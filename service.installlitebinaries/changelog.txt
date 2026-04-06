@@ -1,0 +1,24 @@
+v2.0.8 (2026-02-24)
+ - Change to addon.xml description
+
+v2.0.7 (2026-02-24)
+ - Now a standalone plug-in (not a dependency)
+
+v2.0.6 (2025-07-23)
+ - Add-on summary updated
+
+v2.0.5 (2025-07-13)
+ - Add-on description updated
+
+v2.0.4 (2025-07-13)
+ - Add-on summary and description updated
+ - Forum address updated
+
+v2.0.3 (2024-12-17)
+ - Changes to addon.xml
+
+v2.0.2 (2024-10-19)
+ - Change to addon.xml
+
+v2.0.1 (2024-10-15)
+ - Forked from service.installmybinaries v3.0.2
