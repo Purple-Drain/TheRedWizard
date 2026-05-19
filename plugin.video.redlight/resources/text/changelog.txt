@@ -1,0 +1,52 @@
+[COLOR red][B]*** Fork of FenLight ***[/B][/COLOR]
+
+* We will not revoke our Trakt or TMDb keys
+* We will not block any third party apps or skins
+* No politics
+* NO DRAMA!
+
+[COLOR red][B]Version 1.1.0[/B][/COLOR]
+- A small fix.
+
+[COLOR red][B]Version 1.0.9[/B][/COLOR]
+- Fixed online icons not loading on update. Please restart Kodi, python keeps old code in memory on a simple update.
+
+[COLOR red][B]Version 1.0.8[/B][/COLOR]
+- Menu and UI icons (flags, posters, etc.) load from GitHub (slimmer plugin). Addon icon and fanart remain bundled in the addon.
+- Backing out of Trakt or TMDb authorisations no longer show a failure message (same as Debrid services). Real errors still notify.
+
+[COLOR red][B]Version 1.0.7[/B][/COLOR]
+- Torbox authorisation now a QR code or auto copy/paste into browser (on same device), instead of an API.
+- Fixed Real Debrid copy/paste into browser, this was broken in FenLightAM. Clipboard copy now uses stdin instead of shell echo.
+- Now using unique QR image filenames to avoid stale/cached QR codes.
+- TinyURL now uses HTTPS and validates response.
+- Backing out of Debrid authorisations no longer show a failure message. Real errors still notify.
+- Wording in the Debrid authorisation dialogs rewritten and consistent, tailored to what each service supports.
+
+[COLOR red][B]Version 1.0.6[/B][/COLOR]
+- Fixed Torbox Cloud Storage files not playing. This was broken in FenLightAM.
+- Added "Send URL to WebDL" to My Services > Torbox.
+- Default Red Light fanart changed from local to special path.
+
+[COLOR red][B]Version 1.0.5[/B][/COLOR]
+- A few small fixes.
+
+[COLOR red][B]Version 1.0.4[/B][/COLOR]
+- Fixed Open External Scraper Settings.
+
+[COLOR red][B]Version 1.0.3[/B][/COLOR]
+- Fixed Torbox Cloud Storage (manually added web-links).
+- Fixed database error on first run.
+
+[COLOR red][B]Version 1.0.2[/B][/COLOR]
+- Fixed external playback error. Apologies, an oversight.
+
+[COLOR red][B]Version 1.0.1[/B][/COLOR]
+- Fixed Trakt list contents not appearing from Trakt list search. Clear Trakt cache if you experienced this issue.
+
+[COLOR red][B]Version 1.0.0[/B][/COLOR]
+- Redundant options removed from Tools and Settings menus.
+- Code cleaned up.
+
+[COLOR red][B]Version 0.0.1[/B][/COLOR]
+- Initial release.
