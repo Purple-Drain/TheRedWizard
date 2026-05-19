@@ -1,0 +1,14 @@
+{
+    "Addon1": {
+            "plugin_id": "inputstream.adaptive"
+    },
+    "Addon2": {
+            "plugin_id": "inputstream.ffmpegdirect"
+    },
+	"Addon3": {
+            "plugin_id": "inputstream.rtmp"
+    },
+	"Addon4": {
+            "plugin_id": "pvr.iptvsimple"
+    }
+}
