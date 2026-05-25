@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.chainslivelauncher" name="[COLOR red]Chains Live Launcher[/COLOR]" version="1.0.0" provider-name="[COLOR red]The Red Wizard[/COLOR]">
+	<requires>
+		<import addon="xbmc.python" version="3.0.0"/>
+		<import addon="plugin.video.chainslive" version="1.0.0" optional="true"/>
+	</requires>
+	<extension point="xbmc.python.pluginsource" library="addon.py">
+		<provides>video</provides>
+	</extension>
+	<extension point="xbmc.addon.metadata">
+		<summary lang="en_GB">[COLOR red]Opens Chains Live[/COLOR]</summary>
+		<description lang="en_GB">[COLOR red]Launcher for Chains Live[CR][CR]opens the Chains Live main menu (source list) without a third-party wizard[CR][CR]Requires plugin.video.chainslive[/COLOR]</description>
+		<disclaimer lang="en_GB">[COLOR red]The author of this add-on does not host any content and has no affiliation with the content providers[/COLOR]</disclaimer>
+		<language>en</language>
+		<platform>all</platform>
+		<license>GPL-2.0-or-later</license>
+		<forum>https://t.me/+XiuBf9KvPfw2MzVk</forum>
+		<website>https://redwizard.xyz/</website>
+		<email>info@redwizard.xyz</email>
+		<source>https://github.com/The-Red-Wizard/TheRedWizard/plugin.video.chainslivelauncher</source>
+		<news>[COLOR red]2026-05-25
+- Initial release
+- The Red Wizard has a new home! Go to https://redwizard.xyz[/COLOR]</news>
+		<assets>
+			<icon>resources/media/icon.png</icon>
+			<fanart>resources/media/fanart.jpg</fanart>
+		</assets>
+	</extension>
+</addon>

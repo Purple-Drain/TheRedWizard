@@ -1,0 +1,4 @@
+v1.0.0 (2026-05-25)
+ - Initial release
+ - Opens Chains Live main menu (plugin.video.chainslive root URL)
+ - Install Chains Live separately if not already present
