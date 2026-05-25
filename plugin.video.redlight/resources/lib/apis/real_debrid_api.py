@@ -135,9 +135,18 @@ class RealDebridAPI:
 		url = 'torrents?limit=500'
 		return self._get(url)
 
-	def downloads(self):
-		string = 'rd_downloads'
+	def downloads(self, fresh=False):
 		url = 'downloads?limit=500'
+		if fresh:
+			try:
+				from caches.base_cache import connect_database
+				dbcon = connect_database('maincache_db')
+				dbcon.execute("""DELETE FROM maincache WHERE id=?""", ('rd_downloads',))
+			except:
+				pass
+			result = self._get(url)
+			return result if isinstance(result, list) else []
+		string = 'rd_downloads'
 		return cache_object(self._get, string, url, False, 0.03)
 
 	def user_cloud_info(self, file_id):

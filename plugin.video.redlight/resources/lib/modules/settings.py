@@ -274,6 +274,12 @@ def filter_by_name(scraper):
 def uncached_min_seeders():
 	return int(get_setting('redlight.results.uncached_min_seeders', '0'))
 
+def include_uncached_torbox():
+	return get_setting('redlight.external.include_uncached_torbox', 'false') == 'true'
+
+def tb_notify_cloud_ready():
+	return get_setting('redlight.tb.notify_cloud_ready', 'true') == 'true'
+
 def easynews_language_filter():
 	enabled = get_setting('redlight.easynews.filter_lang') == 'true'
 	if enabled: filters = get_setting('redlight.easynews.lang_filters').split(', ')

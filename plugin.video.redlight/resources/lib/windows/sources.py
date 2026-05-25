@@ -109,7 +109,12 @@ class SourcesResults(BaseDialog):
 			chosen_source = json.loads(chosen_listitem.getProperty('source'))
 			if 'Uncached' in chosen_source.get('cache_provider', ''):
 				from modules.debrid import manual_add_magnet_to_cloud
-				return manual_add_magnet_to_cloud({'mode': 'manual_add_magnet_to_cloud', 'provider': chosen_source['debrid'], 'magnet_url': chosen_source['url']})
+				return manual_add_magnet_to_cloud({
+					'mode': 'manual_add_magnet_to_cloud',
+					'provider': chosen_source['debrid'],
+					'magnet_url': chosen_source['url'],
+					'display_name': chosen_source.get('display_name', ''),
+				})
 			self.selected = ('play', chosen_source)
 			return self.close()
 		elif action in self.context_actions:
@@ -263,12 +268,18 @@ class SourcesResults(BaseDialog):
 			down_file_params = {'mode': 'downloader.runner', 'action': 'meta.single', 'name': self.meta.get('rootname', ''), 'source': source,
 								'url': None, 'provider': scrape_provider, 'meta': meta_json}
 		if 'package' in item and not uncached:
+			pack_provider = item_get('debrid') or cache_provider
 			down_pack_params = {'mode': 'downloader.runner', 'action': 'meta.pack', 'name': self.meta.get('rootname', ''), 'source': source, 'url': None,
-								'provider': cache_provider, 'meta': meta_json, 'magnet_url': magnet_url, 'info_hash': info_hash}
+								'provider': pack_provider, 'meta': meta_json, 'magnet_url': magnet_url, 'info_hash': info_hash}
 		if provider_source == 'torrent':
-			browse_pack_params = {'mode': 'debrid.browse_packs', 'provider': cache_provider, 'name': name,
+			browse_pack_params = {'mode': 'debrid.browse_packs', 'provider': item_get('debrid') or cache_provider, 'name': name,
 								'magnet_url': magnet_url, 'info_hash': info_hash}
-			add_magnet_to_cloud_params = {'mode': 'manual_add_magnet_to_cloud', 'provider': cache_provider, 'magnet_url': magnet_url}
+			add_magnet_to_cloud_params = {
+				'mode': 'manual_add_magnet_to_cloud',
+				'provider': cache_provider,
+				'magnet_url': magnet_url,
+				'display_name': item_get('display_name', ''),
+			}
 		choices_append(('Info', 'results_info'))
 		if add_magnet_to_cloud_params: choices_append(('Add to Cloud', add_magnet_to_cloud_params))
 		if browse_pack_params: choices_append(('Browse', browse_pack_params))

@@ -157,7 +157,7 @@ def routing(sys):
 	elif 'alldebrid' in mode:
 		if mode == 'alldebrid.ad_cloud':
 			from indexers.alldebrid import ad_cloud
-			return ad_cloud(params.get('id', None))
+			return ad_cloud()
 		elif mode == 'alldebrid.ad_downloads':
 			from indexers.alldebrid import ad_downloads
 			return ad_downloads()
@@ -186,6 +186,9 @@ def routing(sys):
 		if mode == 'torbox.tb_cloud':
 			from indexers.torbox import tb_cloud
 			return tb_cloud()
+		elif mode == 'torbox.tb_history':
+			from indexers.torbox import tb_history
+			return tb_history()
 		elif mode == 'torbox.browse_tb_cloud':
 			from indexers.torbox import browse_tb_cloud
 			return browse_tb_cloud(params.get('folder_id'), params.get('media_type'))
