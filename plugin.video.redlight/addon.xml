@@ -11,7 +11,7 @@
     <extension point="xbmc.python.module" library="resources/lib/"/>
     <extension point="xbmc.addon.metadata">
         <reuselanguageinvoker>true</reuselanguageinvoker>
-        <summary lang="en">[COLOR red]Fork of FenLight[/COLOR]</summary>
+        <summary lang="en">[COLOR red]Red Light[/COLOR]</summary>
         <description lang="en">[COLOR red]* We will not revoke our Trakt or TMDb keys
 * We will not block any third party apps or skins
 * No politics
