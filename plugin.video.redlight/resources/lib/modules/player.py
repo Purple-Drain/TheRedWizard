@@ -76,7 +76,7 @@ class RedLightPlayer(xbmc.Player):
 				total_check_time += 0.10
 			ku.hide_busy_dialog()
 			ku.sleep(1000)
-			if st.auto_enable_subs(): self.showSubtitles(True)
+			if st.auto_enable_subs() and not st.submaker_enabled(): self.showSubtitles(True)
 			while self.isPlayingVideo():
 				try:
 					if not ensure_dialog_dead:
@@ -97,6 +97,7 @@ class RedLightPlayer(xbmc.Player):
 						final_chapter = (self.final_chapter(75) or stingers_percentage_fallback) if stinger_use_chapters else stingers_percentage_fallback
 						if self.current_point >= final_chapter: self.run_movie_stingers()
 				except: pass
+				if not self.subs_searched: self.run_subtitles()
 			ku.hide_busy_dialog()
 			if not self.media_marked: self.media_watched_marker()
 			self.clear_playback_properties()
@@ -237,8 +238,22 @@ class RedLightPlayer(xbmc.Player):
 			self.meta_get, self.kodi_monitor, self.playback_percent = self.meta.get, ku.kodi_monitor(), self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
+			self.subs_searched = False
 			self.playback_successful, self.cancel_all_playback = None, False
 			self.playing_item = self.sources_object.playing_item
+
+	def run_subtitles(self):
+		self.subs_searched = True
+		if not st.auto_enable_subs(): return
+		if not st.submaker_enabled(): return
+		if not self.imdb_id: return
+		try:
+			from indexers.subtitles import Subtitles
+			poster = self.meta.get('poster') or ku.get_icon('box_office')
+			season = self.season if self.media_type == 'episode' else None
+			episode = self.episode if self.media_type == 'episode' else None
+			Thread(target=Subtitles().run, args=(self.imdb_id, season, episode, poster)).start()
+		except: pass
 
 	def set_playback_properties(self):
 		try:

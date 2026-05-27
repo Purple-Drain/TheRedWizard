@@ -2980,11 +2980,56 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <property name="setting_label">Auto Enable Subtitles</property>
+                          <property name="setting_label">Subtitles</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Auto Enable Subtitles (Local and SubMaker)</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.auto_enable_subs)]</property>
-                          <property name="setting_description">Enable this and Red Light will automatically enable subtitles when available</property>
+                          <property name="setting_description">Enable subtitle automation in playback. When on, choose Local Subtitles or SubMaker (https://submaker.elfhosted.com)</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=playback.auto_enable_subs)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.auto_enable_subs),true)</visible>
+                          <property name="setting_label">    - Subtitle Source</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.subs_source_name)]</property>
+                          <property name="setting_description">Choose Local Subtitles or SubMaker. Local only enables subtitles already in the stream. SubMaker (https://submaker.elfhosted.com) fetches subtitles using your manifest URL below</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=playback.subs_source)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.auto_enable_subs),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.subs_source),1)</visible>
+                          <property name="setting_label">    - SubMaker Language</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.submaker_language_name)]</property>
+                          <property name="setting_description">Choose the preferred subtitle language for SubMaker. Default is English</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=playback.submaker_language)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.auto_enable_subs),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.subs_source),1)</visible>
+                          <property name="setting_label">    - Prefer Local Subs (if available)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.submaker_prefer_local)]</property>
+                          <property name="setting_description">When using SubMaker, check for local subtitles first. If local subtitles are active, Red Light will keep them and skip SubMaker download</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=playback.submaker_prefer_local)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.auto_enable_subs),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.playback.subs_source),1)</visible>
+                          <property name="setting_label">    - SubMaker Manifest URL</property>
+                          <property name="setting_type">string</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.submaker_manifest)]</property>
+                          <property name="setting_description">Enter your full SubMaker manifest URL from https://submaker.elfhosted.com (must include manifest.json). Example: https://.../manifest.json</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=playback.submaker_manifest)</onclick>
                       </item>
                 </content>
             </control>

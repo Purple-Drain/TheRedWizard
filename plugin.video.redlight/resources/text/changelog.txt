@@ -1,9 +1,9 @@
-[COLOR red][B]*** Fork of FenLight ***[/B][/COLOR]
+[COLOR red][B]Version 1.1.7[/B][/COLOR]
+- Subtitles: SubMaker now supports selectable Subtitle Language in Settings (default English).
+- Subtitles: Now a separate section in Settings > Playback.
 
-* We will not revoke our Trakt or TMDb keys
-* We will not block any third party apps or skins
-* No politics
-* NO DRAMA!
+[COLOR red][B]Version 1.1.6[/B][/COLOR]
+- Subtitles: SubMaker added to Subtitles. Auto Enable Subtitles (default Off - as before). Local Subtitles or SubMaker (default Local). [B]To use SubMaker you need to enter your own SubMaker Manifest URL (https://submaker.elfhosted.com).[/B] Default language English. When SubMaker is selected, optional prefer Local Subs If Available (default On).
 
 [COLOR red][B]Version 1.1.5[/B][/COLOR]
 - Real Debrid: Limit parallel magnet resolves to 3 (semaphore) to reduce rate limiting when multiple sources resolve at once.
