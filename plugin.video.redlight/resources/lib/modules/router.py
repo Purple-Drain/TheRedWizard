@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
 from xbmc import getInfoLabel
 from urllib.parse import parse_qsl
+from modules import kodi_utils
 from modules.kodi_utils import external, get_property
 # from modules.kodi_utils import logger
 
 def sys_exit_check():
-	if get_property('redlight.reuse_language_invoker') == 'false': return False
+	from caches.settings_cache import get_setting
+	if get_setting('redlight.reuse_language_invoker', 'true') == 'false': return False
 	return external()
 
 def routing(sys):
+	from caches.settings_cache import bootstrap_settings_properties, run_deferred_setup_if_needed
+	try: bootstrap_settings_properties()
+	except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
+	try: run_deferred_setup_if_needed()
+	except Exception as e: kodi_utils.logger('routing', 'deferred: %s' % e)
 	params = dict(parse_qsl(sys.argv[2][1:], keep_blank_values=True))
 	mode = params.get('mode', 'navigator.main')
 	if 'navigator.' in mode:

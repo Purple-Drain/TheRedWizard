@@ -1489,6 +1489,32 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">Lists Read Access Token</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.tmdb.lists_read_token)]</property>
+                          <property name="setting_description">Enter your TMDb v4 read access token (JWT). Used for TMDb Lists account authorization and API calls before you sign in with Authorize Account. Create one at themoviedb.org/settings/api with API Read Access permission.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=tmdb.lists_read_token)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.tmdb.lists_read_token),eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJhMGJmMjA3YzVmZjZjMGNhYWJhYzAzMjdlMzliMWNkMiIsIm5iZiI6MTUwMzk0ODAxMC43NTQsInN1YiI6IjU5YTQ2Y2U4YzNhMzY4MGIxMjAwMjgxYiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.2pYaMVzWy-TNg2SBlkP_CrYWpaxcU7LZIZLPdgJp9jw)</visible>
+                          <property name="setting_label">    - Restore Default Lists Read Access Token</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Restore default TMDb Lists read access token</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.restore_setting_default&amp;setting_id=tmdb.lists_read_token)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.tmdb.lists_read_token),eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJhMGJmMjA3YzVmZjZjMGNhYWJhYzAzMjdlMzliMWNkMiIsIm5iZiI6MTUwMzk0ODAxMC43NTQsInN1YiI6IjU5YTQ2Y2U4YzNhMzY4MGIxMjAwMjgxYiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.2pYaMVzWy-TNg2SBlkP_CrYWpaxcU7LZIZLPdgJp9jw)</visible>
+                          <property name="setting_label">Test Lists Read Access Token...</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Test if your TMDb Lists read access token is valid</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=tmdblist_read_token_check_choice)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.tmdb.token),empty_setting)</visible>
                           <property name="setting_label">Authorize Account</property>
                           <property name="setting_type">action</property>
@@ -2044,7 +2070,7 @@
                           <property name="setting_label">Search Cloud Storage</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.provider.tb_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will search your TorBox Cloud for media</property>
+                          <property name="setting_description">Enable this and Red Light will search your TorBox Cloud for media before external scrapers run.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=provider.tb_cloud)</onclick>
                       </item>
                       <item>
@@ -2248,15 +2274,17 @@
                           <property name="setting_description">Choose the order in which EasyNews results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=en.priority)</onclick>
                       </item>
-        <!-- AIOStreams -->
+        <!-- AIOStreams (hidden while aiostreams_api.ENABLED is false) -->
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <property name="setting_label">AIOStreams</property>
                           <property name="setting_type">separator</property>
                           <onclick>noop</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <property name="setting_label">Enable</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.provider.aiostreams)]</property>
@@ -2265,6 +2293,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <property name="setting_label">Instance</property>
                           <property name="setting_type">action</property>
@@ -2274,6 +2303,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <property name="setting_label">    - Active base URL</property>
                           <property name="setting_type">action</property>
@@ -2283,6 +2313,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.instance),4)</visible>
                           <property name="setting_label">    - Custom URL</property>
@@ -2293,6 +2324,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <property name="setting_label">Username</property>
                           <property name="setting_type">numeric</property>
@@ -2302,6 +2334,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <property name="setting_label">Password</property>
                           <property name="setting_type">numeric</property>
@@ -2311,6 +2344,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
                           <property name="setting_label">Filter Results by Name</property>
@@ -2321,6 +2355,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
                           <property name="setting_label">Check Before Full Search</property>
@@ -2331,6 +2366,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.check.aiostreams),true)</visible>
@@ -2342,6 +2378,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
@@ -2747,6 +2784,7 @@
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
                           <property name="setting_label">    - AIOStreams Color</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.aiostreams_highlight)]]$INFO[Window(10000).Property(redlight.provider.aiostreams_highlight)][/COLOR]</property>

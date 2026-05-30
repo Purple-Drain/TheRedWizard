@@ -1,18 +1,73 @@
 # -*- coding: utf-8 -*-
 import json
+import re
 from modules import kodi_utils
 from caches.base_cache import connect_database
 # logger = kodi_utils.logger
 
+VALID_EXTRAS_CONTAINER_IDS = frozenset(range(2050, 2067))
+_COLOR_SETTING_RE = re.compile(r'^[0-9A-Fa-f]{6}$|^[0-9A-Fa-f]{8}$')
+_EXTRAS_LIST_DEFAULT = '2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066'
+_MAX_PROPERTY_LEN = 8192
+_SETTINGS_PROPERTIES_LOADED = 'redlight.settings_properties_loaded'
+_DEFERRED_SETUP_DONE = 'redlight.deferred_service_setup_done'
+
+def _properties_loaded():
+	return kodi_utils.get_property(_SETTINGS_PROPERTIES_LOADED) == 'true'
+
+def property_safe_string(value):
+	if value is None: return ''
+	value = str(value).replace('\x00', '')
+	return ''.join(c for c in value if c >= ' ' or c in '\t\n\r')[:_MAX_PROPERTY_LEN]
+
+def _sanitize_extras_list(value, fallback=_EXTRAS_LIST_DEFAULT):
+	if value in (None, '', 'noop'): return fallback
+	try: ids = [int(i.strip()) for i in str(value).split(',') if i.strip()]
+	except: return fallback
+	valid = [i for i in ids if i in VALID_EXTRAS_CONTAINER_IDS]
+	if not valid: return fallback
+	return ','.join(str(i) for i in valid)
+
+def sanitize_setting_value(setting_id, value, setting_info=None):
+	if setting_info is None: setting_info = default_setting_values(setting_id)
+	default = setting_info['setting_default'] if setting_info else ''
+	if value is None: return default
+	value = property_safe_string(value)
+	if setting_id in ('extras.order', 'extras.enabled'):
+		fallback = setting_info['setting_default'] if setting_info else _EXTRAS_LIST_DEFAULT
+		return _sanitize_extras_list(value, fallback)
+	if setting_id == 'default_addon_fanart':
+		path = kodi_utils.translate_path(value) if value else ''
+		if path and kodi_utils.path_exists(path): return value
+		return kodi_utils.addon_fanart()
+	if setting_id == 'addon_icon_choice':
+		path = kodi_utils.translate_path(value) if value else ''
+		if path and kodi_utils.path_exists(path): return value
+		return default or 'resources/media/addon_icons/icon.png'
+	if setting_id.endswith('_highlight') or setting_id in ('window_theme', 'window_theme_contrast'):
+		if _COLOR_SETTING_RE.match(value): return value.upper()
+		return default
+	if setting_info and setting_info.get('setting_type') == 'boolean':
+		if value in ('true', 'false'): return value
+		return default
+	if len(value) > _MAX_PROPERTY_LEN: return value[:_MAX_PROPERTY_LEN]
+	return value
+
 class SettingsCache:
-	def get(self, setting_id):
+	def read_db_value(self, setting_id):
 		try:
 			dbcon = connect_database('settings_db')
 			setting_id = setting_id.replace('redlight.', '')
-			setting_value = dbcon.execute('SELECT setting_value from settings WHERE setting_id = ?', (setting_id,)).fetchone()[0]
-			self.set_memory_cache(setting_id, setting_value)
-		except: setting_value = None
-		return setting_value
+			row = dbcon.execute('SELECT setting_value FROM settings WHERE setting_id = ?', (setting_id,)).fetchone()
+			if not row: return None
+			setting_value = row[0]
+			setting_info = default_setting_values(setting_id)
+			if setting_info: return sanitize_setting_value(setting_id, setting_value, setting_info)
+			return property_safe_string(setting_value)
+		except: return None
+
+	def get(self, setting_id):
+		return self.read_db_value(setting_id)
 
 	def remove_setting(self, setting_id):
 		dbcon = connect_database('settings_db')
@@ -36,10 +91,13 @@ class SettingsCache:
 	def set(self, setting_id, setting_value=None):
 		dbcon = connect_database('settings_db')
 		setting_info = default_setting_values(setting_id)
+		if not setting_info: return
 		setting_type, setting_default = setting_info['setting_type'], setting_info['setting_default']
 		if setting_value is None: setting_value = setting_default
+		setting_value = sanitize_setting_value(setting_id, setting_value, setting_info)
 		dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', (setting_id, setting_type, setting_default, setting_value))
-		self.set_memory_cache(setting_id, setting_value)
+		if _properties_loaded():
+			self.set_memory_cache(setting_id, setting_value)
 		if setting_type == 'action' and 'settings_options' in setting_info:
 			name_setting_id = '%s_name' % setting_id
 			name_setting_value = setting_info['settings_options'][setting_value]
@@ -49,20 +107,34 @@ class SettingsCache:
 					name_setting_value = INSTANCE_LABELS.get(str(setting_value), name_setting_value)
 				except: pass
 			dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', (name_setting_id, 'name', '', name_setting_value))
-			self.set_memory_cache(name_setting_id, name_setting_value)
-		if setting_id in ('aiostreams.instance', 'aiostreams.custom_url', 'provider.aiostreams'):
+			if _properties_loaded(): self.set_memory_cache(name_setting_id, name_setting_value)
+		if _properties_loaded() and setting_id in ('aiostreams.instance', 'aiostreams.custom_url', 'provider.aiostreams'):
 			try:
 				from apis.aiostreams_api import refresh_settings_properties
 				refresh_settings_properties()
 			except: pass
 
-	def set_many(self, settings_list):
+	def set_many(self, settings_list, load_properties=True):
 		dbcon = connect_database('settings_db')
 		dbcon.executemany('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', settings_list)
-		for item in settings_list: self.set_memory_cache(item[0], item[3] or item[2])
+		if load_properties:
+			for item in settings_list: self.set_memory_cache(item[0], item[3] or item[2])
+
+	def write_db(self, setting_id, setting_value, setting_info=None):
+		if setting_info is None: setting_info = default_setting_values(setting_id)
+		if setting_info: setting_value = sanitize_setting_value(setting_id, setting_value, setting_info)
+		else: setting_value = property_safe_string(setting_value)
+		dbcon = connect_database('settings_db')
+		if setting_info:
+			dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)',
+				(setting_id, setting_info['setting_type'], setting_info['setting_default'], setting_value))
+		else:
+			dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', (setting_id, 'name', '', setting_value))
 
 	def set_memory_cache(self, setting_id, setting_value):
-		kodi_utils.set_property('redlight.%s' % setting_id, setting_value)
+		try:
+			kodi_utils.set_property('redlight.%s' % setting_id, property_safe_string(setting_value))
+		except: pass
 
 	def delete_memory_cache(self, setting_id):
 		clear_property('redlight.%s' % setting_id)
@@ -84,33 +156,86 @@ def set_setting(setting_id, value):
 	settings_cache.set(setting_id, value)
 
 def get_setting(setting_id, fallback=''):
-	return kodi_utils.get_property(setting_id) or settings_cache.get(setting_id) or fallback
+	if _properties_loaded():
+		prop = kodi_utils.get_property(setting_id)
+		if prop not in ('', None): return prop
+	value = settings_cache.read_db_value(setting_id)
+	if value not in ('', None): return value
+	return fallback
 
 def get_many(settings_list):
 	return settings_cache.get_many(settings_list)
 
+def _defaultsettings_ids(d_settings):
+	defaultsettings_ids = [i['setting_id'] for i in d_settings]
+	defaultsettings_names = [i['setting_id'] for i in d_settings if 'settings_options' in i]
+	defaultsettings_ids.extend(['%s_name' % i for i in defaultsettings_names])
+	return defaultsettings_ids
+
+def bootstrap_settings_properties(force=False):
+	if not force and _properties_loaded(): return
+	if force: kodi_utils.clear_property(_SETTINGS_PROPERTIES_LOADED)
+	sync_settings({'silent': 'true', 'load_properties': False})
+	d_settings = default_settings()
+	defaultsettings_ids = _defaultsettings_ids(d_settings)
+	defaults_map = {i['setting_id']: i for i in d_settings}
+	currentsettings = settings_cache.get_all()
+	for setting_id, value in currentsettings.items():
+		if setting_id not in defaultsettings_ids: continue
+		info = defaults_map.get(setting_id)
+		if info: sanitized = sanitize_setting_value(setting_id, value, info)
+		else: sanitized = property_safe_string(value)
+		try: settings_cache.set_memory_cache(setting_id, sanitized)
+		except: pass
+	try:
+		from apis.aiostreams_api import refresh_settings_properties
+		refresh_settings_properties()
+	except: pass
+	kodi_utils.set_property(_SETTINGS_PROPERTIES_LOADED, 'true')
+
+def run_deferred_setup_if_needed():
+	if kodi_utils.get_property(_DEFERRED_SETUP_DONE) == 'true': return
+	kodi_utils.set_property(_DEFERRED_SETUP_DONE, 'true')
+	try:
+		from service import run_deferred_service_setup
+		run_deferred_service_setup()
+	except Exception as e:
+		kodi_utils.logger('run_deferred_setup_if_needed', str(e))
+
+def load_settings_properties(force=False):
+	bootstrap_settings_properties(force=force)
+	run_deferred_setup_if_needed()
+
 def sync_settings(params={}):
 	silent = params.get('silent', 'true') == 'true'
+	load_properties = params.get('load_properties', True)
 	insert_list = []
 	insert_list_append = insert_list.append
 	currentsettings = settings_cache.get_all()
 	d_settings = default_settings()
-	defaultsettings_ids = [i['setting_id'] for i in d_settings]
-	defaultsettings_names = [i['setting_id'] for i in d_settings if 'settings_options' in i]
-	defaultsettings_ids.extend(['%s_name' % i for i in defaultsettings_names])
+	defaultsettings_ids = _defaultsettings_ids(d_settings)
+	defaults_map = {i['setting_id']: i for i in d_settings}
 	try:
 		c_settings = currentsettings.items()
 		obsoletesettings_ids = [k for k, v in c_settings if not k in defaultsettings_ids]
 		if obsoletesettings_ids:
 			for item in obsoletesettings_ids: settings_cache.remove_setting(item)
+			currentsettings = settings_cache.get_all()
 	except: pass
 	if currentsettings:
 		if currentsettings.get('update.username', '').replace('-', '').lower() == 'theredwizard' \
 				and currentsettings.get('update.username') != 'The-Red-Wizard':
-			set_setting('update.username', 'The-Red-Wizard')
+			settings_cache.write_db('update.username', 'The-Red-Wizard', defaults_map.get('update.username'))
 			currentsettings['update.username'] = 'The-Red-Wizard'
-		c_settings = currentsettings.items()
-		for k, v in c_settings: settings_cache.set_memory_cache(k, v)
+			if load_properties: settings_cache.set_memory_cache('update.username', 'The-Red-Wizard')
+		for setting_id, value in list(currentsettings.items()):
+			if setting_id not in defaults_map: continue
+			sanitized = sanitize_setting_value(setting_id, value, defaults_map[setting_id])
+			if sanitized != value:
+				settings_cache.write_db(setting_id, sanitized, defaults_map[setting_id])
+				currentsettings[setting_id] = sanitized
+			if load_properties:
+				settings_cache.set_memory_cache(setting_id, sanitized)
 	for item in d_settings:
 		setting_id = item['setting_id']
 		if setting_id in currentsettings: continue
@@ -125,12 +250,13 @@ def sync_settings(params={}):
 			else: name_default = item['settings_options'][setting_default]
 			insert_list_append(('%s_name' % setting_id, 'name', name_default, name_default))
 		insert_list_append((setting_id, setting_type, setting_default, setting_default))
-	if insert_list: settings_cache.set_many(insert_list)
-	settings_cache.clean_database()
-	try:
-		from apis.aiostreams_api import refresh_settings_properties
-		refresh_settings_properties()
-	except: pass
+	if insert_list: settings_cache.set_many(insert_list, load_properties=load_properties)
+	if load_properties:
+		settings_cache.clean_database()
+		bootstrap_settings_properties(force=True)
+		run_deferred_setup_if_needed()
+	else:
+		kodi_utils.clear_property(_SETTINGS_PROPERTIES_LOADED)
 	if not silent: kodi_utils.notification('Settings Cache Remade')
 
 def set_default(setting_ids):
@@ -361,6 +487,7 @@ def default_settings():
 #==================== TMDb API
 {'setting_id': 'tmdb_api', 'setting_type': 'string', 'setting_default': 'a0bf207c5ff6c0caabac0327e39b1cd2'},
 #==================== TMDb Lists
+{'setting_id': 'tmdb.lists_read_token', 'setting_type': 'string', 'setting_default': 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJhMGJmMjA3YzVmZjZjMGNhYWJhYzAzMjdlMzliMWNkMiIsIm5iZiI6MTUwMzk0ODAxMC43NTQsInN1YiI6IjU5YTQ2Y2U4YzNhMzY4MGIxMjAwMjgxYiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.2pYaMVzWy-TNg2SBlkP_CrYWpaxcU7LZIZLPdgJp9jw'},
 {'setting_id': 'tmdb.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'tmdb.username', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 #==================== OMDb
@@ -487,6 +614,8 @@ def default_settings():
 {'setting_id': 'rescrape.episode_group.order', 'setting_type': 'action', 'setting_default': '3', 'min_value': '1', 'max_value': '5'},
 {'setting_id': 'rescrape.ignore_filters', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '1': 'Auto', '2': 'Prompt'}},
 {'setting_id': 'rescrape.ignore_filters.order', 'setting_type': 'action', 'setting_default': '4', 'min_value': '1', 'max_value': '5'},
+{'setting_id': 'rescrape.full_scrape', 'setting_type': 'action', 'setting_default': '2', 'settings_options': {'0': 'Off', '1': 'Auto', '2': 'Prompt'}},
+{'setting_id': 'rescrape.full_scrape.order', 'setting_type': 'action', 'setting_default': '5', 'min_value': '1', 'max_value': '5'},
 #==================== Sorting and Filtering
 {'setting_id': 'results.sort_order_display', 'setting_type': 'string', 'setting_default': 'Quality, Size, Provider'},
 {'setting_id': 'results.filter_size_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '1': 'Use Line Speed', '2': 'Use Size'}},
@@ -622,8 +751,8 @@ def default_settings():
 {'setting_id': 'folder5.tv_shows_directory', 'setting_type': 'path', 'setting_default': 'None', 'browse_mode': '0'},
 {'setting_id': 'extras.enabled', 'setting_type': 'string', 'setting_default': '2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066'},
 {'setting_id': 'extras.order', 'setting_type': 'string', 'setting_default': '2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,2060,2061,2062,2063,2064,2065,2066'},
-{'setting_id': 'rescrape.enabled', 'setting_type': 'string', 'setting_default': 'cache_ignored,imdb_year,with_all,episode_group,ignore_filters'},
-{'setting_id': 'rescrape.order', 'setting_type': 'string', 'setting_default': 'cache_ignored,imdb_year,with_all,episode_group,ignore_filters'},
+{'setting_id': 'rescrape.enabled', 'setting_type': 'string', 'setting_default': 'cache_ignored,imdb_year,with_all,episode_group,ignore_filters,full_scrape'},
+{'setting_id': 'rescrape.order', 'setting_type': 'string', 'setting_default': 'cache_ignored,imdb_year,with_all,episode_group,ignore_filters,full_scrape'},
 {'setting_id': 'extras.tvshow.button10', 'setting_type': 'string', 'setting_default': 'tvshow_browse'},
 {'setting_id': 'extras.tvshow.button11', 'setting_type': 'string', 'setting_default': 'show_trailers'},
 {'setting_id': 'extras.tvshow.button12', 'setting_type': 'string', 'setting_default': 'show_keywords'},

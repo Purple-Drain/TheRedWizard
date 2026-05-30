@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# Set True when AIOStreams integration is ready to ship again.
+ENABLED = False
+
 import requests
 from urllib.parse import urlencode
 from caches.settings_cache import get_setting
@@ -48,6 +51,7 @@ def sync_instance_display_name():
 	kodi_utils.set_property('redlight.aiostreams.instance_name', label)
 
 def refresh_settings_properties():
+	kodi_utils.set_property('redlight.aiostreams.available', 'true' if ENABLED else 'false')
 	instance_id()
 	sync_instance_display_name()
 	refresh_base_url_property()

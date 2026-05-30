@@ -13,6 +13,7 @@ class source:
 
 	def results(self, info):
 		try:
+			if not aiostreams_api.ENABLED: return source_utils.internal_results(self.scrape_provider, self.sources)
 			if not aiostreams_api.auth(): return source_utils.internal_results(self.scrape_provider, self.sources)
 			filter_title = filter_by_name(self.scrape_provider)
 			self.media_type = info.get('media_type')
