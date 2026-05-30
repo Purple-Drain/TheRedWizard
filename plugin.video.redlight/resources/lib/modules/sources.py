@@ -203,10 +203,11 @@ class Sources():
 			kodi_utils.clear_property('fs_filterless_search')
 		results = self.sort_first(results)
 		if self.ignore_scrape_filters: return results
-		filtered_results = [i for i in results if i not in cloud_results]
-		filtered_results = self.limit_quality_numbers(filtered_results)
-		filtered_results = self.limit_quality_total(filtered_results)
-		return filtered_results + cloud_results
+		non_cloud = [i for i in results if i.get('scrape_provider') not in cloud_scrapers]
+		cloud_in_results = [i for i in results if i.get('scrape_provider') in cloud_scrapers]
+		non_cloud = self.limit_quality_numbers(non_cloud)
+		non_cloud = self.limit_quality_total(non_cloud)
+		return self.sort_first(non_cloud + cloud_in_results)
 
 	def sort_results(self, results):
 		results = [dict(i, **{

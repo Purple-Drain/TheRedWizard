@@ -1,6 +1,8 @@
 [COLOR red][B]Version 1.2.4[/B][/COLOR]
 - TorBox Cloud: cloud search now respects the Results Timeout budget and skips non-matching folders earlier, so a large TorBox library no longer blocks the entire source search when nothing matches.
 - Source search: internal scrapers finish (or time out at 25s) before the external scraper phase starts, so external no longer sits at a red progress bar waiting on slow internal/cloud scrapers.
+- Fixed Real Debrid (and other debrid) cloud results ignoring Show Results at Top: quality limits were re-appending all cloud results to the bottom after they had already been sorted to the top.
+- Fixed All Debrid external cache check returning inconsistent results: API failures no longer mark every torrent as cached, hash matching is normalized to lowercase, invalid hashes are skipped, and instant/ready/cached flags are parsed more reliably from the magnet/instant API.
 
 [COLOR red][B]Version 1.2.3[/B][/COLOR]
 - Fixed skin widgets (e.g. Movies > Trending) staying empty after a settings DB upgrade: widget calls no longer block on settings bootstrap, failed Trakt list fetches are not cached, and widgets are silently reloaded with ReloadSkin only when sync_settings actually migrates or repairs an existing settings.db (not on every boot).

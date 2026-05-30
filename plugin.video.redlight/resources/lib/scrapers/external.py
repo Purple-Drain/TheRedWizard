@@ -197,8 +197,9 @@ class source:
 				if self.external_cache_check: cached = function(hash_list, cached_hashes, self.data, self.active_debrid)
 				else: cached = hash_list
 			else: cached = function(hash_list, cached_hashes)
-			if not self.background: self.process_quality_count_final([i for i in results if i['hash'] in cached])
-			final_results.extend([dict(i, **{'cache_provider': provider if i['hash'] in cached else 'Uncached %s' % provider, 'debrid': provider}) for i in results])
+			cached_set = set(str(i).lower() for i in cached)
+			if not self.background: self.process_quality_count_final([i for i in results if i.get('hash', '').lower() in cached_set])
+			final_results.extend([dict(i, **{'cache_provider': provider if i.get('hash', '').lower() in cached_set else 'Uncached %s' % provider, 'debrid': provider}) for i in results])
 		def _debrid_check_dialog():
 			self.progress_dialog.reset_is_cancelled()
 			start_time, timeout = time.time(), 20
@@ -217,7 +218,7 @@ class source:
 			if not self.background and self.all_internal_sources: self.process_quality_count_final(self.all_internal_sources)
 			final_results = []
 			results = list(_process_duplicates(results))
-			hash_list = list(set([i['hash'] for i in results]))
+			hash_list = list(set([i['hash'].lower() for i in results if i.get('hash') and len(i['hash']) == 40]))
 			cached_hashes = query_local_cache(hash_list)
 			debrid_check_threads = [Thread(target=_process_cache_check, args=self.debrid_runners[item], name=item) for item in self.active_debrid]
 			[i.start() for i in debrid_check_threads]
