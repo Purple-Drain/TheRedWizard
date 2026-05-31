@@ -22,7 +22,7 @@ class source:
 		self.source_dict, self.host_dict = source_dict, []
 		self.sources, self.all_internal_sources, self.processed_internal_scrapers = [], [], []
 		self.processed_internal_scrapers_append = self.processed_internal_scrapers.append
-		self.internal_scrapers, self.prescrape_sources = internal_scrapers, prescrape_sources
+		self.internal_scrapers, self.prescrape_sources = [i for i in (internal_scrapers or []) if i != 'external'], prescrape_sources
 		self.internal_activated, self.internal_prescraped = len(self.internal_scrapers) > 0, len(self.prescrape_sources) > 0
 		self.processed_prescrape, self.threads_completed = False, False
 		self.timeout = 60 if disabled_ext_ignored else int(get_setting('redlight.results.timeout', '20'))
@@ -265,6 +265,7 @@ class source:
 			self.process_quality_count(self.prescrape_sources)
 			self.processed_prescrape = True
 		for i in self.internal_scrapers:
+			if i == 'external': continue
 			win_property = kodi_utils.get_property('redlight.internal_results.%s' % i)
 			if win_property in ('checked', '', None): continue
 			try: internal_sources = json.loads(win_property)
@@ -273,7 +274,7 @@ class source:
 			self.all_internal_sources += internal_sources
 			self.processed_internal_scrapers_append(i)
 			self.process_quality_count(internal_sources)
-		return [i for i in self.internal_scrapers if not i in self.processed_internal_scrapers]
+		return [i for i in self.internal_scrapers if i != 'external' and i not in self.processed_internal_scrapers]
 
 	def _quality_length(self, items, quality):
 		return len([i for i in items if i['quality'] == quality])

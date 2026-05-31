@@ -132,12 +132,10 @@ class Sources():
 		if self.active_external:
 			early_cloud = self.internal_sources(cloud_early=True)
 			if early_cloud:
-				early_threads = []
 				for i in early_cloud:
 					t = Thread(target=self.activate_providers, args=(i[0], i[1], False), name=i[2])
-					early_threads.append(t)
+					threads_append(t)
 					t.start()
-				self._join_scraper_threads(early_threads, 25)
 				self.remove_scrapers.extend(i[2] for i in early_cloud)
 		if self.active_folders: self.append_folder_scrapers(self.providers)
 		self.providers.extend(self.internal_sources())
@@ -145,8 +143,6 @@ class Sources():
 			for i in self.providers: threads_append(Thread(target=self.activate_providers, args=(i[0], i[1], False), name=i[2]))
 			[i.start() for i in self.threads]
 		if self.active_external or self.background:
-			if not self.background and self.threads:
-				self.scrapers_dialog()
 			if self.active_external:
 				self.external_args = (self.meta, self.external_providers, self.debrid_enabled, self.external_cache_check, self.internal_scraper_names,
 										self.prescrape_sources, self.progress_dialog, self.disabled_ext_ignored)
@@ -298,7 +294,7 @@ class Sources():
 
 	def prepare_internal_scrapers(self):
 		if self.active_external and len(self.active_internal_scrapers) == 1:
-			self.internal_scraper_names = self.active_internal_scrapers[:]
+			self.internal_scraper_names = [i for i in self.active_internal_scrapers if i != 'external']
 			if self.clear_properties: self._clear_properties()
 			return True
 		active_internal_scrapers = [i for i in self.active_internal_scrapers if not i in self.remove_scrapers]
@@ -308,11 +304,11 @@ class Sources():
 			self.folder_info = [i for i in folder_info if settings.source_folders_directory(self.media_type, i[1])]
 			if self.folder_info:
 				self.active_folders = True
-				self.internal_scraper_names = [i for i in active_internal_scrapers if not i == 'folders'] + [i[0] for i in self.folder_info]
-			else: self.internal_scraper_names = [i for i in active_internal_scrapers if not i == 'folders']
+				self.internal_scraper_names = [i for i in active_internal_scrapers if i not in ('folders', 'external')] + [i[0] for i in self.folder_info]
+			else: self.internal_scraper_names = [i for i in active_internal_scrapers if i not in ('folders', 'external')]
 		else:
 			self.folder_info = []
-			self.internal_scraper_names = active_internal_scrapers[:]
+			self.internal_scraper_names = [i for i in active_internal_scrapers if i != 'external']
 		self.active_internal_scrapers = active_internal_scrapers
 		if self.clear_properties: self._clear_properties()
 		return True
@@ -378,12 +374,8 @@ class Sources():
 						for i in ('folder1', 'folder2', 'folder3', 'folder4', 'folder5')]
 		return [i for i in folder_info if not i[0] in (None, 'None', '') and i[2]]
 
-	def _join_scraper_threads(self, threads, timeout):
-		end = time.time() + timeout
-		for thread in threads:
-			remaining = end - time.time()
-			if remaining <= 0: break
-			thread.join(remaining)
+	def _get_active_scraper_names(self, scraper_list):
+		return [i[2] for i in scraper_list]
 
 	def scrapers_dialog(self):
 		def _scraperDialog():
