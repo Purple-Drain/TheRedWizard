@@ -292,27 +292,32 @@ if __name__ == '__main__':
 		import xbmc
 		import xbmcaddon
 
-		waited = 0
+		if not xbmc.getCondVisibility('System.HasAddon(script.module.acctmgr)'):
+			return False
 
+		waited = 0
 		while waited < timeout:
 			try:
 				am = xbmcaddon.Addon('script.module.acctmgr')
 				ready = am.getSetting('am_trakt_ready')
 				last_prepare = am.getSetting('am_last_prepare')
-
 				if ready == 'true' and last_prepare:
 					age = int(time.time()) - int(last_prepare)
 					if 0 <= age <= max_age:
 						return True
 			except Exception:
 				pass
-
 			xbmc.sleep(1000)
 			waited += 1
-
 		return False
 
-	wait_for_am_trakt()
+	def _am_trakt_startup():
+		try:
+			wait_for_am_trakt()
+		except Exception:
+			pass
+
+	Thread(target=_am_trakt_startup, daemon=True).start()
 	# ----- AM Lite Trakt startup sync patch END -----
 	kodi_utils.logger('Red Light', 'Main Monitor Service Starting')
 	RedLightMonitor().waitForAbort()

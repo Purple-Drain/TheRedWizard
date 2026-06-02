@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.2.7[/B][/COLOR]
+- Service (AM Lite): optional wait for Account Manager Lite Trakt sync only when script.module.acctmgr is installed; runs in the background so startup is not blocked. Fixes “Unknown addon id script.module.acctmgr” log spam and scrape/playback failing to start when AM Lite is not installed (regression from 1.2.6).
+
 [COLOR red][B]Version 1.2.6[/B][/COLOR]
 - TorBox Cloud (source search): fixed intermittent empty results — folder list cache call was invalid.
 - Premiumize Cloud: faster, more reliable scrape (no early exit before internal_results).
