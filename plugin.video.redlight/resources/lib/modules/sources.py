@@ -884,15 +884,7 @@ class Sources():
 							self.progress_dialog.busy_spinner('false')
 							self.progress_dialog.update_resolver(percent=resolve_percent)
 							kodi_utils.sleep(200)
-							if self._uses_torbox_direct_play(item):
-								self.playback_successful = self._play_torbox_url(url)
-								if self.playback_successful:
-									kodi_utils.hide_busy_dialog()
-									kodi_utils.close_all_dialog()
-									self._kill_progress_dialog(join_timeout=0.25)
-									return
-							else:
-								player.run(url, self)
+							player.run(url, self)
 						else: continue
 						if self.cancel_all_playback or self._resolve_user_cancelled:
 							break
@@ -1058,65 +1050,6 @@ class Sources():
 		try: url = debrid_function().resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
 		except: url = None
 		return url
-
-	def _uses_torbox_direct_play(self, item):
-		try:
-			if item.get('scrape_provider') == 'tb_cloud':
-				return True
-			if item.get('cache_provider') == 'TorBox':
-				return True
-		except Exception:
-			pass
-		return False
-
-	def _play_torbox_url(self, url):
-		'''Match Gears: raw TorBox CDN URL (no proxy / pipe headers).'''
-		import xbmc
-		kodi_utils.hide_busy_dialog()
-		tb_player = xbmc.Player()
-		play_monitor = kodi_utils.kodi_monitor()
-		try:
-			if tb_player.isPlayingVideo():
-				tb_player.stop()
-				kodi_utils.sleep(250)
-		except Exception:
-			pass
-		resolve_percent = 0.0
-		self.progress_dialog.update_resolver(percent=0)
-		tb_player.play(url)
-		kodi_utils.sleep(200)
-		playback_hits = 0
-		while resolve_percent < 100:
-			kodi_utils.hide_busy_dialog()
-			if self._resolve_user_cancelled or self.cancel_all_playback:
-				try: tb_player.stop()
-				except: pass
-				return False
-			if self.progress_dialog and (self.progress_dialog.iscanceled() or play_monitor.abortRequested()):
-				self._resolve_user_cancelled = True
-				self.cancel_all_playback = True
-				try: tb_player.stop()
-				except: pass
-				return False
-			if resolve_percent >= 100:
-				return False
-			if kodi_utils.get_visibility('Window.IsTopMost(okdialog)'):
-				kodi_utils.execute_builtin('SendClick(okdialog, 11)')
-				return False
-			resolve_percent = round(resolve_percent + 0.26, 1)
-			self.progress_dialog.update_resolver(percent=resolve_percent)
-			if resolve_percent >= 0.52:
-				try:
-					if tb_player.isPlayingVideo() and tb_player.getTotalTime() not in ('0.0', '', 0.0, None) and kodi_utils.get_visibility('Window.IsActive(fullscreenvideo)'):
-						playback_hits += 1
-						if playback_hits >= 3:
-							return True
-					else:
-						playback_hits = 0
-				except Exception:
-					playback_hits = 0
-			kodi_utils.sleep(50)
-		return False
 
 	def resolve_internal(self, scrape_provider, item_id, url_dl, direct_debrid_link=False, cloud_media_type=None):
 		url = None

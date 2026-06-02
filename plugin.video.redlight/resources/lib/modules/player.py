@@ -67,6 +67,7 @@ class RedLightPlayer(xbmc.Player):
 		self.sources_object.playback_successful = True
 		self.kill_dialog()
 		ku.sleep(200)
+		ku.close_all_dialog()
 
 	def monitor(self):
 		try:
