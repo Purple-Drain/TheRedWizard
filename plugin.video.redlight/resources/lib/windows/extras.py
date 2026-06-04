@@ -777,7 +777,13 @@ class Extras(BaseDialog):
 
 	def show_trakt_manager(self):
 		return dialogs.trakt_manager_choice({'tmdb_id': self.tmdb_id, 'imdb_id': self.imdb_id, 'tvdb_id': self.meta_get('tvdb_id', 'None'),
-											'media_type': self.media_type, 'icon': self.poster})
+											'media_type': self.options_media_type or self.media_type, 'icon': self.poster, 'title': self.title,
+											'season': getattr(self, 'options_season', ''), 'episode': getattr(self, 'options_episode', '')})
+
+	def show_simkl_manager(self):
+		return dialogs.simkl_manager_choice({'tmdb_id': self.tmdb_id, 'imdb_id': self.imdb_id, 'tvdb_id': self.meta_get('tvdb_id', 'None'),
+											'media_type': self.options_media_type or self.media_type, 'icon': self.poster, 'title': self.title,
+											'season': getattr(self, 'options_season', ''), 'episode': getattr(self, 'options_episode', '')})
 
 	def show_personallists_manager(self):
 		return dialogs.personallists_manager_choice({'list_type': self.media_type, 'tmdb_id': self.tmdb_id, 'title': self.title,
@@ -829,6 +835,7 @@ class Extras(BaseDialog):
 		self.meta = kwargs.get('meta')
 		self.meta_get = self.meta.get
 		self.media_type, self.options_media_type = self.meta_get('mediatype'), kwargs.get('options_media_type')
+		self.options_season, self.options_episode = kwargs.get('options_season', ''), kwargs.get('options_episode', '')
 		self.starting_position = kwargs.get('starting_position', None)
 		self.is_external = kwargs.get('is_external').lower()
 		self.item_action_dict, self.button_action_dict = {}, {}

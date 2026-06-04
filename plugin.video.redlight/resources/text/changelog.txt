@@ -1,5 +1,18 @@
+[COLOR red][B]Version 1.3.1[/B][/COLOR]
+- Simkl (first release): Meta Accounts PIN authorization (built-in Red Light API key, not shown in settings) with working QR code, Simkl as Watched indicators provider, background sync (watched + playback), playback scrobble (start/pause/stop), Simkl Manager in Options and context menus on movies/TV (watch/unwatch, reset scrobble, Plan to Watch / Hold / Dropped). Simkl Cache / resync interval on General (above Trakt). Force Simkl Sync clears cache and shows progress; fixes activity timestamps and removals from simkl.com. One-time upgrade enables Simkl Manager in context menu settings for existing users.
+- Trakt Manager (renamed from Trakt Lists Manager): Mark as Watched, Mark as Unwatched, Reset Scrobble, Rate (1–10), Unrate, then watchlist, collection, personal lists, Add to New List (separator before list actions). Episode Options/Extras pass season and episode so actions target the correct episode.
+- Context menu: Mark Watched / Mark Unwatched labelled “(Red Light)” on movies, TV shows, seasons, and episodes so they are distinct from Kodi’s built-in Mark as Watched.
+- External Scrapers: setting label shortened to “Check for Cached Results (RD)”.
+- Sources Accounts: provider sections reordered alphabetically (All Debrid, EasyNews, Offcloud, Premiumize, Real Debrid, TorBox; Local Media Folders last). External Scrapers debrid toggles ordered Offcloud, Real Debrid, TorBox when each provider is enabled.
+- Offcloud: Notify when added torrents are ready in Cloud (default On), TorBox-style background poll after Add to Cloud / uncached row select; Kodi notification when status becomes Downloaded or on failure. TorBox/Offcloud add-to-cloud and ready notifications aligned (Cloud Storage wording; History hint when notify is off).
+- Offcloud: History menu (queued, processing, downloaded, and failed items from cloud/history). Cloud Storage lists downloaded items only; notification when nothing is ready yet but History has jobs.
+- Offcloud: "Include uncached results (Offcloud)" under External Scrapers (default Off). When enabled, uncached Offcloud rows appear in the main list with UNCACHED label and TorBox-style sorting; selecting a row adds the magnet to your Offcloud cloud.
+- Fixed Offcloud Download Pack from source results ("No URL found for Download"); pack file links from Offcloud are now used directly (Download File and cloud browse were already fine).
+- Fixed custom download folder name ignored on season/show pack downloads; Download File now resolves using the episode in the chosen filename (not only the searched episode).
+- Offcloud Add to Cloud: clearer status messages, provider normalisation, and queued vs ready feedback (items with status "created" may take time to appear in History first, then Cloud Storage when Downloaded).
+
 [COLOR red][B]Version 1.3.0[/B][/COLOR]
-- Offcloud support (authorise, cloud storage, cloud scrape, external cache check, resolve, packs, highlight colour) with QR OAuth Bearer API auth. Cached torrents use instant cache/download resolve. Uncached torrents add to cloud first.
+- Offcloud support (authorise, cloud storage, cloud scrape, external cache check, resolve, packs, highlight colour) with QR OAuth Bearer API auth. Cached torrents use instant cache/download resolve.
 - Rescrape Actions: clearer text for Offer Full Search After Early Results (settings, results-list row, confirm dialog).
 - Rescrape With No Cache Check: labels and prompts now say (Real Debrid Only), matching external cache-check behaviour.
 - Choose Rescrape Actions: shorter title; list shows Action and Order only (help text in Settings description).

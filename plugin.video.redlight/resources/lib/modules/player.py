@@ -87,6 +87,7 @@ class RedLightPlayer(xbmc.Player):
 				total_check_time += 0.10
 			ku.hide_busy_dialog()
 			ku.sleep(1000)
+			self._simkl_scrobble_start()
 			if st.auto_enable_subs() and not st.submaker_enabled(): self.showSubtitles(True)
 			while self.isPlayingVideo():
 				try:
@@ -110,7 +111,12 @@ class RedLightPlayer(xbmc.Player):
 				except: pass
 				if not self.subs_searched: self.run_subtitles()
 			ku.hide_busy_dialog()
-			if not self.media_marked: self.media_watched_marker()
+			if not self.media_marked:
+				try:
+					if getattr(self, 'total_time', 0) and getattr(self, 'curr_time', None) is not None and self.total_time > 0:
+						if (self.total_time - self.curr_time) < 30: self.current_point = 100
+				except: pass
+				self.media_watched_marker()
 			self.clear_playback_properties(clear_navigation=False)
 		except:
 			ku.hide_busy_dialog()
@@ -184,10 +190,22 @@ class RedLightPlayer(xbmc.Player):
 			self.set_playback_properties()
 		return listitem
 
+	def _simkl_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 2: return
+		from apis.simkl_api import simkl_scrobble
+		percent = self.playback_percent if self.playback_percent else 0
+		Thread(target=simkl_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+
+	def _simkl_scrobble_stop(self, percent):
+		if self.is_generic or st.watched_indicators() != 2: return
+		from apis.simkl_api import simkl_scrobble
+		Thread(target=simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
 		try:
 			if self.current_point >= 90 or force_watched:
+				self._simkl_scrobble_stop(100)
 				watched_function = ws.mark_movie if self.media_type == 'movie' else ws.mark_episode
 				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
@@ -267,6 +285,7 @@ class RedLightPlayer(xbmc.Player):
 			self.meta_get, self.kodi_monitor, self.playback_percent = self.meta.get, ku.kodi_monitor(), self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
+			self.current_point = 0
 			self.subs_searched = False
 			self.playback_successful, self.cancel_all_playback = None, False
 			self.playing_item = self.sources_object.playing_item

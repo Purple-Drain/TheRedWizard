@@ -51,6 +51,9 @@ def routing(sys):
 			return exec('trakt_lists.%s(params)' % mode.split('.')[2])
 		from apis import trakt_api
 		return exec('trakt_api.%s(params)' % mode.split('.')[1])
+	elif 'simkl.' in mode:
+		from apis import simkl_api
+		return exec('simkl_api.%s(params)' % mode.split('.')[1])
 	elif 'build' in mode:
 		if mode == 'build_movie_list':
 			from indexers.movies import Movies
@@ -199,6 +202,9 @@ def routing(sys):
 		if mode == 'offcloud.oc_cloud':
 			from indexers.offcloud import oc_cloud
 			return oc_cloud()
+		elif mode == 'offcloud.oc_history':
+			from indexers.offcloud import oc_history
+			return oc_history()
 		elif mode == 'offcloud.browse_oc_cloud':
 			from indexers.offcloud import browse_oc_cloud
 			return browse_oc_cloud(params.get('folder_id'))

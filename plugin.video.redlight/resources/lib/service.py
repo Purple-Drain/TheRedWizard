@@ -147,6 +147,32 @@ class TraktMonitor:
 		except: pass
 		return kodi_utils.logger('Red Light', 'TraktMonitor Service Finished')
 
+class SimklMonitor:
+	def run(self):
+		kodi_utils.logger('Red Light', 'SimklMonitor Service Starting')
+		from apis.simkl_api import simkl_sync_activities
+		from modules.settings import simkl_user_active, simkl_sync_interval
+		monitor, player = kodi_utils.kodi_monitor(), kodi_utils.kodi_player()
+		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
+		wait_for_abort(45)
+		while not monitor.abortRequested():
+			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			wait_time = 1800
+			try:
+				sync_interval, wait_time = simkl_sync_interval()
+				next_update_string = 'Simkl Sync finished - Next Sync in %s minutes'
+				next_update_string = next_update_string % sync_interval
+				if simkl_user_active(): status = simkl_sync_activities()
+				else: status = 'no_auth'
+				if status == 'failed': kodi_utils.logger('Red Light', 'Simkl Sync Failed')
+				elif status == 'no_auth': kodi_utils.logger('Red Light', 'Simkl Sync Not Run - No Account')
+				else: kodi_utils.logger('Red Light', 'Simkl Sync %s - %s' % ('OK' if status == 'success' else 'No Changes', next_update_string))
+				if status == 'success' and get_setting('redlight.simkl.refresh_widgets', 'false') == 'true':
+					kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+			except Exception as e: kodi_utils.logger('Red Light', 'Simkl Sync Failed: %s' % str(e))
+			wait_for_abort(wait_time)
+		return kodi_utils.logger('Red Light', 'SimklMonitor Service Finished')
+
 class UpdateCheck:
 	def run(self):
 		if kodi_utils.get_property(firstrun_update_prop) == 'true': return
@@ -272,6 +298,7 @@ class RedLightMonitor(Monitor):
 		Thread(target=BootstrapSettings().run).start()
 		start_custom_windows_prepare()
 		Thread(target=TraktMonitor().run).start()
+		Thread(target=SimklMonitor().run).start()
 		Thread(target=UpdateCheck().run).start()
 		Thread(target=WidgetRefresher().run).start()
 		try: AutoStart().run()

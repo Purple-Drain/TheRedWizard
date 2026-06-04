@@ -18,6 +18,15 @@ def trakt_secret():
 def trakt_user_active():
 	return get_setting('redlight.trakt.user', 'empty_setting') not in (None, 'empty_setting', '')
 
+def simkl_user_active():
+	return get_setting('redlight.simkl.user', 'empty_setting') not in (None, 'empty_setting', '') \
+		and get_setting('redlight.simkl.token', '0') not in (None, '0', '', 'empty_setting')
+
+def simkl_sync_interval():
+	setting = get_setting('redlight.simkl.sync_interval', '60')
+	interval = int(setting) * 60
+	return setting, interval
+
 def tmdblist_user_active():
 	return get_setting('redlight.tmdb.account_id', 'empty_setting') not in (None, 'empty_setting', '')
 
@@ -323,8 +332,14 @@ def uncached_min_seeders():
 def include_uncached_torbox():
 	return get_setting('redlight.external.include_uncached_torbox', 'false') == 'true'
 
+def include_uncached_offcloud():
+	return get_setting('redlight.external.include_uncached_offcloud', 'false') == 'true'
+
 def tb_notify_cloud_ready():
 	return get_setting('redlight.tb.notify_cloud_ready', 'true') == 'true'
+
+def oc_notify_cloud_ready():
+	return get_setting('redlight.oc.notify_cloud_ready', 'true') == 'true'
 
 def easynews_language_filter():
 	enabled = get_setting('redlight.easynews.filter_lang') == 'true'
@@ -460,8 +475,10 @@ def media_open_action(media_type):
 	return int(get_setting('redlight.media_open_action_%s' % media_type, '0'))
 
 def watched_indicators():
-	if not trakt_user_active(): return 0
-	return int(get_setting('redlight.watched_indicators', '0'))
+	ind = int(get_setting('redlight.watched_indicators', '0'))
+	if ind == 1 and not trakt_user_active(): return 0
+	if ind == 2 and not simkl_user_active(): return 0
+	return ind
 
 def flatten_episodes():
 	return get_setting('redlight.trakt.flatten_episodes', 'false') == 'true'
@@ -512,19 +529,52 @@ def rescrape_settings():
 def rescrape_action_value(action, default='0'):
 	return int(get_setting('redlight.rescrape.%s' % action, default))
 
+_CM_ORDER_DEFAULT = 'extras,options,playback_options,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
+	'simkl_manager,trakt_manager,personal_manager,tmdb_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+
+def _merge_cm_order_with_enabled(order, enabled):
+	order = [i for i in order if i]
+	for item in enabled:
+		if item in order: continue
+		if item == 'simkl_manager' and 'trakt_manager' in order:
+			order.insert(order.index('trakt_manager'), item)
+		else:
+			order.append(item)
+	return order
+
+def migrate_simkl_context_menu_for_upgrade(had_existing_settings):
+	"""One-time: enable Simkl Manager in context menu for users upgrading from pre-Simkl builds."""
+	if get_setting('redlight.simkl.cm_menu_migrated', 'false') == 'true': return False
+	set_setting('simkl.cm_menu_migrated', 'true')
+	if not had_existing_settings: return False
+	item, changed = 'simkl_manager', False
+	raw = get_setting('redlight.context_menu.enabled', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = [p for p in raw.split(',') if p]
+		if item not in parts:
+			set_setting('context_menu.enabled', ','.join(parts + [item]))
+			changed = True
+	raw = get_setting('redlight.context_menu.order', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = _merge_cm_order_with_enabled([p for p in raw.split(',') if p], cm_enabled())
+		if item not in raw.split(','):
+			set_setting('context_menu.order', ','.join(parts))
+			changed = True
+	return changed
+
 def cm_enabled():
-	default = 'extras,options,playback_options,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'trakt_manager,personal_manager,tmdb_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
-	setting = get_setting('redlight.context_menu.enabled', default)
-	if setting in ('', None, 'noop', '[]'): return default.split(',')
-	return setting.split(',')
+	setting = get_setting('redlight.context_menu.enabled', _CM_ORDER_DEFAULT)
+	if setting in ('', None, 'noop', '[]'): return _CM_ORDER_DEFAULT.split(',')
+	return [p for p in setting.split(',') if p]
 
 def cm_current_order():
-	default = 'extras,options,playback_options,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'trakt_manager,personal_manager,tmdb_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
-	setting = get_setting('redlight.context_menu.order', default)
-	if setting in ('', None, 'noop', '[]'): return default.split(',')
-	return setting.split(',')
+	setting = get_setting('redlight.context_menu.order', _CM_ORDER_DEFAULT)
+	if setting in ('', None, 'noop', '[]'): order = _CM_ORDER_DEFAULT.split(',')
+	else: order = [p for p in setting.split(',') if p]
+	enabled = cm_enabled()
+	merged = _merge_cm_order_with_enabled(order, enabled)
+	if merged != order: set_setting('context_menu.order', ','.join(merged))
+	return merged
 
 def cm_sort_order():
 	try: setting = {i: c for c, i in enumerate([i for i in cm_current_order() if i in cm_enabled()])}

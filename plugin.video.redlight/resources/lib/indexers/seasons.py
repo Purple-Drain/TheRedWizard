@@ -49,10 +49,10 @@ def build_season_list(params):
 				if playcount:
 					if hide_watched: continue
 				elif not unaired and not season_special:
-						cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_watched',
+						cm_append(['mark_watched', ('[B]Mark Watched (Red Light)[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_watched',
 															'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
 				if progress:
-					cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_unwatched',
+					cm_append(['mark_watched', ('[B]Mark Unwatched (Red Light)[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_unwatched',
 														'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
 				set_properties({'watchedepisodes': str(watched), 'unwatchedepisodes': str(unwatched)})
 				set_properties({'totalepisodes': str(aired_eps), 'watchedprogress': str(visible_progress),

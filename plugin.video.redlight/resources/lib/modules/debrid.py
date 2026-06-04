@@ -24,8 +24,17 @@ def normalize_debrid_provider(provider):
 	if not provider:
 		return provider
 	if provider.startswith('Uncached '):
-		return provider[9:]
-	return provider
+		provider = provider[9:]
+	aliases = {
+		'offcloud': 'Offcloud',
+		'torbox': 'TorBox',
+		'torbox cloud': 'TorBox',
+		'real-debrid': 'Real-Debrid',
+		'premiumize.me': 'Premiumize.me',
+		'premiumize': 'Premiumize.me',
+		'alldebrid': 'AllDebrid',
+	}
+	return aliases.get(str(provider).lower(), provider)
 
 def downloader_provider_slug(provider):
 	provider = normalize_debrid_provider(provider)
@@ -79,19 +88,39 @@ class ExternalPackSource:
 
 def manual_add_magnet_to_cloud(params):
 	show_busy_dialog()
-	provider = normalize_debrid_provider(params.get('provider', ''))
+	provider = normalize_debrid_provider(params.get('provider') or params.get('debrid', ''))
 	debrid_list_modules = [('Real-Debrid', RealDebridAPI), ('Premiumize.me', PremiumizeAPI), ('AllDebrid', AllDebridAPI), ('Offcloud', OffcloudAPI), ('TorBox', TorBoxAPI)]
-	function = [i[1] for i in debrid_list_modules if i[0] == provider][0]
+	try:
+		function = [i[1] for i in debrid_list_modules if i[0] == provider][0]
+	except IndexError:
+		hide_busy_dialog()
+		return notification('Unsupported provider for Add to Cloud: %s' % (provider or 'Unknown'), 4500)
 	api = function()
-	result = api.create_transfer(params['magnet_url'])
+	magnet_url = (params.get('magnet_url') or '').strip()
+	info_hash = (params.get('info_hash') or params.get('hash') or '').strip().lower()
+	if magnet_url and not magnet_url.startswith('magnet:') and len(info_hash) == 40:
+		magnet_url = 'magnet:?xt=urn:btih:%s' % info_hash
+	if not magnet_url or magnet_url == 'None':
+		hide_busy_dialog()
+		return notification('No magnet/link to send to cloud', 4500)
+	if provider == 'Offcloud':
+		label = params.get('display_name') or params.get('name') or ''
+		ok, detail = api.add_to_cloud(magnet_url, title=label)
+		api.clear_cache()
+		hide_busy_dialog()
+		return notification(detail, 6000 if ok else 4500)
+	result = api.create_transfer(magnet_url)
 	api.clear_cache()
 	hide_busy_dialog()
 	if not result or result == 'failed':
 		return notification('Failed')
 	if provider == 'TorBox':
+		from modules.settings import tb_notify_cloud_ready
 		label = params.get('display_name') or params.get('name') or ''
-		api.monitor_torrent_cloud_ready(result, label)
-		return notification('TorBox: Added — you will be notified when it is ready in Cloud', 4500)
+		if tb_notify_cloud_ready():
+			api.monitor_torrent_cloud_ready(result, label)
+			return notification('TorBox: Added — you will be notified when it is ready in Cloud Storage', 4500)
+		return notification('TorBox: Added — check TorBox History for progress', 4500)
 	notification('Success')
 
 def query_local_cache(hash_list):

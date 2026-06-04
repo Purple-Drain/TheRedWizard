@@ -7,7 +7,7 @@ from caches.external_cache import external_cache
 from caches.settings_cache import get_setting
 from modules import kodi_utils, source_utils
 from modules.debrid import RD_check, OC_check, TB_check, query_local_cache
-from modules.settings import include_uncached_torbox
+from modules.settings import include_uncached_torbox, include_uncached_offcloud
 from modules.utils import clean_file_name
 # logger = kodi_utils.logger
 
@@ -204,6 +204,8 @@ class source:
 				return self.external_cache_check
 			if provider == 'TorBox':
 				return include_uncached_torbox()
+			if provider == 'Offcloud':
+				return include_uncached_offcloud()
 			return False
 		def _process_cache_check(provider, function):
 			if _debrid_api_check_enabled(provider):

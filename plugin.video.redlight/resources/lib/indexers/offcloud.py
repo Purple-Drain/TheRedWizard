@@ -7,6 +7,16 @@ from modules.source_utils import supported_video_extensions
 from modules.utils import clean_file_name, normalize
 # logger = kodi_utils.logger
 
+def _oc_status_label(status):
+	status = str(status or '').lower()
+	if status == 'downloaded':
+		return 'DOWNLOADED'
+	if status in ('error', 'failed'):
+		return 'ERROR'
+	if status == 'created':
+		return 'QUEUED'
+	return (status or 'processing').upper()
+
 def oc_cloud():
 	def _builder():
 		for count, item in enumerate(folders, 1):
@@ -36,12 +46,78 @@ def oc_cloud():
 			except Exception:
 				pass
 	icon, fanart = kodi_utils.get_icon('offcloud'), kodi_utils.get_addon_fanart()
-	cloud_folders = Offcloud.user_cloud()
-	folders = [i for i in (cloud_folders or []) if i.get('status') == 'downloaded']
+	all_items = []
+	try:
+		kodi_utils.show_busy_dialog()
+		all_items = Offcloud.user_cloud_check() or []
+		if not isinstance(all_items, list):
+			all_items = []
+	except Exception:
+		all_items = []
+	finally:
+		kodi_utils.hide_busy_dialog()
+	folders = [i for i in all_items if str(i.get('status', '')).lower() == 'downloaded']
+	handle = int(sys.argv[1])
+	built = list(_builder())
+	kodi_utils.add_items(handle, built)
+	kodi_utils.set_content(handle, 'files')
+	kodi_utils.end_directory(handle, cacheToDisc=False)
+	kodi_utils.set_view_mode('view.premium')
+	if not built and all_items:
+		kodi_utils.notification('Offcloud: Nothing ready in Cloud Storage yet. Open History for queued or processing items.', 5500)
+
+def oc_history():
+	def _builder():
+		for count, item in enumerate(history_items, 1):
+			try:
+				cm = []
+				cm_append = cm.append
+				status = str(item.get('status', '')).lower()
+				status_label = _oc_status_label(status)
+				folder_name = clean_file_name(normalize(item.get('fileName', ''))).upper()
+				display = '%02d | [B]%s[/B] | [I]%s [/I]' % (count, status_label, folder_name)
+				request_id = item.get('requestId', '')
+				delete_params = {'mode': 'offcloud.delete', 'folder_id': request_id}
+				cm_append(('[B]Delete[/B]', 'RunPlugin(%s)' % kodi_utils.build_url(delete_params)))
+				if status == 'downloaded':
+					is_folder = item.get('isDirectory')
+					if is_folder:
+						url_params = {'mode': 'offcloud.browse_oc_cloud', 'folder_id': request_id}
+						is_folder = True
+					else:
+						server = item.get('server', '')
+						link = Offcloud.requote_uri(Offcloud.build_url(server, request_id, item.get('fileName', '')))
+						url_params = {'mode': 'offcloud.resolve_oc', 'url': link, 'play': 'true'}
+						is_folder = False
+				else:
+					url_params = {'mode': 'offcloud.oc_history'}
+					is_folder = False
+				url = kodi_utils.build_url(url_params)
+				listitem = kodi_utils.make_listitem()
+				listitem.setLabel(display)
+				listitem.addContextMenuItems(cm)
+				listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': fanart, 'banner': icon})
+				plot = item.get('message') or item.get('detail') or status_label
+				if isinstance(plot, str) and plot.strip():
+					listitem.getVideoInfoTag(True).setPlot(plot)
+				yield (url, listitem, is_folder)
+			except Exception:
+				pass
+	icon, fanart = kodi_utils.get_icon('offcloud'), kodi_utils.get_addon_fanart()
+	history_items = []
+	try:
+		kodi_utils.show_busy_dialog()
+		history_items = Offcloud.user_cloud_check() or []
+		kodi_utils.hide_busy_dialog()
+		if not isinstance(history_items, list):
+			history_items = []
+	except Exception:
+		kodi_utils.hide_busy_dialog()
+		history_items = []
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
 	kodi_utils.set_content(handle, 'files')
-	kodi_utils.end_directory(handle)
+	kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.premium')
 
 def browse_oc_cloud(folder_id):
@@ -102,6 +178,7 @@ def oc_account_info():
 		if 'can_download' in account_info:
 			append('[B]Can Download[/B]: %s' % account_info.get('can_download'))
 		append('[B]Cloud Limit[/B]: {:,}'.format((account_info.get('limits') or {}).get('cloud', 0)))
+		append('[I]Can Download and Cloud Limit are set by your Offcloud plan (offcloud.com), not in Red Light.[/I]')
 		kodi_utils.hide_busy_dialog()
 		return kodi_utils.show_text('OFFCLOUD', '\n\n'.join(body), font_size='large')
 	except Exception:

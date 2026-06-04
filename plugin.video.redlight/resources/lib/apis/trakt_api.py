@@ -367,6 +367,74 @@ def trakt_watched_status_mark(action, media, media_id, tvdb_id=0, season=None, e
 		if media != 'movies' and tvdb_id != 0 and key != 'tvdb': return trakt_watched_status_mark(action, media, tvdb_id, 0, season, episode, 'tvdb')
 	return success
 
+def _trakt_episode_scope(media_type, season, episode):
+	try: return media_type in ('episode',) and int(season) > 0 and int(episode) > 0
+	except: return False
+
+def trakt_manager_list_data(params):
+	tmdb_id, tvdb_id, imdb_id, media_type = params['tmdb_id'], params.get('tvdb_id'), params.get('imdb_id'), params.get('media_type')
+	if media_type == 'movie':
+		key, media_key, media_id = 'movies', 'tmdb', int(tmdb_id)
+	else:
+		key = 'shows'
+		media_ids = [(tmdb_id, 'tmdb'), (imdb_id, 'imdb'), (tvdb_id, 'tvdb')]
+		media_id, media_key = next(item for item in media_ids if item[0] not in ('None', None, ''))
+		if media_id in (tmdb_id, tvdb_id):
+			try: media_id = int(media_id)
+			except: pass
+	return key, media_key, media_id, {key: [{'ids': {media_key: media_id}}]}
+
+def _trakt_ratings_payload(params, rating=None):
+	media_type = params.get('media_type')
+	season, episode = params.get('season'), params.get('episode')
+	tmdb_id, tvdb_id, imdb_id = params['tmdb_id'], params.get('tvdb_id'), params.get('imdb_id')
+	rating_key = {'rating': int(rating)} if rating is not None else {}
+	if media_type == 'movie':
+		return {'movies': [{'ids': {'tmdb': int(tmdb_id)}, **rating_key}]}
+	media_ids = [(tmdb_id, 'tmdb'), (imdb_id, 'imdb'), (tvdb_id, 'tvdb')]
+	media_id, media_key = next(item for item in media_ids if item[0] not in ('None', None, ''))
+	try: show_ids = {media_key: int(media_id) if media_key in ('tmdb', 'tvdb') else media_id}
+	except: show_ids = {media_key: media_id}
+	if _trakt_episode_scope(media_type, season, episode):
+		ep = {'number': int(episode), **rating_key}
+		return {'shows': [{'ids': show_ids, 'seasons': [{'number': int(season), 'episodes': [ep]}]}]}
+	return {'shows': [{'ids': show_ids, **rating_key}]}
+
+def trakt_add_rating(params, rating):
+	try:
+		result = call_trakt('sync/ratings', data=_trakt_ratings_payload(params, rating))
+		if not result: return kodi_utils.notification('Error', 3000)
+		kodi_utils.notification('Success', 3000)
+		trakt_sync_activities()
+		return True
+	except: return kodi_utils.notification('Error', 3000)
+
+def trakt_remove_rating(params):
+	try:
+		result = call_trakt('sync/ratings/remove', data=_trakt_ratings_payload(params))
+		if not result: return kodi_utils.notification('Error', 3000)
+		kodi_utils.notification('Success', 3000)
+		trakt_sync_activities()
+		return True
+	except: return kodi_utils.notification('Error', 3000)
+
+def trakt_reset_scrobble(params):
+	from modules.watched_status import erase_bookmark
+	media_type, tmdb_id = params.get('media_type'), params.get('tmdb_id')
+	season, episode = params.get('season', ''), params.get('episode', '')
+	try:
+		if media_type == 'movie':
+			call_trakt('scrobble/stop', data={'movie': {'ids': {'tmdb': int(tmdb_id)}}, 'progress': 0})
+			erase_bookmark('movie', tmdb_id, '', '', 'true')
+		elif _trakt_episode_scope(media_type, season, episode):
+			call_trakt('scrobble/stop', data={'show': {'ids': {'tmdb': int(tmdb_id)}},
+				'episode': {'season': int(season), 'number': int(episode)}, 'progress': 0})
+			erase_bookmark('episode', tmdb_id, season, episode, 'true')
+		else: return kodi_utils.notification('Reset Scrobble is only available for movies and episodes', 3500)
+		trakt_sync_activities()
+		return kodi_utils.notification('Success', 3000)
+	except: return kodi_utils.notification('Error', 3000)
+
 def trakt_progress(action, media, media_id, percent, season=None, episode=None, resume_id=None, refresh_trakt=False):
 	if action == 'clear_progress':
 		url = 'sync/playback/%s' % resume_id
@@ -613,6 +681,16 @@ def make_new_trakt_list(params):
 	trakt_sync_activities()
 	kodi_utils.notification('Success', 3000)
 	kodi_utils.kodi_refresh()
+
+def make_new_trakt_list_and_add(list_data):
+	list_title = kodi_utils.kodi_dialog().input('Enter New List Name')
+	if not list_title: return
+	list_name = unquote(list_title)
+	payload = {'name': list_name, 'privacy': 'private', 'allow_comments': False}
+	result = call_trakt('users/me/lists', data=payload)
+	if not result or not result.get('ids', {}).get('slug'): return kodi_utils.notification('Error', 3000)
+	trakt_sync_activities()
+	return add_to_list('me', result['ids']['slug'], list_data)
 
 def delete_trakt_list(params):
 	user = params['user']

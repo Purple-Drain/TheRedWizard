@@ -182,10 +182,14 @@ class Sources():
 		min_seeders = settings.uncached_min_seeders()
 		all_uncached_results = [i for i in results if 'Uncached' in i.get('cache_provider', '')]
 		self.uncached_results = [i for i in all_uncached_results if int(i.get('seeders', '0')) >= min_seeders]
+		uncached_in_main = []
 		if settings.include_uncached_torbox():
-			tb_uncached_in_main = [i for i in self.uncached_results if 'TorBox' in i.get('cache_provider', '')]
-			strip_uncached = [i for i in all_uncached_results if i not in tb_uncached_in_main]
-			self.uncached_results = [i for i in self.uncached_results if i not in tb_uncached_in_main]
+			uncached_in_main.extend([i for i in self.uncached_results if 'TorBox' in i.get('cache_provider', '')])
+		if settings.include_uncached_offcloud():
+			uncached_in_main.extend([i for i in self.uncached_results if 'Offcloud' in i.get('cache_provider', '')])
+		if uncached_in_main:
+			strip_uncached = [i for i in all_uncached_results if i not in uncached_in_main]
+			self.uncached_results = [i for i in self.uncached_results if i not in uncached_in_main]
 		else:
 			strip_uncached = all_uncached_results
 		results = [i for i in results if i not in strip_uncached]
@@ -719,8 +723,13 @@ class Sources():
 		else: return 1
 
 	def _sort_uncached_results(self, results):
+		keep_in_sort = []
 		if settings.include_uncached_torbox():
-			defer_uncached = [i for i in results if 'Uncached' in i.get('cache_provider', '') and 'TorBox' not in i.get('cache_provider', '')]
+			keep_in_sort.append('TorBox')
+		if settings.include_uncached_offcloud():
+			keep_in_sort.append('Offcloud')
+		if keep_in_sort:
+			defer_uncached = [i for i in results if 'Uncached' in i.get('cache_provider', '') and not any(p in i.get('cache_provider', '') for p in keep_in_sort)]
 			return [i for i in results if i not in defer_uncached] + defer_uncached
 		uncached = [i for i in results if 'Uncached' in i.get('cache_provider', '')]
 		cached = [i for i in results if i not in uncached]

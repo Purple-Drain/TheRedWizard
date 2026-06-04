@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from threading import Thread
 from caches.main_cache import cache_object
 from caches.settings_cache import get_setting, set_setting
 from modules.source_utils import supported_video_extensions, seas_ep_filter, extras
@@ -38,6 +39,40 @@ class OffcloudAPI:
 
 	def _post(self, path, json_data=None, data=None, **kwargs):
 		return self._request('post', path, json_data=json_data, data=data, **kwargs)
+
+	def _cloud_post(self, path, payload):
+		'''Offcloud docs describe POST request variables; prefer form body (Gears/node-offcloud).'''
+		return self._post(path, data=payload)
+
+	def cloud_status(self, request_id):
+		if not request_id: return {}
+		return self._cloud_post('cloud/status', {'requestId': request_id}) or {}
+
+	def _parse_cloud_response(self, result):
+		if not result or not isinstance(result, dict):
+			return False, 'Offcloud: No response from API (check authorization)'
+		not_available = result.get('not_available')
+		if not_available:
+			reasons = {
+				'premium': 'Premium addon required',
+				'links': 'Link limit addon required',
+				'proxy': 'Proxy addon required',
+				'cloud': 'Cloud storage addon required',
+				'video': 'Video site addon required',
+			}
+			return False, 'Offcloud: %s' % reasons.get(str(not_available).lower(), not_available)
+		if result.get('error'):
+			err = result.get('error')
+			if isinstance(err, dict):
+				err = err.get('message') or str(err)
+			return False, 'Offcloud: %s' % err
+		status = str(result.get('status', '')).lower()
+		if status in ('error', 'failed'):
+			detail = result.get('message') or result.get('detail') or 'Request rejected'
+			return False, 'Offcloud: %s' % detail
+		if status not in ('created', 'downloaded'):
+			return False, 'Offcloud: Unexpected status "%s"' % (result.get('status') or 'unknown')
+		return True, result
 
 	def auth(self):
 		self.token = ''
@@ -157,12 +192,64 @@ class OffcloudAPI:
 		return self.requote_uri(selected[0].get('url', ''))
 
 	def create_transfer(self, magnet_url):
-		result = self.add_magnet(magnet_url)
-		if not result or result.get('status') not in ('created', 'downloaded'): return ''
-		return result.get('requestId', '')
+		ok, result = self._parse_cloud_response(self.add_magnet(magnet_url))
+		if not ok:
+			return ''
+		return result.get('requestId', '') or ''
+
+	def monitor_cloud_ready(self, request_id, title=''):
+		if not request_id:
+			return
+		Thread(target=self._monitor_cloud_ready, args=(str(request_id), title or ''), daemon=True).start()
+
+	def _monitor_cloud_ready(self, request_id, title):
+		from modules.settings import oc_notify_cloud_ready
+		if not oc_notify_cloud_ready():
+			return
+		interval_ms, max_attempts = 15000, 240
+		for attempt in range(max_attempts):
+			if attempt:
+				sleep(interval_ms)
+			poll = self.cloud_status(request_id) or {}
+			status = str(poll.get('status', '')).lower()
+			if status == 'downloaded':
+				from modules.utils import clean_file_name, normalize
+				label = title or poll.get('fileName') or 'Download'
+				label = clean_file_name(normalize(label))[:80]
+				self.clear_cache()
+				notification('Offcloud: Ready in Cloud Storage — %s' % label, 6000)
+				return
+			if status in ('error', 'failed'):
+				detail = poll.get('message') or poll.get('detail') or status
+				notification('Offcloud: Transfer failed — %s' % (title or detail), 5000)
+				return
+		notification('Offcloud: Still downloading — check Offcloud History', 4500)
+
+	def add_to_cloud(self, url, title=''):
+		ok, result = self._parse_cloud_response(self.add_magnet(url))
+		if not ok:
+			return False, result if isinstance(result, str) else 'Offcloud: Request failed'
+		request_id = result.get('requestId', '')
+		status = str(result.get('status', '')).lower()
+		label = title or result.get('fileName') or ''
+		if status == 'downloaded':
+			return True, 'Offcloud: Ready in Cloud Storage now.'
+		# Poll once — stuck on created usually means still processing or account/cloud limit
+		if request_id:
+			poll = self.cloud_status(request_id)
+			poll_status = str((poll or {}).get('status', '')).lower()
+			if poll_status == 'downloaded':
+				return True, 'Offcloud: Ready in Cloud Storage now.'
+			if poll_status == 'error':
+				return False, 'Offcloud: Download failed on Offcloud servers (check Offcloud History)'
+		from modules.settings import oc_notify_cloud_ready
+		if request_id and oc_notify_cloud_ready():
+			self.monitor_cloud_ready(request_id, label)
+			return True, 'Offcloud: Added — you will be notified when it is ready in Cloud Storage'
+		return True, 'Offcloud: Added — check Offcloud History for progress'
 
 	def add_magnet(self, magnet):
-		return self._post('cloud', json_data={'url': magnet})
+		return self._cloud_post('cloud', {'url': magnet})
 
 	def torrent_info(self, request_id=''):
 		return self._get('cloud/explore/%s' % request_id)

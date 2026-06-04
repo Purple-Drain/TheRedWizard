@@ -352,7 +352,7 @@ class TorBoxAPI:
 				label = title or item.get('name') or item.get('filename') or 'Torrent'
 				label = clean_file_name(normalize(label))[:80]
 				self.clear_cache()
-				notification('TorBox: Ready in Cloud — %s' % label, 6000)
+				notification('TorBox: Ready in Cloud Storage — %s' % label, 6000)
 				return
 			status = str(item.get('status', '')).lower()
 			if status in ('error', 'failed') or 'stalled' in status:

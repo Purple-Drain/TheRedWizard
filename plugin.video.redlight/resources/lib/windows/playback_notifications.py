@@ -57,9 +57,11 @@ class NextEpisode(BaseDialog):
 		return thumb
 
 	def monitor(self):
-		total_time = self.player.getTotalTime()
+		try: total_time = self.player.getTotalTime()
+		except: total_time = 0
 		while self.player.isPlaying():
-			remaining_time = round(total_time - self.player.getTime())
+			try: remaining_time = round(total_time - self.player.getTime())
+			except: break
 			if self.closed: break
 			elif self.selected == 'pause' and remaining_time <= 10:
 				self.player.pause()

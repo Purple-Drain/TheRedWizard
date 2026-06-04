@@ -279,8 +279,10 @@ class SourcesResults(BaseDialog):
 								'magnet_url': magnet_url, 'info_hash': info_hash}
 			add_magnet_to_cloud_params = {
 				'mode': 'manual_add_magnet_to_cloud',
-				'provider': cache_provider,
+				'provider': item_get('debrid') or cache_provider,
+				'debrid': item_get('debrid') or cache_provider,
 				'magnet_url': magnet_url,
+				'info_hash': info_hash,
 				'display_name': item_get('display_name', ''),
 			}
 		choices_append(('Info', 'results_info'))
