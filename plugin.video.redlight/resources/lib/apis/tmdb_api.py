@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime
+from threading import Lock
 from caches.meta_cache import cache_function
 from caches.lists_cache import lists_cache_object
 from modules.settings import get_meta_filter, tmdb_api_key, lists_cache_duraton
@@ -7,6 +8,7 @@ from modules.kodi_utils import make_session, remove_keys
 # from modules.kodi_utils import logger
 
 session = make_session('https://api.themoviedb.org/3')
+_tmdb_lock = Lock()
 
 def tmdb_dict_removals():
 	return ('adult', 'backdrop_path', 'genre_ids', 'original_language', 'original_title', 'overview', 'popularity', 'vote_count', 'video', 'origin_country', 'original_name')
@@ -590,6 +592,7 @@ def get_data(url):
 	return get_tmdb(url).json()
 
 def get_tmdb(url):
-	try: response = session.get(url, timeout=20.0)
+	try:
+		with _tmdb_lock: response = session.get(url, timeout=20.0)
 	except: response = None
 	return response

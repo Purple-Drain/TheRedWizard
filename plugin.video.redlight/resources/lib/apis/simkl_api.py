@@ -115,7 +115,8 @@ def simkl_authenticate(dummy=''):
 	if info and info.get('user'):
 		set_setting('simkl.user', str(info['user'].get('name') or info['user'].get('login') or 'Simkl User'))
 	else: set_setting('simkl.user', 'Simkl User')
-	set_setting('watched_indicators', '2')
+	if get_setting('redlight.watched_indicators', '0') == '0': set_setting('watched_indicators', '2')
+	if get_setting('redlight.sync_indicators', '') in ('', '0'): set_setting('sync_indicators', '2')
 	kodi_utils.notification('Simkl Account Authorized', 3000)
 	simkl_sync_activities(force_update=True)
 	return True
@@ -123,7 +124,8 @@ def simkl_authenticate(dummy=''):
 def simkl_revoke_authentication(dummy=''):
 	set_setting('simkl.user', 'empty_setting')
 	set_setting('simkl.token', '0')
-	if get_setting('redlight.watched_indicators', '0') == '2': set_setting('watched_indicators', '0')
+	if get_setting('redlight.watched_indicators', '0') == '2': set_setting('watched_indicators', '1' if settings.trakt_user_active() else '0')
+	if get_setting('redlight.sync_indicators', '0') == '2': set_setting('sync_indicators', '1' if settings.trakt_user_active() else '0')
 	simkl_cache.clear_all_simkl_cache_data(silent=True, refresh=False)
 	kodi_utils.notification('Simkl Authorization Reset', 3000)
 

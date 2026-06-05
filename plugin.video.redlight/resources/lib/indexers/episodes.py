@@ -2,7 +2,7 @@
 import sys
 from modules import kodi_utils, settings, watched_status as ws
 from modules.metadata import tvshow_meta, episodes_meta, all_episodes_meta
-from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool
+from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, taskpool_tasks_enumerate
 # logger = kodi_utils.logger
 
 def build_episode_list(params):
@@ -22,7 +22,6 @@ def build_episode_list(params):
 				if season_special: playcount, progress = 0, None
 				else:
 					playcount = ws.get_watched_status_episode(watched_info, (season, episode))
-					if playcount and hide_watched: continue
 					if total_seasons: progress = ws.get_progress_status_all_episode(bookmarks, season, episode)
 					else: progress = ws.get_progress_status_episode(bookmarks, episode)
 				if no_spoilers and not playcount: thumb, plot = show_landscape or show_fanart, tvshow_plot or '* Hidden to Prevent Spoilers *'
@@ -72,7 +71,7 @@ def build_episode_list(params):
 				info_tag.setYear(int(year)), info_tag.setRating(item_get('rating')), info_tag.setVotes(item_get('votes')), info_tag.setMpaa(mpaa)
 				info_tag.setStudios(studio), info_tag.setWriters(item_get('writer'))
 				full_cast = cast + item_get('guest_stars', [])
-				info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
+				kodi_utils.set_cast(info_tag, full_cast)
 				if progress and not unaired:
 					info_tag.setResumePoint(ws.get_resume_seconds(progress, duration))
 					set_properties({'WatchedProgress': progress})
@@ -86,14 +85,14 @@ def build_episode_list(params):
 					})
 				yield (play_params, listitem, False)
 			except: pass
-	kodi_actor, make_listitem, build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
+	make_listitem, build_url = kodi_utils.make_listitem, kodi_utils.build_url
 	poster_empty, fanart_empty = kodi_utils.get_icon('box_office'), kodi_utils.addon_fanart()
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
 	no_spoilers = settings.avoid_episode_spoilers()
 	item_list = []
 	append = item_list.append
 	watched_indicators, adjust_hours = settings.watched_indicators(), settings.date_offset()
-	current_date, hide_watched = get_datetime(), is_external and settings.widget_hide_watched()
+	current_date = get_datetime()
 	cm_sort_order = settings.cm_sort_order()
 	custom_cm_menu = cm_sort_order != settings.cm_default_order()
 	rpdb_info = settings.rpdb_info('tvshow')
@@ -207,7 +206,6 @@ def build_single_episode(list_type, params={}):
 			else: seas_ep = ''
 			if not list_type_starts_with('next_'):
 				playcount = ws.get_watched_status_episode(watched_info, (season, episode))
-				if playcount and hide_watched: return
 			if list_type_starts_with('next_'):
 				playcount = 0
 				if include_airdate:
@@ -277,7 +275,7 @@ def build_single_episode(list_type, params={}):
 			info_tag.setStudios(studio), info_tag.setWriters(item_get('writer')), info_tag.setDirectors(item_get('director'))
 			info_tag.setYear(int(year)), info_tag.setRating(item_get('rating')), info_tag.setVotes(item_get('votes')), info_tag.setMpaa(mpaa)
 			full_cast = cast + item_get('guest_stars', [])
-			info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
+			kodi_utils.set_cast(info_tag, full_cast)
 			if progress and not unaired:
 				info_tag.setResumePoint(ws.get_resume_seconds(progress, duration))
 				set_properties({'WatchedProgress': progress})
@@ -292,7 +290,7 @@ def build_single_episode(list_type, params={}):
 			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str_season_zfill2, str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
 		except: pass
-	kodi_actor, make_listitem, build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
+	make_listitem, build_url = kodi_utils.make_listitem, kodi_utils.build_url
 	poster_empty, fanart_empty = kodi_utils.get_icon('box_office'), kodi_utils.addon_fanart()
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
 	is_anime_list = 'is_anime_list' in params
@@ -302,10 +300,9 @@ def build_single_episode(list_type, params={}):
 	item_list_append = item_list.append
 	window_command = 'ActivateWindow(Videos,%s,return)' if is_external else 'Container.Update(%s)'
 	no_spoilers = settings.avoid_episode_spoilers()
-	watched_indicators, display_format = settings.watched_indicators(), settings.single_ep_display_format(is_external)
+	watched_indicators, sync_indicators, display_format = settings.watched_indicators(), settings.sync_indicators(), settings.single_ep_display_format(is_external)
 	current_date, current_time, adjust_hours = get_datetime(), get_current_timestamp(), settings.date_offset()
 	unwatched_info = settings.single_ep_unwatched_episodes()
-	hide_watched = is_external and settings.widget_hide_watched() and list_type != 'episode.recently_watched'
 	api_key, mpaa_region_value = settings.tmdb_api_key(), settings.mpaa_region()
 	cm_sort_order, ignore_articles = settings.cm_sort_order(), settings.ignore_articles()
 	custom_cm_menu = cm_sort_order != settings.cm_default_order()
@@ -320,9 +317,9 @@ def build_single_episode(list_type, params={}):
 		include_airdate = settings.nextep_include_airdate()
 		data = ws.get_next_episodes(nextep_content)
 		if settings.nextep_limit_history(): data = data[:settings.nextep_limit()]
-		hidden_list = ws.get_hidden_progress_items(watched_indicators)
+		hidden_list = ws.get_hidden_progress_items(sync_indicators)
 		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
-		if watched_indicators == 1: resformat, resinsert, list_type = '%Y-%m-%dT%H:%M:%S.%fZ', '2000-01-01T00:00:00.000Z', 'episode.next_trakt'
+		if sync_indicators == 1: resformat, resinsert, list_type = '%Y-%m-%dT%H:%M:%S.%fZ', '2000-01-01T00:00:00.000Z', 'episode.next_trakt'
 		else: resformat, resinsert, list_type = '%Y-%m-%d %H:%M:%S', '2000-01-01 00:00:00', 'episode.next_redlight'
 		if include_unwatched != 0:
 			if include_unwatched in (1, 3):
@@ -361,7 +358,7 @@ def build_single_episode(list_type, params={}):
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
 	list_type_compare = list_type.split('episode.')[1]
 	list_type_starts_with = list_type_compare.startswith
-	threads = TaskPool().tasks_enumerate(_process, data, min(len(data), settings.max_threads()))
+	threads = taskpool_tasks_enumerate(_process, data, min(len(data), settings.max_threads()))
 	[i.join() for i in threads]
 	if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
 	if list_type_starts_with('next_'):

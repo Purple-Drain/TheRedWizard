@@ -89,7 +89,49 @@ def get_infolabel(label):
 	return xbmc.getInfoLabel(label)
 
 def kodi_actor():
-	return xbmc.Actor
+	actor = getattr(xbmc, 'Actor', None)
+	if actor: return actor
+	return getattr(xbmcgui, 'Actor', None)
+
+def _android_kodi():
+	try:
+		if 'android' in xbmc.getPlatform().lower(): return True
+	except:
+		pass
+	try:
+		return os.path.exists('/system/build.prop')
+	except:
+		return False
+
+def call_method(obj, name, *args):
+	try:
+		fn = getattr(obj, name, None)
+		if callable(fn): fn(*args)
+	except Exception:
+		pass
+
+def get_video_info_tag(listitem):
+	try:
+		fn = getattr(listitem, 'getVideoInfoTag', None)
+		if fn is None: return None
+		if callable(fn): return fn(True)
+		return fn
+	except Exception:
+		return None
+
+def set_listitem_properties(listitem, properties):
+	call_method(listitem, 'setProperties', properties)
+
+def set_cast(info_tag, cast):
+	if not cast or not info_tag: return
+	actor_cls = kodi_actor()
+	try:
+		if actor_cls:
+			call_method(info_tag, 'setCast', [actor_cls(name=item.get('name', ''), role=item.get('role', ''), thumbnail=item.get('thumbnail', '')) for item in cast])
+			return
+	except Exception:
+		pass
+	call_method(info_tag, 'setCast', [{'name': item.get('name', ''), 'role': item.get('role', ''), 'thumbnail': item.get('thumbnail', '')} for item in cast])
 
 def translate_path(_path):
 	return xbmcvfs.translatePath(_path)
@@ -177,6 +219,7 @@ def add_dir(handle, url_params, list_name, icon_image='folder', fanart_image=Non
 	add_item(handle, url, listitem, isFolder)
 
 def make_listitem():
+	if _android_kodi(): return xbmcgui.ListItem()
 	return xbmcgui.ListItem(offscreen=True)
 
 def add_item(handle, url, listitem, isFolder):

@@ -4,7 +4,7 @@ import json
 import random
 from datetime import date
 from modules.sources import Sources
-from modules.settings import date_offset, watched_indicators, ignore_articles, playback_key, max_threads
+from modules.settings import date_offset, sync_indicators, ignore_articles, playback_key, max_threads
 from modules.metadata import episodes_meta, all_episodes_meta
 from modules.watched_status import get_watched_status_episode, get_next_episodes, get_hidden_progress_items, watched_info_episode, get_next
 from modules.utils import adjust_premiered_date, get_datetime, title_key, TaskPool
@@ -130,7 +130,7 @@ def build_next_episode_manager():
 	make_listitem, build_url, addon_fanart = kodi_utils.make_listitem, kodi_utils.build_url, kodi_utils.get_addon_fanart()
 	list_items = []
 	append = list_items.append
-	indicators = watched_indicators()
+	indicators = sync_indicators()
 	show_list = get_next_episodes(0)
 	hidden_list = get_hidden_progress_items(indicators)
 	if indicators == 0: icon, mode = kodi_utils.get_icon('folder'), 'hide_unhide_progress_items'

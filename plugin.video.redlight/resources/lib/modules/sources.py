@@ -220,8 +220,10 @@ class Sources():
 		non_cloud = self.limit_quality_total(non_cloud)
 		combined = non_cloud + cloud_in_results
 		if self._pin_scrapers_to_top_enabled():
-			return self.sort_first(combined)
-		return self.sort_results(combined)
+			combined = self.sort_first(combined)
+		if not self._custom_pref_sort_active():
+			combined = self.sort_results(combined)
+		return combined
 
 	def sort_results(self, results):
 		results = [dict(i, **{
@@ -279,6 +281,9 @@ class Sources():
 				return preference_results + results
 			except: pass
 		return results
+
+	def _custom_pref_sort_active(self):
+		return settings.sort_to_top_filter(self.autoplay) and bool(settings.preferred_filters())
 
 	def _pin_scrapers_to_top_enabled(self):
 		if 'folders' in self.all_scrapers and settings.sort_to_top('folders'): return True
@@ -446,11 +451,7 @@ class Sources():
 			return
 		action, chosen_item = window_result
 		if not action: self._kill_progress_dialog()
-		elif action == 'play':
-			play_result = self.play_file(results, chosen_item)
-			if isinstance(play_result, tuple) and play_result[0] == 'return_to_sources':
-				return self.display_results(play_result[1])
-			return play_result
+		elif action == 'play': return self.play_file(results, chosen_item)
 		elif self.prescrape and action == 'perform_full_search':
 			if not self._continue_full_scrape(): return self.display_results(results)
 			self._reset_scrape_state()
@@ -834,12 +835,23 @@ class Sources():
 		self._kill_progress_dialog()
 		return RedLightPlayer().run(link, 'video')
 
+	def _sync_resolve_user_cancel(self):
+		try:
+			if self.progress_dialog and self.progress_dialog.iscanceled():
+				self._resolve_user_cancelled = True
+				self.cancel_all_playback = True
+				return True
+		except:
+			pass
+		return False
+
 	def play_file(self, results, source={}):
 		self.playback_successful, self.cancel_all_playback = None, False
 		self._resolve_user_cancelled = False
+		self.playback_user_stopped, self.playback_chained_next = False, False
+		kodi_utils.clear_property('redlight.playback_user_stopped')
 		retry_easynews = settings.easynews_playback_method('retry')
 		retry_easynews_limit = settings.easynews_playback_method_retries()
-		original_results = list(results)
 		try:
 			kodi_utils.hide_busy_dialog()
 			url = None
@@ -881,15 +893,19 @@ class Sources():
 				try:
 					if self._resolve_user_cancelled or self.cancel_all_playback:
 						break
+					if self._sync_resolve_user_cancel():
+						break
 					kodi_utils.hide_busy_dialog()
 					if not self.progress_dialog: break
-					if count > 1:
-						prev = items[count - 2]
-						if prev.get('scrape_provider') != item.get('scrape_provider'):
-							if not self._resolve_user_cancelled:
+					if not self._resolve_user_cancelled:
+						if count > 1:
+							prev = items[count - 2]
+							if prev.get('scrape_provider') != item.get('scrape_provider') and not self.progress_dialog.iscanceled():
 								self.progress_dialog.reset_is_cancelled()
-					elif not self._resolve_user_cancelled:
-						self.progress_dialog.reset_is_cancelled()
+						elif not self.progress_dialog.iscanceled():
+							self.progress_dialog.reset_is_cancelled()
+					if self._sync_resolve_user_cancel():
+						break
 					self.progress_dialog.update_resolver(text=item['resolve_display'])
 					self.progress_dialog.busy_spinner()
 					if count > 1:
@@ -903,12 +919,10 @@ class Sources():
 					self.playing_item = item
 					player = RedLightPlayer()
 					try:
-						if self.progress_dialog.iscanceled() or monitor.abortRequested():
-							self._resolve_user_cancelled = True
-							self.cancel_all_playback = True
+						if self._sync_resolve_user_cancel() or monitor.abortRequested():
 							break
 						url = self.resolve_sources(item)
-						if self._resolve_user_cancelled or self.cancel_all_playback:
+						if self._sync_resolve_user_cancel():
 							break
 						if url:
 							resolve_percent = 0
@@ -916,32 +930,34 @@ class Sources():
 							self.progress_dialog.update_resolver(percent=resolve_percent)
 							kodi_utils.sleep(200)
 							player.run(url, self)
-						else: continue
-						if self.cancel_all_playback or self._resolve_user_cancelled:
+						else:
+							if self._sync_resolve_user_cancel():
+								break
+							continue
+						if self._sync_resolve_user_cancel():
 							break
 						if self.playback_successful: break
 					except: pass
 				except: pass
 		except: self._kill_progress_dialog()
-		if self.cancel_all_playback or self._resolve_user_cancelled:
+		if self._resolve_user_cancelled or self.cancel_all_playback:
 			self.resolve_dialog_made = False
 			self._kill_progress_dialog(join_timeout=0.25)
-			if not self.background and not self.autoplay:
-				return 'return_to_sources', original_results
 			return
-		if self.playback_successful and url:
-			self.resolve_dialog_made = False
-			self._kill_progress_dialog(join_timeout=0.25)
-			if not self.background and not self.autoplay:
-				return self.display_results(original_results)
-		if not self.playback_successful or not url: self.playback_failed_action()
+		self.resolve_dialog_made = False
+		self._kill_progress_dialog(join_timeout=0.25)
+		if self.playback_chained_next or self.playback_user_stopped:
+			return
+		if not self.playback_successful or not url:
+			self.playback_failed_action()
 		try: del monitor
 		except: pass
 
 	def get_playback_percent(self):
-		if self.media_type == 'movie': percent = watched_status.get_progress_status_movie(watched_status.get_bookmarks_movie(), str(self.tmdb_id))
+		sync_db = watched_status.get_database(settings.sync_indicators())
+		if self.media_type == 'movie': percent = watched_status.get_progress_status_movie(watched_status.get_bookmarks_movie(sync_db), str(self.tmdb_id))
 		elif any((self.random, self.random_continual)): return 0.0
-		else: percent = watched_status.get_progress_status_episode(watched_status.get_bookmarks_episode(self.tmdb_id, self.season), self.episode)
+		else: percent = watched_status.get_progress_status_episode(watched_status.get_bookmarks_episode(self.tmdb_id, self.season, sync_db), self.episode)
 		if not percent: return 0.0
 		action = self.get_resume_status(percent)
 		if action == 'cancel': return None
@@ -1046,6 +1062,9 @@ class Sources():
 				kodi_utils.notification('[B]Next Episode Ready:[/B] %s S%02dE%02d' \
 						% (self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')), 6500, self.meta.get('poster'))
 				while player.isPlayingVideo(): kodi_utils.sleep(100)
+			if kodi_utils.get_property('redlight.playback_user_stopped') == 'true':
+				kodi_utils.clear_property('redlight.playback_user_stopped')
+				return
 			self.display_results(results)
 		else: return
 

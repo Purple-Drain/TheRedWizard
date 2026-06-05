@@ -2,7 +2,7 @@
 import sys
 from modules import kodi_utils, settings
 from modules.metadata import tvshow_meta
-from modules.utils import get_datetime, adjust_premiered_date, TaskPool
+from modules.utils import get_datetime, adjust_premiered_date, taskpool_tasks
 from modules.watched_status import get_database, watched_info_season, get_watched_status_season, get_progress_status_season
 # logger = kodi_utils.logger
 
@@ -46,11 +46,9 @@ def build_season_list(params):
 				options_params = build_url({'mode': 'options_menu_choice', 'content': 'season', 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external})
 				cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
 				cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
-				if playcount:
-					if hide_watched: continue
-				elif not unaired and not season_special:
-						cm_append(['mark_watched', ('[B]Mark Watched (Red Light)[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_watched',
-															'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
+				if not playcount and not unaired and not season_special:
+					cm_append(['mark_watched', ('[B]Mark Watched (Red Light)[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_watched',
+														'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
 				if progress:
 					cm_append(['mark_watched', ('[B]Mark Unwatched (Red Light)[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_unwatched',
 														'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
@@ -70,17 +68,17 @@ def build_season_list(params):
 				info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str_tmdb_id, 'tvdb': str_tvdb_id})
 				info_tag.setTvShowStatus(status), info_tag.setFirstAired(premiered), info_tag.setStudios(studio), info_tag.setYear(int(year))
 				info_tag.setRating(rating), info_tag.setVotes(votes), info_tag.setMpaa(mpaa), info_tag.setCountries(country), info_tag.setTrailer(trailer)
-				info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
+				kodi_utils.set_cast(info_tag, cast)
 				listitem.setLabel(title)
 				listitem.setArt({'poster': poster, 'season.poster': poster, 'fanart': show_fanart, 'clearlogo': show_clearlogo, 'landscape': show_landscape, 'thumb': thumb,
 								'icon': show_landscape, 'tvshow.poster': poster, 'tvshow.clearlogo': show_clearlogo})
 				listitem.addContextMenuItems(cm)
 				yield (url_params, listitem, True)
 			except: pass
-	kodi_actor, make_listitem, build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
+	make_listitem, build_url = kodi_utils.make_listitem, kodi_utils.build_url
 	poster_empty, fanart_empty = kodi_utils.get_icon('box_office'), kodi_utils.addon_fanart()
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
-	watched_indicators, adjust_hours, hide_watched = settings.watched_indicators(), settings.date_offset(), is_external and settings.widget_hide_watched()
+	watched_indicators, adjust_hours = settings.watched_indicators(), settings.date_offset()
 	current_date = get_datetime()
 	cm_sort_order = settings.cm_sort_order()
 	custom_cm_menu = cm_sort_order != settings.cm_default_order()
@@ -118,6 +116,6 @@ def build_season_list(params):
 
 def single_seasons(seasons_list):
 	season_results = []
-	threads = TaskPool().tasks(lambda x: season_results.append(build_season_list(x)), seasons_list, min(len(seasons_list), settings.max_threads()))
+	threads = taskpool_tasks(lambda x: season_results.append(build_season_list(x)), seasons_list, min(len(seasons_list), settings.max_threads()))
 	[i.join() for i in threads]
 	return [i for i in season_results if i]

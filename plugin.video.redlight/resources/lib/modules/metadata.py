@@ -20,7 +20,7 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 			external_result = movie_external_id(id_type, media_id, api_key)
 			if not external_result: data = None
 			else: data = movie_details(external_result['id'], api_key)
-		if not data: return None
+		if not data or not data.get('id'): return None
 		elif data.get('status_code') in (6, 34, 37):
 			if id_type == 'tmdb_id': meta = {'tmdb_id': media_id, 'imdb_id': 'tt0000000', 'tvdb_id': '0000000', 'blank_entry': True}
 			else: meta = {'tmdb_id': '0000000', 'imdb_id': media_id, 'tvdb_id': '0000000', 'blank_entry': True}
@@ -68,7 +68,7 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 		try:
 			genres = data_get('genres')
 			genre = [i['name'] for i in genres]
-		except: genre == []
+		except: genre = []
 		rootname = '%s (%s)' % (title, year)
 		companies = data_get('production_companies')
 		if companies:
@@ -135,7 +135,10 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 				'director': director, 'alternative_titles': alternative_titles, 'plot': plot, 'studio': studio, 'extra_info': extra_info, 'mediatype': 'movie', 'tvdb_id': 'None',
 				'clearlogo': clearlogo, 'landscape': landscape, 'keywords': keywords, 'rpdb_poster': rpdb_poster, 'short_cast': short_cast, 'stinger_keys': stinger_keys}
 		meta_cache.set('movie', id_type, meta, movie_expiry(current_date, meta), current_time)
-	except: pass
+	except Exception as e:
+		from modules.kodi_utils import logger
+		logger('Red Light', 'movie_meta failed id_type=%s media_id=%s: %s' % (id_type, media_id, e))
+		meta = None
 	return meta
 
 def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, is_anime_list=None):
