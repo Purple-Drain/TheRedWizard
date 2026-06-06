@@ -1,3 +1,11 @@
+[COLOR red][B]Version 1.2.9a[/B][/COLOR]
+- Offcloud support (ported from v1.3.x): QR OAuth auth, My Services Cloud Storage and History, cloud scrape, external cache check, resolve, packs, highlight colour. Include uncached results (Offcloud) under External Scrapers (default Off). Notify when added torrents are ready in Cloud. Clear Offcloud Cache in cache tools.
+- Sources Accounts: provider sections reordered alphabetically (All Debrid, EasyNews, Offcloud, Premiumize, Real Debrid, TorBox; Local Media Folders last). External Scrapers debrid toggles ordered Offcloud, Real Debrid, TorBox when each provider is enabled.
+- My Services: same alphabetical provider order (All Debrid, EasyNews, Offcloud, Premiumize, Real Debrid, TorBox).
+- Fixed Custom Sort to Top for movies: Set Filters to Top now promotes matching rows to the top of each quality band (4K, 1080p, etc.) instead of the 1.3.x tie-breaker that only reordered identical quality/size/provider rows. SD HDR no longer sorts above 1080p Remux. Debrid cloud results keep pref order when quality limits apply.
+- Check Before Full Search: restored prescrape prompt and Run Full Source Search flow (not tied to Rescrape Actions). Full scrape after cloud hits now uses the same handoff as empty prescrape (finished cloud scrapers stay in remove_scrapers), so progress shows external/cache check only while prescrape cloud results are kept.
+- External Scrapers: setting label shortened to “Check for cached status of Results (RD)”. Description text amended.
+
 [COLOR red][B]Version 1.2.9[/B][/COLOR]
 - Fixed scrape progress window staying open after a search returns no results (including unreleased episodes).
 - When a source search finds nothing, now shows a Red Light style "No results found" dialog after the scrape progress window closes, with the Kodi dialog as a fallback if the skin window cannot open.
