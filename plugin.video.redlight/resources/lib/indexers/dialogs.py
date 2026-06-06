@@ -113,17 +113,17 @@ def rescrape_actions_choice(params):
 	action_values = {0: 'Off', 1: 'Auto', 2: 'Prompt'}
 	order_values = {0: 'Highest', 1: 'High', 2: 'Middle', 3: 'Low', 4: 'Lower', 5: 'Lowest'}
 	rescrape_settings = settings.rescrape_all_settings()
-	choices = [dict(i, **{'line1': '%02d, %s' % (int(k[2]) + 1, i['name']),
-				'line2': 'Current | Action: [B]%s[/B] | Order: [B]%s[/B]' % (action_values[k[1]], order_values[k[2]]), 'value': i['value'],
+	choices = [dict(i, **{'line1': i['name'],
+				'line2': 'Action: [B]%s[/B] | Order: [B]%s[/B]' % (action_values[k[1]], order_values[k[2]]), 'value': i['value'],
 				'action': k[1], 'order': k[2]}) for i in kodi_utils.rescrape_items() for k in rescrape_settings if k[0] == i['value']]
 	choices = [dict(i, **{'position': c}) for c, i in enumerate(sorted(choices, key=lambda k: k['order']))]
-	kwargs = {'items': json.dumps(choices), 'heading': 'Choose Properties for Rescrape Functions', 'multi_line': 'true', 'narrow_window': 'true', 'set_focus': set_focus}
+	kwargs = {'items': json.dumps(choices), 'heading': 'Rescrape Actions', 'multi_line': 'true', 'narrow_window': 'true', 'set_focus': set_focus}
 	choice = kodi_utils.select_dialog(choices, **kwargs)
 	if choice == None: return
 	choice_value, choice_action, choice_order = choice['value'], choice['action'], choice['order']
 	params['set_focus'] = choice['position']
 	choices = [{'line1': 'Set Action', 'action': 'set_action'}, {'line1': 'Set Order', 'action': 'set_order'}]
-	kwargs = {'items': json.dumps(choices), 'heading': 'Choose Properties for Rescrape Functions', 'narrow_window': 'true', 'set_focus': set_focus}
+	kwargs = {'items': json.dumps(choices), 'heading': 'Rescrape Actions', 'narrow_window': 'true', 'set_focus': set_focus}
 	choice = kodi_utils.select_dialog(choices, **kwargs)
 	if choice == None: return rescrape_actions_choice(params)
 	action = choice['action']
