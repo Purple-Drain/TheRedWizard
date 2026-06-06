@@ -325,11 +325,29 @@ def filter_by_name(scraper):
 def uncached_min_seeders():
 	return int(get_setting('redlight.results.uncached_min_seeders', '0'))
 
+_DEBRID_CACHE_CHECK_SETTINGS = {
+	'Real-Debrid': 'rd.cache_check',
+	'TorBox': 'tb.cache_check',
+	'Premiumize.me': 'pm.cache_check',
+	'Offcloud': 'oc.cache_check',
+}
+
+def debrid_cache_check(provider):
+	setting_id = _DEBRID_CACHE_CHECK_SETTINGS.get(provider)
+	if not setting_id: return False
+	return get_setting('redlight.%s' % setting_id, 'false') == 'true'
+
+def any_external_cache_check():
+	for slug, provider in (('rd', 'Real-Debrid'), ('tb', 'TorBox'), ('pm', 'Premiumize.me'), ('oc', 'Offcloud')):
+		if enabled_debrids_check(slug) and debrid_cache_check(provider):
+			return True
+	return False
+
 def include_uncached_torbox():
-	return get_setting('redlight.external.include_uncached_torbox', 'false') == 'true'
+	return get_setting('redlight.tb.include_uncached', 'false') == 'true'
 
 def include_uncached_offcloud():
-	return get_setting('redlight.external.include_uncached_offcloud', 'false') == 'true'
+	return get_setting('redlight.oc.include_uncached', 'false') == 'true'
 
 def tb_notify_cloud_ready():
 	return get_setting('redlight.tb.notify_cloud_ready', 'true') == 'true'
@@ -431,7 +449,7 @@ def scraping_settings():
 			'4k': highlight_4K, '1080p': highlight_1080P, '720p': highlight_720P, 'sd': highlight_SD}
 
 def external_cache_check():
-	return get_setting('redlight.external.cache_check') == 'true'
+	return any_external_cache_check()
 
 def omdb_api_key():
 	return get_setting('redlight.omdb_api', 'empty_setting')

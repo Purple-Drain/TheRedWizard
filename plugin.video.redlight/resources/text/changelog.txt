@@ -1,3 +1,7 @@
+[COLOR red][B]Version 1.2.9c[/B][/COLOR]
+- External cache check: per-provider toggles under each Debrid account (Real Debrid, TorBox, Premiumize, Offcloud). TorBox/Offcloud include-uncached moved to their Debrid sections. Existing settings migrate automatically. Premiumize cache check wired for external scrapers.
+- Fixed Movies In Progress empty when using Trakt watched indicators: playback progress is saved locally on stop, and Trakt sync no longer wipes those rows while waiting for Trakt to catch up. If Red Light has no progress rows, the list now refreshes from Trakt (when authorized) or imports from Fen Light on the same profile (dual-addon builds).
+
 [COLOR red][B]Version 1.2.9b[/B][/COLOR]
 - Filter Results by Name: EasyNews and Local Folders use exact show-title match before SxxExx (e.g. Wings no longer matches Behind The Wings). Debrid cloud scrapers, use S/E match plus optional title filter; turn off for S/E-only recall.
 - Rescrape Actions: clearer labels (Offer Full Search After Early Results, Disabled External Providers, Real Debrid Only for no cache check). Rescrape Actions settings screen shows Action and Order only; full help in Settings description. Check Before Full Search / Run Full Source Search remain independent of rescrape full_scrape.

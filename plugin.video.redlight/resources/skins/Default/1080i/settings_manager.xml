@@ -1628,39 +1628,6 @@
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.oc.token),empty_setting)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.oc.enabled),true)</visible>
-                          <property name="setting_label">Include uncached results (Offcloud)</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external.include_uncached_offcloud)]</property>
-                          <property name="setting_description">When enabled, torrents not in Offcloud instant cache appear in the main results list (subject to minimum seeders). Default off shows cached Offcloud only. Selecting an uncached row adds it to your Offcloud cloud.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=external.include_uncached_offcloud)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.rd.token),empty_setting)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.rd.enabled),true)</visible>
-                          <property name="setting_label">Check for cached status of Results (RD)</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external.cache_check)]</property>
-                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your Real Debrid account before listing them. You may see fewer links, but those shown should be instant.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=external.cache_check)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.tb.enabled),true)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.tb.token),empty_setting)</visible>
-                          <property name="setting_label">Include uncached results (TorBox)</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external.include_uncached_torbox)]</property>
-                          <property name="setting_description">When enabled, torrents not in TorBox shared cache appear in the main results list (subject to minimum seeders). Default off shows cached TorBox only. Selecting an uncached row adds it to your TorBox cloud.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=external.include_uncached_torbox)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.name),empty_setting)</visible>
                           <property name="setting_label">Open External Scraper Settings</property>
                           <property name="setting_type">action</property>
@@ -1964,6 +1931,28 @@
                           <visible>Container(2000).HasFocus(60)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.oc.token),empty_setting)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.oc.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Check Cached Status (External Scrapers)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.oc.cache_check)]</property>
+                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your Offcloud account before listing them. You may see fewer links, but those shown should be instant.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=oc.cache_check)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.oc.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.oc.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Include Uncached Results (External Scrapers)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.oc.include_uncached)]</property>
+                          <property name="setting_description">When enabled, torrents not in Offcloud instant cache also appear in the main results list (subject to minimum seeders). Selecting an uncached row adds it to your Offcloud cloud.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=oc.include_uncached)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.oc.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.oc.enabled),true)</visible>
                           <property name="setting_label">Add Resolved Debrid Cache to Cloud</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.store_resolved_to_cloud.offcloud_name)]</property>
@@ -2067,6 +2056,17 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.pm.account_id)]</property>
                           <property name="setting_description">Revoke authorization of your Premiumize account</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=premiumize.revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.pm.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.pm.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Check Cached Status (External Scrapers)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.pm.cache_check)]</property>
+                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your Premiumize account before listing them. You may see fewer links, but those shown should be instant.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=pm.cache_check)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
@@ -2177,6 +2177,17 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.rd.account_id)]</property>
                           <property name="setting_description">Revoke authorization of your Real Debrid account</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=real_debrid.revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.rd.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.rd.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Check Cached Status (External Scrapers)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.rd.cache_check)]</property>
+                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your Real Debrid account before listing them. You may see fewer links, but those shown should be instant.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=rd.cache_check)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
@@ -2307,6 +2318,28 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.tb.token)]</property>
                           <property name="setting_description">Revoke authorization of your TorBox account</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=torbox.revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.tb.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.tb.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Check Cached Status (External Scrapers)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.tb.cache_check)]</property>
+                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your TorBox account before listing them. You may see fewer links, but those shown should be instant.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=tb.cache_check)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.tb.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.tb.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Include Uncached Results (External Scrapers)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.tb.include_uncached)]</property>
+                          <property name="setting_description">When enabled, torrents not in TorBox shared cache also appear in the main results list (subject to minimum seeders). Selecting an uncached row adds it to your TorBox cloud.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=tb.include_uncached)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
@@ -2621,7 +2654,7 @@
                           <property name="setting_label">Rescrape Actions</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Configure automatic retries when a source search returns no playable results. Each action can be Off, Auto, or Prompt, with order from Highest to Lowest. Rescrape With No Cache Check applies to Real Debrid external cache check only. Rescrape With Disabled External Providers includes disabled external torrent providers (not internal scrapers such as EasyNews or debrid cloud). Offer Full Search After Early Results applies to the empty-search retry path only; Check Before Full Search and Run Full Source Search during prescrape are separate.</property>
+                          <property name="setting_description">Configure automatic retries when a source search returns no playable results. Each action can be Off, Auto, or Prompt, with order from Highest to Lowest. Rescrape With No Cache Check disables per-provider external cache checks (Real Debrid, TorBox, Premiumize, Offcloud). Rescrape With Disabled External Providers includes disabled external torrent providers (not internal scrapers such as EasyNews or debrid cloud). Offer Full Search After Early Results applies to the empty-search retry path only; Check Before Full Search and Run Full Source Search during prescrape are separate.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=rescrape_actions_choice)</onclick>
                       </item>
         <!-- Sorting and Filtering -->

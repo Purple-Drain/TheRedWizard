@@ -300,6 +300,21 @@ def sync_settings(params={}):
 			migrated = True
 			currentsettings = settings_cache.get_all()
 	except: pass
+	_setting_migrations = (
+		('external.cache_check', 'rd.cache_check'),
+		('external.include_uncached_torbox', 'tb.include_uncached'),
+		('external.include_uncached_offcloud', 'oc.include_uncached'),
+	)
+	for old_id, new_id in _setting_migrations:
+		if old_id not in currentsettings: continue
+		if new_id not in currentsettings:
+			value = currentsettings[old_id]
+			settings_cache.write_db(new_id, value, defaults_map.get(new_id))
+			currentsettings[new_id] = value
+			if load_properties: settings_cache.set_memory_cache(new_id, value)
+		settings_cache.remove_setting(old_id)
+		currentsettings.pop(old_id, None)
+		migrated = True
 	if currentsettings:
 		if currentsettings.get('update.username', '').replace('-', '').lower() == 'theredwizard' \
 				and currentsettings.get('update.username') != 'The-Red-Wizard':
@@ -598,12 +613,10 @@ def default_settings():
 #==================== External
 {'setting_id': 'provider.external', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'external_scraper.name', 'setting_type': 'string', 'setting_default': 'empty_setting'},
-{'setting_id': 'external.cache_check', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'external.include_uncached_torbox', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'external.include_uncached_offcloud', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== Real Debrid
 {'setting_id': 'rd.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'rd.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'rd.cache_check', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'rd.account_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'store_resolved_to_cloud.real-debrid', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'All', '2': 'Show Packs Only'}},
 {'setting_id': 'provider.rd_cloud', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -617,6 +630,7 @@ def default_settings():
 #==================== Premiumize
 {'setting_id': 'pm.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'pm.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'pm.cache_check', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'pm.account_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'store_resolved_to_cloud.premiumize.me', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'All', '2': 'Show Packs Only'}},
 {'setting_id': 'provider.pm_cloud', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -640,6 +654,8 @@ def default_settings():
 {'setting_id': 'oc.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'oc.account_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'oc.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'oc.cache_check', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'oc.include_uncached', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'store_resolved_to_cloud.offcloud', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'All', '2': 'Show Packs Only'}},
 {'setting_id': 'oc.notify_cloud_ready', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'provider.oc_cloud', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -651,6 +667,8 @@ def default_settings():
 #==================== TorBox
 {'setting_id': 'tb.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'tb.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'tb.cache_check', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'tb.include_uncached', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'store_resolved_to_cloud.torbox', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'All', '2': 'Show Packs Only'}},
 {'setting_id': 'tb.notify_cloud_ready', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'provider.tb_cloud', 'setting_type': 'boolean', 'setting_default': 'false'},

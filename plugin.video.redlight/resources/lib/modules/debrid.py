@@ -16,9 +16,12 @@ def debrid_enabled():
 	return [
 	i[0] for i in [('Real-Debrid', 'rd'), ('Premiumize.me', 'pm'), ('AllDebrid', 'ad'), ('Offcloud', 'oc'), ('TorBox', 'tb')] if enabled_debrids_check(i[1])]
 
-def debrid_for_ext_cache_check(enabled_debrid=None):
+def debrid_cache_check_available(enabled_debrid=None):
 	if not enabled_debrid: enabled_debrid = debrid_enabled()
-	return 'Real-Debrid' in enabled_debrid
+	return any(p in enabled_debrid for p in ('Real-Debrid', 'TorBox', 'Premiumize.me', 'Offcloud'))
+
+def debrid_for_ext_cache_check(enabled_debrid=None):
+	return debrid_cache_check_available(enabled_debrid)
 
 def normalize_debrid_provider(provider):
 	if not provider:

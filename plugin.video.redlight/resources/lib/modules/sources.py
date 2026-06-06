@@ -44,8 +44,8 @@ class Sources():
 		self.background = params_get('background', 'false') == 'true'
 		self.prescrape = params_get('prescrape', self.prescrape) == 'true'
 		self.random, self.random_continual = params_get('random', 'false') == 'true', params_get('random_continual', 'false') == 'true'
-		if 'external_cache_check' in self.params: self.external_cache_check = params_get('external_cache_check') == 'true'
-		else: self.external_cache_check = settings.external_cache_check()
+		if 'external_cache_check' in self.params: self.cache_check_override = params_get('external_cache_check') == 'true'
+		else: self.cache_check_override = None
 		if self.play_type:
 			if self.play_type == 'autoplay_nextep': self.autoplay_nextep, self.autoscrape_nextep = True, False
 			elif self.play_type == 'random_continual': self.autoplay_nextep, self.autoscrape_nextep = False, False
@@ -104,6 +104,11 @@ class Sources():
 			self.ext_folder, self.ext_name = settings.external_scraper_info()
 			if not self.ext_folder or not self.ext_name: return self.disable_external('Error Importing External Module')
 
+	def _any_cache_check_active(self):
+		if self.cache_check_override is not None:
+			return self.cache_check_override
+		return settings.any_external_cache_check()
+
 	def _playback_skips_prescrape_override(self):
 		if self.play_type == 'autoscrape_nextep': return True
 		if self.disabled_ext_ignored or self.ignore_scrape_filters: return True
@@ -136,7 +141,7 @@ class Sources():
 			if not self.orig_results: self._kill_progress_dialog()
 			results = self.process_results(self.orig_results)
 		if not results:
-			if self.uncached_results and self.external_cache_check and self.active_external:
+			if self.uncached_results and self._any_cache_check_active() and self.active_external:
 				return self.play_source(self.sort_results(self.uncached_results))
 			return self._process_post_results()
 		if self.autoscrape: return results
@@ -166,7 +171,7 @@ class Sources():
 				# Cloud scrapers in remove_scrapers run in parallel threads; do not poll their
 				# window properties on the external progress bar (was showing TB_CLOUD etc. for the full timeout).
 				external_progress_scrapers = [i for i in self.internal_scraper_names if i not in self.remove_scrapers]
-				self.external_args = (self.meta, self.external_providers, self.debrid_enabled, self.external_cache_check, external_progress_scrapers,
+				self.external_args = (self.meta, self.external_providers, self.debrid_enabled, self.cache_check_override, external_progress_scrapers,
 										self.prescrape_sources, self.progress_dialog, self.disabled_ext_ignored, self.cloud_scraper_names)
 				self.activate_providers('external', external, False)
 			if self.threads:
@@ -560,7 +565,7 @@ class Sources():
 		window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
 				window_format=window_format, window_id=window_number, results=results, meta=self.meta, episode_group_label=self.episode_group_label,
 				scraper_settings=self.scraper_settings, prescrape=self.prescrape, filters_ignored=self.filters_ignored,
-				uncached_results=self.uncached_results, external_cache_check=self.external_cache_check)
+				uncached_results=self.uncached_results, cache_check_override=self.cache_check_override)
 		if not window_result:
 			self._kill_progress_dialog()
 			return
@@ -589,7 +594,7 @@ class Sources():
 			if not self.ignore_scrape_filters: kodi_utils.clear_property('fs_filterless_search')
 			return self.get_sources()
 		elif action == 'cache_change_rescrape':
-			self.external_cache_check = chosen_item == 'true'
+			self.cache_check_override = chosen_item == 'true'
 			self._reset_scrape_state(keep_disabled_ext_ignored=True)
 			return self.get_sources()
 
@@ -623,10 +628,10 @@ class Sources():
 		if not self.retry_actions: return self._no_results()
 		next_action, next_setting, order = self.retry_actions.pop(0)
 		if next_action == 'cache_ignored':
-			if next_setting in (1, 2) and self.active_external and self.orig_results and self.external_cache_check \
-																				and debrid.debrid_for_ext_cache_check(self.debrid_enabled):
-				if next_setting == 1 or kodi_utils.confirm_dialog(heading=self.meta.get('rootname', ''), text='No results.[CR]Retry with cache check disabled (Real Debrid only)?'):
-					self.threads, self.prescrape, self.external_cache_check = [], False, False
+			if next_setting in (1, 2) and self.active_external and self.orig_results and self._any_cache_check_active() \
+																				and debrid.debrid_cache_check_available(self.debrid_enabled):
+				if next_setting == 1 or kodi_utils.confirm_dialog(heading=self.meta.get('rootname', ''), text='No results.[CR]Retry with external cache check disabled?'):
+					self.threads, self.prescrape, self.cache_check_override = [], False, False
 					return self.get_sources()
 			return self._process_post_results()
 		if next_action == 'imdb_year':

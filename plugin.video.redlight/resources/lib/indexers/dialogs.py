@@ -639,7 +639,7 @@ def assign_episode_group_choice(params):
 
 def playback_choice(params):
 	from modules.utils import get_datetime
-	from modules.debrid import debrid_for_ext_cache_check
+	from modules.debrid import debrid_cache_check_available
 	from modules.source_utils import get_aliases_titles, make_alias_dict
 	from modules import metadata
 	media_type, season, episode, episode_id = params.get('media_type'), params.get('season', ''), params.get('episode', ''), params.get('episode_id', None)
@@ -654,10 +654,10 @@ def playback_choice(params):
 		meta = function('tmdb_id', meta, settings.tmdb_api_key(), settings.mpaa_region(), get_datetime())
 	poster = meta.get('poster') or kodi_utils.get_icon('box_office')
 	aliases = get_aliases_titles(make_alias_dict(meta, meta['title']))
-	check_cache_status, check_cache_toggle =  ('OFF', 'false') if settings.external_cache_check() else ('ON', 'true')
+	check_cache_status, check_cache_toggle = ('OFF', 'false') if settings.any_external_cache_check() else ('ON', 'true')
 	items = [{'line': 'Select Source', 'function': 'scrape'},
 			{'line': 'Rescrape & Select Source', 'function': 'clear_and_rescrape'}]
-	if debrid_for_ext_cache_check():
+	if debrid_cache_check_available():
 		items.append({'line': 'Rescrape with External Cache Check [B]%s[/B]' % check_cache_status, 'function': 'rescrape_external_cache_check'})
 	items.extend([{'line': 'Clear Debrid Cache & Show Results', 'function': 'clear_debrid_cache_and_show'},
 				{'line': 'Scrape with ALL External Scrapers', 'function': 'scrape_with_disabled'},

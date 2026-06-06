@@ -62,7 +62,7 @@ def context_menu_items():
 
 def rescrape_items():
 	return [
-	{'name': 'Rescrape With No Cache Check (RD Only)', 'value': 'cache_ignored'},
+	{'name': 'Rescrape With No Cache Check', 'value': 'cache_ignored'},
 	{'name': 'Rescrape With IMDb Year Data', 'value': 'imdb_year'},
 	{'name': 'Rescrape With Disabled External Providers', 'value': 'with_all'},
 	{'name': 'Rescrape With Episode Group', 'value': 'episode_group'},
