@@ -4,8 +4,7 @@ from threading import Thread
 from apis.trakt_api import trakt_watched_status_mark, trakt_official_status, trakt_progress, trakt_get_hidden_items
 from caches.base_cache import connect_database, database
 from caches.trakt_cache import clear_trakt_collection_watchlist_data
-from os.path import join, dirname, exists
-from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, addon_profile, addon_installed, logger
+from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, logger
 from modules.utils import get_datetime, adjust_premiered_date, sort_for_article, TaskPool
 from modules import metadata, settings
 # from modules.kodi_utils import logger
@@ -449,30 +448,31 @@ def _movie_progress_list(dbcon):
 	data = dbcon.execute('SELECT media_id, title, last_played, resume_point FROM progress WHERE db_type = ?', ('movie',)).fetchall()
 	return [{'media_id': i[0], 'title': i[1], 'last_played': i[2]} for i in data if i[0] and float(i[3] or 0) > 1]
 
-def _movie_progress_rows(dbcon):
-	return dbcon.execute('SELECT db_type, media_id, season, episode, resume_point, curr_time, last_played, resume_id, title FROM progress WHERE db_type = ? AND CAST(resume_point AS REAL) > 1',
-						('movie',)).fetchall()
-
-def _import_movie_progress_rows(rows, watched_indicators):
-	if not rows: return
-	dbcon = get_database(watched_indicators)
-	for row in rows:
-		dbcon.execute('INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-					(row[0], row[1], row[2], row[3], row[4], row[5], row[6], 0, row[8]))
-
-def _sibling_addon_progress_dbs(addon_id='plugin.video.fenlight'):
-	try:
-		if not addon_installed(addon_id): return []
-		base = dirname(dirname(addon_profile()))
-		return [join(base, addon_id, 'databases', name) for name in ('traktcache.db', 'watched.db') if exists(join(base, addon_id, 'databases', name))]
-	except: return []
-
 def _refresh_trakt_movie_progress():
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
 		from apis.trakt_api import trakt_playback_progress, trakt_progress_movies
 		trakt_progress_movies(trakt_playback_progress())
 	except: pass
+
+def _refresh_trakt_episode_progress():
+	try:
+		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
+		from apis.trakt_api import trakt_playback_progress, trakt_progress_tv
+		trakt_progress_tv(trakt_playback_progress())
+	except: pass
+
+def _refresh_trakt_tvshow_watched():
+	try:
+		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
+		from apis.trakt_api import trakt_indicators_tv
+		trakt_indicators_tv()
+	except: pass
+
+def _episode_progress_list(dbcon):
+	data = dbcon.execute('SELECT media_id, season, episode, resume_point, last_played, title FROM progress WHERE db_type = ?', ('episode',)).fetchall()
+	return [{'media_ids': {'tmdb': i[0]}, 'season': int(i[1]), 'episode': int(i[2]), 'resume_point': float(i[3]), 'date': i[4], 'title': i[5]}
+		for i in data if i[0] and float(i[3] or 0) > 1]
 
 def _sort_progress_list(data):
 	if settings.lists_sort_order('progress') == 0: return sort_for_article(data, 'title', settings.ignore_articles())
@@ -483,36 +483,34 @@ def get_in_progress_movies(dummy_arg, page_no):
 	dbcon = get_database(watched_indicators)
 	data = _movie_progress_list(dbcon)
 	source = 'local'
-	if not data:
+	if watched_indicators == 1 and settings.trakt_user_active():
 		_refresh_trakt_movie_progress()
 		data = _movie_progress_list(dbcon)
 		if data: source = 'trakt'
-	if not data:
-		for fp in _sibling_addon_progress_dbs():
-			try:
-				sibling = database.connect(fp)
-				rows = _movie_progress_rows(sibling)
-				data = _movie_progress_list(sibling)
-				sibling.close()
-				if data:
-					_import_movie_progress_rows(rows, watched_indicators)
-					source = 'sibling'
-					break
-			except: pass
 	logger('Red Light', 'get_in_progress_movies: %s item(s) from %s' % (len(data), source))
 	return _sort_progress_list(data)
 
 def get_in_progress_tvshows(dummy_arg, page_no):
-	# results = cache_watched_tvshow_status(active_tvshows_information, 'progress')
+	source = 'local'
+	if settings.watched_indicators() == 1 and settings.trakt_user_active():
+		_refresh_trakt_tvshow_watched()
+		source = 'trakt'
 	results = active_tvshows_information('progress')
+	logger('Red Light', 'get_in_progress_tvshows: %s item(s) from %s' % (len(results), source))
 	if settings.lists_sort_order('progress') == 0: results = sort_for_article(results, 'title', settings.ignore_articles())
 	else: results = sorted(results, key=lambda x: x['last_played'], reverse=True)
 	return results
 
 def get_in_progress_episodes():
-	dbcon = get_database()
-	data = dbcon.execute('SELECT media_id, season, episode, resume_point, last_played, title FROM progress WHERE db_type = ?', ('episode',)).fetchall()
-	episode_list = [{'media_ids': {'tmdb': i[0]}, 'season': int(i[1]), 'episode': int(i[2]), 'resume_point': float(i[3]), 'date': i[4], 'title': i[5]} for i in data]
+	watched_indicators = settings.watched_indicators()
+	dbcon = get_database(watched_indicators)
+	episode_list = _episode_progress_list(dbcon)
+	source = 'local'
+	if watched_indicators == 1 and settings.trakt_user_active():
+		_refresh_trakt_episode_progress()
+		episode_list = _episode_progress_list(dbcon)
+		if episode_list: source = 'trakt'
+	logger('Red Light', 'get_in_progress_episodes: %s item(s) from %s' % (len(episode_list), source))
 	if settings.lists_sort_order('progress') == 0: episode_list = sort_for_article(episode_list, 'title', settings.ignore_articles())
 	else: episode_list.sort(key=lambda k: k['date'], reverse=True)
 	return episode_list
