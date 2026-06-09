@@ -330,6 +330,7 @@ _DEBRID_CACHE_CHECK_SETTINGS = {
 	'TorBox': 'tb.cache_check',
 	'Premiumize.me': 'pm.cache_check',
 	'Offcloud': 'oc.cache_check',
+	'AllDebrid': 'ad.cache_check',
 }
 
 def debrid_cache_check(provider):
@@ -338,7 +339,7 @@ def debrid_cache_check(provider):
 	return get_setting('redlight.%s' % setting_id, 'false') == 'true'
 
 def any_external_cache_check():
-	for slug, provider in (('rd', 'Real-Debrid'), ('tb', 'TorBox'), ('pm', 'Premiumize.me'), ('oc', 'Offcloud')):
+	for slug, provider in (('rd', 'Real-Debrid'), ('tb', 'TorBox'), ('pm', 'Premiumize.me'), ('oc', 'Offcloud'), ('ad', 'AllDebrid')):
 		if enabled_debrids_check(slug) and debrid_cache_check(provider):
 			return True
 	return False
@@ -348,6 +349,9 @@ def include_uncached_torbox():
 
 def include_uncached_offcloud():
 	return get_setting('redlight.oc.include_uncached', 'false') == 'true'
+
+def include_uncached_premiumize():
+	return get_setting('redlight.pm.include_uncached', 'false') == 'true' and debrid_cache_check('Premiumize.me')
 
 def tb_notify_cloud_ready():
 	return get_setting('redlight.tb.notify_cloud_ready', 'true') == 'true'
