@@ -308,6 +308,8 @@ class RealDebridAPI:
 		try:
 			torrent_id = None
 			torrent = self.add_magnet(magnet_url)
+			if not torrent or 'error' in torrent:
+				return None
 			torrent_id = torrent['id']
 			self.add_torrent_select(torrent_id, 'all')
 			sleep(1000)

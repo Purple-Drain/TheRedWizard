@@ -1,3 +1,8 @@
+[COLOR red][B]Version 1.2.9g[/B][/COLOR]
+- Download File: fixed immediate No URL found when resolving external debrid links (Sources resolve flags were unset on the lightweight downloader path).
+- Download Pack: Real-Debrid empty/failed pack lists now show No URL Found for Download instead of a generic Error; RD add-magnet failures no longer throw before cleanup.
+- Autoplay: show No Results Found when nothing is playable (e.g. only uncached external torrents, with Include Uncached on or off) instead of closing silently; same dialog when autoplay/background resolve exhausts all links.
+
 [COLOR red][B]Version 1.2.9f[/B][/COLOR]
 - TorBox and Offcloud: Include Uncached Results (External Scrapers) shown only when Check Cached Status is enabled, matching Premiumize (v1.2.9e). Include uncached has no effect while cache check is off.
 

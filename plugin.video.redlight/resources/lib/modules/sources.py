@@ -31,6 +31,7 @@ class Sources():
 		self.ext_name, self.ext_folder = '', ''
 		self.progress_dialog, self.progress_thread = None, None
 		self.playing_filename = ''
+		self._resolve_user_cancelled, self.cancel_all_playback = False, False
 		self.count_tuple = (('sources_4k', '4K', self._quality_length), ('sources_1080p', '1080p', self._quality_length), ('sources_720p', '720p', self._quality_length),
 							('sources_sd', '', self._quality_length_sd), ('sources_total', '', self._quality_length_final))
 		self.filter_keys = include_exclude_filters()
@@ -173,8 +174,6 @@ class Sources():
 			if self._user_cancelled_scrape():
 				return self._finish_scrape_cancel()
 			if not results:
-				if self.uncached_results and self._any_cache_check_active() and self.active_external:
-					return self.play_source(self.sort_results(self.uncached_results))
 				return self._process_post_results()
 			if self.autoscrape: return results
 			else: return self.play_source(results)
@@ -1084,7 +1083,7 @@ class Sources():
 	def _user_cancelled_resolve(self):
 		if kodi_utils.get_property(PROP_RESOLVE_CANCEL) == 'true':
 			return True
-		if self._resolve_user_cancelled or self.cancel_all_playback:
+		if getattr(self, '_resolve_user_cancelled', False) or getattr(self, 'cancel_all_playback', False):
 			return True
 		try:
 			if self.progress_dialog and self.progress_dialog.iscanceled():
@@ -1236,6 +1235,9 @@ class Sources():
 		return RedLightPlayer().run(link, 'video')
 
 	def play_file(self, results, source={}):
+		playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
+		if not playable_results and not source:
+			return self._no_results()
 		kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
 		self._claim_resolve_busy()
 		self.playback_successful, self.cancel_all_playback = None, False
@@ -1247,7 +1249,6 @@ class Sources():
 		try:
 			kodi_utils.hide_busy_dialog()
 			url = None
-			playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
 			if not source: source = playable_results[0]
 			items = [source]
 			if not self.limit_resolve:
@@ -1391,7 +1392,9 @@ class Sources():
 		self._kill_progress_dialog(join_timeout=3.0)
 		if self.prescrape and self.autoplay:
 			self.resolve_dialog_made, self.prescrape, self.prescrape_sources = False, False, []
-			self.get_sources()
+			return self.get_sources()
+		if self.autoplay or self.background:
+			return self._no_results()
 
 	def still_watching_check(self):
 		watching_check = self.nextep_settings.get('watching_check', 0)
@@ -1492,8 +1495,11 @@ class Sources():
 		if meta: self.meta = meta
 		url = None
 		try:
-			if 'cache_provider' in item:
-				cache_provider = item['cache_provider']
+			if 'cache_provider' in item or item.get('debrid'):
+				raw_cache = item.get('cache_provider', '')
+				if 'Uncached' in raw_cache:
+					return None
+				cache_provider = debrid.normalize_debrid_provider(raw_cache or item.get('debrid'))
 				if self.meta['media_type'] == 'episode':
 					if hasattr(self, 'search_info'):
 						title, season, episode, pack = self.search_info['title'], self.search_info['season'], self.search_info['episode'], 'package' in item

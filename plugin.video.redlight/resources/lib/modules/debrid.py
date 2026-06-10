@@ -20,6 +20,8 @@ def debrid_cache_check_available(enabled_debrid=None):
 	if not enabled_debrid: enabled_debrid = debrid_enabled()
 	return any(p in enabled_debrid for p in ('Real-Debrid', 'TorBox', 'Premiumize.me', 'Offcloud', 'AllDebrid'))
 
+NO_DOWNLOAD_URL_MSG = 'No URL found for Download. Pick another Source'
+
 def debrid_for_ext_cache_check(enabled_debrid=None):
 	return debrid_cache_check_available(enabled_debrid)
 
@@ -82,7 +84,7 @@ class ExternalPackSource:
 			if provider == 'TorBox':
 				notification('TorBox: No video files in this pack yet. Try again in a moment.', 4500)
 			else:
-				notification('Error')
+				notification(NO_DOWNLOAD_URL_MSG, 2500)
 			return None
 		pack_choices.sort(key=lambda k: (k.get('filename') or '').lower())
 		if download:
