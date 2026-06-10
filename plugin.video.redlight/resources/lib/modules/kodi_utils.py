@@ -103,6 +103,33 @@ def kodi_player():
 def kodi_dialog():
 	return xbmcgui.Dialog()
 
+def is_android():
+	return get_visibility('System.Platform.Android')
+
+def _folder_has_entries(path):
+	try:
+		tpath = translate_path(path)
+		if not path_exists(tpath) or not os.path.isdir(tpath):
+			return False
+		with os.scandir(tpath) as scan:
+			return any(True for _ in scan)
+	except:
+		return False
+
+def safe_browse_defaultt(path):
+	# Kodi on Android can block parent navigation when browse opens inside a non-empty folder.
+	if not is_android() or not path or path in ('None', ''):
+		return path
+	if _folder_has_entries(path):
+		return ''
+	return path
+
+def browse_directory(defaultt=''):
+	return kodi_dialog().browse(0, '', '', defaultt=safe_browse_defaultt(defaultt) or None)
+
+def browse_file(mask='', defaultt=''):
+	return kodi_dialog().browse(1, '', '', mask, defaultt=safe_browse_defaultt(defaultt) or None)
+
 def addon_info(info):
 	return xbmcaddon.Addon('plugin.video.redlight').getAddonInfo(info)
 

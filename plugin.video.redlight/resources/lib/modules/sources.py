@@ -128,6 +128,7 @@ class Sources():
 		depth = getattr(self, '_get_sources_depth', 0)
 		if depth == 0:
 			autoscrape_bg = self.autoscrape and self.background
+			self._clear_stale_resolve_busy()
 			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not autoscrape_bg:
 				if not self.background:
 					kodi_utils.notification('Resolve or playback in progress.', 2500)
@@ -559,6 +560,7 @@ class Sources():
 	def play_source(self, results):
 		if self._user_cancelled_scrape():
 			return self._finish_scrape_cancel()
+		self._clear_stale_resolve_busy()
 		if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true':
 			return
 		if self.background or self.autoplay:
@@ -625,13 +627,10 @@ class Sources():
 			self.resolve_dialog_made = False
 		elif action == 'play':
 			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
-			self._claim_resolve_busy()
-			self._prepare_resolve_ui()
 			self.play_file(results, chosen_item)
 			return
 		elif self.prescrape and action == 'perform_full_search':
 			self._kill_progress_dialog(join_timeout=1.0)
-			if not self._continue_check_before_full_search(): return self.display_results(results)
 			if not self.progress_dialog and not self.background:
 				self._make_progress_dialog()
 			# Mirror empty-prescrape → full scrape: keep remove_scrapers and prescrape_sources
@@ -675,17 +674,11 @@ class Sources():
 		self.quality_filter = self._quality_filter()
 
 	def _exclude_internal_scrapers_for_external_only_followup(self):
-		"""After prescrape, external follow-up must not re-scrape providers that already ran in prescrape.
-
-		Prescrape scrapers are already listed in remove_scrapers from collect_prescrape_results().
-		Providers with Check Before Full Search off were not prescraped and must still run here."""
+		"""Run External Scraper Search: skip all non-external scrapers; keep prescrape results in memory."""
 		self.determine_scrapers_status()
-
-	def _continue_check_before_full_search(self, empty_prescrape=False):
-		text = 'Run external torrent scrapers?[CR][CR]Results limits, filters, and external scraper settings will apply.'
-		if empty_prescrape:
-			text = 'No results found.[CR][CR]%s' % text
-		return kodi_utils.confirm_dialog(heading=self.meta.get('rootname', ''), text=text)
+		for scraper in self.active_internal_scrapers:
+			if scraper != 'external' and scraper not in self.remove_scrapers:
+				self.remove_scrapers.append(scraper)
 
 	def _reset_scrape_state(self, keep_disabled_ext_ignored=False):
 		self.prescrape = False
@@ -762,10 +755,9 @@ class Sources():
 			return self._process_post_results()
 		return self._process_post_results()
 
-	def _no_results(self):
+	def _close_progress_before_modal(self):
 		self._kill_progress_dialog(join_timeout=3.0)
 		kodi_utils.hide_busy_dialog()
-		if self.background: return kodi_utils.notification('[B]Next Up:[/B] No Results', 5000)
 		if self.progress_thread and self.progress_thread.is_alive():
 			try:
 				kodi_utils.close_dialog('sources_playback.xml')
@@ -773,14 +765,29 @@ class Sources():
 			except:
 				pass
 		kodi_utils.sleep(400)
-		heading = self.meta.get('rootname', '') or self.meta.get('title', '') or 'Red Light'
+
+	def _show_modal_message(self, heading, text, background_notification=None):
+		if self.background:
+			return kodi_utils.notification(background_notification or text, 5000)
 		try:
-			return kodi_utils.ok_dialog(heading=heading, text='No results found.', ok_label='OK')
+			return kodi_utils.kodi_dialog().ok(heading, text)
 		except Exception:
 			try:
-				return kodi_utils.kodi_dialog().ok(heading, 'No results found.')
+				return kodi_utils.ok_dialog(heading=heading, text=text, ok_label='OK')
 			except Exception:
-				return kodi_utils.notification('No results found.', 4000, settle_ms=400)
+				return kodi_utils.notification(text, 4000, settle_ms=400)
+
+	def _show_playback_failed_dialog(self, text=None):
+		self._close_progress_before_modal()
+		message = text or 'This link could not be played. It may be expired, removed, or unsupported on this device.'
+		if self.autoplay or self.background:
+			return kodi_utils.notification('Playback Failed', 4000, settle_ms=400)
+		return self._show_modal_message('Playback failed', message)
+
+	def _no_results(self):
+		self._close_progress_before_modal()
+		heading = self.meta.get('rootname', '') or self.meta.get('title', '') or 'Red Light'
+		return self._show_modal_message(heading, 'No results found.', '[B]Next Up:[/B] No Results')
 
 	def get_search_title(self):
 		search_title = self.meta.get('custom_title', None) or self.meta.get('english_title') or self.meta.get('title')
@@ -1000,6 +1007,21 @@ class Sources():
 		if kodi_utils.get_property(PROP_RESOLVE_OWNER) == getattr(self, '_resolve_busy_owner', ''):
 			kodi_utils.clear_property(PROP_RESOLVE_BUSY)
 			kodi_utils.clear_property(PROP_RESOLVE_OWNER)
+
+	def _clear_stale_resolve_busy(self):
+		if kodi_utils.get_property(PROP_RESOLVE_BUSY) != 'true':
+			return False
+		try:
+			if kodi_utils.kodi_player().isPlayingVideo():
+				return False
+		except:
+			pass
+		if kodi_utils.get_property(PROP_PLAY_OPENING) == 'true':
+			return False
+		kodi_utils.clear_property(PROP_RESOLVE_BUSY)
+		kodi_utils.clear_property(PROP_RESOLVE_OWNER)
+		kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
+		return True
 
 	def _claim_resolve_busy(self):
 		self._resolve_busy_owner = str(id(self))
@@ -1240,15 +1262,16 @@ class Sources():
 			return self._no_results()
 		kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
 		self._claim_resolve_busy()
-		self.playback_successful, self.cancel_all_playback = None, False
-		self._resolve_user_cancelled = False
-		self._prepare_resolve_ui()
-		self._stop_active_playback()
-		retry_easynews = settings.easynews_playback_method('retry')
-		retry_easynews_limit = settings.easynews_playback_method_retries()
+		url = None
+		monitor = None
 		try:
+			self.playback_successful, self.cancel_all_playback = None, False
+			self._resolve_user_cancelled = False
+			self._prepare_resolve_ui()
+			self._stop_active_playback()
+			retry_easynews = settings.easynews_playback_method('retry')
+			retry_easynews_limit = settings.easynews_playback_method_retries()
 			kodi_utils.hide_busy_dialog()
-			url = None
 			if not source: source = playable_results[0]
 			items = [source]
 			if not self.limit_resolve:
@@ -1275,13 +1298,14 @@ class Sources():
 						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
 						processed_items_append(resolve_item)
 			items = list(processed_items)
-			if not self.continue_resolve_check(): return self._kill_progress_dialog()
+			if not self.continue_resolve_check():
+				self._kill_progress_dialog()
+				return
 			kodi_utils.hide_busy_dialog()
 			self.playback_percent = self.get_playback_percent()
 			if self.playback_percent == None:
-				if self._user_cancelled_resolve():
-					return self._finish_resolve_cancel()
-				return self._kill_progress_dialog(join_timeout=3.0)
+				self._finish_resolve_cancel()
+				return
 			if not self.resolve_dialog_made: self._make_resolve_dialog()
 			if self.background: kodi_utils.sleep(1000)
 			monitor = kodi_utils.kodi_monitor()
@@ -1356,14 +1380,17 @@ class Sources():
 						if self.playback_successful: break
 					except: pass
 				except: pass
-		except: self._kill_progress_dialog()
-		if self.cancel_all_playback or self._resolve_user_cancelled:
-			self._finish_resolve_cancel()
-		elif not self.playback_successful or not url:
-			self.playback_failed_action()
-		self._release_resolve_busy()
-		try: del monitor
-		except: pass
+		except:
+			self._kill_progress_dialog()
+		else:
+			if self.cancel_all_playback or self._resolve_user_cancelled:
+				self._finish_resolve_cancel()
+			elif not self.playback_successful or not url:
+				self.playback_failed_action()
+		finally:
+			self._release_resolve_busy()
+			try: del monitor
+			except: pass
 
 	def get_playback_percent(self):
 		if self.media_type == 'movie': percent = watched_status.get_progress_status_movie(watched_status.get_bookmarks_movie(), str(self.tmdb_id))
@@ -1389,12 +1416,13 @@ class Sources():
 	def playback_failed_action(self):
 		if self._user_cancelled_resolve():
 			return self._finish_resolve_cancel()
-		self._kill_progress_dialog(join_timeout=3.0)
 		if self.prescrape and self.autoplay:
+			self._kill_progress_dialog(join_timeout=1.0)
 			self.resolve_dialog_made, self.prescrape, self.prescrape_sources = False, False, []
 			return self.get_sources()
 		if self.autoplay or self.background:
 			return self._no_results()
+		return self._show_playback_failed_dialog()
 
 	def still_watching_check(self):
 		watching_check = self.nextep_settings.get('watching_check', 0)

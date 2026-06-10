@@ -1,6 +1,16 @@
+[COLOR red][B]Version 1.2.9h[/B][/COLOR]
+- Tools: Red Light Favorites & Progress Import & Export — backup Red Light favorites and local progress to JSON; import with merge (keep furthest progress, keep local-only items) or replace per section in the file.
+- Settings: Import & Export Directory under General, default folder for Red Light favorites and progress backup file browse. On Android, folder browse for non-empty download/backup paths starts at local root so parent navigation is not blocked (a Kodi browser quirk).
+- Add to Cloud: Real Debrid and All Debrid now show No URL Found for Add to Cloud (matching Download Pack) when the magnet has nothing to send, instead of Failed.
+- Resolve lock: fixed Resolve or playback in progress blocking new play attempts after cancelling resume, backing out of resolve, or other early exit from playback (busy flag was not always cleared).
+- Resolve lock: stale resolve busy flag is cleared automatically when nothing is playing and no stream is opening.
+- Playback: debrid / cloud direct links no longer reopen at Kodi's saved URL resume point (near end of file); Red Light StartPercent resume is still used when set.
+- Playback: failed resolve/play from source search now shows a Playback Failed dialog instead of failing silently (closes progress window first; uses Kodi native OK dialog so it is not blocked by the resolve UI thread).
+- Prescrape (Check Before Full Search): choosing Run External Scraper Search no longer shows a second OK confirm — the list row is the action; external scrapers start immediately.
+
 [COLOR red][B]Version 1.2.9g[/B][/COLOR]
 - Download File: fixed immediate No URL found when resolving external debrid links (Sources resolve flags were unset on the lightweight downloader path).
-- Download Pack: Real-Debrid empty/failed pack lists now show No URL Found for Download instead of a generic Error; RD add-magnet failures no longer throw before cleanup.
+- Download Pack: Real-Debrid empty/failed pack lists no longer throw on add-magnet failure (was showing generic Error instead of the shared No URL found for Download message used by all debrids); RD add-magnet failures now clean up the temp torrent before returning.
 - Autoplay: show No Results Found when nothing is playable (e.g. only uncached external torrents, with Include Uncached on or off) instead of closing silently; same dialog when autoplay/background resolve exhausts all links.
 
 [COLOR red][B]Version 1.2.9f[/B][/COLOR]

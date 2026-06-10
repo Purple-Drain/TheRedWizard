@@ -23,9 +23,13 @@ class RedLightPlayer(xbmc.Player):
 	def run(self, url=None, obj=None):
 		ku.hide_busy_dialog()
 		self.clear_playback_properties(clear_navigation=False)
-		if not url: return self.run_error()
+		if not url:
+			self.is_generic = obj == 'video'
+			return self.run_error('No playable link was returned.')
 		try: return self.play_video(url, obj)
-		except: return self.run_error()
+		except:
+			self.is_generic = obj == 'video'
+			return self.run_error()
 
 	def play_video(self, url, obj):
 		self.set_constants(url, obj)
@@ -38,29 +42,59 @@ class RedLightPlayer(xbmc.Player):
 		ku.volume_checker()
 		ku.set_property(PROP_PLAY_OPENING, 'true')
 		self.play(self.url, self.make_listing())
-		if not self.is_generic:
+		if self.is_generic:
+			self.check_playback_start_generic()
+			if self.playback_successful:
+				ku.clear_property(PROP_PLAY_OPENING)
+			else:
+				self.safe_stop()
+				return self.run_error()
+		else:
 			self.check_playback_start()
 			if self.playback_successful:
 				ku.clear_property(PROP_PLAY_OPENING)
 				self.monitor()
 			else:
 				self.sources_object.playback_successful = self.playback_successful
-				if self.cancel_all_playback or self.sources_object._resolve_user_cancelled:
+				cancelled = self.cancel_all_playback or self.sources_object._resolve_user_cancelled
+				if cancelled:
 					self.sources_object.cancel_all_playback = True
 					self.sources_object._resolve_user_cancelled = True
 				else:
 					self.sources_object.cancel_all_playback = self.cancel_all_playback
-				if self.cancel_all_playback or self.sources_object._resolve_user_cancelled:
+				if cancelled:
 					if not self.sources_object._resolve_user_cancelled:
 						self.kill_dialog()
-					self.safe_stop()
-			try: del self.kodi_monitor
-			except: pass
+				else:
+					self.kill_dialog()
+					self.run_error()
+				self.safe_stop()
+		try: del self.kodi_monitor
+		except: pass
+
+	def check_playback_start_generic(self):
+		resolve_percent = 0
+		while self.playback_successful is None:
+			ku.hide_busy_dialog()
+			if self.kodi_monitor.abortRequested():
+				self.playback_successful = False
+				break
+			elif resolve_percent >= 100:
+				self.playback_successful = False
+				break
+			elif ku.get_visibility('Window.IsTopMost(okdialog)'):
+				ku.execute_builtin('SendClick(okdialog, 11)')
+				self.playback_successful = False
+			elif self.isPlayingVideo():
+				try:
+					if self.getTotalTime() not in ('0.0', '', 0.0, None) and ku.get_visibility('Window.IsActive(fullscreenvideo)'):
+						self.playback_successful = True
+				except:
+					pass
+			resolve_percent = round(resolve_percent + 0.26, 1)
+			ku.sleep(50)
 
 	def check_playback_start(self):
-		if self.is_generic:
-			self.playback_successful = True
-			return
 		resolve_percent = 0
 		while self.playback_successful is None:
 			ku.hide_busy_dialog()
@@ -193,6 +227,7 @@ class RedLightPlayer(xbmc.Player):
 					listitem.setMimeType(mime)
 				except Exception:
 					pass
+			self._disable_kodi_url_resume(listitem)
 		else:
 			self.tmdb_id, self.imdb_id, self.tvdb_id = self.meta_get('tmdb_id', ''), self.meta_get('imdb_id', ''), self.meta_get('tvdb_id', '')
 			self.media_type, self.title, self.year = self.meta_get('media_type'), self.meta_get('title'), self.meta_get('year')
@@ -230,6 +265,8 @@ class RedLightPlayer(xbmc.Player):
 				info_tag.setCast([ku.kodi_actor()(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
 				info_tag.setFilenameAndPath(self.url)
 			self.set_resume_point(listitem)
+			if self.url and str(self.url).startswith('http'):
+				self._disable_kodi_url_resume(listitem, keep_start_percent=True)
 			self.set_playback_properties()
 		return listitem
 
@@ -279,6 +316,16 @@ class RedLightPlayer(xbmc.Player):
 	def set_resume_point(self, listitem):
 		if self.playback_percent > 0.0: listitem.setProperty('StartPercent', str(self.playback_percent))
 
+	def _disable_kodi_url_resume(self, listitem, keep_start_percent=False):
+		# Kodi stores resume by stream URL/filename; debrid links reuse the same name and can reopen near EOF.
+		if not keep_start_percent or float(listitem.getProperty('StartPercent') or 0) <= 0:
+			listitem.setProperty('StartPercent', '0')
+		listitem.setProperty('StartOffset', '0')
+		try:
+			listitem.getVideoInfoTag(True).setResumePoint(0.0)
+		except:
+			pass
+
 	def info_next_ep(self):
 		self.nextep_info_gathered = True
 		play_type = 'autoplay_nextep' if self.autoplay_nextep else 'autoscrape_nextep'
@@ -314,13 +361,15 @@ class RedLightPlayer(xbmc.Player):
 		self.url = url
 		self.sources_object = obj
 		self.is_generic = self.sources_object == 'video'
+		self.kodi_monitor = ku.kodi_monitor()
+		self.playback_successful = None
+		self.cancel_all_playback = False
 		if not self.is_generic:
 			self.meta = self.sources_object.meta
-			self.meta_get, self.kodi_monitor, self.playback_percent = self.meta.get, ku.kodi_monitor(), self.sources_object.playback_percent or 0.0
+			self.meta_get, self.playback_percent = self.meta.get, self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
 			self.subs_searched = False
-			self.playback_successful, self.cancel_all_playback = None, False
 			self.playing_item = self.sources_object.playing_item
 
 	def run_subtitles(self):
@@ -389,10 +438,26 @@ class RedLightPlayer(xbmc.Player):
 		ku.clear_property('script.trakt.ids')
 		ku.clear_property('subs.player_filename')
 
-	def run_error(self):
+	def run_error(self, message=None):
 		ku.clear_property(PROP_PLAY_OPENING)
-		try: self.sources_object.playback_successful = False
-		except: pass
+		try:
+			if not self.is_generic:
+				self.sources_object.playback_successful = False
+		except:
+			pass
 		self.clear_playback_properties()
-		ku.notification('Playback Failed', 3500)
-		return False
+		text = message or 'This link could not be played. It may be expired, removed, or unsupported on this device.'
+		try:
+			if not self.is_generic and getattr(self, 'sources_object', None):
+				return self.sources_object._show_playback_failed_dialog(text)
+		except:
+			pass
+		ku.hide_busy_dialog()
+		ku.sleep(400)
+		try:
+			return ku.kodi_dialog().ok('Playback failed', text)
+		except Exception:
+			try:
+				return ku.ok_dialog(heading='Playback failed', text=text)
+			except Exception:
+				return ku.notification('Playback Failed', 4000, settle_ms=400)

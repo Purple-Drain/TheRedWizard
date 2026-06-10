@@ -286,6 +286,9 @@ def routing(sys):
 		from modules import updater
 		return exec('updater.%s()' % mode.split('.')[1])
 	##EXTRA modes##
+	elif 'local_backup.' in mode:
+		from modules import local_backup
+		return getattr(local_backup, mode.split('.', 1)[1])(params)
 	elif mode == 'set_view':
 		from modules.kodi_utils import set_view
 		return kodi_utils.set_view(params.get('view_type'))

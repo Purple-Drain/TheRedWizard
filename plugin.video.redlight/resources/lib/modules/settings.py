@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from caches.settings_cache import get_setting, set_setting, default_setting_values, _EXTRAS_LIST_DEFAULT
-from modules.kodi_utils import translate_path, get_property
+from modules.kodi_utils import translate_path, get_property, addon_profile
 from modules.kodi_utils import logger
 
 def tmdb_api_key():
@@ -62,6 +62,12 @@ def download_directory(media_type):
 								'image_url': 'redlight.image_download_directory','image': 'redlight.image_download_directory', 'premium': 'redlight.premium_download_directory',
 								None: 'redlight.premium_download_directory', 'None': False}
 	return translate_path(get_setting(download_directories_dict[media_type]))
+
+def import_export_directory():
+	path = get_setting('redlight.import_export_directory', '')
+	if path in ('', 'None', None):
+		return translate_path(addon_profile())
+	return translate_path(path)
 
 def ai_model_active():
 	if get_setting('redlight.google_api', 'empty_setting') not in (None, 'None', '', 'empty_setting'): return True
