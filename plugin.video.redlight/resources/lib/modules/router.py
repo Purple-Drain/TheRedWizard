@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 from xbmc import getInfoLabel
 from urllib.parse import parse_qsl
 from modules import kodi_utils
@@ -321,7 +322,13 @@ def routing(sys):
 		return runner(params)
 	elif mode == 'debrid.browse_packs':
 		from modules.sources import Sources
-		return Sources().debridPacks(params.get('provider'), params.get('name'), params.get('magnet_url'), params.get('info_hash'))
+		source_item = params.get('source_item')
+		if isinstance(source_item, str):
+			try:
+				source_item = json.loads(source_item)
+			except:
+				source_item = None
+		return Sources().debridPacks(params.get('provider'), params.get('name'), params.get('magnet_url'), params.get('info_hash'), source_item=source_item)
 	elif mode == 'open_settings':
 		from modules.kodi_utils import open_settings
 		return open_settings()

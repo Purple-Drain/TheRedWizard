@@ -45,12 +45,35 @@ class Sources():
 		'tb_browse': ('apis.torbox_api', 'TorBoxAPI')}
 		self.retry_actions = settings.rescrape_settings()
 
+	def _playback_already_active(self):
+		try:
+			player = kodi_utils.kodi_player()
+			if player.isPlayingVideo() or player.isPlaying():
+				return True
+		except:
+			pass
+		try:
+			if kodi_utils.get_visibility('Window.IsActive(fullscreenvideo)'):
+				return True
+		except:
+			pass
+		return False
+
+	def _close_sources_results_window(self):
+		try:
+			kodi_utils.close_dialog('sources_results.xml')
+			kodi_utils.sleep(200)
+		except:
+			pass
+
 	def playback_prep(self, params=None):
 		kodi_utils.hide_busy_dialog()
 		if params: self.params = params
 		params_get = self.params.get
-		self.play_type = params_get('play_type', '')
 		self.background = params_get('background', 'false') == 'true'
+		if self._playback_already_active() and not self.background:
+			return
+		self.play_type = params_get('play_type', '')
 		self.prescrape = params_get('prescrape', self.prescrape) == 'true'
 		self.random, self.random_continual = params_get('random', 'false') == 'true', params_get('random_continual', 'false') == 'true'
 		if 'external_cache_check' in self.params: self.cache_check_override = params_get('external_cache_check') == 'true'
@@ -77,6 +100,7 @@ class Sources():
 		else: self.season, self.episode, self.custom_season, self.custom_episode = '', '', '', ''
 		if 'autoplay' in self.params: self.autoplay = params_get('autoplay', 'false') == 'true'
 		else: self.autoplay = settings.auto_play(self.media_type)
+		self.cloud_prescrape_autoplay = False
 		self.get_meta()
 		self.determine_scrapers_status()
 		if not self.prescrape and not self._playback_skips_prescrape_override() and settings.prescrape_enabled(self.media_type, self.active_internal_scrapers):
@@ -124,16 +148,24 @@ class Sources():
 		if 'disabled_ext_ignored' in self.params or 'ignore_scrape_filters' in self.params: return True
 		return False
 
+	def _background_nextep_scrape(self):
+		return self.background and self.play_type in ('autoplay_nextep', 'autoscrape_nextep')
+
+	def _allow_concurrent_scrape(self):
+		if self.autoscrape and self.background:
+			return True
+		return self._background_nextep_scrape()
+
 	def get_sources(self):
 		depth = getattr(self, '_get_sources_depth', 0)
 		if depth == 0:
-			autoscrape_bg = self.autoscrape and self.background
+			allow_concurrent = self._allow_concurrent_scrape()
 			self._clear_stale_resolve_busy()
-			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not autoscrape_bg:
+			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
 				if not self.background:
 					kodi_utils.notification('Resolve or playback in progress.', 2500)
 				return
-			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not autoscrape_bg:
+			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not allow_concurrent:
 				if not self.background:
 					kodi_utils.notification('Source search already running.', 2500)
 				return
@@ -160,10 +192,16 @@ class Sources():
 					self._kill_progress_dialog(join_timeout=1.0)
 					if not self.progress_dialog and not self.background:
 						self._make_progress_dialog()
-					self.prescrape_empty_notice = True
-					self.autoplay = False
+					if not self.background and not self.prescrape_sources:
+						self.prescrape_empty_notice = True
+						if settings.auto_play(self.media_type) and self.active_external:
+							notice_main, notice_sub = self._prescrape_empty_notice_labels()
+							kodi_utils.notification('%s — %s' % (notice_main, notice_sub), 3500)
 					self._refresh_results_settings()
+				if not settings.auto_play(self.media_type) and not self.cloud_prescrape_autoplay:
+					self.autoplay = False
 				self.prescrape = False
+				self._release_empty_prescrape_cloud_scrapers()
 				self.prepare_internal_scrapers()
 				if self.active_external: self.activate_external_providers()
 				elif not self.active_internal_scrapers: self._kill_progress_dialog()
@@ -227,20 +265,27 @@ class Sources():
 
 	def collect_prescrape_results(self):
 		threads_append = self.prescrape_threads.append
+		folder_prescrape = False
 		if self.active_folders:
 			if settings.check_prescrape_sources('folders', self.media_type):
 				self.append_folder_scrapers(self.prescrape_scrapers)
-				self.remove_scrapers.append('folders')
+				folder_prescrape = True
 		self.prescrape_scrapers.extend(self.internal_sources(True))
-		if not self.prescrape_scrapers: return []
+		if not self.prescrape_scrapers and not folder_prescrape: return []
 		for i in self.prescrape_scrapers: threads_append(Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]))
 		[i.start() for i in self.prescrape_threads]
-		self.remove_scrapers.extend(i[2] for i in self.prescrape_scrapers)
 		if self.background: [i.join() for i in self.prescrape_threads]
 		else: self.scrapers_dialog()
+		for i in self.prescrape_scrapers:
+			scraper_name = i[2]
+			if any(r.get('scrape_provider') == scraper_name for r in self.prescrape_sources) and scraper_name not in self.remove_scrapers:
+				self.remove_scrapers.append(scraper_name)
+		if folder_prescrape and any(r.get('scrape_provider') == 'folders' for r in self.prescrape_sources) and 'folders' not in self.remove_scrapers:
+			self.remove_scrapers.append('folders')
 		return self.prescrape_sources
 
 	def process_results(self, results):
+		if not results: return results
 		results = self.sort_results(results)
 		min_seeders = settings.uncached_min_seeders()
 		all_uncached_results = [i for i in results if 'Uncached' in i.get('cache_provider', '')]
@@ -269,9 +314,10 @@ class Sources():
 			results = scrape_results + cloud_results
 		if self.prescrape:
 			self.all_scrapers = self.active_internal_scrapers
-			autoplay_results = [i for i in results if i['scrape_provider'] in self.active_internal_scrapers and settings.autoplay_prescrape(i['scrape_provider'])]
+			autoplay_results = self._cloud_autoplay_candidates(results)
 			if autoplay_results:
 				self.autoplay = True
+				self.cloud_prescrape_autoplay = True
 				results = autoplay_results
 		else:
 			self.all_scrapers = list(set(self.active_internal_scrapers + self.remove_scrapers))
@@ -557,14 +603,69 @@ class Sources():
 		except: sourceDict = []
 		return sourceDict
 
+	def _cloud_scrapers(self):
+		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+
+	def _cloud_autoplay_candidates(self, results):
+		return [i for i in results if i.get('scrape_provider') in self._cloud_scrapers() and settings.autoplay_prescrape(i['scrape_provider'])]
+
+	def _is_cloud_result(self, item):
+		return item.get('scrape_provider') in self._cloud_scrapers()
+
+	def _external_autoplay_candidates(self, results):
+		"""Global Autoplay Movie/Episode — external scrapers only, not debrid cloud library rows."""
+		return [i for i in results if not self._is_cloud_result(i)]
+
+	def _release_empty_prescrape_cloud_scrapers(self):
+		"""Let cloud scrapers run again during full scrape when prescrape found nothing."""
+		if not self.check_prescrape_ran: return
+		for scraper in self._cloud_scrapers():
+			if scraper in self.remove_scrapers and not any(r.get('scrape_provider') == scraper for r in self.prescrape_sources):
+				self.remove_scrapers.remove(scraper)
+
+	def _effective_autoplay(self):
+		if not self.autoplay:
+			return False
+		if self.cloud_prescrape_autoplay:
+			return True
+		return settings.auto_play(self.media_type)
+
+	def _prepare_cloud_autoplay_resolve(self):
+		"""Leave prescrape progress UI and open a clean resolver dialog for cloud autoplay."""
+		self._kill_progress_dialog(join_timeout=1.0)
+		if not self.background:
+			self._make_progress_dialog()
+		self.resolve_dialog_made = False
+
 	def play_source(self, results):
 		if self._user_cancelled_scrape():
 			return self._finish_scrape_cancel()
 		self._clear_stale_resolve_busy()
 		if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true':
 			return
-		if self.background or self.autoplay:
-			return self.play_file(results)
+		if self.background:
+			autoplay_queue = results
+			if self.autoplay and settings.auto_play(self.media_type):
+				external = self._external_autoplay_candidates(results)
+				if external: autoplay_queue = external
+			return self.play_file(autoplay_queue)
+		cloud_autoplay = self._cloud_autoplay_candidates(results)
+		if cloud_autoplay:
+			self.autoplay = True
+			self.cloud_prescrape_autoplay = True
+			self._last_cloud_autoplay_results = list(cloud_autoplay)
+			kodi_utils.logger('Red Light', 'Autoplay cloud: %s hit(s) from %s' % (len(cloud_autoplay), cloud_autoplay[0].get('scrape_provider', '')))
+			self._prepare_cloud_autoplay_resolve()
+			return self.play_file(cloud_autoplay)
+		self.cloud_prescrape_autoplay = False
+		if self.prescrape and any(self._is_cloud_result(i) for i in results):
+			return self.display_results(results)
+		if self.autoplay and settings.auto_play(self.media_type):
+			external = self._external_autoplay_candidates(results)
+			if external:
+				return self.play_file(external)
+			if any(self._is_cloud_result(i) for i in results):
+				return self.display_results(results)
 		return self.display_results(results)
 
 	def append_folder_scrapers(self, current_list):
@@ -623,26 +724,12 @@ class Sources():
 			return
 		action, chosen_item = window_result
 		if not action:
-			try:
-				if kodi_utils.kodi_player().isPlayingVideo():
-					self._kill_progress_dialog(join_timeout=1.0)
-					self.resolve_dialog_made = False
-					return
-			except:
-				pass
+			if self._playback_already_active():
+				self._kill_progress_dialog(join_timeout=1.0)
+				self.resolve_dialog_made = False
+				return
 			self._kill_progress_dialog(join_timeout=3.0)
 			self.resolve_dialog_made = False
-		elif action == 'browse_pack':
-			self.resolve_dialog_made = False
-			self.debridPacks(chosen_item.get('provider'), chosen_item.get('name'), chosen_item.get('magnet_url'), chosen_item.get('info_hash'),
-				source_item=chosen_item.get('source_item'))
-			try:
-				if kodi_utils.kodi_player().isPlayingVideo():
-					self._kill_progress_dialog(join_timeout=1.0)
-					return
-			except:
-				pass
-			return self.display_results(results)
 		elif action == 'play':
 			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
 			self.play_file(results, chosen_item)
@@ -675,9 +762,12 @@ class Sources():
 	def _prescrape_empty_notice_labels(self):
 		cloud_scrapers = frozenset(('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'))
 		prescraped = frozenset(i[2] for i in self.prescrape_scrapers)
-		if prescraped & cloud_scrapers:
-			return 'NO CLOUD RESULTS FOUND', 'Results below are from other enabled scrapers.'
-		return 'NO EARLY RESULTS FOUND', 'Results below are from other enabled scrapers.'
+		main = 'NO CLOUD RESULTS FOUND' if prescraped & cloud_scrapers else 'NO EARLY RESULTS FOUND'
+		if settings.auto_play(self.media_type) and self.active_external:
+			sub = 'Results from other enabled scrapers.'
+		else:
+			sub = 'Results below are from other enabled scrapers.'
+		return main, sub
 
 	def _prepare_external_only_followup(self):
 		"""External torrent follow-up: skip re-scraping internals, use current filter/sort/priority settings."""
@@ -709,6 +799,7 @@ class Sources():
 		self.internal_scraper_names, self.resolve_dialog_made = [], False
 		if 'autoplay' in self.params: self.autoplay = self.params.get('autoplay') == 'true'
 		else: self.autoplay = settings.auto_play(self.media_type)
+		self.cloud_prescrape_autoplay = False
 		if not keep_disabled_ext_ignored:
 			self.disabled_ext_ignored = self.params.get('disabled_ext_ignored', 'false') == 'true'
 		if not self.ignore_scrape_filters: kodi_utils.clear_property('fs_filterless_search')
@@ -1253,6 +1344,43 @@ class Sources():
 			return None
 		return result[0]
 
+	def _browse_transfer_id(self, debrid_provider, debrid_files):
+		if not debrid_files:
+			return None
+		item = debrid_files[0]
+		if item.get('torrent_id') not in (None, ''):
+			return item.get('torrent_id')
+		if item.get('request_id') not in (None, ''):
+			return item.get('request_id')
+		if debrid_provider == 'TorBox':
+			link = str(item.get('link', ''))
+			if ',' in link:
+				return link.split(',')[0]
+		return None
+
+	def _close_sources_results_for_playback(self):
+		window = getattr(self, '_sources_results_window', None)
+		if window:
+			try:
+				window.selected = (None, '')
+				window.close()
+			except:
+				pass
+			return
+		self._close_sources_results_window()
+
+	def _cleanup_browse_transfer(self, debrid_provider, debrid_files, is_pack):
+		'''Remove temporary browse transfers when Store Resolved to Cloud does not apply.'''
+		if debrid_provider not in ('TorBox', 'Offcloud'):
+			return
+		if settings.store_resolved_to_cloud(debrid_provider, is_pack):
+			return
+		transfer_id = self._browse_transfer_id(debrid_provider, debrid_files)
+		if not transfer_id:
+			return
+		api = self.debrid_importer(debrid_provider)()
+		Thread(target=api.delete_torrent, args=(transfer_id,), daemon=True).start()
+
 	def _resolve_browse_pack_fallback(self, source_item, debrid_provider):
 		if not source_item:
 			return None
@@ -1272,16 +1400,21 @@ class Sources():
 	def debridPacks(self, debrid_provider, name, magnet_url, info_hash, download=False, source_item=None):
 		from modules.debrid import ExternalPackSource, normalize_debrid_provider
 		debrid_provider = normalize_debrid_provider(debrid_provider)
+		verify_only = not download and (not source_item or 'package' not in source_item)
 		source = {'url': magnet_url, 'hash': info_hash, 'debrid': debrid_provider, 'cache_provider': debrid_provider, 'name': name}
 		pack_result = ExternalPackSource(source).browse_packs(download=download)
 		if not pack_result:
 			if download:
+				return None
+			if verify_only:
+				kodi_utils.notification('Could not list files on %s — source may not be cached' % debrid_provider, 4500)
 				return None
 			link = self._resolve_browse_pack_fallback(source_item, debrid_provider)
 			if not link:
 				return None
 			self._close_progress_before_modal()
 			link = self._ensure_play_headers(link, {'debrid': debrid_provider, 'cache_provider': debrid_provider})
+			self._close_sources_results_for_playback()
 			return RedLightPlayer().run(link, 'video')
 		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse'}.get(debrid_provider)
 		if download:
@@ -1289,21 +1422,28 @@ class Sources():
 			return debrid_files, self.debrid_importer(debrid_info)
 		debrid_files = pack_result
 		self._close_progress_before_modal()
-		if len(debrid_files) == 1:
-			chosen_result = debrid_files[0]
-		else:
-			list_items = [{'line1': '%.2f GB | %s' % (float(item['size'])/1073741824, clean_file_name(item['filename']).upper())} for item in debrid_files]
-			kwargs = {'items': json.dumps(list_items), 'heading': name, 'enumerate': 'true', 'narrow_window': 'true'}
-			chosen_result = kodi_utils.select_dialog(debrid_files, **kwargs)
-			if chosen_result is None:
-				return None
+		list_items = [{'line1': '%.2f GB | %s' % (float(item['size'])/1073741824, clean_file_name(item['filename']).upper())} for item in debrid_files]
+		picker_heading = 'Verify: %s' % name if verify_only else name
+		kwargs = {'items': json.dumps(list_items), 'heading': picker_heading, 'enumerate': 'true', 'narrow_window': 'true'}
+		chosen_result = kodi_utils.select_dialog(debrid_files, **kwargs)
+		if chosen_result is None:
+			self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=not verify_only)
+			return None
+		if verify_only:
+			file_count = len(debrid_files)
+			selected = clean_file_name(chosen_result.get('filename', ''))
+			kodi_utils.ok_dialog(heading='Source viable', text='%d file(s) listed on %s.\nSelected: %s' % (file_count, debrid_provider, selected))
+			self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=False)
+			return None
 		link = self.resolve_internal(debrid_info, chosen_result['link'], '')
+		self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=True)
 		if not link:
 			link = self._resolve_browse_pack_fallback(source_item, debrid_provider)
 		if not link:
 			return None
 		link = self._ensure_play_headers(link, {'debrid': debrid_provider, 'cache_provider': debrid_provider})
 		self._close_progress_before_modal()
+		self._close_sources_results_for_playback()
 		return RedLightPlayer().run(link, 'video')
 
 	def play_file(self, results, source={}):
@@ -1318,7 +1458,9 @@ class Sources():
 			self.playback_successful, self.cancel_all_playback = None, False
 			self._resolve_user_cancelled = False
 			self._prepare_resolve_ui()
-			self._stop_active_playback()
+			defer_stop_for_nextep = self.background and self.autoplay_nextep
+			if not defer_stop_for_nextep:
+				self._stop_active_playback()
 			retry_easynews = settings.easynews_playback_method('retry')
 			retry_easynews_limit = settings.easynews_playback_method_retries()
 			kodi_utils.hide_busy_dialog()
@@ -1351,7 +1493,11 @@ class Sources():
 			if not self.continue_resolve_check():
 				self._kill_progress_dialog()
 				return
+			if defer_stop_for_nextep:
+				self._stop_active_playback()
 			kodi_utils.hide_busy_dialog()
+			if not self.progress_dialog and not self.background:
+				self._make_progress_dialog()
 			self.playback_percent = self.get_playback_percent()
 			if self.playback_percent == None:
 				self._finish_resolve_cancel()
@@ -1436,6 +1582,8 @@ class Sources():
 			if self.cancel_all_playback or self._resolve_user_cancelled:
 				self._finish_resolve_cancel()
 			elif not self.playback_successful or not url:
+				kodi_utils.logger('Red Light', 'Autoplay cloud resolve failed: success=%s url=%s dialog=%s' % (
+					self.playback_successful, bool(url), bool(self.progress_dialog)))
 				self.playback_failed_action()
 		finally:
 			self._release_resolve_busy()
@@ -1447,6 +1595,10 @@ class Sources():
 		elif any((self.random, self.random_continual)): return 0.0
 		else: percent = watched_status.get_progress_status_episode(watched_status.get_bookmarks_episode(self.tmdb_id, self.season), self.episode)
 		if not percent: return 0.0
+		if self.cloud_prescrape_autoplay:
+			if settings.auto_resume(self.media_type, True):
+				return float(percent)
+			return 0.0
 		action = self.get_resume_status(percent)
 		if action == 'cancel': return None
 		if action == 'start_over':
@@ -1466,7 +1618,23 @@ class Sources():
 	def playback_failed_action(self):
 		if self._user_cancelled_resolve():
 			return self._finish_resolve_cancel()
-		if self.prescrape and self.autoplay:
+		if self.cloud_prescrape_autoplay:
+			self._kill_progress_dialog(join_timeout=1.0)
+			self.resolve_dialog_made = False
+			fallback_sources = list(self.prescrape_sources) if self.prescrape_sources else list(getattr(self, '_last_cloud_autoplay_results', []) or [])
+			if fallback_sources:
+				self.prescrape = bool(self.prescrape_sources)
+				results = self.process_results(fallback_sources)
+				if results:
+					self.cloud_prescrape_autoplay = False
+					if self.autoplay and not settings.auto_play(self.media_type):
+						self.autoplay = False
+					return self.display_results(results)
+			self.cloud_prescrape_autoplay = False
+			if self.autoplay and not settings.auto_play(self.media_type):
+				self.autoplay = False
+			return self._show_playback_failed_dialog()
+		if self.prescrape and self._effective_autoplay():
 			self._kill_progress_dialog(join_timeout=1.0)
 			self.resolve_dialog_made, self.prescrape, self.prescrape_sources = False, False, []
 			return self.get_sources()
@@ -1572,8 +1740,16 @@ class Sources():
 			return None
 		if meta: self.meta = meta
 		url = None
+		scrape_provider = item.get('scrape_provider')
 		try:
-			if 'cache_provider' in item or item.get('debrid'):
+			# Cloud scrapers set debrid=tb_cloud/pm_cloud/etc.; resolve those here, not via resolve_cached.
+			if scrape_provider in self.default_internal_scrapers:
+				if scrape_provider == 'aiostreams':
+					from apis.aiostreams_api import resolve_playback_url
+					url = resolve_playback_url(item)
+				else:
+					url = self.resolve_internal(scrape_provider, item['id'], item['url_dl'], item.get('direct_debrid_link', False), item.get('cloud_media_type'))
+			elif 'cache_provider' in item or item.get('debrid'):
 				raw_cache = item.get('cache_provider', '')
 				if 'Uncached' in raw_cache:
 					return None
@@ -1585,12 +1761,6 @@ class Sources():
 				else: title, season, episode, pack = self.get_search_title(), None, None, False
 				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox'):
 					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack)
-			elif item.get('scrape_provider', None) in self.default_internal_scrapers:
-				if item.get('scrape_provider') == 'aiostreams':
-					from apis.aiostreams_api import resolve_playback_url
-					url = resolve_playback_url(item)
-				else:
-					url = self.resolve_internal(item['scrape_provider'], item['id'], item['url_dl'], item.get('direct_debrid_link', False), item.get('cloud_media_type'))
 			else: url = item['url']
 		except: pass
 		if self._user_cancelled_resolve():

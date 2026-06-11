@@ -53,6 +53,11 @@ class RedLightPlayer(xbmc.Player):
 			self.check_playback_start()
 			if self.playback_successful:
 				ku.clear_property(PROP_PLAY_OPENING)
+				try:
+					if self.sources_object:
+						self.sources_object._release_resolve_busy()
+				except:
+					pass
 				self.monitor()
 			else:
 				self.sources_object.playback_successful = self.playback_successful

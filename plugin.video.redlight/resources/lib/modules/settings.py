@@ -296,7 +296,9 @@ def tv_progress_location():
 
 def check_prescrape_sources(scraper, media_type):
 	if scraper in ('easynews', 'aiostreams', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'folders'):
-		return get_setting('redlight.check.%s' % scraper) == 'true'
+		if get_setting('redlight.check.%s' % scraper) == 'true': return True
+		if scraper in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') and autoplay_prescrape(scraper): return True
+		return False
 	if get_setting('redlight.check.%s' % scraper) == 'true' and auto_play(media_type):
 		return True
 	return False

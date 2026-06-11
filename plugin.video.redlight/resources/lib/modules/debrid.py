@@ -33,12 +33,17 @@ def normalize_debrid_provider(provider):
 		provider = provider[9:]
 	aliases = {
 		'offcloud': 'Offcloud',
+		'oc_cloud': 'Offcloud',
 		'torbox': 'TorBox',
 		'torbox cloud': 'TorBox',
+		'tb_cloud': 'TorBox',
 		'real-debrid': 'Real-Debrid',
+		'rd_cloud': 'Real-Debrid',
 		'premiumize.me': 'Premiumize.me',
 		'premiumize': 'Premiumize.me',
+		'pm_cloud': 'Premiumize.me',
 		'alldebrid': 'AllDebrid',
+		'ad_cloud': 'AllDebrid',
 	}
 	return aliases.get(str(provider).lower(), provider)
 

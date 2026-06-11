@@ -145,8 +145,21 @@ class SourcesResults(BaseDialog):
 			if choice:
 				if isinstance(choice, dict):
 					if choice.get('mode') == 'debrid.browse_packs':
-						self.selected = ('browse_pack', choice)
-						return self.close()
+						if self.sources_ref:
+							try:
+								self.sources_ref._close_progress_before_modal()
+							except:
+								pass
+							self.sources_ref._sources_results_window = self
+							try:
+								self.sources_ref.debridPacks(choice.get('provider'), choice.get('name'), choice.get('magnet_url'),
+									choice.get('info_hash'), source_item=choice.get('source_item'))
+							finally:
+								self.sources_ref._sources_results_window = None
+							if self.sources_ref._playback_already_active():
+								self.selected = (None, '')
+								return self.close()
+						return
 					return self.execute_code('RunPlugin(%s)' % self.build_url(choice))
 				if choice == 'results_info': return self.open_window(('windows.sources', 'SourcesInfo'), 'sources_info.xml', item=chosen_listitem)
 				if choice == 'rd_cloud_delete':
@@ -303,9 +316,9 @@ class SourcesResults(BaseDialog):
 			pack_provider = item_get('debrid') or cache_provider
 			down_pack_params = {'mode': 'downloader.runner', 'action': 'meta.pack', 'name': self.meta.get('rootname', ''), 'source': source, 'url': None,
 								'provider': pack_provider, 'meta': meta_json, 'magnet_url': magnet_url, 'info_hash': info_hash}
-			if provider_source == 'torrent':
-				browse_pack_params = {'mode': 'debrid.browse_packs', 'provider': item_get('debrid') or cache_provider, 'name': name,
-									'magnet_url': magnet_url, 'info_hash': info_hash, 'source_item': item}
+		if provider_source == 'torrent' and not uncached:
+			browse_pack_params = {'mode': 'debrid.browse_packs', 'provider': item_get('debrid') or cache_provider, 'name': name,
+								'magnet_url': magnet_url, 'info_hash': info_hash, 'source_item': item}
 		if provider_source == 'torrent':
 			add_magnet_to_cloud_params = {
 				'mode': 'manual_add_magnet_to_cloud',
