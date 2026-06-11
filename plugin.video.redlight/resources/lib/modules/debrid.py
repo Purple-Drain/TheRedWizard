@@ -89,7 +89,9 @@ class ExternalPackSource:
 		hide_busy_dialog()
 		if not pack_choices:
 			if provider == 'TorBox':
-				notification('TorBox: No video files in this pack yet. Try again in a moment.', 4500)
+				notification('TorBox: No video file(s) yet. Try again in a moment.', 4500)
+			elif download:
+				notification(NO_DOWNLOAD_URL_MSG, 2500)
 			else:
 				notification(BROWSE_NO_FILES_MSG, 4500)
 			return None
