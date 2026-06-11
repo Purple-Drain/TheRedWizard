@@ -1,3 +1,9 @@
+[COLOR red][B]Version 1.2.9k[/B][/COLOR]
+- Sources Browse (pack): fix playback when picking a file — defer TorBox/Offcloud browse cleanup until after playback starts; close the results list from the window handler when play begins.
+- Sources Browse (single-file torrent): picking a file from the list now plays (cancel still returns to sources); only marked packs skip the picker when there is one file; empty lists on non-pack sources still do not fall back to autoplay.
+- Sources Browse: use Browse-specific empty-list message (not Download wording); resolve picked files via direct URLs where possible; notify when a picked file cannot be resolved; non-pack browse no longer falls back to full magnet resolve after a failed file pick (avoids surprise playback).
+- Sources Browse (verify): drop the extra Source viable OK dialog; seeing the file list (or picking a file) is enough confirmation and avoids focus bouncing back into Browse.
+
 [COLOR red][B]Version 1.2.9j[/B][/COLOR]
 - Prescrape (Check Before Full Search): restore early cloud results with Run External Scraper Search when prescrape finds hits but does not autoplay; No Cloud Results Found notice only when prescrape truly found nothing, with a notification when Autoplay continues to external search.
 - Prescrape: empty-cloud notice subtitle says Results from other enabled scrapers (not results below) when global Autoplay Movie/Episode continues to external search.

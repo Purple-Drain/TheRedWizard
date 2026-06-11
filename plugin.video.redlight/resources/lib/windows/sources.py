@@ -151,11 +151,9 @@ class SourcesResults(BaseDialog):
 							except:
 								pass
 							self.sources_ref._sources_results_window = self
-							try:
-								self.sources_ref.debridPacks(choice.get('provider'), choice.get('name'), choice.get('magnet_url'),
-									choice.get('info_hash'), source_item=choice.get('source_item'))
-							finally:
-								self.sources_ref._sources_results_window = None
+							self.sources_ref.debridPacks(choice.get('provider'), choice.get('name'), choice.get('magnet_url'),
+								choice.get('info_hash'), source_item=choice.get('source_item'))
+							self.sources_ref._sources_results_window = None
 							if self.sources_ref._playback_already_active():
 								self.selected = (None, '')
 								return self.close()

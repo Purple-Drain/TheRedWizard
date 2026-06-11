@@ -22,6 +22,7 @@ def debrid_cache_check_available(enabled_debrid=None):
 
 NO_DOWNLOAD_URL_MSG = 'No URL found for Download. Pick another Source'
 NO_CLOUD_ADD_MSG = 'No URL found for Add to Cloud. Pick another Source'
+BROWSE_NO_FILES_MSG = 'Could not list files for Browse — source may not be cached yet'
 
 def debrid_for_ext_cache_check(enabled_debrid=None):
 	return debrid_cache_check_available(enabled_debrid)
@@ -90,7 +91,7 @@ class ExternalPackSource:
 			if provider == 'TorBox':
 				notification('TorBox: No video files in this pack yet. Try again in a moment.', 4500)
 			else:
-				notification(NO_DOWNLOAD_URL_MSG, 2500)
+				notification(BROWSE_NO_FILES_MSG, 4500)
 			return None
 		pack_choices.sort(key=lambda k: (k.get('filename') or '').lower())
 		if download:

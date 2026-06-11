@@ -1381,6 +1381,30 @@ class Sources():
 		api = self.debrid_importer(debrid_provider)()
 		Thread(target=api.delete_torrent, args=(transfer_id,), daemon=True).start()
 
+	def _resolve_browse_pick_link(self, debrid_info, debrid_provider, chosen_result):
+		file_link = (chosen_result.get('link') or '').strip()
+		if not file_link:
+			return None
+		if debrid_info == 'tb_browse':
+			return self.resolve_internal(debrid_info, file_link, '')
+		if file_link.startswith(('http://', 'https://')):
+			api = self.debrid_importer(debrid_provider)()
+			if debrid_info in ('pm_browse', 'oc_browse'):
+				try:
+					return api.add_headers_to_url(file_link)
+				except:
+					return file_link
+			if debrid_info == 'rd_browse':
+				try:
+					url = api.unrestrict_link(file_link)
+					if url:
+						return url
+				except:
+					pass
+				if 'real-debrid.com' in file_link or 'download.real-debrid.com' in file_link:
+					return file_link
+		return self.resolve_internal(debrid_info, file_link, '')
+
 	def _resolve_browse_pack_fallback(self, source_item, debrid_provider):
 		if not source_item:
 			return None
@@ -1400,7 +1424,8 @@ class Sources():
 	def debridPacks(self, debrid_provider, name, magnet_url, info_hash, download=False, source_item=None):
 		from modules.debrid import ExternalPackSource, normalize_debrid_provider
 		debrid_provider = normalize_debrid_provider(debrid_provider)
-		verify_only = not download and (not source_item or 'package' not in source_item)
+		is_pack = bool(source_item and 'package' in source_item)
+		verify_only = not download and not is_pack
 		source = {'url': magnet_url, 'hash': info_hash, 'debrid': debrid_provider, 'cache_provider': debrid_provider, 'name': name}
 		pack_result = ExternalPackSource(source).browse_packs(download=download)
 		if not pack_result:
@@ -1414,37 +1439,36 @@ class Sources():
 				return None
 			self._close_progress_before_modal()
 			link = self._ensure_play_headers(link, {'debrid': debrid_provider, 'cache_provider': debrid_provider})
-			self._close_sources_results_for_playback()
-			return RedLightPlayer().run(link, 'video')
+			playback = RedLightPlayer().run(link, 'video')
+			return playback
 		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse'}.get(debrid_provider)
 		if download:
 			debrid_files, _pack_api = pack_result
 			return debrid_files, self.debrid_importer(debrid_info)
 		debrid_files = pack_result
 		self._close_progress_before_modal()
-		list_items = [{'line1': '%.2f GB | %s' % (float(item['size'])/1073741824, clean_file_name(item['filename']).upper())} for item in debrid_files]
-		picker_heading = 'Verify: %s' % name if verify_only else name
-		kwargs = {'items': json.dumps(list_items), 'heading': picker_heading, 'enumerate': 'true', 'narrow_window': 'true'}
-		chosen_result = kodi_utils.select_dialog(debrid_files, **kwargs)
+		if is_pack and len(debrid_files) == 1:
+			chosen_result = debrid_files[0]
+		else:
+			list_items = [{'line1': '%.2f GB | %s' % (float(item['size'])/1073741824, clean_file_name(item['filename']).upper())} for item in debrid_files]
+			picker_heading = 'Browse: %s' % name
+			kwargs = {'items': json.dumps(list_items), 'heading': picker_heading, 'enumerate': 'true', 'narrow_window': 'true'}
+			chosen_result = kodi_utils.select_dialog(debrid_files, **kwargs)
 		if chosen_result is None:
-			self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=not verify_only)
+			self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=is_pack)
 			return None
-		if verify_only:
-			file_count = len(debrid_files)
-			selected = clean_file_name(chosen_result.get('filename', ''))
-			kodi_utils.ok_dialog(heading='Source viable', text='%d file(s) listed on %s.\nSelected: %s' % (file_count, debrid_provider, selected))
-			self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=False)
-			return None
-		link = self.resolve_internal(debrid_info, chosen_result['link'], '')
-		self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=True)
-		if not link:
+		link = self._resolve_browse_pick_link(debrid_info, debrid_provider, chosen_result)
+		if not link and is_pack:
 			link = self._resolve_browse_pack_fallback(source_item, debrid_provider)
 		if not link:
+			kodi_utils.notification('Could not resolve selected file on %s' % debrid_provider, 4500)
+			self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=is_pack)
 			return None
 		link = self._ensure_play_headers(link, {'debrid': debrid_provider, 'cache_provider': debrid_provider})
 		self._close_progress_before_modal()
-		self._close_sources_results_for_playback()
-		return RedLightPlayer().run(link, 'video')
+		playback = RedLightPlayer().run(link, 'video')
+		self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=is_pack)
+		return playback
 
 	def play_file(self, results, source={}):
 		playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
