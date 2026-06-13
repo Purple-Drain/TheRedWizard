@@ -18,6 +18,7 @@ PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
 PROP_RESOLVE_OWNER = 'redlight.resolve_busy_owner'
 PROP_RESOLVE_CANCEL = 'redlight.resolve_cancelled'
 PROP_PLAY_OPENING = 'redlight.play_opening'
+PROP_BROWSE_RETURN_SOURCES = 'redlight.browse_return_sources'
 
 class Sources():
 	def __init__(self):
@@ -711,50 +712,64 @@ class Sources():
 		try: del monitor
 		except: pass
 
+	def _wait_active_playback_end(self):
+		player = kodi_utils.kodi_player()
+		monitor = kodi_utils.kodi_monitor()
+		while player.isPlayingVideo() or player.isPlaying():
+			if monitor.abortRequested():
+				return
+			kodi_utils.sleep(100)
+
 	def display_results(self, results):
-		window_format, window_number = settings.results_format()
-		notice_main, notice_sub = self._prescrape_empty_notice_labels() if self.prescrape_empty_notice else ('', '')
-		window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
-				window_format=window_format, window_id=window_number, results=results, meta=self.meta, sources_ref=self, episode_group_label=self.episode_group_label,
-				scraper_settings=self.scraper_settings, prescrape=self.prescrape, filters_ignored=self.filters_ignored,
-				uncached_results=self.uncached_results, cache_check_override=self.cache_check_override,
-				prescrape_empty_notice=self.prescrape_empty_notice, prescrape_empty_notice_main=notice_main, prescrape_empty_notice_sub=notice_sub)
-		if not window_result:
-			self._kill_progress_dialog()
-			return
-		action, chosen_item = window_result
-		if not action:
-			if self._playback_already_active():
-				self._kill_progress_dialog(join_timeout=1.0)
+		while True:
+			window_format, window_number = settings.results_format()
+			notice_main, notice_sub = self._prescrape_empty_notice_labels() if self.prescrape_empty_notice else ('', '')
+			window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
+					window_format=window_format, window_id=window_number, results=results, meta=self.meta, sources_ref=self, episode_group_label=self.episode_group_label,
+					scraper_settings=self.scraper_settings, prescrape=self.prescrape, filters_ignored=self.filters_ignored,
+					uncached_results=self.uncached_results, cache_check_override=self.cache_check_override,
+					prescrape_empty_notice=self.prescrape_empty_notice, prescrape_empty_notice_main=notice_main, prescrape_empty_notice_sub=notice_sub)
+			if not window_result:
+				self._kill_progress_dialog()
+				return
+			action, chosen_item = window_result
+			if not action:
+				if kodi_utils.get_property(PROP_BROWSE_RETURN_SOURCES) == 'true':
+					kodi_utils.clear_property(PROP_BROWSE_RETURN_SOURCES)
+					self._wait_active_playback_end()
+					continue
+				if self._playback_already_active():
+					self._kill_progress_dialog(join_timeout=1.0)
+					self.resolve_dialog_made = False
+					return
+				self._kill_progress_dialog(join_timeout=3.0)
 				self.resolve_dialog_made = False
 				return
-			self._kill_progress_dialog(join_timeout=3.0)
-			self.resolve_dialog_made = False
-		elif action == 'play':
-			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
-			self.play_file(results, chosen_item)
-			return
-		elif self.prescrape and action == 'perform_full_search':
-			self._kill_progress_dialog(join_timeout=1.0)
-			if not self.progress_dialog and not self.background:
-				self._make_progress_dialog()
-			# Mirror empty-prescrape → full scrape: keep remove_scrapers and prescrape_sources
-			# so cloud scrapers stay finished and progress shows external/cache only.
-			self.prescrape = False
-			self.clear_properties = True
-			self.filters_ignored = self.ignore_scrape_filters
-			self.sources, self.orig_results = [], []
-			self.threads, self.providers, self.prescrape_scrapers, self.prescrape_threads = [], [], [], []
-			self.uncached_results, self.cloud_scraper_names = [], []
-			self.active_folders, self.folder_info = False, []
-			self.internal_scraper_names, self.resolve_dialog_made = [], False
-			if not self.ignore_scrape_filters: kodi_utils.clear_property('fs_filterless_search')
-			self._prepare_external_only_followup()
-			return self.get_sources()
-		elif action == 'cache_change_rescrape':
-			self.cache_check_override = chosen_item == 'true'
-			self._reset_scrape_state(keep_disabled_ext_ignored=True)
-			return self.get_sources()
+			elif action == 'play':
+				kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
+				self.play_file(results, chosen_item)
+				return
+			elif self.prescrape and action == 'perform_full_search':
+				self._kill_progress_dialog(join_timeout=1.0)
+				if not self.progress_dialog and not self.background:
+					self._make_progress_dialog()
+				# Mirror empty-prescrape → full scrape: keep remove_scrapers and prescrape_sources
+				# so cloud scrapers stay finished and progress shows external/cache only.
+				self.prescrape = False
+				self.clear_properties = True
+				self.filters_ignored = self.ignore_scrape_filters
+				self.sources, self.orig_results = [], []
+				self.threads, self.providers, self.prescrape_scrapers, self.prescrape_threads = [], [], [], []
+				self.uncached_results, self.cloud_scraper_names = [], []
+				self.active_folders, self.folder_info = False, []
+				self.internal_scraper_names, self.resolve_dialog_made = [], False
+				if not self.ignore_scrape_filters: kodi_utils.clear_property('fs_filterless_search')
+				self._prepare_external_only_followup()
+				return self.get_sources()
+			elif action == 'cache_change_rescrape':
+				self.cache_check_override = chosen_item == 'true'
+				self._reset_scrape_state(keep_disabled_ext_ignored=True)
+				return self.get_sources()
 
 	def _get_active_scraper_names(self, scraper_list):
 		return [i[2] for i in scraper_list]
@@ -1358,17 +1373,6 @@ class Sources():
 				return link.split(',')[0]
 		return None
 
-	def _close_sources_results_for_playback(self):
-		window = getattr(self, '_sources_results_window', None)
-		if window:
-			try:
-				window.selected = (None, '')
-				window.close()
-			except:
-				pass
-			return
-		self._close_sources_results_window()
-
 	def _cleanup_browse_transfer(self, debrid_provider, debrid_files, is_pack):
 		'''Remove temporary browse transfers when Store Resolved to Cloud does not apply.'''
 		if debrid_provider not in ('TorBox', 'Offcloud'):
@@ -1425,22 +1429,13 @@ class Sources():
 		from modules.debrid import ExternalPackSource, normalize_debrid_provider
 		debrid_provider = normalize_debrid_provider(debrid_provider)
 		is_pack = bool(source_item and 'package' in source_item)
-		verify_only = not download and not is_pack
 		source = {'url': magnet_url, 'hash': info_hash, 'debrid': debrid_provider, 'cache_provider': debrid_provider, 'name': name}
 		pack_result = ExternalPackSource(source).browse_packs(download=download)
 		if not pack_result:
 			if download:
 				return None
-			if verify_only:
-				kodi_utils.notification('Could not list files on %s — source may not be cached' % debrid_provider, 4500)
-				return None
-			link = self._resolve_browse_pack_fallback(source_item, debrid_provider)
-			if not link:
-				return None
-			self._close_progress_before_modal()
-			link = self._ensure_play_headers(link, {'debrid': debrid_provider, 'cache_provider': debrid_provider})
-			playback = RedLightPlayer().run(link, 'video')
-			return playback
+			# browse_packs() already notified; do not fall back to full magnet resolve/play.
+			return None
 		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse'}.get(debrid_provider)
 		if download:
 			debrid_files, _pack_api = pack_result
@@ -1466,9 +1461,16 @@ class Sources():
 			return None
 		link = self._ensure_play_headers(link, {'debrid': debrid_provider, 'cache_provider': debrid_provider})
 		self._close_progress_before_modal()
-		playback = RedLightPlayer().run(link, 'video')
+		kodi_utils.set_property('redlight.browse_playback', 'true')
+		kodi_utils.set_property(PROP_BROWSE_RETURN_SOURCES, 'true')
+		player = RedLightPlayer()
+		player._browse_results_window = getattr(self, '_sources_results_window', None)
+		player.run(link, 'video')
+		kodi_utils.clear_property('redlight.browse_playback')
+		if not getattr(player, 'playback_successful', False):
+			kodi_utils.clear_property(PROP_BROWSE_RETURN_SOURCES)
 		self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=is_pack)
-		return playback
+		return player
 
 	def play_file(self, results, source={}):
 		playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]

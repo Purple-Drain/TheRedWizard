@@ -1,3 +1,9 @@
+[COLOR red][B]Version 1.2.9l[/B][/COLOR]
+- Sources Browse: after browse playback, return to the sources results list without re-scraping.
+- Sources Browse: close the results list when playback starts so fullscreen is not blocked.
+- Sources Browse: clear the video playlist before generic browse play so stale episode entries do not interrupt pack playback; playback failure shows a toast; empty browse lists do not fall back to full magnet resolve/play.
+- Select dialog: initialise control_id so keyboard/remote selection before a list click does not break browse pickers.
+
 [COLOR red][B]Version 1.2.9k[/B][/COLOR]
 - Sources Browse (pack): fix playback when picking a file — defer TorBox/Offcloud browse cleanup until after playback starts; close the results list from the window handler when play begins.
 - Sources Browse (single-file torrent): picking a file from the list now plays (cancel still returns to sources); only marked packs skip the picker when there is one file; empty lists on non-pack sources still do not fall back to autoplay.
@@ -113,7 +119,7 @@
 [COLOR red][B]Version 1.2.3[/B][/COLOR]
 - Fixed skin widgets (e.g. Movies > Trending) staying empty after a settings DB upgrade: widget calls no longer block on settings bootstrap, failed Trakt list fetches are not cached, and widgets are silently reloaded with ReloadSkin only when sync_settings actually migrates or repairs an existing settings.db (not on every boot).
 - Fixed slow startup and browsing after the v1.2.2 boot-crash fix: settings reads no longer hit SQLite on every call once properties are loaded, the database is not synced twice on boot, path-existence checks are skipped on the read path, and default-settings metadata is cached in memory.
-- Fixed widget and skin list loads hanging ~5 seconds (or failing) after opening Red Light: the font/skin background thread now runs only in the service process, not in the plugin invoker where it blocked every widget exit.
+- Fixed widget and skin list loads hanging 5 seconds (or failing) after opening Red Light: the font/skin background thread now runs only in the service process, not in the plugin invoker where it blocked every widget exit.
 - Fixed widgets staying empty after the above change: widget calls no longer bulk-load settings into window properties (which could fail silently); they read from a warmed in-memory DB cache instead when properties are not yet loaded.
 
 [COLOR red][B]Version 1.2.2[/B][/COLOR]

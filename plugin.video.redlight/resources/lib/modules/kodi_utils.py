@@ -291,6 +291,16 @@ def make_session(url='https://'):
 def make_playlist(playlist_type='video'):
 	return xbmc.PlayList({'music': 0, 'video': 1}[playlist_type])
 
+def clear_video_playlist():
+	'''Drop episode plugin URLs left on the video playlist when browse/direct play starts during a scrape.'''
+	try:
+		make_playlist('video').clear()
+	except:
+		try:
+			execute_builtin('Playlist.Clear')
+		except:
+			pass
+
 def supported_media():
 	return xbmc.getSupportedMedia('video')
 
@@ -342,8 +352,8 @@ def kodi_version():
 def get_video_database_path():
 	return translate_path('special://profile/Database/MyVideos%s.db' % {19: '119', 20: '121', 21: '124'}[kodi_version()])
 
-def show_busy_dialog():
-	return execute_builtin('ActivateWindow(busydialognocancel)')
+def show_busy_dialog(block=False):
+	return execute_builtin('ActivateWindow(busydialognocancel)', block)
 
 def hide_busy_dialog():
 	execute_builtin('Dialog.Close(busydialognocancel)')

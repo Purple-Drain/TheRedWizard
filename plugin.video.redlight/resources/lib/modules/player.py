@@ -33,6 +33,8 @@ class RedLightPlayer(xbmc.Player):
 
 	def play_video(self, url, obj):
 		self.set_constants(url, obj)
+		if self.is_generic:
+			ku.clear_video_playlist()
 		if not self.is_generic and self._resolve_cancelled():
 			self.playback_successful = False
 			self.cancel_all_playback = True
@@ -92,7 +94,18 @@ class RedLightPlayer(xbmc.Player):
 				self.playback_successful = False
 			elif self.isPlayingVideo():
 				try:
-					if self.getTotalTime() not in ('0.0', '', 0.0, None) and ku.get_visibility('Window.IsActive(fullscreenvideo)'):
+					if ku.get_property('redlight.browse_playback') == 'true':
+						browse_window = getattr(self, '_browse_results_window', None)
+						if browse_window:
+							try:
+								browse_window.selected = (None, '')
+								browse_window.close()
+								self._browse_results_window = None
+							except:
+								pass
+					if not ku.get_visibility('Window.IsActive(fullscreenvideo)'):
+						ku.execute_builtin('ActivateWindow(fullscreenvideo)', block=False)
+					if self.getTotalTime() not in ('0.0', '', 0.0, None):
 						self.playback_successful = True
 				except:
 					pass
@@ -450,8 +463,10 @@ class RedLightPlayer(xbmc.Player):
 				self.sources_object.playback_successful = False
 		except:
 			pass
-		self.clear_playback_properties()
+		self.clear_playback_properties(clear_navigation=not self.is_generic)
 		text = message or 'This link could not be played. It may be expired, removed, or unsupported on this device.'
+		if self.is_generic and ku.get_property('redlight.browse_playback') == 'true':
+			return ku.notification('Playback Failed', 4000, settle_ms=400)
 		try:
 			if not self.is_generic and getattr(self, 'sources_object', None):
 				return self.sources_object._show_playback_failed_dialog(text)

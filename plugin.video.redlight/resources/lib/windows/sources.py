@@ -155,8 +155,13 @@ class SourcesResults(BaseDialog):
 								choice.get('info_hash'), source_item=choice.get('source_item'))
 							self.sources_ref._sources_results_window = None
 							if self.sources_ref._playback_already_active():
-								self.selected = (None, '')
-								return self.close()
+								try:
+									if self.get_visibility('Window.IsActive(sources_results.xml)'):
+										self.selected = (None, '')
+										return self.close()
+								except:
+									self.selected = (None, '')
+									return self.close()
 						return
 					return self.execute_code('RunPlugin(%s)' % self.build_url(choice))
 				if choice == 'results_info': return self.open_window(('windows.sources', 'SourcesInfo'), 'sources_info.xml', item=chosen_listitem)
