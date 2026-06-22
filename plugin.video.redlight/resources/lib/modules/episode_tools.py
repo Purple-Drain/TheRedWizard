@@ -144,9 +144,9 @@ def build_next_episode_manager():
 	item_list = sorted(list_items, key=lambda k: (title_key(k['sort_title'], ignore_articles())), reverse=False)
 	item_list = [i['listitem'] for i in item_list]
 	kodi_utils.add_items(handle, item_list)
-	kodi_utils.set_content(handle, '')
+	kodi_utils.set_content(handle, 'files')
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.main', '')
+	kodi_utils.set_view_mode('view.main', 'files', False)
 
 def single_last_watched_episodes(data):
 	seen = set()

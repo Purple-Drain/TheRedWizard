@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from caches.settings_cache import get_setting, set_setting, default_setting_values, _EXTRAS_LIST_DEFAULT
-from modules.kodi_utils import translate_path, get_property, addon_profile
+from modules.kodi_utils import translate_path, get_property, addon_profile, make_directory
 from modules.kodi_utils import logger
 
 def tmdb_api_key():
@@ -92,11 +92,23 @@ def download_directory(media_type):
 								None: 'redlight.premium_download_directory', 'None': False}
 	return translate_path(get_setting(download_directories_dict[media_type]))
 
-def import_export_directory():
+_IMPORT_EXPORT_DIR_DEFAULT = 'special://profile/addon_data/plugin.video.redlight/Import Export/'
+
+def import_export_directory_setting():
+	# Virtual path for Kodi browse dialogs (works on all platforms).
 	path = get_setting('redlight.import_export_directory', '')
-	if path in ('', 'None', None):
-		return translate_path(addon_profile())
-	return translate_path(path)
+	if path in ('', 'None', None, 'empty_setting'):
+		return _IMPORT_EXPORT_DIR_DEFAULT
+	return path
+
+def import_export_directory():
+	# Filesystem path for os.path / file I/O.
+	return translate_path(import_export_directory_setting())
+
+def ensure_import_export_directory():
+	path = import_export_directory()
+	make_directory(path)
+	return path
 
 def ai_model_active():
 	if get_setting('redlight.google_api', 'empty_setting') not in (None, 'None', '', 'empty_setting'): return True
@@ -633,12 +645,6 @@ def nextep_sort_key():
 
 def nextep_sort_direction():
 	return int(get_setting('redlight.nextep.sort_order', '0')) == 0
-
-def update_delay():
-	return int(get_setting('redlight.update.delay', '45'))
-
-def update_action():
-	return int(get_setting('redlight.update.action', '2'))
 
 def _rescrape_defaults():
 	return [('cache_ignored', '1', '0'), ('imdb_year', '0', '1'), ('with_all', '0', '2'), ('episode_group', '0', '3'), ('ignore_filters', '0', '4'), ('full_scrape', '2', '5')]

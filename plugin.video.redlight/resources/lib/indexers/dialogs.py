@@ -80,8 +80,10 @@ def language_invoker_choice(params):
 	new_xml = str(root.toxml()).replace('<?xml version="1.0" ?>', '')
 	with open(addon_xml, 'w') as f: f.write(new_xml)
 	set_setting('reuse_language_invoker', new_value)
-	kodi_utils.update_local_addons()
-	kodi_utils.disable_enable_addon()
+	kodi_utils.mark_addon_xml_synced()
+	kodi_utils.clear_property('redlight.addon_xml_applied')
+	kodi_utils.apply_addon_xml_reload(invoker_changed=True)
+	kodi_utils.notification('Language invoker %s' % ('enabled' if new_value == 'true' else 'disabled'), 3500)
 
 def addon_icon_choice(params):
 	import os

@@ -2,14 +2,12 @@
 from xbmc import Monitor
 import os
 import json
-import inspect
 from time import time
 from threading import Thread
-from caches.settings_cache import get_setting, set_setting, sync_settings
+from caches.settings_cache import get_setting, sync_settings
 from modules import kodi_utils
 
 pause_services_prop = 'redlight.pause_services'
-firstrun_update_prop = 'redlight.firstrun_update'
 current_skin_prop = 'redlight.current_skin'
 trakt_service_string = 'TraktMonitor Service Update %s - %s'
 trakt_success_line_dict = {'success': 'Trakt Update Performed', 'no account': '(Unauthorised) Trakt Update Performed'}
@@ -23,6 +21,7 @@ class SetAddonConstants:
 		prev_version = kodi_utils.get_property('redlight.addon_version')
 		if prev_version and prev_version != new_version:
 			kodi_utils.clear_property('redlight.deferred_service_setup_done')
+			kodi_utils.clear_addon_xml_sync_version()
 			kodi_utils.logger('Red Light', 'SetAddonConstants - version %s -> %s' % (prev_version, new_version))
 		icon_choice = get_setting('addon_icon_choice', 'resources/media/addon_icons/icon.png')
 		addon_path = kodi_utils.addon_info('path')
@@ -39,6 +38,12 @@ class SetAddonConstants:
 					]
 		for item in addon_items: kodi_utils.set_property(*item)
 		kodi_utils.clear_property('redlight.widgets_refresh_scheduled')
+		kodi_utils.clear_property('redlight.language_invoker_ready')
+		kodi_utils.clear_property('redlight.addon_xml_applied')
+		try:
+			from modules.utils import _prune_qr_cache
+			_prune_qr_cache(kodi_utils.translate_path(kodi_utils.addon_info('profile')))
+		except: pass
 		return kodi_utils.logger('Red Light', 'SetAddonConstants Service Finished')
 
 class DatabaseMaintenance:
@@ -61,9 +66,10 @@ class BootstrapSettings:
 		monitor.waitForAbort(2)
 		if monitor.abortRequested(): return
 		try:
-			from caches.settings_cache import bootstrap_settings_properties, refresh_widgets_after_db_migration
+			from caches.settings_cache import bootstrap_settings_properties, refresh_widgets_after_db_migration, run_deferred_setup_background_if_needed
 			bootstrap_settings_properties()
 			refresh_widgets_after_db_migration()
+			run_deferred_setup_background_if_needed()
 		except Exception as e:
 			kodi_utils.logger('BootstrapSettings', str(e))
 		return kodi_utils.logger('Red Light', 'BootstrapSettings Service Finished')
@@ -79,31 +85,11 @@ def start_custom_windows_prepare():
 def run_deferred_service_setup():
 	global _custom_windows_thread_started
 	kodi_utils.logger('Red Light', 'Deferred Service Setup Starting')
-	try: kodi_utils.restore_addon_xml_from_settings()
-	except Exception as e: kodi_utils.logger('DeferredServiceSetup', 'RestoreAddonXml: %s' % e)
-	try: OnUpdateChanges().run()
-	except Exception as e: kodi_utils.logger('DeferredServiceSetup', 'OnUpdateChanges: %s' % e)
 	try:
 		from windows.base_window import ExtrasUtils
 		ExtrasUtils().run()
 	except Exception as e: kodi_utils.logger('DeferredServiceSetup', 'ExtrasUtils: %s' % e)
 	return kodi_utils.logger('Red Light', 'Deferred Service Setup Finished')
-
-class OnUpdateChanges:
-	def run(self):
-		kodi_utils.logger('Red Light', 'OnUpdateChanges Service Starting')
-		try:
-			for method in list(filter(lambda x: x[0] != 'run', inspect.getmembers(OnUpdateChanges, predicate=inspect.isfunction))):
-				if not get_setting('redlight.updatechecks.%s' % method[0], 'false') == 'true':
-					method[1](self)
-					set_setting('updatechecks.%s' % method[0], 'true')
-		except: pass
-		return kodi_utils.logger('Red Light', 'OnUpdateChanges Service Finished')
-
-	def fix_media_github_username(self):
-		stored = get_setting('redlight.update.username', '')
-		if stored.replace('-', '').lower() == 'theredwizard' and stored != 'The-Red-Wizard':
-			set_setting('update.username', 'The-Red-Wizard')
 
 class CustomWindowsPrepare:
 	def run(self):
@@ -205,27 +191,6 @@ class MdblistMonitor:
 			wait_for_abort(wait_time)
 		return kodi_utils.logger('Red Light', 'MDBListMonitor Service Finished')
 
-class UpdateCheck:
-	def run(self):
-		if kodi_utils.get_property(firstrun_update_prop) == 'true': return
-		kodi_utils.logger('Red Light', 'UpdateCheck Service Starting')
-		from modules.updater import update_check
-		from modules.settings import update_action, update_delay
-		end_pause = time() + update_delay()
-		monitor, player = kodi_utils.kodi_monitor(), kodi_utils.kodi_player()
-		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
-		while not monitor.abortRequested():
-			while time() < end_pause: wait_for_abort(1)
-			while kodi_utils.get_property(pause_services_prop) == 'true' or is_playing(): wait_for_abort(1)
-			update_check(update_action())
-			break
-		kodi_utils.set_property(firstrun_update_prop, 'true')
-		try: del monitor
-		except: pass
-		try: del player
-		except: pass
-		return kodi_utils.logger('Red Light', 'UpdateCheck Service Finished')
-
 class WidgetRefresher:
 	def run(self):
 		kodi_utils.logger('Red Light', 'WidgetRefresher Service Starting')
@@ -276,7 +241,13 @@ class AutoStart:
 	def run(self):
 		kodi_utils.logger('Red Light', 'AutoStart Service Starting')
 		from modules.settings import auto_start_redlight
-		if auto_start_redlight(): kodi_utils.run_addon()
+		if auto_start_redlight():
+			try:
+				from caches.settings_cache import ensure_settings_properties_loaded
+				ensure_settings_properties_loaded()
+			except Exception as e:
+				kodi_utils.logger('AutoStart', 'bootstrap: %s' % e)
+			kodi_utils.run_addon()
 		return kodi_utils.logger('Red Light', 'AutoStart Service Finished')
 
 class RedLightMonitor(Monitor):
@@ -291,14 +262,11 @@ class RedLightMonitor(Monitor):
 		except Exception as e: kodi_utils.logger('DatabaseMaintenance', str(e))
 		try: SyncSettings().run()
 		except Exception as e: kodi_utils.logger('SyncSettings', str(e))
-		try: kodi_utils.restore_addon_xml_from_settings()
-		except Exception as e: kodi_utils.logger('RestoreAddonXml', str(e))
 		Thread(target=BootstrapSettings().run).start()
 		start_custom_windows_prepare()
 		Thread(target=TraktMonitor().run).start()
 		Thread(target=SimklMonitor().run).start()
 		Thread(target=MdblistMonitor().run).start()
-		Thread(target=UpdateCheck().run).start()
 		Thread(target=WidgetRefresher().run).start()
 		try: AutoStart().run()
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))

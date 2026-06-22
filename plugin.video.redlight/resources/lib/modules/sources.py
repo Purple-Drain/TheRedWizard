@@ -392,12 +392,12 @@ class Sources():
 		enable_setting, key = settings.filter_status(file_type), self.filter_keys[file_type]
 		if key == 'HEVC' and enable_setting == 0:
 			hevc_max_quality = self._get_quality_rank(get_setting('redlight.filter.hevc.%s' % ('max_autoplay_quality' if self.autoplay else 'max_quality'), '4K'))
-			results = [i for i in results if not key in i['extraInfo'] or i['quality_rank'] >= hevc_max_quality]
+			results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key) or i['quality_rank'] >= hevc_max_quality]
 		if enable_setting == 1:
 			if key in ('D/VISION', 'HDR'):
-				if not settings.filter_status({'D/VISION': 'hdr', 'HDR': 'dv'}[key]) == 0: results = [i for i in results if not key in i['extraInfo']]
-				else: results = [i for i in results if not (key in i['extraInfo'] and not 'HYBRID' in i['extraInfo'])]
-			else: results = [i for i in results if not key in i['extraInfo']]
+				if not settings.filter_status({'D/VISION': 'hdr', 'HDR': 'dv'}[key]) == 0: results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key)]
+				else: results = [i for i in results if not (self._extra_info_has_tag(i['extraInfo'], key) and not self._extra_info_has_tag(i['extraInfo'], 'HYBRID'))]
+			else: results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key)]
 		return results
 
 	def _normalize_pref_tag(self, tag):
@@ -406,11 +406,27 @@ class Sources():
 		aliases = {'d/vision': 'D/VISION', 'dolby vision': 'D/VISION', 'hdr': 'HDR', 'high dynamic range (hdr)': 'HDR', 'dolby atmos': 'ATMOS', 'atmos': 'ATMOS', 'hevc (x265)': 'HEVC', 'hevc': 'HEVC'}
 		return aliases.get(key, tag)
 
+	def _parse_extra_info_tags(self, extra_info):
+		tags = []
+		if not extra_info: return tags
+		items = extra_info if isinstance(extra_info, list) else [extra_info]
+		for item in items:
+			if not item: continue
+			for part in str(item).split(' | '):
+				part = part.replace('[B]', '').replace('[/B]', '').strip()
+				if part: tags.append(part)
+		return tags
+
 	def _pref_tag_in_extra_info(self, tag, extra_info):
 		if not tag or not extra_info: return False
-		if isinstance(extra_info, list): extra_info = ' | '.join(extra_info)
 		normalized = self._normalize_pref_tag(tag)
-		return normalized in extra_info or tag in extra_info
+		for part in self._parse_extra_info_tags(extra_info):
+			part_norm = self._normalize_pref_tag(part)
+			if part_norm == normalized or part == tag or part == normalized: return True
+		return False
+
+	def _extra_info_has_tag(self, extra_info, tag):
+		return self._pref_tag_in_extra_info(tag, extra_info)
 
 	def _normalized_title_blob(self, item):
 		parts = [item.get('name'), item.get('display_name')]
@@ -445,7 +461,10 @@ class Sources():
 		blob = self._normalized_title_blob(item)
 		if normalized == 'D/VISION' and any(x in blob for x in ('dolby vision', 'dolbyvision', ' dovi ', ' dv ', 'dovi', 'profile 8', 'profile8')): return True
 		if normalized == 'ATMOS' and ('atmos' in blob or ('ddp' in blob and 'atmos' in blob)): return True
-		if normalized == 'HDR' and any(x in blob for x in ('hdr10', ' hdr ', 'hdr10+', 'hdr10p')): return True
+		if normalized == 'HDR':
+			if any(x in blob.split() for x in ('hdrip', 'hd.rip')): return False
+			if any(x in blob for x in ('hdr10', 'hdr10+', 'hdr10p')): return True
+			return ' hdr ' in f' {blob} '
 		return False
 
 	def sort_preferred_filters(self, results):

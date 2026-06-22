@@ -481,48 +481,6 @@
                           <property name="setting_description">Choose the Opacity Red Light will use for custom window themes. Choose between 10% - 100%</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=window_theme_choice&amp;type=opacity)</onclick>
                       </item>
-        <!-- Manage Addon Updates
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <property name="setting_label">Manage Addon Updates</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <property name="setting_label">Update Action</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.update.action_name)]</property>
-                          <property name="setting_description">Choose the manner in which Red Light handles updates</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=update.action)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.update.action),3)</visible>
-                          <property name="setting_label">    - Delay Before Running (secs)</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.update.delay)]</property>
-                          <property name="setting_description">Choose the delay time before Red Light checks for updates after Kodi start</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=update.delay)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.update.action),3)</visible>
-                          <property name="setting_label">    - Github Username</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.update.username)]</property>
-                          <property name="setting_description">Leave this setting as default unless you wsh to update Red Light through a different user repository. If you do, enter the Github Username of the new github location</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=update.username)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.update.action),3)</visible>
-                          <property name="setting_label">    - Github Repo Address</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.update.location)]</property>
-                          <property name="setting_description">Leave this setting as default unless you wsh to update Red Light through a different user repository. If you do, enter the Github Repo Address of the new github location</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=update.location)</onclick>
-                      </item> -->
         <!-- Watched Indicators -->
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
@@ -734,7 +692,7 @@
                           <property name="setting_label">Import &amp; Export Directory</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.import_export_directory)]</property>
-                          <property name="setting_description">Choose your default location for Red Light favorites and progress backup files</property>
+                          <property name="setting_description">Default folder for Tools > Import &amp; Export backups. Import and export file browsers open here. You can also save a new folder as the default when prompted after export</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_path&amp;setting_id=import_export_directory)</onclick>
                       </item>
 <!-- FEATURES 20-->

@@ -1,9 +1,19 @@
+[COLOR red][B]Version 1.4.4[/B][/COLOR]
+- Tools > Import & Export: separate zip backup/restore for Red Light settings (custom menus, personal lists, discover lists, list images, and all addon settings).
+- Kodi favorites import/export: copy or merge the profile **Favourites.xml** file (export is a literal copy; import offers merge by action or full replace with backup of the current file); warns that favorites only work for the add-on or library path that created them; restart Kodi to refresh the Favorites menu.
+- Tools > Import & Export: **Red Light Favorites & History** JSON backup/restore (renamed from Favorites & Progress) — exports favorites plus local in-progress and watched rows when Watched Indicators is Red Light; import merge keeps furthest progress, newer watched dates, and local-only items; replace clears each section present in the file; older backups without watched still import.
+- Import & Export browse: cancelling folder or file browse no longer continues to confirm; export and import folder browse open at your default; after a successful export you can save the chosen folder as your default; **Import & Export Directory** under Settings > General; default backup folder is addon profile **Import Export** (special://profile/.../Import Export/) on all platforms when unset; settings backup preview/import text clarifies that settings.db includes debrids, EasyNews, and TMDb lists as well as Trakt, Simkl, and MDBList.
+- Fixed auth QR codes sometimes missing or blank on device authorise dialogs (Trakt, Simkl, MDBList, debrids, EasyNews, TMDb lists, log uploader).
+- Fixed Custom Sort to Top: HDR preference no longer matches HDrip releases (HDrip was treated as HDR because of substring matching in source info tags).
+- Fixed Tools > Set Views: saving a view no longer errors (view name was dropped from the save action URL).
+- Language Invoker: after an update or settings import, your saved choice is written back to addon.xml the first time you open Red Light (disable/enable when the value changes). Widgets refresh lightly only — not a full skin reload.
+
 [COLOR red][B]Version 1.4.3[/B][/COLOR]
 - Improved browse menu navigation: Back and Exit return to the correct parent menu (Movies, TV Shows, Anime, My Lists, MDBList, Trakt, TMDb, genres, and more) with list view preserved.
 - Refined menu folder links for smoother navigation through Trending, watchlists, collections, and other browse shortcuts.
 
 [COLOR red][B]Version 1.4.2[/B][/COLOR]
-- MDBList: optional watched status provider (API key auth) with sync, scrobble/progress, watchlist, library (collection), dropped, and list browse under My Lists → MDBList Lists.
+- MDBList: optional watched status provider (API key auth) with sync, scrobble/progress, watchlist, library (collection), dropped, and list browse under My Lists > MDBList Lists.
 - MDBList Manager on movie/TV rows (watch/unwatch, reset scrobble, watchlist add/remove) when authorised.
 - Settings: Meta Accounts > MDBList; My Data > MDBList Cache (sync interval, force sync, clear cache).
 - Settings: Meta Accounts > Simkl > clear cache; Trakt > clear cache.
@@ -88,7 +98,7 @@
 - Playback: Autoplay Cloud Result now applies on full-scrape cloud hits (not only the prescrape phase), uses provider autoplay settings instead of the active-scraper list, and no longer clears cloud autoplay when falling through to external; failed cloud autoplay shows cloud results instead of jumping straight to external.
 - Playback: prescrape no longer blocks cloud scrapers from the full scrape when they returned no hits; play_source again autoplays cloud hits from per-provider settings at play time (restores pre-v1.2.9j behaviour while keeping global Autoplay Episode/Movie gating external only).
 - Playback: Autoplay Cloud Result now switches to a fresh resolver dialog after prescrape (scraper UI was blocking resolve) and falls back to the cloud results list if resolve fails.
-- Playback: when Check Before Full Search finds no cloud results but Autoplay is on and external scrapers are enabled, external results now autoplay instead of always opening the results list (cloud autoplay → external autoplay cascade).
+- Playback: when Check Before Full Search finds no cloud results but Autoplay is on and external scrapers are enabled, external results now autoplay instead of always opening the results list (cloud autoplay > external autoplay cascade).
 - Autoplay Next Episode: release the resolve lock once playback has started so the next episode can scrape in the background while the current episode is still playing; background next-episode searches bypass the resolve/sources busy gate that previously aborted silently.
 - Autoplay Next Episode: keep the current episode playing until the Next Episode alert is answered (resolve no longer stops playback before the window); the alert dialog no longer crashes when the player is idle and runs its timer on a background thread so Cancel / Play / Close work reliably.
 - Sources Browse (cached pack): close the results window before the pack picker; skip reopening results after pack playback; ignore playback.media while video is already playing (fixes episode browse Back rescraping over fullscreen).

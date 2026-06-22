@@ -6,24 +6,34 @@ from modules import kodi_utils
 from modules.kodi_utils import external, get_property
 # from modules.kodi_utils import logger
 
-def sys_exit_check():
-	from caches.settings_cache import get_setting
+def sys_exit_check(mode='navigator.main'):
+	from caches.settings_cache import get_setting, is_directory_listing_mode
 	if get_setting('redlight.reuse_language_invoker', 'true') == 'false': return False
-	return external()
+	# First open still has external() true before Container.PluginName updates; never discard a built list.
+	if is_directory_listing_mode(mode): return False
+	if not external(): return False
+	return True
+
+def prepare_directory_listing(mode):
+	from caches.settings_cache import is_directory_listing_mode
+	if not is_directory_listing_mode(mode): return
+	try:
+		from caches.base_cache import ensure_listing_databases_ready
+		ensure_listing_databases_ready()
+	except Exception as e:
+		kodi_utils.logger('routing', 'prepare listing: %s' % e)
 
 def routing(sys):
 	params = dict(parse_qsl(sys.argv[2][1:], keep_blank_values=True))
-	if not external():
-		from caches.settings_cache import bootstrap_settings_properties, refresh_widgets_after_db_migration
-		from caches.settings_cache import run_deferred_setup_if_needed, run_deferred_setup_background_if_needed, is_directory_listing_mode
-		try: bootstrap_settings_properties()
-		except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
-		try: refresh_widgets_after_db_migration()
-		except Exception as e: kodi_utils.logger('routing', 'refresh widgets: %s' % e)
 	mode = params.get('mode', 'navigator.main')
+	try: kodi_utils.ensure_addon_xml_from_settings()
+	except Exception as e: kodi_utils.logger('routing', 'addon.xml: %s' % e)
+	prepare_directory_listing(mode)
 	if not external():
-		try: run_deferred_setup_if_needed()
-		except Exception as e: kodi_utils.logger('routing', 'deferred: %s' % e)
+		from caches.settings_cache import ensure_settings_properties_loaded, should_block_bootstrap_on_entry
+		if should_block_bootstrap_on_entry(mode):
+			try: ensure_settings_properties_loaded()
+			except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
 	if 'navigator.' in mode:
 		from indexers.navigator import Navigator
 		return exec('Navigator(params).%s()' % mode.split('.')[1])
@@ -294,16 +304,18 @@ def routing(sys):
 	elif 'downloader.' in mode:
 		from modules import downloader
 		return exec('downloader.%s(params)' % mode.split('.')[1])
-	elif 'updater' in mode:
-		from modules import updater
-		return exec('updater.%s()' % mode.split('.')[1])
-	##EXTRA modes##
 	elif 'local_backup.' in mode:
 		from modules import local_backup
 		return getattr(local_backup, mode.split('.', 1)[1])(params)
+	elif 'settings_backup.' in mode:
+		from modules import settings_backup
+		return getattr(settings_backup, mode.split('.', 1)[1])(params)
+	elif 'kodi_favorites.' in mode:
+		from modules import kodi_favorites_backup
+		return getattr(kodi_favorites_backup, mode.split('.', 1)[1])(params)
 	elif mode == 'set_view':
-		from modules.kodi_utils import set_view
-		return kodi_utils.set_view(params.get('view_type'))
+		from indexers.navigator import Navigator
+		return Navigator(params).set_view()
 	elif mode == 'sync_settings':
 		from caches.settings_cache import sync_settings
 		return sync_settings(params)
