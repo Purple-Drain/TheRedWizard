@@ -3282,7 +3282,7 @@
                           <property name="setting_label">    - Alert Timing Source</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.stinger_alert.alert_timing_name)]</property>
-                          <property name="setting_description">Choose how Red Light decides when to show the Credit Stingers Alert. Off uses the playback percentage only. Chapter Info uses video chapter markers when available. Subtitles Info uses timing from active subtitles when a subtitle file is available (bundled sidecar, Kodi or A4KSubtitles download, SubMaker, or other external .srt). If subtitle timing is unavailable, the playback percentage is used instead</property>
+                          <property name="setting_description">Choose how Red Light decides when to show the Credit Stingers Alert. Off uses the playback percentage only. Chapter Info uses video chapter markers when available. Subtitles Info uses timing from active subtitles when a subtitle file is available (bundled sidecar, Kodi or A4KSubtitles download, SubMaker, or other external .srt). If the selected method is unavailable, the playback percentage setting is used instead</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=stinger_alert.alert_timing)</onclick>
                       </item>
         <!-- Playback Episodes -->
@@ -3361,7 +3361,7 @@
                           <property name="setting_label">    - Alert Timing Source</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_alert_timing_name)]</property>
-                          <property name="setting_description">Choose how Red Light decides when to show the Next Episode alert. Off uses the playback percentage only. Chapter Info uses video chapter markers when available. Subtitles Info uses timing from active subtitles when a subtitle file is available (bundled sidecar, Kodi or A4KSubtitles download, SubMaker, or other external .srt). If subtitle timing is unavailable, the playback percentage is used instead</property>
+                          <property name="setting_description">Choose how Red Light decides when to show the Next Episode alert. Off uses the playback percentage only. Chapter Info uses video chapter markers when available. Subtitles Info uses timing from active subtitles when a subtitle file is available (bundled sidecar, Kodi or A4KSubtitles download, SubMaker, or other external .srt). If the selected method is unavailable, the playback percentage setting is used instead</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoplay_alert_timing)</onclick>
                       </item>
                       <item>
@@ -3397,7 +3397,7 @@
                           <property name="setting_label">    - Alert Timing Source</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_alert_timing_name)]</property>
-                          <property name="setting_description">Choose how Red Light decides when to show the Next Episode alert. Off uses the playback percentage only. Chapter Info uses video chapter markers when available. Subtitles Info uses timing from active subtitles when a subtitle file is available (bundled sidecar, Kodi or A4KSubtitles download, SubMaker, or other external .srt). If subtitle timing is unavailable, the playback percentage is used instead</property>
+                          <property name="setting_description">Choose how Red Light decides when to show the Next Episode alert. Off uses the playback percentage only. Chapter Info uses video chapter markers when available. Subtitles Info uses timing from active subtitles when a subtitle file is available (bundled sidecar, Kodi or A4KSubtitles download, SubMaker, or other external .srt). If the selected method is unavailable, the playback percentage setting is used instead</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoscrape_alert_timing)</onclick>
                       </item>
                       
