@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from threading import Thread
 from caches.base_cache import connect_database
-from modules.kodi_utils import sleep, confirm_dialog, close_all_dialog
+from modules.kodi_utils import sleep, confirm_dialog, close_all_dialog, notification
 # from modules.kodi_utils import logger
 
 class TraktCache:	
@@ -105,15 +105,23 @@ def get_all_lists_custom_sort():
 		return dict([(i['list_id'], {'sort_by': i['sort_by'], 'sort_how': i['sort_how']}) for i in all_cache_data])
 	except: return {}
 
+def valid_trakt_activities(data):
+	return isinstance(data, dict) and 'all' in data and isinstance(data.get('movies'), dict) and isinstance(data.get('episodes'), dict)
+
 def reset_activity(latest_activities):
 	string = 'trakt_get_activity'
 	try:
 		dbcon = connect_database('trakt_db')
 		data = dbcon.execute('SELECT data FROM trakt_data WHERE id = ?', (string,)).fetchone()
-		if data: cached_data = eval(data[0])
+		if data:
+			cached_data = eval(data[0])
+			if not valid_trakt_activities(cached_data):
+				cached_data = default_activities()
+				dbcon.execute('DELETE FROM trakt_data WHERE id=?', (string,))
 		else: cached_data = default_activities()
-		dbcon.execute('DELETE FROM trakt_data WHERE id=?', (string,))
-		trakt_cache.set(string, latest_activities)
+		if valid_trakt_activities(latest_activities):
+			dbcon.execute('DELETE FROM trakt_data WHERE id=?', (string,))
+			trakt_cache.set(string, latest_activities)
 	except: cached_data = default_activities()
 	return cached_data
 
@@ -176,8 +184,7 @@ def clear_trakt_favorites():
 
 def clear_all_trakt_cache_data(silent=False, refresh=True):
 	try:
-		start = silent or confirm_dialog()
-		if not start: return False
+		if not silent and not confirm_dialog(): return False
 		from caches.main_cache import main_cache
 		main_cache_dbcon = connect_database('maincache_db')
 		lists_with_media = main_cache_dbcon.execute('SELECT id FROM maincache WHERE id LIKE %s' % "'trakt_lists_with_media_%'").fetchall()
@@ -189,6 +196,7 @@ def clear_all_trakt_cache_data(silent=False, refresh=True):
 		for table in ('progress', 'watched', 'watched_status'): dbcon.execute('DELETE FROM %s' % table)
 		dbcon.execute('DELETE FROM trakt_data WHERE id NOT LIKE %s' % "'trakt_list_custom_sort_%'")
 		dbcon.execute('VACUUM')
+		if not silent: notification('Trakt Cache Cleared', 3000)
 		if refresh:
 			from apis.trakt_api import trakt_sync_activities
 			Thread(target=trakt_sync_activities, kwargs={'force_update': True}).start()

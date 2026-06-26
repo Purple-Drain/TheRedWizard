@@ -887,6 +887,7 @@ def trakt_sync_activities(params=None, force_update=False):
 	if not settings.trakt_user_active() and not force_update: return 'no account'
 	try: latest = trakt_get_activity()
 	except: return 'failed'
+	if not trakt_cache.valid_trakt_activities(latest): return 'failed'
 	cached = trakt_cache.reset_activity(latest)
 	fallback_date = '2020-01-01T00:00:01.000Z'
 	if not force_update and not _compare(latest['all'], cached['all']): return 'not needed'
@@ -933,9 +934,14 @@ def trakt_sync_activities(params=None, force_update=False):
 def trakt_force_sync(params=None):
 	if not settings.trakt_user_active(): return kodi_utils.notification('Trakt account not authorised', 3000)
 	progress = kodi_utils.progress_dialog('Trakt Sync')
-	progress.update('Syncing with Trakt...', 0)
-	status = trakt_sync_activities(force_update=True)
-	progress.close()
+	status = 'failed'
+	try:
+		progress.update('Syncing with Trakt...', 0)
+		status = trakt_sync_activities(force_update=True)
+	except Exception as e:
+		kodi_utils.logger('Trakt', 'Force sync failed: %s' % e)
+	finally:
+		kodi_utils.close_progress_dialog(progress)
 	if status == 'failed': kodi_utils.notification('Trakt Sync Failed', 3000)
 	else:
 		kodi_utils.notification('Trakt Sync Complete', 3000)

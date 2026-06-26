@@ -511,28 +511,30 @@ def _refresh_simkl_tvshow_watched():
 		simkl_indicators_tv()
 	except: pass
 
-def _refresh_mdblist_tvshow_watched():
+def _refresh_mdblist_watched():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
-		from apis.mdblist_api import mdblist_indicators_tv, _get_mdbl_paginated_list
+		from apis.mdblist_api import mdblist_indicators_movies, mdblist_indicators_tv, _get_mdbl_paginated_list
 		watched_info = _get_mdbl_paginated_list('sync/watched')
+		mdblist_indicators_movies(watched_info)
 		mdblist_indicators_tv(watched_info)
 	except: pass
+
+def _refresh_mdblist_tvshow_watched():
+	_refresh_mdblist_watched()
 
 def _refresh_mdblist_movie_progress():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
-		from apis.mdblist_api import call_mdblist, mdblist_progress_movies
-		progress = call_mdblist('sync/playback') or {}
-		mdblist_progress_movies(progress.get('items', []))
+		from apis.mdblist_api import _get_mdbl_playback_items, mdblist_progress_movies
+		mdblist_progress_movies(_get_mdbl_playback_items())
 	except: pass
 
 def _refresh_mdblist_episode_progress():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
-		from apis.mdblist_api import call_mdblist, mdblist_progress_tv
-		progress = call_mdblist('sync/playback') or {}
-		mdblist_progress_tv(progress.get('items', []))
+		from apis.mdblist_api import _get_mdbl_playback_items, mdblist_progress_tv
+		mdblist_progress_tv(_get_mdbl_playback_items())
 	except: pass
 
 def _refresh_trakt_episode_progress():
@@ -610,6 +612,8 @@ def get_in_progress_episodes():
 	return episode_list
 
 def get_watched_items(media_type, page_no):
+	if settings.watched_indicators() == 3 and settings.mdblist_user_active():
+		_refresh_mdblist_watched()
 	if media_type == 'tvshow': results = active_tvshows_information('watched')
 	else: results = [v for k,v in watched_info_movie().items()]
 	if settings.lists_sort_order('watched') == 0: results = sort_for_article(results, 'title', settings.ignore_articles())
@@ -618,6 +622,8 @@ def get_watched_items(media_type, page_no):
 
 def get_recently_watched(media_type, short_list=0):
 	watched_indicators = settings.watched_indicators()
+	if watched_indicators == 3 and settings.mdblist_user_active():
+		_refresh_mdblist_watched()
 	if media_type == 'movie':
 		watched_movies = watched_info_movie().items()
 		data = sorted([v for k,v in watched_movies], key=lambda x: x['last_played'], reverse=True)

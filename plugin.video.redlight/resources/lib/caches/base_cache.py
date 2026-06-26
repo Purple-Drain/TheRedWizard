@@ -281,7 +281,7 @@ def clear_cache(cache_type, silent=False):
 		if not _confirm(): return
 		from caches.main_cache import main_cache
 		success = main_cache.delete_all()
-	if not silent and success: kodi_utils.notification('Success')
+	if not silent and success and cache_type not in ('trakt', 'simkl', 'mdblist'): kodi_utils.notification('Success')
 	return success
 
 def clear_all_cache():

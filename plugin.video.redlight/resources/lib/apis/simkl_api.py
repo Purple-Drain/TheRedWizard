@@ -697,9 +697,14 @@ def simkl_sync_activities(params=None, force_update=False):
 def simkl_force_sync(params=None):
 	if not settings.simkl_user_active(): return kodi_utils.notification('Simkl account not authorised', 3000)
 	progress = kodi_utils.progress_dialog('Simkl Sync')
-	progress.update('Syncing with Simkl...', 0)
-	status = simkl_sync_activities(force_update=True)
-	progress.close()
+	status = 'failed'
+	try:
+		progress.update('Syncing with Simkl...', 0)
+		status = simkl_sync_activities(force_update=True)
+	except Exception as e:
+		kodi_utils.logger('Simkl', 'Force sync failed: %s' % e)
+	finally:
+		kodi_utils.close_progress_dialog(progress)
 	if status == 'failed': kodi_utils.notification('Simkl Sync Failed', 3000)
 	else:
 		kodi_utils.notification('Simkl Sync Complete', 3000)

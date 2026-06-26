@@ -832,6 +832,13 @@ def progress_dialog(heading='', icon=None):
 		sleep(50)
 	return progress_dialog
 
+def close_progress_dialog(progress):
+	if not progress: return
+	try:
+		progress.is_canceled = True
+		progress.close()
+	except: pass
+
 def select_dialog(function_list, **kwargs):
 	from windows.base_window import open_window
 	selection = open_window(('windows.default_dialogs', 'Select'), 'select.xml', **kwargs)

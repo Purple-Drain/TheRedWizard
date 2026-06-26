@@ -2,7 +2,6 @@
 import json
 import time
 import requests
-from threading import Thread
 from operator import itemgetter
 from caches import mdblist_cache
 from caches.settings_cache import get_setting, set_setting
@@ -68,6 +67,9 @@ def _get_mdbl_paginated_list(url):
 			params['cursor'] = next_cursor
 	except: pass
 	return items
+
+def _get_mdbl_playback_items():
+	return _get_mdbl_paginated_list('sync/playback').get('items', [])
 
 def _tmdb_id_from_ids(ids):
 	for key in ('tmdb', 'tmdbid'):
@@ -279,9 +281,11 @@ def mdblist_force_sync(params=None):
 	status = 'failed'
 	try:
 		status = mdblist_sync_activities(force_update=True, progress=progress)
+	except Exception as e:
+		kodi_utils.logger('MDBList', 'Force sync failed: %s' % e)
+		status = 'failed'
 	finally:
-		try: progress.close()
-		except: pass
+		kodi_utils.close_progress_dialog(progress)
 	if status == 'canceled': return status
 	if status == 'failed': kodi_utils.notification('MDBList Sync Failed', 3000)
 	elif status != 'no account':
@@ -415,7 +419,8 @@ def mdblist_indicators_movies(watched_info):
 	def _process(item):
 		tmdb_id = _resolve_movie_id(item.get('movie', {}).get('ids', {}))
 		if tmdb_id: insert_list.append(('movie', tmdb_id, '', '', item.get('last_watched_at', ''), item.get('movie', {}).get('title', '')))
-	for i in TaskPool().tasks(lambda x: _process(x[0]), [(i,) for i in watched_info.get('movies', [])], Thread): i.join()
+	movies = watched_info.get('movies', [])
+	for i in TaskPool().tasks(_process, movies, min(len(movies), settings.max_threads())): i.join()
 	mdblist_cache.mdblist_watched_cache.set_bulk_movie_watched(insert_list)
 
 def mdblist_indicators_tv(watched_info):
@@ -426,7 +431,8 @@ def mdblist_indicators_tv(watched_info):
 		if not tmdb_id: return
 		ep = item.get('episode', {})
 		insert_list.append(('episode', tmdb_id, ep.get('season'), ep.get('number'), item.get('last_watched_at', ''), ep.get('show', {}).get('title', '')))
-	for i in TaskPool().tasks(lambda x: _process(x[0]), [(i,) for i in watched_info.get('episodes', [])], Thread): i.join()
+	episodes = watched_info.get('episodes', [])
+	for i in TaskPool().tasks(_process, episodes, min(len(episodes), settings.max_threads())): i.join()
 	mdblist_cache.mdblist_watched_cache.set_bulk_tvshow_watched(insert_list)
 
 def mdblist_progress_movies(progress_info):
@@ -500,8 +506,7 @@ def mdblist_sync_activities(params=None, force_update=False, progress=None):
 	if refresh_movie_pause or refresh_episode_pause:
 		if _sync_canceled(): return 'canceled'
 		success = 'success'
-		progress_data = call_mdblist('sync/playback') or {}
-		items = progress_data.get('items', []) if isinstance(progress_data, dict) else []
+		items = _get_mdbl_playback_items()
 		if _sync_canceled(): return 'canceled'
 		if refresh_movie_pause: mdblist_progress_movies(items)
 		if _sync_canceled(): return 'canceled'
