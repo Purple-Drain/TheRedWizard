@@ -9,7 +9,7 @@ timeout = 20.0
 _ALERT_SUB_MAX_REMAINING = 600
 # When the last .srt cue ends long before EOF, assume an unsubtitled credits tail and aim pre-credits.
 _SUBS_UNSUBTITLED_TAIL_SEC = 90
-_SUBS_PRE_CREDITS_REMAINING_SEC = 90
+_SUBS_PRE_CREDITS_REMAINING_SEC = 20
 _SUB_EXTS = ('.srt', '.ass', '.ssa', '.sub', '.vtt')
 _ACTIVE_SUB_PROP = 'redlight.active_subtitle_path'
 _SUBMAKER_SKIP_LANGS = frozenset(('sub toolbox',))
@@ -299,6 +299,47 @@ def _subtitle_last_end_seconds(content):
 		end_seconds = max(end_seconds, _time_part_to_seconds(end))
 	return end_seconds if end_seconds > 0 else None
 
+_SUBS_CREDITS_JUNK_RE = re.compile(
+	r'addic7ed|opensubtitles|subscene|sub\s*toolbox|sync\s*&|corrections?\s*by|translated\s*by|subtitle\s*team|www\.|http',
+	re.I)
+
+def _subtitle_cue_text_is_junk(text):
+	text = re.sub(r'<[^>]+>', '', text or '').strip()
+	if not text: return True
+	if _SUBS_CREDITS_JUNK_RE.search(text): return True
+	if re.fullmatch(r'[\s♪♫\(\)\[\]\-\*\.!]+', text): return True
+	if re.fullmatch(r'\([^)]+\)', text): return True
+	if re.fullmatch(r'\[[^\]]+\]', text): return True
+	if '♪' in text and len(re.sub(r'[^a-zA-Z]', '', text)) < 4: return True
+	return False
+
+def _subtitle_cue_end_from_time_line(line):
+	match = re.search(r'-->\s*(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})', line)
+	if not match: return None
+	h, m, s, ms = match.groups()
+	return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+def _subtitle_last_dialogue_end_seconds(content):
+	blocks = re.split(r'\n\s*\n', content.strip())
+	for block in reversed(blocks):
+		lines = [line.strip() for line in block.splitlines() if line.strip()]
+		if len(lines) < 2: continue
+		end_seconds = None
+		text_lines = []
+		for line in lines:
+			if '-->' in line:
+				end_seconds = _subtitle_cue_end_from_time_line(line)
+			elif not line.isdigit():
+				text_lines.append(line)
+		if end_seconds is None: continue
+		if not _subtitle_cue_text_is_junk(' '.join(text_lines)): return end_seconds
+	return None
+
+def _credits_entry_remaining_from_dialogue(total_time, dialogue_end):
+	remaining = float(total_time) - float(dialogue_end)
+	if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
+	return int(remaining)
+
 def _raw_remaining_from_last_cue(total_time, last_cue_end):
 	remaining = float(total_time) - float(last_cue_end)
 	if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
@@ -308,13 +349,17 @@ def _alert_remaining_from_last_cue(total_time, last_cue_end):
 	remaining = float(total_time) - float(last_cue_end)
 	if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
 	if remaining > _SUBS_UNSUBTITLED_TAIL_SEC:
-		remaining = min(remaining, _SUBS_PRE_CREDITS_REMAINING_SEC)
+		remaining = _SUBS_PRE_CREDITS_REMAINING_SEC
 	return int(remaining)
 
-def _seconds_remaining_before_end(sub_path, total_time, for_alert=False):
+def _seconds_remaining_before_end(sub_path, total_time, for_alert=False, credits_entry=False):
 	try:
 		with ku.open_file(sub_path) as file: content = file.read()
 		if not _looks_like_subtitle_content(content): return None
+		if credits_entry:
+			dialogue_end = _subtitle_last_dialogue_end_seconds(content)
+			if dialogue_end is None: return None
+			return _credits_entry_remaining_from_dialogue(total_time, dialogue_end)
 		end_seconds = _subtitle_last_end_seconds(content)
 		if end_seconds is None: return None
 		if for_alert: return _alert_remaining_from_last_cue(total_time, end_seconds)
@@ -359,15 +404,26 @@ def _fetch_alert_subtitle(imdb_id, season, episode):
 	return _fetch_submaker_alert_subtitle(imdb_id, season, episode)
 
 def subtitle_seconds_remaining_before_end(total_time, imdb_id, season=None, episode=None, fetch=False, player=None,
-		playing_filename=None, playback_started_at=None, year=None, for_alert=False):
+		playing_filename=None, playback_started_at=None, year=None, for_alert=False, credits_entry=False, quiet=False):
 	if not total_time: return None
+	log_label = 'Subtitle credits entry' if credits_entry else 'Subtitle alert timing'
 	for sub_path in _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at):
-		remaining = _seconds_remaining_before_end(sub_path, total_time, for_alert=for_alert)
-		if remaining is not None: return remaining
+		remaining = _seconds_remaining_before_end(sub_path, total_time, for_alert=for_alert, credits_entry=credits_entry)
+		if remaining is not None:
+			if not quiet:
+				try: label = os.path.basename(ku.translate_path(sub_path) if sub_path.startswith('special://') else sub_path)
+				except: label = sub_path or 'unknown'
+				ku.logger('Red Light', '%s (local): %s remaining=%ss' % (log_label, label, remaining))
+			return remaining
 	if not fetch or not imdb_id or not st.subs_alert_fetch_configured(): return None
 	fetched = fetch_subtitle_for_alert_timing(imdb_id, season, episode, year, playing_filename)
 	if not fetched: return None
-	return _seconds_remaining_before_end(fetched, total_time, for_alert=for_alert)
+	remaining = _seconds_remaining_before_end(fetched, total_time, for_alert=for_alert, credits_entry=credits_entry)
+	if remaining is not None and not quiet:
+		try: label = os.path.basename(ku.translate_path(fetched) if fetched.startswith('special://') else fetched)
+		except: label = fetched or 'unknown'
+		ku.logger('Red Light', '%s (fetched): %s remaining=%ss' % (log_label, label, remaining))
+	return remaining
 
 def remember_active_subtitle_path(path):
 	if path: ku.set_property(_ACTIVE_SUB_PROP, path)

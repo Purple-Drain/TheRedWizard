@@ -73,7 +73,9 @@ class TVShows:
 				if not is_random and data['total_pages'] > page_no: self.new_page = {'new_page': str(page_no + 1)}
 			elif self.action in self.special:
 				key_id = self.params_get('key_id') or self.params_get('query')
-				if not key_id: return
+				if not key_id:
+					kodi_utils.end_directory(handle)
+					return
 				data = function(key_id, page_no)
 				results = data['results']
 				self.list = [i['id'] for i in results]
@@ -104,7 +106,9 @@ class TVShows:
 				if not is_random and self.action != 'trakt_recommendations': self.new_page = {'new_page': str(page_no + 1)}
 			elif self.action in self.trakt_special:
 				key_id = self.params_get('key_id', None) or self.params_get('query')
-				if not key_id: return
+				if not key_id:
+					kodi_utils.end_directory(handle)
+					return
 				self.id_type = 'trakt_dict'
 				data = function(key_id, page_no)
 				self.list = [i['show']['ids'] for i in data]

@@ -401,18 +401,33 @@ class RandomLists():
 	def get_sample(self):
 		return random.sample(range(1, self.max_range), self.sample_size)
 
+def _shortcut_item_is_random(item):
+	if item.get('random') == 'true': return True
+	mode = item.get('mode', '')
+	if mode.startswith('random.'): return True
+	action = item.get('action', '')
+	if action in RandomLists.movie_special_main or action in RandomLists.tvshow_special_main:
+		if not item.get('key_id') and not item.get('query'): return True
+	return False
+
 def random_shortcut_folders(folder_name, random_results):
 	random_check = kodi_utils.random_valid_type_check()
 	random_results = [i for i in random_results if i['mode'].replace('random.', '') in random_check]
+	handle = int(sys.argv[1])
+	if not random_results:
+		kodi_utils.set_category(handle, folder_name)
+		return kodi_utils.end_directory(handle)
 	database = RandomWidgets()
 	is_external = kodi_utils.external()
 	random_list, cache_to_memory = get_persistent_content(database, 'random_shortcut_folders_%s' % folder_name, is_external)
 	if not random_list:
 		if len(random_results) > 1: random_list = random.choice(random_results)
 		else: random_list = random_results[0]
+		is_random_item = _shortcut_item_is_random(random_list)
 		random_list.update({'folder_name': folder_name, 'mode': random_list['mode'].replace('random.', '')})
+		if is_random_item: random_list['random'] = 'true'
 		if cache_to_memory: set_persistent_content(database, 'random_shortcut_folders_%s' % folder_name, random_list)
-	if random_list.get('random') == 'true': return RandomLists(random_list).run_random()
+	if _shortcut_item_is_random(random_list): return RandomLists(random_list).run_random()
 	if random_list.get('action') in ('tmdb_movies_discover', 'tmdb_tv_discover'): return RandomLists(random_list).run_random()
 	menu_type = random_check[random_list['mode']]
 	list_name = random_list.get('list_name', None) or random_list.get('name', None) or 'Random'

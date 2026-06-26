@@ -590,6 +590,11 @@ class Navigator:
 			return self.end_directory()
 		is_random = '[COLOR red][RANDOM][/COLOR]' in list_name
 		contents = nc.get_shortcut_folder_contents(list_name)
+		if not contents and not is_random:
+			random_name = '%s [COLOR red][RANDOM][/COLOR]' % list_name
+			contents = nc.get_shortcut_folder_contents(random_name)
+			if contents:
+				list_name, is_random = random_name, True
 		folder_icon = self.get_icon('folder')
 		if is_random:
 			from indexers.random_lists import random_shortcut_folders

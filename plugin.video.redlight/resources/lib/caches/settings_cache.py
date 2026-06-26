@@ -681,6 +681,8 @@ def set_from_list(params):
 	settings_list = [(v, k) for k, v in settings_options]
 	if setting_id == 'watched_indicators':
 		settings_list.sort(key=lambda item: item[0].lower())
+	elif setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
+		settings_list.sort(key=lambda item: item[0].lower())
 	new_value = kodi_utils.select_dialog(settings_list, **{'items': json.dumps([{'line1': item[0]} for item in settings_list]), 'narrow_window': 'true'})
 	if not new_value: return
 	setting_value = new_value[1]

@@ -57,7 +57,9 @@ class Movies:
 				if data['total_pages'] > page_no: self.new_page = {'new_page': str(data['page'] + 1)}
 			elif self.action in self.special:
 				key_id = self.params_get('key_id') or self.params_get('query')
-				if not key_id: return
+				if not key_id:
+					kodi_utils.end_directory(handle)
+					return
 				data = function(key_id, page_no)
 				results = data['results']
 				self.list = [i['id'] for i in results]

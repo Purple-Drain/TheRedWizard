@@ -125,7 +125,7 @@ class Sources():
 		self.include_unknown_size = get_setting('redlight.results.size_unknown', 'false') == 'true'
 		self.make_search_info()
 		if self.background and self.play_type in ('autoplay_nextep', 'autoscrape_nextep'):
-			self._notify_nextep_scrape_started()
+			self._log_nextep_scrape_started()
 		if self.background and self.autoplay_nextep and self.nextep_settings:
 			if not self.still_watching_check():
 				kodi_utils.notification('Cancel Autoplay', icon=self.meta.get('poster'))
@@ -1741,22 +1741,49 @@ class Sources():
 			return self._no_results()
 		return self._show_playback_failed_dialog()
 
-	def _notify_nextep_scrape_started(self):
+	def _log_nextep_scrape_started(self):
 		try:
-			kodi_utils.notification('[B]Next Up:[/B] Scraping %s S%02dE%02d' % (self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')), 4500, self.meta.get('poster'))
+			kodi_utils.logger('Red Light', 'Next episode background scrape started: %s S%02dE%02d (%s)' % (
+				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), self.play_type))
 		except: pass
 
-	def _wait_for_pop_window(self, window_time):
-		if not window_time: return
-		player = kodi_utils.kodi_player()
-		if not player.isPlayingVideo(): return
-		try: total_time = player.getTotalTime()
-		except: return
-		while player.isPlayingVideo():
+	def _playback_remaining_seconds(self, player, allow_stopped=False):
+		try:
+			if not allow_stopped and not player.isPlayingVideo(): return None
+			return round(float(player.getTotalTime()) - float(player.getTime()))
+		except:
+			if not allow_stopped: return None
 			try:
-				if round(total_time - player.getTime()) <= int(window_time): return
+				prop = kodi_utils.get_property('redlight.nextep_remaining')
+				if prop: return int(prop)
 			except: pass
-			kodi_utils.sleep(1000)
+			return None
+
+	def _autoscrape_stop_notify_remaining(self, window_time):
+		return max(int(window_time), settings.NEXTEP_STOP_NOTIFY_REMAINING_SEC)
+
+	def _notify_autoscrape_ready(self, remaining, window_time):
+		if getattr(self, '_autoscrape_ready_notified', False): return
+		self._autoscrape_ready_notified = True
+		kodi_utils.logger('Red Light', 'Autoscrape next episode ready: %s S%02dE%02d remaining=%ss alert_window=%ss' % (
+			self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), remaining, window_time))
+		kodi_utils.notification('[B]Next Episode Ready:[/B] %s S%02dE%02d' \
+				% (self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')), 6500, self.meta.get('poster'))
+
+	def _wait_autoscrape_pop_window(self, player, window_time):
+		tight = int(window_time)
+		last_remaining = self._playback_remaining_seconds(player)
+		while player.isPlayingVideo():
+			last_remaining = self._playback_remaining_seconds(player)
+			if last_remaining is None: break
+			if last_remaining <= tight:
+				return last_remaining, True
+			kodi_utils.sleep(500)
+		return last_remaining, False
+
+	def _should_autoscrape_stop_notify(self, remaining, window_time):
+		if remaining is None: return False
+		return remaining <= self._autoscrape_stop_notify_remaining(window_time)
 
 	def still_watching_check(self):
 		watching_check = self.nextep_settings.get('watching_check', 0)
@@ -1835,17 +1862,35 @@ class Sources():
 			if not self._make_still_watching_dialog('Autoscrape Next Episode of [B]%s[/B]?', heading='Autoscrape Next Episode?', right_align=True):
 				return
 		player = kodi_utils.kodi_player()
-		if player.isPlayingVideo():
-			results = self.get_sources()
-			if not results:
-				return
-			window_time = self.nextep_settings.get('window_time', 0) if self.nextep_settings else 0
-			self._wait_for_pop_window(window_time)
-			kodi_utils.notification('[B]Next Episode Ready:[/B] %s S%02dE%02d' \
-					% (self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')), 6500, self.meta.get('poster'))
-			while player.isPlayingVideo(): kodi_utils.sleep(100)
-			self.display_results(results)
-		else: return
+		if not player.isPlayingVideo():
+			return
+		results = self.get_sources()
+		if not results:
+			kodi_utils.logger('Red Light', 'Autoscrape next episode: no results for %s S%02dE%02d' % (
+				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')))
+			return
+		window_time = self.nextep_settings.get('window_time', 0) if self.nextep_settings else 0
+		self._autoscrape_ready_notified = False
+		remaining = self._playback_remaining_seconds(player, allow_stopped=True)
+		if not player.isPlayingVideo():
+			if self._should_autoscrape_stop_notify(remaining, window_time):
+				self._notify_autoscrape_ready(remaining, window_time)
+			else:
+				kodi_utils.logger('Red Light', 'Autoscrape next episode ready (stopped during scrape): %s S%02dE%02d remaining=%ss alert_window=%ss' % (
+					self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), remaining, window_time))
+			return self.display_results(results)
+		if remaining is not None and remaining <= int(window_time):
+			self._notify_autoscrape_ready(remaining, window_time)
+		else:
+			remaining, should_notify = self._wait_autoscrape_pop_window(player, window_time)
+			if should_notify:
+				self._notify_autoscrape_ready(remaining, window_time)
+		while player.isPlayingVideo(): kodi_utils.sleep(100)
+		if not self._autoscrape_ready_notified:
+			remaining = self._playback_remaining_seconds(player, allow_stopped=True)
+			if self._should_autoscrape_stop_notify(remaining, window_time):
+				self._notify_autoscrape_ready(remaining, window_time)
+		self.display_results(results)
 
 	def debrid_importer(self, debrid_provider):
 		return manual_function_import(*self.debrids[debrid_provider])

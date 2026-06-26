@@ -324,6 +324,12 @@ def mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=N
 	if success and action == 'mark_as_unwatched': mdblist_sync_activities()
 	return success
 
+def mdblist_official_status(media_type):
+	if kodi_utils.service_scrobbler_defer('service.mdblist-scrobbler',
+		auth_keys=('api_key', 'apikey', 'token', 'mdblist_api_key', 'mdblist.token', 'refresh_token'),
+		scrobble_enable_keys=('scrobble', 'scrobble_enabled', 'enable_scrobble', 'scrobble_movies', 'scrobble_episodes')): return False
+	return True
+
 def mdblist_progress(action, media_type, tmdb_id, percent, season=None, episode=None, resume_id=None, refresh_mdblist=False):
 	if action == 'clear_progress':
 		call_mdblist('scrobble/clear', json_data={'id': resume_id}, method='post')

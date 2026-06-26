@@ -318,6 +318,11 @@ def autoplay_prescrape(scrape_provider):
 
 NEXTEP_SCRAPE_MARGIN_SEC = 30
 NEXTEP_COMMAND_HEADROOM_SEC = 15
+NEXTEP_AUTOSCRAPE_MIN_HEADROOM_SEC = 90
+NEXTEP_ALERT_MAX_REMAINING_SEC = 20
+NEXTEP_ALERT_MIN_REMAINING_SEC = 20
+NEXTEP_CREDITS_ENTRY_GAP_SEC = 15
+NEXTEP_STOP_NOTIFY_REMAINING_SEC = 90
 
 def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
 	# Scrape budget (results.timeout + NEXTEP_SCRAPE_MARGIN_SEC) plus time for still-watching / autoscrape confirm dialogs.
@@ -326,6 +331,8 @@ def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
 		headroom += NEXTEP_COMMAND_HEADROOM_SEC
 	if 'autoscrape' in play_type and autoscrape_confirm():
 		headroom += NEXTEP_COMMAND_HEADROOM_SEC
+	if 'autoscrape' in play_type:
+		headroom = max(headroom, NEXTEP_AUTOSCRAPE_MIN_HEADROOM_SEC)
 	return headroom
 
 def auto_nextep_settings(play_type):

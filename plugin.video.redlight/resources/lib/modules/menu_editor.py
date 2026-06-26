@@ -171,6 +171,7 @@ class MenuEditor:
 		browsed_result = self._path_browser()
 		if browsed_result == None: return
 		menu_item = self._get_menu_item(browsed_result['file'])
+		if menu_item.get('mode', '').startswith('random.'): menu_item['random'] = 'true'
 		name, icon = browsed_result['label'], self._get_icon_var(browsed_result['thumbnail'])
 		menu_name = self._get_external_name_input(name) or name
 		icon_choice = self._icon_select(default_icon=icon)

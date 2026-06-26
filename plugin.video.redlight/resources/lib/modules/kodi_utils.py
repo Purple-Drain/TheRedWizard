@@ -446,6 +446,27 @@ def addon_installed(addon_id):
 def addon_enabled(addon_id):
 	return get_visibility('System.AddonIsEnabled(%s)' % addon_id)
 
+def service_scrobbler_defer(addon_id, auth_keys=(), scrobble_enable_keys=()):
+	"""Return True when an external service addon should own playback scrobbling."""
+	if not addon_installed(addon_id) or not addon_enabled(addon_id): return False
+	try: inst = addon(addon_id)
+	except: return False
+	if auth_keys:
+		authed = False
+		for key in auth_keys:
+			try:
+				val = str(inst.getSetting(key) or '').strip()
+				if val and val not in ('empty_setting',): authed = True; break
+			except: pass
+		if not authed: return False
+	for key in scrobble_enable_keys:
+		try:
+			val = str(inst.getSetting(key) or '').strip().lower()
+			if val in ('false', '0', 'no', 'off'): return False
+			if val in ('true', '1', 'yes', 'on'): return True
+		except: pass
+	return bool(auth_keys)
+
 def container_content():
 	return get_infolabel('Container.Content')
 

@@ -2,8 +2,8 @@
 from datetime import datetime
 from threading import Thread
 from apis.trakt_api import trakt_watched_status_mark, trakt_official_status, trakt_progress, trakt_get_hidden_items
-from apis.simkl_api import simkl_watched_status_mark, simkl_progress
-from apis.mdblist_api import mdblist_watched_status_mark, mdblist_progress
+from apis.simkl_api import simkl_watched_status_mark, simkl_progress, simkl_official_status
+from apis.mdblist_api import mdblist_watched_status_mark, mdblist_progress, mdblist_official_status
 from caches.base_cache import connect_database, database
 from caches.trakt_cache import clear_trakt_collection_watchlist_data
 from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, logger
@@ -302,9 +302,9 @@ def set_bookmark(params):
 		_write_local_progress(watched_indicators, media_type, tmdb_id, season, episode, resume_point, curr_time, title)
 		if watched_indicators == 1 and trakt_official_status(media_type):
 			trakt_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_trakt=False)
-		elif watched_indicators == 2:
+		elif watched_indicators == 2 and simkl_official_status(media_type):
 			simkl_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_simkl=False)
-		elif watched_indicators == 3:
+		elif watched_indicators == 3 and mdblist_official_status(media_type):
 			mdblist_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_mdblist=False)
 		refresh_container(refresh)
 	except: pass
@@ -320,9 +320,11 @@ def mark_movie(params):
 		elif not trakt_watched_status_mark(action, 'movies', tmdb_id): return notification('Error')
 		clear_trakt_collection_watchlist_data('watchlist', media_type)
 	elif watched_indicators == 2:
-		if not simkl_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
+		if from_playback and simkl_official_status(media_type) == False: sleep(1000)
+		elif not simkl_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
 	elif watched_indicators == 3:
-		if not mdblist_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
+		if from_playback and mdblist_official_status(media_type) == False: sleep(1000)
+		elif not mdblist_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, title=title)
 	refresh_container(refresh)
 
@@ -413,9 +415,11 @@ def mark_episode(params):
 		elif not trakt_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode): return notification('Error')
 		clear_trakt_collection_watchlist_data('watchlist', 'tvshow')
 	elif watched_indicators == 2:
-		if not simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
+		if from_playback and simkl_official_status(media_type) == False: sleep(1000)
+		elif not simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
 	elif watched_indicators == 3:
-		if not mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
+		if from_playback and mdblist_official_status(media_type) == False: sleep(1000)
+		elif not mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, season, episode, title)
 	update_hidden_progress(tmdb_id)
 	refresh_container(refresh)
