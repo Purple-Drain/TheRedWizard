@@ -25,15 +25,17 @@ class Navigator:
 				try:
 					folder_params = dict(item)
 					url = k.build_folder_url(folder_params)
-					cm_items = [
-					('[B]Move[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.move', 'active_list': self.list_name, 'position': count})),
+					cm_items = []
+					if can_move:
+						cm_items.append(('[B]Move[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.move', 'active_list': self.list_name, 'position': count})))
+					cm_items.extend([
 					('[B]Remove[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.remove', 'active_list': self.list_name, 'position': count})),
 					('[B]Add Content[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.add', 'active_list': self.list_name, 'position': count})),
 					('[B]Restore Menu[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.restore', 'active_list': self.list_name, 'position': count})),
 					('[B]Check for New Menu Items[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.update', 'active_list': self.list_name, 'position': count})),
 					('[B]Reload Menu[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.reload', 'active_list': self.list_name, 'position': count})),
 					('[B]Browse Removed items[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.browse', 'active_list': self.list_name, 'position': count})),
-					('[B]Add to Shortcut Folder[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_add_known', 'url': url}))]
+					('[B]Add to Shortcut Folder[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_add_known', 'url': url}))])
 					icon = k.resolve_list_icon(item.get('iconImage', ''))
 					item['iconImage'] = icon
 					listitem = self.make_listitem()
@@ -48,6 +50,7 @@ class Navigator:
 		else: browse_list = nc.currently_used_list(self.list_name)
 		if not browse_list:
 			browse_list = list(nc.main_menus.get(self.list_name, []))
+		can_move = len(browse_list) > 1
 		results = sorted(list(_process()), key=lambda k: k[1])
 		if not results and browse_list:
 			k.logger('Red Light', 'menu build empty for %s (%s items expected)' % (self.list_name, len(browse_list)))
@@ -532,7 +535,7 @@ class Navigator:
 				self.add(url_params, key_id, 'calender', cm_items=cm_items)
 			except: pass
 		self.category_name = self.params_get('name') or 'History'
-		self.end_directory()
+		self.end_directory(cache_to_disc=False)
 
 	def keyword_results(self):
 		from apis.tmdb_api import tmdb_keywords_by_query
@@ -600,6 +603,7 @@ class Navigator:
 			from indexers.random_lists import random_shortcut_folders
 			return random_shortcut_folders(list_name.replace(' [COLOR red][RANDOM][/COLOR]', ''), contents)
 		if contents:
+			can_move = len(contents) > 1
 			for count, item in enumerate(contents):
 				item_get = item.get
 				iconImage = item_get('iconImage', None)
@@ -609,12 +613,14 @@ class Navigator:
 					else:
 						icon, original_image = k.resolve_list_icon(iconImage), False
 				else: icon, original_image = folder_icon, False
-				cm_items = [
-				('[B]Move[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_edit', 'active_list': list_name, 'position': count, 'action': 'move'})),
+				cm_items = []
+				if can_move:
+					cm_items.append(('[B]Move[/B]', self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_edit', 'active_list': list_name, 'position': count, 'action': 'move'})))
+				cm_items.extend([
 				('[B]Remove[/B]' , self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_edit', 'active_list': list_name, 'position': count, 'action': 'remove'})),
 				('[B]Add Content[/B]' , self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_add', 'name': list_name})),
 				('[B]Rename[/B]' , self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_edit', 'active_list': list_name, 'position': count, 'action': 'rename'})),
-				('[B]Clear All[/B]' , self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_edit', 'active_list': list_name, 'position': count, 'action': 'clear'}))]
+				('[B]Clear All[/B]' , self.run_plugin % self.build_url({'mode': 'menu_editor.shortcut_folder_edit', 'active_list': list_name, 'position': count, 'action': 'clear'}))])
 				self.add(item, item_get('name'), icon, original_image, cm_items=cm_items)
 		elif is_random: pass
 		else: self.add({'mode': 'menu_editor.shortcut_folder_add', 'name': list_name, 'isFolder': 'false'}, '[I]Add Content...[/I]', 'new')

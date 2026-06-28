@@ -32,7 +32,7 @@ class MenuEditor:
 
 	def move(self):
 		list_items = navigator_cache.currently_used_list(self.active_list)
-		if len(list_items) == 1: return kodi_utils.notification('Cancelled', 1500)
+		if len(list_items) <= 1: return
 		if self.position < 0 or self.position >= len(list_items): return kodi_utils.notification('Cancelled', 1500)
 		if not self.name: self.name = list_items[self.position].get('name', '')
 		choice_items = [i for i in list_items if str(i['name']) != str(self.name)]
@@ -126,7 +126,7 @@ class MenuEditor:
 				if self.position < 0 or self.position >= len(list_items): return
 				list_items.pop(self.position)
 			elif self.action == 'move':
-				if len(list_items) == 1: return kodi_utils.notification('Cancelled', 1500)
+				if len(list_items) <= 1: return
 				choice_items = [i for i in list_items if str(i['name']) != str(self.name)]
 				new_position = self._menu_select(choice_items, self.name, multi_line='true', position_list=True)
 				if new_position == None or new_position == self.position: return

@@ -11,6 +11,7 @@ def sys_exit_check(mode='navigator.main'):
 	if get_setting('redlight.reuse_language_invoker', 'true') == 'false': return False
 	# First open still has external() true before Container.PluginName updates; never discard a built list.
 	if is_directory_listing_mode(mode): return False
+	if mode == 'open_settings': return False
 	if not external(): return False
 	return True
 
@@ -27,11 +28,10 @@ def routing(sys):
 	params = dict(parse_qsl(sys.argv[2][1:], keep_blank_values=True))
 	mode = params.get('mode', 'navigator.main')
 	prepare_directory_listing(mode)
-	if not external():
-		from caches.settings_cache import ensure_settings_properties_loaded, should_block_bootstrap_on_entry
-		if should_block_bootstrap_on_entry(mode):
-			try: ensure_settings_properties_loaded()
-			except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
+	from caches.settings_cache import ensure_settings_properties_loaded, should_block_bootstrap_on_entry
+	if should_block_bootstrap_on_entry(mode):
+		try: ensure_settings_properties_loaded()
+		except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
 	if 'navigator.' in mode:
 		from indexers.navigator import Navigator
 		return exec('Navigator(params).%s()' % mode.split('.')[1])

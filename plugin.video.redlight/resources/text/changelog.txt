@@ -1,3 +1,9 @@
+[COLOR red][B]Version 1.5.1[/B][/COLOR]
+- Fixed [B]Open Red Light Settings…[/B] from [B]Configure[/B] / [B]Add-on settings[/B] when opened outside the add-on (add-on list context menu or sideblade): settings bootstrap and language invoker handling now match [B]Tools > Settings[/B].
+- [B]Shortcut Folders[/B] and main menu edit: [B]Move[/B] is hidden when the folder or menu has only one item (nothing to reorder). If move is triggered anyway, Red Light exits quietly instead of showing a misleading [B]Cancelled[/B] notification.
+- Fixed [B]People[/B] and [B]EasyNews Images[/B] search history not updating after a new search until you left and re-opened the history list: refresh the history view when the results window closes, and stop caching search history folders to disc.
+- [B]Sources Accounts[/B]: clearer [B]Check Cached Status (External Scrapers)[/B] help for [B]All Debrid[/B] and [B]Real Debrid[/B] — neither exposes cached status for external scrapers; when enabled, Red Light filters torrents via third-party cache check(s). The scrape may take longer and you will see fewer links.
+
 [COLOR red][B]Version 1.5.0[/B][/COLOR]
 - [B]Autoplay[/B] / [B]Autoscrape Next Episode[/B]: removed the extra [B]Next Up: Scraping[/B] toast at background prep start. [B]Autoscrape[/B] shows one [B]Next Episode Ready[/B] alert when results are ready (before the sources list); [B]Autoplay[/B] keeps one [B]Next Up[/B] alert or the autoplay dialog. Background scrape start is still logged for diagnostics.
 - [B]Autoscrape Next Episode[/B]: background prep starts earlier (minimum 90s scrape headroom) so slow external scrapes can finish before the pre-credits alert when [B]Results > Timeout[/B] is low. [B]Subtitles Info[/B] waits briefly for the alert-timing subtitle fetch before falling back to percentage; [B]Chapter Info[/B] refreshes when chapter markers become available. Next-episode timing, prep schedule, and ready-state are logged to [B]kodi.log[/B] for diagnosis.

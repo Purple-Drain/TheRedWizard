@@ -1876,7 +1876,7 @@
                           <property name="setting_label">Check Cached Status (External Scrapers)</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.ad.cache_check)]</property>
-                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your All Debrid account before listing them. You may see fewer links, but those shown should be instant.</property>
+                          <property name="setting_description">All Debrid does not expose cached status for external scrapers. When enabled, Red Light filters external scraper torrents using a third-party cache check. The scrape may take longer and you will see fewer links.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=ad.cache_check)</onclick>
                       </item>
                       <item>
@@ -2407,7 +2407,7 @@
                           <property name="setting_label">Check Cached Status (External Scrapers)</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.rd.cache_check)]</property>
-                          <property name="setting_description">When enabled, Red Light checks whether external torrent results are cached on your Real Debrid account before listing them. You may see fewer links, but those shown should be instant.</property>
+                          <property name="setting_description">Real Debrid does not expose cached status for external scrapers. When enabled, Red Light filters external scraper torrents using third-party cache checks. The scrape may take longer and you will see fewer links.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=rd.cache_check)</onclick>
                       </item>
                       <item>
