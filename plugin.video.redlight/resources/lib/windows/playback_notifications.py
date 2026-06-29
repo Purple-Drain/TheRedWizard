@@ -179,6 +179,65 @@ class StillWatching(BaseDialog):
 		if not self.closed:
 			self.close()
 
+class IntroSkipPrompt(BaseDialog):
+	def __init__(self, *args, **kwargs):
+		BaseDialog.__init__(self, *args)
+		self.closed = False
+		self.selected = False
+		self.meta = kwargs.get('meta')
+		self.set_properties()
+
+	def onInit(self):
+		self.setFocusId(10)
+		Thread(target=self.monitor, daemon=True).start()
+
+	def run(self):
+		self.doModal()
+		self.clearProperties()
+		self.clear_modals()
+		return self.selected
+
+	def onAction(self, action):
+		if action in self.closing_actions:
+			self.selected = False
+			self.closed = True
+			self.close()
+
+	def onClick(self, controlID):
+		self.selected = {10: True, 11: False}[controlID]
+		self.closed = True
+		self.close()
+
+	def set_properties(self):
+		fanart, clearlogo = self.meta.get('fanart', ''), self.meta.get('clearlogo', '')
+		self.setProperty('mode', 'skip_intro')
+		if avoid_episode_spoilers() and int(self.meta.get('playcount', '0')) == 0:
+			thumb = fanart or addon_fanart()
+		else:
+			thumb = self.meta.get('ep_thumb') or fanart or addon_fanart()
+		self.setProperty('thumb', thumb)
+		self.setProperty('clearlogo', clearlogo)
+		self.setProperty('episode_label', '%s[B] | [/B]%02dx%02d[B] | [/B]%s' % (
+			self.meta['title'], self.meta['season'], self.meta['episode'], self.meta.get('ep_name', '')))
+		self.setProperty('still_watching_heading', 'Skip Intro?')
+		self.setProperty('pause_timer', '')
+
+	def monitor(self):
+		pause_timer = 10
+		try:
+			while not self.closed and pause_timer >= 0:
+				self.setProperty('pause_timer', '%02d %s' % (pause_timer, 'seconds' if pause_timer > 1 else 'second'))
+				self.sleep(1000)
+				if self.closed:
+					return
+				if pause_timer == 0:
+					break
+				pause_timer -= 1
+		except:
+			pass
+		if not self.closed:
+			self.close()
+
 class StingersNotification(BaseDialog):
 	def __init__(self, *args, **kwargs):
 		BaseDialog.__init__(self, *args)

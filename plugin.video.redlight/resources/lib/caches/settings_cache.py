@@ -144,6 +144,14 @@ def sanitize_setting_value(setting_id, value, setting_info=None, validate_paths=
 		if value == '1':
 			return '2' if '2' in opts else '0'
 		return '0'
+	if setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
+		from modules.settings import alert_timing_options
+		value = str(value)
+		opts = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing'))
+		if value in opts: return value
+		if value == '2':
+			return '1' if '1' in opts else '0'
+		return default if default in opts else ('1' if '1' in opts else '0')
 	if setting_id in _CREDENTIAL_STRING_SETTINGS:
 		if value in (None, 'empty_setting', ''): return default if value is None else value
 		return normalize_credential_string(value)
@@ -236,6 +244,10 @@ class SettingsCache:
 				from modules.settings import subtitles_source_options
 				opts = subtitles_source_options()
 				name_setting_value = opts.get(str(setting_value), opts['0'])
+			elif setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
+				from modules.settings import alert_timing_options
+				opts = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing'))
+				name_setting_value = opts.get(str(setting_value), opts.get('1', opts.get('0', '')))
 			else:
 				name_setting_value = setting_info['settings_options'][setting_value]
 			if setting_id == 'aiostreams.instance':
@@ -328,10 +340,10 @@ def _apply_settings_properties_from_db():
 				opts = subtitles_source_options()
 				settings_cache.set_memory_cache('playback.subs_source_name', opts.get(sanitized, opts['0']))
 			except: pass
-		if setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
+		if setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing', 'autoplay_skip_intro'):
 			try:
-				info = defaults_map.get(setting_id) or {}
-				opts = info.get('settings_options', {})
+				from modules.settings import alert_timing_options
+				opts = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing'))
 				settings_cache.set_memory_cache('%s_name' % setting_id, opts.get(sanitized, opts.get('1', '')))
 			except: pass
 	try:
@@ -364,8 +376,9 @@ def refresh_settings_manager_properties():
 	settings_cache.clear_db_cache()
 	_apply_settings_properties_from_db()
 	try:
-		from modules.settings import refresh_playback_subs_source
+		from modules.settings import refresh_playback_subs_source, refresh_alert_timing_settings
 		refresh_playback_subs_source()
+		refresh_alert_timing_settings()
 	except: pass
 
 def bootstrap_settings_properties(force=False):
@@ -624,8 +637,7 @@ def set_string(params):
 	set_setting(setting_id, new_value or 'empty_setting')
 	if setting_id in ('playback.submaker_manifest', 'playback.opensubs_username', 'playback.opensubs_password'):
 		try:
-			from modules.settings import refresh_playback_subs_source
-			refresh_playback_subs_source()
+			refresh_settings_manager_properties()
 		except: pass
 
 def set_numeric(params):
@@ -676,6 +688,9 @@ def set_from_list(params):
 	elif setting_id == 'playback.subs_source':
 		from modules.settings import subtitles_source_options
 		settings_options = subtitles_source_options().items()
+	elif setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
+		from modules.settings import alert_timing_options
+		settings_options = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing')).items()
 	else:
 		settings_options = default_setting_values(setting_id)['settings_options'].items()
 	settings_list = [(v, k) for k, v in settings_options]
@@ -1109,11 +1124,13 @@ def default_settings():
 {'setting_id': 'autoplay_alert_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Window', '1': 'Notification'}},
 {'setting_id': 'autoplay_default_action', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Play', '1': 'Cancel', '2': 'Pause & Wait'}},
 {'setting_id': 'autoplay_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
-{'setting_id': 'autoplay_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info'}},
+{'setting_id': 'autoplay_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
+{'setting_id': 'autoplay_skip_intro', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '2': 'Auto', '1': 'Prompt'}},
+{'setting_id': 'skip_intro_all_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoplay_watching_check', 'setting_type': 'action', 'setting_default': '3', 'min_value': '0', 'max_value': '5'},
 {'setting_id': 'autoscrape_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoscrape_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
-{'setting_id': 'autoscrape_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info'}},
+{'setting_id': 'autoscrape_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
 {'setting_id': 'autoscrape_confirm', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'auto_resume_episode', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Never', '1': 'Always', '2': 'Autoplay Only'}},
 #==================== Playback Utilities

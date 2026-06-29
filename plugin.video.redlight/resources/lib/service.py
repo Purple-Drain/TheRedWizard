@@ -79,6 +79,11 @@ class BootstrapSettings:
 		if not service_bootstrap_needed():
 			return
 		kodi_utils.logger('Red Light', 'BootstrapSettings Service Starting')
+		try:
+			from modules.sources import clear_orphan_nextep_play_stash
+			clear_orphan_nextep_play_stash()
+		except:
+			pass
 		if bootstrap_settings_needed() and not _properties_loaded():
 			monitor.waitForAbort(2)
 		if kodi_utils.service_shutting_down(monitor): return

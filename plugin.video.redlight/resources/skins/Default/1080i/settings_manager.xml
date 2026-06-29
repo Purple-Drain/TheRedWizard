@@ -3319,7 +3319,7 @@
                           <property name="setting_label">    - Alert Timing Source</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.stinger_alert.alert_timing_name)]</property>
-                          <property name="setting_description">Choose when to show the Credit Stingers alert. Uses the percentage above, chapter markers, or subtitle timing. Falls back to Playback Percentage when unavailable</property>
+                          <property name="setting_description">Choose when to show the Credit Stingers alert. Uses the percentage above, chapter markers, or Subtitles Info when a SubMaker manifest URL and/or OpenSubtitles account is configured under Subtitles below. Subtitles Info follows cues in the subtitle file (not the on-screen credits roll), so timing can vary by episode. Falls back to Playback Percentage when unavailable</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=stinger_alert.alert_timing)</onclick>
                       </item>
         <!-- Playback Episodes -->
@@ -3354,6 +3354,59 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_quality_episode)]</property>
                           <property name="setting_description">Choose the Quality properties allowed for autoplay results</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=set_quality_choice&amp;setting_id=autoplay_quality_episode)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Skip Intro</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_skip_intro_name)]</property>
+                          <property name="setting_description">Skip TV intros via TheIntroDB then IntroDB, with embedded chapters as fallback. Prompt asks first. Plays you start yourself (single plays, etc) still prompt when Auto is selected.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoplay_skip_intro)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.autoplay_skip_intro),0)</visible>
+                          <property name="setting_label">    - Also On Plays You Start Yourself</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.skip_intro_all_episodes)]</property>
+                          <property name="setting_description">Apply Skip Intro to library and source-list plays (single plays, etc). Auto still prompts before skipping on those plays.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=skip_intro_all_episodes)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false)</visible>
+                          <property name="setting_label">Autoscrape Next Episode</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_next_episode)]</property>
+                          <property name="setting_description">Enable this and Red Light will automatically search for sources for the next episode of a TV Show towards the end of the episode currently being watched</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoscrape_next_episode)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false) + String.IsEqual(Window(10000).Property(redlight.autoscrape_next_episode),true)</visible>
+                          <property name="setting_label">    - Show Notification After (%) Playback</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_next_window_percentage)]</property>
+                          <property name="setting_description">Choose when Red Light will show the Next Episode Alert</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoscrape_next_window_percentage)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false) + String.IsEqual(Window(10000).Property(redlight.autoscrape_next_episode),true)</visible>
+                          <property name="setting_label">    - Alert Timing Source</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_alert_timing_name)]</property>
+                          <property name="setting_description">Choose when to show the Next Episode alert. Uses the percentage above, chapter markers, IntroDB Info (TheIntroDB credits then IntroDB outro), or Subtitles Info when a SubMaker manifest URL and/or OpenSubtitles account is configured under Subtitles below. Subtitles Info follows cues in the subtitle file (not the on-screen credits roll), so timing can vary by episode. Falls back to Playback Percentage when unavailable</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoscrape_alert_timing)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false) + String.IsEqual(Window(10000).Property(redlight.autoscrape_next_episode),true)</visible>
+                          <property name="setting_label">    - Confirm Before Autoscrape?</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_confirm)]</property>
+                          <property name="setting_description">Enable this and Red Light will confirm you wish to autoscrape the next episode towards the end of the current episode's runtime</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoscrape_confirm)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
@@ -3398,7 +3451,7 @@
                           <property name="setting_label">    - Alert Timing Source</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_alert_timing_name)]</property>
-                          <property name="setting_description">Choose when to show the Next Episode alert. Uses the percentage above, chapter markers, or subtitle timing. Falls back to Playback Percentage when unavailable</property>
+                          <property name="setting_description">Choose when to show the Next Episode alert. Uses the percentage above, chapter markers, IntroDB Info (TheIntroDB credits then IntroDB outro), or Subtitles Info when a SubMaker manifest URL and/or OpenSubtitles account is configured under Subtitles below. Subtitles Info follows cues in the subtitle file (not the on-screen credits roll), so timing can vary by episode. Falls back to Playback Percentage when unavailable</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoplay_alert_timing)</onclick>
                       </item>
                       <item>
@@ -3409,43 +3462,6 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_watching_check)]</property>
                           <property name="setting_description">Choose after how many auto played episodes Red Light will ask if you are still watching. Set to 0 to disable</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoplay_watching_check)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false)</visible>
-                          <property name="setting_label">Autoscrape Next Episode</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_next_episode)]</property>
-                          <property name="setting_description">Enable this and Red Light will automatically search for sources for the next episode of a TV Show towards the end of the episode currently being watched</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoscrape_next_episode)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false) + String.IsEqual(Window(10000).Property(redlight.autoscrape_next_episode),true)</visible>
-                          <property name="setting_label">    - Show Notification After (%) Playback</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_next_window_percentage)]</property>
-                          <property name="setting_description">Choose when Red Light will show the Next Episode Alert</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoscrape_next_window_percentage)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false) + String.IsEqual(Window(10000).Property(redlight.autoscrape_next_episode),true)</visible>
-                          <property name="setting_label">    - Alert Timing Source</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_alert_timing_name)]</property>
-                          <property name="setting_description">Choose when to show the Next Episode alert. Uses the percentage above, chapter markers, or subtitle timing. Falls back to Playback Percentage when unavailable</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoscrape_alert_timing)</onclick>
-                      </item>
-                      
-                      <item>
-                          <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false) + String.IsEqual(Window(10000).Property(redlight.autoscrape_next_episode),true)</visible>
-                          <property name="setting_label">    - Confirm Before Autoscrape?</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoscrape_confirm)]</property>
-                          <property name="setting_description">Enable this and Red Light will confirm you wish to autoscrape the next episode towards the end of the current eisodes runtime</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoscrape_confirm)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>

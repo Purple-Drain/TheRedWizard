@@ -7,9 +7,11 @@ from modules import kodi_utils as ku, settings as st
 
 timeout = 20.0
 _ALERT_SUB_MAX_REMAINING = 600
-# When the last .srt cue ends long before EOF, assume an unsubtitled credits tail and aim pre-credits.
-_SUBS_UNSUBTITLED_TAIL_SEC = 90
+# When dialogue ends long before EOF, scan the final window for the first music/SFX cue (credits roll).
+# Short tails (<60s) use seconds after last dialogue/cue directly.
+_SUBS_UNSUBTITLED_TAIL_SEC = 60
 _SUBS_PRE_CREDITS_REMAINING_SEC = 20
+_SUBS_FINAL_TAIL_SCAN_SEC = 65
 _SUB_EXTS = ('.srt', '.ass', '.ssa', '.sub', '.vtt')
 _ACTIVE_SUB_PROP = 'redlight.active_subtitle_path'
 _SUBMAKER_SKIP_LANGS = frozenset(('sub toolbox',))
@@ -255,21 +257,23 @@ def _alert_temp_paths(imdb_id, season, episode):
 
 def _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at=None):
 	paths, seen = [], set()
-	def add(path):
+	def add(path, require_episode_match=False):
 		if not path: return
+		if require_episode_match and not _subtitle_path_matches_episode(path, imdb_id, season, episode):
+			return
 		try: key = os.path.normcase(os.path.normpath(ku.translate_path(path) if path.startswith('special://') else path))
 		except: key = path
 		if key in seen: return
 		seen.add(key)
 		paths.append(path)
-	for path in _active_subtitle_paths_from_player(): add(path)
 	for path in _alert_temp_paths(imdb_id, season, episode): add(path)
+	for path in _active_subtitle_paths_from_player(): add(path, require_episode_match=True)
 	active_prop = ku.get_property(_ACTIVE_SUB_PROP)
-	if active_prop: add(active_prop)
+	if active_prop: add(active_prop, require_episode_match=True)
 	if playback_started_at:
 		for directory in _addon_temp_subtitle_dirs():
 			for path in _recent_subtitles_in_dir(directory, playback_started_at):
-				add(path)
+				add(path, require_episode_match=True)
 	try: playing_url = player.getPlayingFile() if player else None
 	except: playing_url = None
 	for path in _sidecar_subtitle_paths(playing_filename, playing_url): add(path)
@@ -302,15 +306,35 @@ def _subtitle_last_end_seconds(content):
 _SUBS_CREDITS_JUNK_RE = re.compile(
 	r'addic7ed|opensubtitles|subscene|sub\s*toolbox|sync\s*&|corrections?\s*by|translated\s*by|subtitle\s*team|www\.|http',
 	re.I)
+_SUBS_CREDITS_ROLL_RE = re.compile(
+	r'^(cast|crew|credits|starring|directed by|written by|created by|developed by|executive producers?|producers?|music by)\b',
+	re.I)
+
+def _subtitle_path_matches_episode(path, imdb_id, season, episode):
+	if not path or season is None or episode is None:
+		return True
+	try:
+		name = os.path.basename(ku.translate_path(path) if str(path).startswith('special://') else path).lower()
+	except:
+		name = os.path.basename(str(path)).lower()
+	if 'redlightsubs_' not in name and 'redlightopensubs_' not in name:
+		return True
+	imdb = str(imdb_id or '').lower()
+	if imdb and imdb not in name:
+		return False
+	s, e = int(season), int(episode)
+	return ('_%s_%s_' % (s, e)) in name or ('_%s_%s.' % (s, e)) in name
 
 def _subtitle_cue_text_is_junk(text):
 	text = re.sub(r'<[^>]+>', '', text or '').strip()
 	if not text: return True
 	if _SUBS_CREDITS_JUNK_RE.search(text): return True
+	if re.search(r'[♪♫]', text): return True
+	if re.search(r'\b(music|instrumental|orchestral)\b', text, re.I): return True
+	if len(text) < 80 and _SUBS_CREDITS_ROLL_RE.search(text): return True
 	if re.fullmatch(r'[\s♪♫\(\)\[\]\-\*\.!]+', text): return True
 	if re.fullmatch(r'\([^)]+\)', text): return True
 	if re.fullmatch(r'\[[^\]]+\]', text): return True
-	if '♪' in text and len(re.sub(r'[^a-zA-Z]', '', text)) < 4: return True
 	return False
 
 def _subtitle_cue_end_from_time_line(line):
@@ -318,6 +342,61 @@ def _subtitle_cue_end_from_time_line(line):
 	if not match: return None
 	h, m, s, ms = match.groups()
 	return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+def _subtitle_cue_start_from_time_line(line):
+	match = re.search(r'(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})\s*-->', line)
+	if not match: return None
+	h, m, s, ms = match.groups()
+	return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+def _subtitle_first_junk_start_after(content, min_start_seconds):
+	first_start = None
+	for block in re.split(r'\n\s*\n', content.strip()):
+		lines = [line.strip() for line in block.splitlines() if line.strip()]
+		if len(lines) < 2: continue
+		start_seconds = None
+		text_lines = []
+		for line in lines:
+			if '-->' in line:
+				start_seconds = _subtitle_cue_start_from_time_line(line)
+			elif not line.isdigit():
+				text_lines.append(line)
+		if start_seconds is None or start_seconds < min_start_seconds: continue
+		if not _subtitle_cue_text_is_junk(' '.join(text_lines)): continue
+		if first_start is None or start_seconds < first_start:
+			first_start = start_seconds
+	return first_start
+
+def _subtitle_credits_entry_remaining_seconds(total_time, content):
+	dialogue_end = _subtitle_last_dialogue_end_seconds(content)
+	if dialogue_end is None:
+		end_seconds = _subtitle_last_end_seconds(content)
+		if end_seconds is None: return None
+		return _bounded_alert_remaining(float(total_time) - float(end_seconds))
+	gap = float(total_time) - float(dialogue_end)
+	return _bounded_alert_remaining(gap)
+
+def _subtitle_alert_remaining_seconds(total_time, content):
+	dialogue_end = _subtitle_last_dialogue_end_seconds(content)
+	if dialogue_end is None:
+		end_seconds = _subtitle_last_end_seconds(content)
+		if end_seconds is None: return None
+		return _alert_remaining_from_last_cue(total_time, end_seconds)
+	gap = float(total_time) - float(dialogue_end)
+	if gap < _SUBS_UNSUBTITLED_TAIL_SEC:
+		return _bounded_alert_remaining(gap)
+	junk_start = _subtitle_first_junk_start_after(content, float(dialogue_end))
+	if junk_start is not None:
+		remaining = float(total_time) - junk_start
+		if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
+		return int(remaining)
+	return _bounded_alert_remaining(gap)
+
+def _bounded_alert_remaining(remaining):
+	try: remaining = float(remaining)
+	except: return None
+	if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
+	return int(remaining)
 
 def _subtitle_last_dialogue_end_seconds(content):
 	blocks = re.split(r'\n\s*\n', content.strip())
@@ -335,9 +414,12 @@ def _subtitle_last_dialogue_end_seconds(content):
 		if not _subtitle_cue_text_is_junk(' '.join(text_lines)): return end_seconds
 	return None
 
-def _credits_entry_remaining_from_dialogue(total_time, dialogue_end):
-	remaining = float(total_time) - float(dialogue_end)
+def _subs_alert_remaining_before_eof(remaining):
+	try: remaining = float(remaining)
+	except: return None
 	if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
+	if remaining >= _SUBS_UNSUBTITLED_TAIL_SEC:
+		remaining = _SUBS_PRE_CREDITS_REMAINING_SEC
 	return int(remaining)
 
 def _raw_remaining_from_last_cue(total_time, last_cue_end):
@@ -346,20 +428,19 @@ def _raw_remaining_from_last_cue(total_time, last_cue_end):
 	return int(remaining)
 
 def _alert_remaining_from_last_cue(total_time, last_cue_end):
-	remaining = float(total_time) - float(last_cue_end)
-	if remaining < 0 or remaining > _ALERT_SUB_MAX_REMAINING: return None
-	if remaining > _SUBS_UNSUBTITLED_TAIL_SEC:
-		remaining = _SUBS_PRE_CREDITS_REMAINING_SEC
-	return int(remaining)
+	return _subs_alert_remaining_before_eof(float(total_time) - float(last_cue_end))
 
 def _seconds_remaining_before_end(sub_path, total_time, for_alert=False, credits_entry=False):
 	try:
 		with ku.open_file(sub_path) as file: content = file.read()
 		if not _looks_like_subtitle_content(content): return None
 		if credits_entry:
-			dialogue_end = _subtitle_last_dialogue_end_seconds(content)
-			if dialogue_end is None: return None
-			return _credits_entry_remaining_from_dialogue(total_time, dialogue_end)
+			remaining = _subtitle_credits_entry_remaining_seconds(total_time, content)
+			if remaining is not None: return remaining
+			return None
+		if for_alert:
+			remaining = _subtitle_alert_remaining_seconds(total_time, content)
+			if remaining is not None: return remaining
 		end_seconds = _subtitle_last_end_seconds(content)
 		if end_seconds is None: return None
 		if for_alert: return _alert_remaining_from_last_cue(total_time, end_seconds)

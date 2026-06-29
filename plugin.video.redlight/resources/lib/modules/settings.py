@@ -225,6 +225,31 @@ def opensubs_configured():
 def subs_alert_fetch_configured():
 	return submaker_manifest_configured() or opensubs_configured()
 
+def alert_timing_options(next_episode=False):
+	options = {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info'}
+	if next_episode:
+		options['3'] = 'IntroDB Info'
+	if not subs_alert_fetch_configured():
+		options.pop('2', None)
+	return options
+
+def refresh_alert_timing_settings():
+	from caches.settings_cache import get_setting, set_setting, settings_cache
+	settings_cache.clear_db_cache()
+	changed = False
+	for setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
+		opts = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing'))
+		current = str(get_setting('redlight.%s' % setting_id, '1'))
+		if current not in opts:
+			fallback = '1' if '1' in opts else '0'
+			set_setting(setting_id, fallback)
+			current = fallback
+			changed = True
+		try:
+			settings_cache.set_memory_cache('%s_name' % setting_id, opts.get(current, ''))
+		except: pass
+	return changed
+
 def submaker_language():
 	return get_setting('redlight.playback.submaker_language_name', 'English')
 
@@ -274,7 +299,7 @@ def stingers_show():
 
 def _alert_timing_mode(setting_id, default='1'):
 	value = get_setting('redlight.%s' % setting_id, default)
-	return {'0': 'off', '1': 'chapters', '2': 'subtitles'}.get(str(value), 'chapters')
+	return {'0': 'off', '1': 'chapters', '2': 'subtitles', '3': 'introdb'}.get(str(value), 'chapters')
 
 def stingers_alert_timing():
 	return _alert_timing_mode('stinger_alert.alert_timing', '1')
@@ -294,6 +319,42 @@ def auto_play(media_type):
 def autoplay_next_episode():
 	if auto_play('episode') and get_setting('redlight.autoplay_next_episode', 'false') == 'true': return True
 	else: return False
+
+def skip_intro_mode():
+	return int(get_setting('redlight.autoplay_skip_intro', '0'))
+
+def skip_intro_all_episodes():
+	return get_setting('redlight.skip_intro_all_episodes', 'false') == 'true'
+
+def _skip_intro_chain_play_type(play_type):
+	return play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual')
+
+def skip_intro_enabled(play_type):
+	if skip_intro_mode() == 0:
+		return False
+	if _skip_intro_chain_play_type(play_type):
+		return True
+	return skip_intro_all_episodes()
+
+def skip_intro_auto_approved(play_type):
+	return skip_intro_mode() == 2 and _skip_intro_chain_play_type(play_type)
+
+def skip_intro_needs_prompt(play_type):
+	mode = skip_intro_mode()
+	if mode == 1:
+		return True
+	if mode == 2 and not _skip_intro_chain_play_type(play_type):
+		return True
+	return False
+
+def autoplay_skip_intro_mode():
+	return skip_intro_mode()
+
+def autoplay_skip_intro_enabled(play_type):
+	return skip_intro_enabled(play_type)
+
+def autoplay_skip_intro_auto(play_type):
+	return skip_intro_auto_approved(play_type)
 
 def autoscrape_next_episode():
 	if not auto_play('episode') and get_setting('redlight.autoscrape_next_episode', 'false') == 'true': return True
@@ -322,6 +383,7 @@ NEXTEP_AUTOSCRAPE_MIN_HEADROOM_SEC = 90
 NEXTEP_ALERT_MAX_REMAINING_SEC = 20
 NEXTEP_ALERT_MIN_REMAINING_SEC = 20
 NEXTEP_CREDITS_ENTRY_GAP_SEC = 15
+NEXTEP_INTRODB_BUFFER_SEC = 5
 NEXTEP_STOP_NOTIFY_REMAINING_SEC = 90
 
 def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
