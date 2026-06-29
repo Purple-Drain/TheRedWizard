@@ -116,6 +116,14 @@ class SourcesResults(BaseDialog):
 			if not filtered_list: return ok_dialog(text='No Results')
 			self.set_filter(filtered_list)
 
+	def _offer_full_scrape(self):
+		if not self.prescrape: return False
+		ref = self.sources_ref
+		if not ref: return True
+		if getattr(ref, 'check_prescrape_ran', False): return True
+		if getattr(ref, 'active_external', False): return True
+		return False
+
 	def onAction(self, action):
 		if self.get_visibility('Control.HasFocus(%s)' % self.filter_window_id): return self.filter_action(action)
 		chosen_listitem = self.get_listitem(self.window_id)
@@ -126,7 +134,7 @@ class SourcesResults(BaseDialog):
 		if action == self.info_action:
 			self.open_window(('windows.sources', 'SourcesInfo'), 'sources_info.xml', item=chosen_listitem)
 		elif action in self.selection_actions:
-			if self.prescrape and chosen_listitem.getProperty('perform_full_search') == 'true':
+			if self._offer_full_scrape() and chosen_listitem.getProperty('perform_full_search') == 'true':
 				self.selected = ('perform_full_search', '')
 				return self.close()
 			chosen_source = json.loads(chosen_listitem.getProperty('source'))
@@ -251,7 +259,7 @@ class SourcesResults(BaseDialog):
 			item_list.sort(key=lambda k: k[1])
 			self.item_list = [i[0] for i in item_list]
 			self.total_results = str(len(self.item_list))
-			if self.prescrape:
+			if self.prescrape and self._offer_full_scrape():
 				prescrape_listitem = self.make_listitem()
 				prescrape_listitem.setProperty('perform_full_search', 'true')
 				self.item_list.append(prescrape_listitem)

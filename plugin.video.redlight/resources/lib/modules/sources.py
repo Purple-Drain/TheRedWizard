@@ -118,7 +118,7 @@ class Sources():
 		self.threads, self.providers, self.sources, self.internal_scraper_names, self.remove_scrapers = [], [], [], [], ['external']
 		self.clear_properties, self.filters_ignored, self.active_folders, self.resolve_dialog_made, self.episode_group_used = True, False, False, False, False
 		self.sources_total = self.sources_4k = self.sources_1080p = self.sources_720p = self.sources_sd = 0
-		self.prescrape, self.disabled_ext_ignored = 'true', 'false'
+		self.prescrape, self.disabled_ext_ignored = False, False
 		self.ext_name, self.ext_folder = '', ''
 		self.progress_dialog, self.progress_thread = None, None
 		self.playing_filename = ''
@@ -188,7 +188,10 @@ class Sources():
 		if not self.background and params_get('nextep_stash_play') != 'true' and self._playback_already_active():
 			return
 		self.play_type = params_get('play_type', '')
-		self.prescrape = params_get('prescrape', self.prescrape) == 'true'
+		if 'prescrape' in self.params:
+			self.prescrape = params_get('prescrape') == 'true'
+		else:
+			self.prescrape = False
 		self.random, self.random_continual = params_get('random', 'false') == 'true', params_get('random_continual', 'false') == 'true'
 		if 'external_cache_check' in self.params: self.cache_check_override = params_get('external_cache_check') == 'true'
 		else: self.cache_check_override = None
@@ -309,6 +312,8 @@ class Sources():
 			kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
 		self._get_sources_depth = depth + 1
 		try:
+			if depth == 0:
+				self._log_prescrape_settings()
 			if not self.progress_dialog and not self.background: self._make_progress_dialog()
 			results = []
 			self.check_prescrape_ran = False
@@ -467,6 +472,19 @@ class Sources():
 			combined = self.sort_results(combined)
 		self._log_custom_sort_summary(combined, pref_sort_ran)
 		return combined
+
+	def _log_prescrape_settings(self):
+		try:
+			active = self.active_internal_scrapers or []
+			check_scrapers = ('easynews', 'aiostreams', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'folders', 'external')
+			check = {s: settings.check_prescrape_sources(s, self.media_type) for s in active if s in check_scrapers}
+			label = '%s tmdb=%s' % (self.media_type, self.tmdb_id)
+			if self.media_type == 'episode':
+				label += ' S%02dE%02d' % (self.season, self.episode)
+			kodi_utils.logger('ScrapePrescrape', '%s prescrape=%s enabled=%s skip_override=%s autoplay=%s background=%s check=%s active=%s' % (
+				label, self.prescrape, settings.prescrape_enabled(self.media_type, active),
+				self._playback_skips_prescrape_override(), self.autoplay, self.background, check, active))
+		except: pass
 
 	def _log_custom_sort_summary(self, results, pref_sort_ran):
 		try:

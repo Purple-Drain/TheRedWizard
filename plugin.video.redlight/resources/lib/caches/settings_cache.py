@@ -340,11 +340,16 @@ def _apply_settings_properties_from_db():
 				opts = subtitles_source_options()
 				settings_cache.set_memory_cache('playback.subs_source_name', opts.get(sanitized, opts['0']))
 			except: pass
-		if setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing', 'autoplay_skip_intro'):
+		if setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
 			try:
 				from modules.settings import alert_timing_options
 				opts = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing'))
 				settings_cache.set_memory_cache('%s_name' % setting_id, opts.get(sanitized, opts.get('1', '')))
+			except: pass
+		elif setting_id == 'autoplay_skip_intro':
+			try:
+				opts = (defaults_map.get(setting_id) or {}).get('settings_options', {})
+				settings_cache.set_memory_cache('%s_name' % setting_id, opts.get(sanitized, opts.get('0', '')))
 			except: pass
 	try:
 		from apis.aiostreams_api import refresh_settings_properties
@@ -1126,7 +1131,7 @@ def default_settings():
 {'setting_id': 'autoplay_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
 {'setting_id': 'autoplay_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
 {'setting_id': 'autoplay_skip_intro', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '2': 'Auto', '1': 'Prompt'}},
-{'setting_id': 'skip_intro_all_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'skip_intro_all_episodes', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'autoplay_watching_check', 'setting_type': 'action', 'setting_default': '3', 'min_value': '0', 'max_value': '5'},
 {'setting_id': 'autoscrape_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoscrape_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
