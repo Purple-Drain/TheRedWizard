@@ -192,7 +192,16 @@ def watched_info_episode(media_id, watched_db=None):
 	return watched_info
 
 def get_watched_status_episode(watched_info, season_episode):
-	if season_episode in watched_info: return 1
+	try:
+		season, episode = int(season_episode[0]), int(season_episode[1])
+	except:
+		return 0
+	for row in watched_info:
+		try:
+			if int(row[0]) == season and int(row[1]) == episode:
+				return 1
+		except:
+			pass
 	return 0
 
 def get_bookmarks_episode(media_id, season, watched_db=None):
@@ -461,41 +470,44 @@ def batch_watched_status_mark(watched_indicators, insert_list, action):
 def get_next_episodes(nextep_content):
 	watched_db = get_database()
 	if nextep_content == 0:
-		data = watched_db.execute('''WITH cte AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY season DESC, episode DESC) rn FROM watched WHERE db_type == ?)
-									SELECT media_id, season, episode, title, last_played FROM cte WHERE rn = 1''', ('episode',)).fetchall()
+		sql = '''WITH cte AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY season DESC, episode DESC) rn FROM watched WHERE db_type = ?)
+				SELECT media_id, season, episode, title, last_played FROM cte WHERE rn = 1'''
 	else:
-		data = watched_db.execute('SELECT media_id, season, episode, title, MAX(last_played), COUNT(*) AS COUNTER FROM watched WHERE db_type = ? GROUP BY media_id',
-								('episode',)).fetchall()
+		sql = '''WITH cte AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY last_played DESC) rn FROM watched WHERE db_type = ?)
+				SELECT media_id, season, episode, title, last_played FROM cte WHERE rn = 1'''
+	data = watched_db.execute(sql, ('episode',)).fetchall()
 	data = [{'media_ids': {'tmdb': int(i[0])}, 'season': int(i[1]), 'episode': int(i[2]), 'title': i[3], 'last_played': i[4]} for i in data]
 	data.sort(key=lambda x: (x['last_played']), reverse=True)
 	return data
-	
+
+def _find_next_unwatched_episode(season, episode, watched_info, season_data):
+	try:
+		relevant_seasons = [i for i in season_data if i['season_number'] >= season]
+		for item in relevant_seasons:
+			episode_count, item_season = item['episode_count'], item['season_number']
+			if season == item_season:
+				if episode >= episode_count:
+					continue
+				episode_range = range(episode + 1, episode_count + 1)
+			else:
+				episode_range = range(1, episode_count + 1)
+			next_episode = next((i for i in episode_range if not get_watched_status_episode(watched_info, (item_season, i))), None)
+			if next_episode:
+				return item_season, next_episode
+	except: pass
+	return None, None
+
 def get_next(season, episode, watched_info, season_data, nextep_content):
 	if episode == 0: episode = 1
-	elif nextep_content == 0:
+	if nextep_content == 0:
 		try:
 			episode_count = next((i['episode_count'] for i in season_data if i['season_number'] == season), None)
 			season = season if episode < episode_count else season + 1
 			episode = episode + 1 if episode < episode_count else 1
 		except: pass
-	else:
-		try:
-			next_episode = 0
-			relevant_seasons = [i for i in season_data if i['season_number'] >= season]
-			for item in relevant_seasons:
-				episode_count, item_season = item['episode_count'], item['season_number']
-				if season == item_season:
-					if episode >= episode_count:
-						item_season, next_episode = None, None
-						continue
-					episode_range = range(episode + 1, episode_count + 1)
-				else: episode_range = range(1, episode_count + 1)
-				next_episode = next((i for i in episode_range if not get_watched_status_episode(watched_info, (item_season, i))), None)
-				if next_episode: break
-			if not next_episode: season, episode = None, None
-			season, episode = item_season, next_episode
-		except: pass
-	return season, episode
+		if not get_watched_status_episode(watched_info, (season, episode)):
+			return season, episode
+	return _find_next_unwatched_episode(season, episode, watched_info, season_data)
 
 def _movie_progress_list(dbcon):
 	data = dbcon.execute('SELECT media_id, title, last_played, resume_point FROM progress WHERE db_type = ?', ('movie',)).fetchall()

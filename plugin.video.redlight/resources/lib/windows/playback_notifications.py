@@ -184,6 +184,7 @@ class IntroSkipPrompt(BaseDialog):
 		BaseDialog.__init__(self, *args)
 		self.closed = False
 		self.selected = False
+		self.timed_out = False
 		self.meta = kwargs.get('meta')
 		self.set_properties()
 
@@ -195,6 +196,8 @@ class IntroSkipPrompt(BaseDialog):
 		self.doModal()
 		self.clearProperties()
 		self.clear_modals()
+		if self.timed_out:
+			return None
 		return self.selected
 
 	def onAction(self, action):
@@ -236,6 +239,7 @@ class IntroSkipPrompt(BaseDialog):
 		except:
 			pass
 		if not self.closed:
+			self.timed_out = True
 			self.close()
 
 class StingersNotification(BaseDialog):

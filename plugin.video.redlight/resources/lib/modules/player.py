@@ -1003,7 +1003,10 @@ class RedLightPlayer(xbmc.Player):
 	def _intro_skip_past_segment(self, segment):
 		try:
 			end_sec = float(segment['end_sec'])
-			if float(self.curr_time) >= end_sec:
+			curr = float(self.curr_time)
+			if getattr(self, '_intro_skip_approved', False) and curr < end_sec + _INTRO_SKIP_POST_END_GRACE_SEC:
+				return False
+			if curr >= end_sec:
 				return True
 			if self.playback_percent and float(self.playback_percent) > 0:
 				resume_sec = float(self.total_time) * float(self.playback_percent) / 100.0
@@ -1011,6 +1014,31 @@ class RedLightPlayer(xbmc.Player):
 					return True
 		except: pass
 		return False
+
+	def _execute_intro_skip_seek(self, start_sec, end_sec, source):
+		if not self._player_is_active():
+			self._log_intro_skip('Intro skip failed: player inactive')
+			return False
+		if not self.seek(end_sec, False):
+			self._log_intro_skip('Intro skip failed: seek rejected')
+			return False
+		try:
+			ku.sleep(400)
+			actual = float(self.getTime())
+			if abs(actual - end_sec) > 8:
+				if not self.seek(end_sec, False):
+					self._log_intro_skip('Intro skip failed: seek did not stick (at %.1fs, wanted %.1fs)' % (actual, end_sec))
+					return False
+				ku.sleep(400)
+				actual = float(self.getTime())
+				if abs(actual - end_sec) > 8:
+					self._log_intro_skip('Intro skip failed: seek did not stick (at %.1fs, wanted %.1fs)' % (actual, end_sec))
+					return False
+		except Exception as exc:
+			self._log_intro_skip('Intro skip failed: seek verify (%s)' % exc)
+			return False
+		self._log_intro_skip('Intro skip (%s): %.1fs -> %.1fs' % (source, start_sec, end_sec))
+		return True
 
 	def _prompt_intro_skip(self):
 		if not self._player_is_active():
@@ -1032,6 +1060,8 @@ class RedLightPlayer(xbmc.Player):
 			self._maybe_log_intro_skip_no_timing()
 			return
 		if self._intro_skip_past_segment(segment):
+			if getattr(self, '_intro_skip_approved', False):
+				self._log_intro_skip('Intro skip missed: past grace window')
 			self._intro_skip_done = True
 			return
 		try:
@@ -1043,25 +1073,30 @@ class RedLightPlayer(xbmc.Player):
 		if not getattr(self, '_intro_skip_prompt_answered', False) and st.skip_intro_needs_prompt(getattr(self.sources_object, 'play_type', '')):
 			should_prompt = (start_sec <= _INTRO_SKIP_EARLY_START_SEC and curr <= _INTRO_SKIP_PROMPT_EARLY_SEC) or (curr >= start_sec and curr < end_sec)
 			if should_prompt:
+				choice = self._prompt_intro_skip()
+				if choice is None:
+					return
 				self._intro_skip_prompt_answered = True
-				self._intro_skip_approved = self._prompt_intro_skip()
-				if not self._intro_skip_approved:
+				if not choice:
 					self._intro_skip_done = True
-				return
+					self._log_intro_skip('Intro skip: declined')
+					return
+				self._intro_skip_approved = True
+				try:
+					curr = float(self.curr_time)
+				except:
+					return
 		if not getattr(self, '_intro_skip_approved', False):
+			return
+		if self._intro_skip_past_segment(segment):
+			self._log_intro_skip('Intro skip missed: past grace window')
+			self._intro_skip_done = True
 			return
 		if curr < start_sec:
 			return
-		if curr >= end_sec:
-			if not (getattr(self, '_intro_skip_approved', False) and curr < end_sec + _INTRO_SKIP_POST_END_GRACE_SEC):
-				self._intro_skip_done = True
-				return
 		try:
-			if not self.seek(end_sec, False):
+			if self._execute_intro_skip_seek(start_sec, end_sec, segment.get('source', '?')):
 				self._intro_skip_done = True
-				return
-			self._intro_skip_done = True
-			self._log_intro_skip('Intro skip (%s): %.1fs -> %.1fs' % (segment.get('source', '?'), start_sec, end_sec))
 		except Exception as exc:
 			self._log_intro_skip('Intro skip failed: %s' % exc)
 			self._intro_skip_done = True

@@ -167,6 +167,7 @@ def build_single_episode(list_type, params={}):
 			if list_type_starts_with('next'):
 				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content)
 				if not orig_season or not orig_episode: return
+				if ws.get_watched_status_episode(watched_info, (orig_season, orig_episode)): return
 			episodes_data = episodes_meta(orig_season, meta)
 			if not episodes_data: return
 			item = next((i for i in episodes_data if i['episode'] == orig_episode), None)
