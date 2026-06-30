@@ -17,7 +17,11 @@ PROP_NEXTEP_PREP_SCHEDULED = 'redlight.nextep_prep_scheduled'
 _STINGER_EARLY_OFFSET_SEC = 180
 _NEXTEP_SUB_FETCH_DEFER_SEC = 45
 _INTRO_SKIP_PROMPT_EARLY_SEC = 15
+_INTRO_SKIP_PROMPT_COUNTDOWN_SEC = 15
 _INTRO_SKIP_EARLY_START_SEC = 120
+_INTRO_SKIP_SETTLE_SEC = 4
+_INTRO_SKIP_SETTLE_MAX_WAIT_SEC = 12
+_INTRO_SKIP_SETTLE_JUMP_SEC = 20
 _INTRO_CHAPTER_MIN_START_SEC = 5
 _INTRO_CHAPTER_MIN_SEGMENT_SEC = 10
 _INTRO_CHAPTER_MIN_END_SEC = 15
@@ -922,6 +926,8 @@ class RedLightPlayer(xbmc.Player):
 			self._intro_skip_done = False
 			self._intro_skip_segment = None
 			self._intro_skip_no_timing_logged = False
+			self._intro_skip_last_curr = None
+			self._intro_skip_settle_ready = False
 			self._outro_credits_start_cached = '__unset__'
 
 	def _start_intro_skip_fetch(self):
@@ -1000,18 +1006,54 @@ class RedLightPlayer(xbmc.Player):
 		self._intro_skip_done = True
 		self._log_intro_skip('Intro skip: no timing (api miss, chapters rejected)')
 
+	def _intro_resume_sec(self):
+		if self.playback_percent and float(self.playback_percent) > 0:
+			try: return float(self.total_time) * float(self.playback_percent) / 100.0
+			except: pass
+		return None
+
+	def _intro_effective_playhead(self):
+		try: curr = float(self.curr_time)
+		except: curr = 0.0
+		resume_sec = self._intro_resume_sec()
+		if resume_sec is not None: return max(curr, resume_sec)
+		return curr
+
+	def _intro_skip_position_settled(self):
+		if getattr(self, '_intro_skip_settle_ready', False): return True
+		started = getattr(self, '_playback_started_at', None)
+		if not started: return True
+		elapsed = time.time() - started
+		try: curr = float(self.curr_time)
+		except: return False
+		last = getattr(self, '_intro_skip_last_curr', None)
+		if last is not None and abs(curr - last) >= _INTRO_SKIP_SETTLE_JUMP_SEC:
+			self._intro_skip_last_curr = curr
+			return False
+		resume_sec = self._intro_resume_sec()
+		if resume_sec is not None and resume_sec > _INTRO_SKIP_PROMPT_EARLY_SEC:
+			self._intro_skip_settle_ready = True
+			return True
+		if elapsed < _INTRO_SKIP_SETTLE_SEC:
+			self._intro_skip_last_curr = curr
+			return False
+		if last is not None and abs(curr - last) <= 3:
+			self._intro_skip_settle_ready = True
+			return True
+		if elapsed >= _INTRO_SKIP_SETTLE_MAX_WAIT_SEC:
+			self._intro_skip_settle_ready = True
+			return True
+		self._intro_skip_last_curr = curr
+		return False
+
 	def _intro_skip_past_segment(self, segment):
 		try:
 			end_sec = float(segment['end_sec'])
-			curr = float(self.curr_time)
+			curr = self._intro_effective_playhead()
 			if getattr(self, '_intro_skip_approved', False) and curr < end_sec + _INTRO_SKIP_POST_END_GRACE_SEC:
 				return False
 			if curr >= end_sec:
 				return True
-			if self.playback_percent and float(self.playback_percent) > 0:
-				resume_sec = float(self.total_time) * float(self.playback_percent) / 100.0
-				if resume_sec >= end_sec - 2:
-					return True
 		except: pass
 		return False
 
@@ -1045,7 +1087,8 @@ class RedLightPlayer(xbmc.Player):
 			return False
 		try:
 			from windows.base_window import open_window
-			return open_window(('windows.playback_notifications', 'IntroSkipPrompt'), 'playback_notifications.xml', meta=self.meta)
+			return open_window(('windows.playback_notifications', 'IntroSkipPrompt'), 'playback_notifications.xml',
+				meta=self.meta, countdown_sec=_INTRO_SKIP_PROMPT_COUNTDOWN_SEC)
 		except:
 			return False
 
@@ -1071,12 +1114,17 @@ class RedLightPlayer(xbmc.Player):
 		except:
 			return
 		if not getattr(self, '_intro_skip_prompt_answered', False) and st.skip_intro_needs_prompt(getattr(self.sources_object, 'play_type', '')):
-			should_prompt = (start_sec <= _INTRO_SKIP_EARLY_START_SEC and curr <= _INTRO_SKIP_PROMPT_EARLY_SEC) or (curr >= start_sec and curr < end_sec)
+			if not self._intro_skip_position_settled():
+				return
+			effective_curr = self._intro_effective_playhead()
+			should_prompt = (start_sec <= _INTRO_SKIP_EARLY_START_SEC and effective_curr <= _INTRO_SKIP_PROMPT_EARLY_SEC) or (effective_curr >= start_sec and effective_curr < end_sec)
 			if should_prompt:
 				choice = self._prompt_intro_skip()
-				if choice is None:
-					return
 				self._intro_skip_prompt_answered = True
+				if choice is None:
+					self._intro_skip_done = True
+					self._log_intro_skip('Intro skip: timed out')
+					return
 				if not choice:
 					self._intro_skip_done = True
 					self._log_intro_skip('Intro skip: declined')

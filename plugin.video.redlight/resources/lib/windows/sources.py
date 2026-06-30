@@ -374,6 +374,8 @@ class SourcesResults(BaseDialog):
 		self.setProperty('filter_applied', 'false')
 		self.setProperty('filter_info', '')
 
+_RESUME_CHOICE_TIMEOUT_MS = 15000
+
 class SourcesPlayback(BaseDialog):
 	def __init__(self, *args, **kwargs):
 		BaseDialog.__init__(self, *args)
@@ -463,6 +465,7 @@ class SourcesPlayback(BaseDialog):
 	def set_resume_properties(self, percent):
 		self.setProperty('window_mode', self.window_mode)
 		self.setProperty('resume_percent', percent)
+		self.setProperty('percent', '0')
 		self.setFocusId(10)
 		self.update_resumer()
 
@@ -483,8 +486,9 @@ class SourcesPlayback(BaseDialog):
 	def update_resumer(self):
 		count = 0
 		while self.resume_choice is None:
-			percent = int((float(count)/10000)*100)
-			if percent >= 100: self.resume_choice = 'resume'
+			percent = int((float(count) / _RESUME_CHOICE_TIMEOUT_MS) * 100)
+			if percent >= 100:
+				self.resume_choice = 'resume'
 			self.setProperty('percent', str(percent))
 			count += 100
 			self.sleep(100)

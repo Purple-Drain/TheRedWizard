@@ -186,6 +186,8 @@ class IntroSkipPrompt(BaseDialog):
 		self.selected = False
 		self.timed_out = False
 		self.meta = kwargs.get('meta')
+		try: self.countdown_sec = max(5, int(kwargs.get('countdown_sec', 15)))
+		except: self.countdown_sec = 15
 		self.set_properties()
 
 	def onInit(self):
@@ -226,7 +228,7 @@ class IntroSkipPrompt(BaseDialog):
 		self.setProperty('pause_timer', '')
 
 	def monitor(self):
-		pause_timer = 10
+		pause_timer = self.countdown_sec
 		try:
 			while not self.closed and pause_timer >= 0:
 				self.setProperty('pause_timer', '%02d %s' % (pause_timer, 'seconds' if pause_timer > 1 else 'second'))

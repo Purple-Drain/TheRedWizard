@@ -1,3 +1,8 @@
+[COLOR red][B]Version 1.5.9[/B][/COLOR]
+- [B]Skip Intro[/B] [B]Prompt[/B]: one dialog per play with a [B]15[/B]-second countdown; timing out no longer opens a second prompt (logs [B]Intro skip: timed out[/B]).
+- Fixed [B]Skip Intro[/B] [B]Prompt[/B] on resume: waits for playback position to settle (e.g. [B]Unpause Jumpback[/B] / Kodi bookmark seek) before prompting, and skips the prompt when the resume point is already past the intro.
+- Source [B]Resume[/B] / [B]Start Over[/B] / [B]Cancel[/B] prompt (when [B]Auto Resume[/B] is off): [B]15[/B]-second dot countdown before defaulting to [B]Resume[/B] (was [B]10[/B] seconds).
+
 [COLOR red][B]Version 1.5.8[/B][/COLOR]
 - Fixed [B]TMDb Helper[/B] (and other external players): [B]autoplay=true[/B] / [B]autoplay=false[/B] in the playback URL is now honoured regardless of Red Light global [B]Auto Play[/B]. [B]Red Light - Auto Play[/B] resolves the top result; [B]Red Light - Source Select[/B] always opens the source list. In-addon [B]Play[/B] without an [B]autoplay[/B] URL flag still follows [B]Playback > Auto Play[/B] as before.
 
