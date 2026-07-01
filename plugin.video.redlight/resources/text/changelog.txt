@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.6.5[/B][/COLOR]
+- Fixed [B]Random Lists[/B] dynamic widget labels (e.g. [B]Random Because You Watched[/B], random genres/providers): browse and widget paths again include the list [B]name[/B] so Red Light can set the matching [B]Window.Property[/B] for [B]$INFO[Window.Property(redlight.[NAME OF LIST])][/B]. Widgets saved from [B]Random Lists[/B] since [B]1.4.3[/B] may need recreating once so the path includes [B]name=[/B].
+
 [COLOR red][B]Version 1.6.4[/B][/COLOR]
 - [B]External Scrapers[/B]: switching [B]Search Mode[/B] from [B]Series (Fallback by Slot Order)[/B] to [B]Parallel (All Enabled Slots)[/B] shows a reminder about shared volunteer-run indexers and responsible use ([B]Keep Series[/B] is the default button).
 

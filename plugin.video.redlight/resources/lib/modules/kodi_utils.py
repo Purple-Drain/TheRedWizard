@@ -246,10 +246,14 @@ def build_url(url_params):
 _FOLDER_URL_SKIP = frozenset(('iconImage', 'random_support', 'random', 'name', 'isFolder'))
 _FOLDER_URL_KEEP_NAME_MODES = frozenset(('navigator.build_shortcut_folder_contents',))
 
+def _folder_url_keep_name(mode):
+	if mode in _FOLDER_URL_KEEP_NAME_MODES: return True
+	return mode.startswith('random.build_')
+
 def build_folder_url(url_params):
 	mode = url_params.get('mode', '')
 	skip = _FOLDER_URL_SKIP
-	if mode in _FOLDER_URL_KEEP_NAME_MODES:
+	if _folder_url_keep_name(mode):
 		skip = skip - frozenset(('name',))
 	routing = {k: v for k, v in url_params.items() if k not in skip and v not in (None, '')}
 	if 'category_name' not in routing and url_params.get('name') and mode in ('build_movie_list', 'build_tvshow_list'):
