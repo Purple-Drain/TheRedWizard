@@ -708,7 +708,7 @@ def append_external_scraper_settings_cm(cm_append, build_url_fn):
 		'RunPlugin(%s)' % build_url_fn({'mode': 'open_external_scraper_settings'}))])
 
 def external_scraper_run_mode_series():
-	return get_setting('redlight.external_scraper.run_mode', '0') == '1'
+	return get_setting('redlight.external_scraper.run_mode', '1') == '1'
 
 def refresh_external_scraper_properties():
 	from modules.kodi_utils import set_property

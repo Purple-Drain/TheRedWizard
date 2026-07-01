@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.6.3[/B][/COLOR]
+- [B]External Scrapers[/B]: [B]Search Mode[/B] now defaults to [B]Series (Fallback by Slot Order)[/B] for new installs — runs one scraper slot at a time instead of hitting indexers in parallel across every enabled slot. Existing saved settings are unchanged. Switch to [B]Parallel (All Enabled Slots)[/B] under [B]Sources Accounts[/B] when you want all enabled scrapers at once.
+
 [COLOR red][B]Version 1.6.2[/B][/COLOR]
 - [B]Tools[/B] and [B]Options[/B]: [B]External Scraper(s) Settings[/B] opens a picker when more than one scraper module is configured (lists each slot by name; disabled slots marked). One module configured opens that module's settings directly. Per-slot [B]Open[/B] under [B]Sources Accounts[/B] is unchanged.
 - [B]Context Menu[/B]: [B]External Scraper(s) Settings[/B] on movie, TV show, season, and episode rows (after [B]Play Options[/B] where shown). Same picker behaviour. Toggle visibility under [B]Settings > General > Context Menu[/B]. [B]Options[/B] on TV shows and seasons includes the same entry.

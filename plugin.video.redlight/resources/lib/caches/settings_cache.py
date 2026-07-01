@@ -958,7 +958,7 @@ def default_settings():
 {'setting_id': 'external_scraper.slot3.module', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'external_scraper.slot3.name', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'external_scraper.slot3.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'external_scraper.run_mode', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Parallel (All Enabled Slots)', '1': 'Series (Fallback by Slot Order)'}},
+{'setting_id': 'external_scraper.run_mode', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Parallel (All Enabled Slots)', '1': 'Series (Fallback by Slot Order)'}},
 {'setting_id': 'migration.external_scraper_slots_v160', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.cache_check_pm_oc_tb_v129e', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.my_content_nav_mode_v136', 'setting_type': 'boolean', 'setting_default': 'false'},
