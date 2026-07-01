@@ -721,6 +721,20 @@ def set_from_list(params):
 	new_value = kodi_utils.select_dialog(settings_list, **{'items': json.dumps([{'line1': item[0]} for item in settings_list]), 'narrow_window': 'true'})
 	if not new_value: return
 	setting_value = new_value[1]
+	if setting_id == 'external_scraper.run_mode' and setting_value == '0':
+		current = get_setting('redlight.external_scraper.run_mode', '1')
+		if current == '1':
+			if not kodi_utils.confirm_dialog(
+				heading='Search Mode',
+				text=('Many indexers used by external scrapers are non-profit community resources maintained by volunteers.[CR][CR]'
+					'[B]Parallel (All Enabled Slots)[/B] runs every enabled scraper module at the same time. If the same indexers are enabled on each module, that increases load on those indexers.[CR][CR]'
+					'Please use external scrapers responsibly. [B]Series (Fallback by Slot Order)[/B] runs one slot at a time and is gentler on shared indexers.'),
+				ok_label='Switch to Parallel',
+				cancel_label='Keep Series',
+				default_control=11,
+				scroll=True
+			):
+				return
 	prev_value = get_setting('redlight.%s' % setting_id) if setting_id == 'watched_indicators' else None
 	set_setting(setting_id, setting_value)
 	if setting_id == 'watched_indicators' and setting_value == '3' and str(prev_value) != '3':

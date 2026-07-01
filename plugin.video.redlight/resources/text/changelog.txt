@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.6.4[/B][/COLOR]
+- [B]External Scrapers[/B]: switching [B]Search Mode[/B] from [B]Series (Fallback by Slot Order)[/B] to [B]Parallel (All Enabled Slots)[/B] shows a reminder about shared volunteer-run indexers and responsible use ([B]Keep Series[/B] is the default button).
+
 [COLOR red][B]Version 1.6.3[/B][/COLOR]
 - [B]External Scrapers[/B]: [B]Search Mode[/B] now defaults to [B]Series (Fallback by Slot Order)[/B] for new installs — runs one scraper slot at a time instead of hitting indexers in parallel across every enabled slot. Existing saved settings are unchanged. Switch to [B]Parallel (All Enabled Slots)[/B] under [B]Sources Accounts[/B] when you want all enabled scrapers at once.
 
