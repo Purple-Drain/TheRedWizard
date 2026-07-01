@@ -365,6 +365,9 @@ def routing(sys):
 	elif mode == 'hide_unhide_progress_items':
 		from modules.watched_status import hide_unhide_progress_items
 		return hide_unhide_progress_items(params)
+	elif mode in ('external_scraper_clear_slot', 'external_scraper_move_slot'):
+		from indexers import dialogs
+		return exec('dialogs.%s(params)' % mode)
 	elif mode == 'open_external_scraper_settings':
 		from modules.kodi_utils import external_scraper_settings
-		return external_scraper_settings()
+		return external_scraper_settings(params)

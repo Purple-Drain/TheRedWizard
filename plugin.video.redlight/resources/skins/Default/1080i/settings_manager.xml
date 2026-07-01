@@ -1816,22 +1816,189 @@
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
-                          <property name="setting_label">Choose External Scrapers Module</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.name)]</property>
-                          <property name="setting_description">Choose the external scraper module to use within Red Light. No support is provided when you choose to use external scrapers within Red Light</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_choice)</onclick>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.multi_search),true)</visible>
+                          <property name="setting_label">Multi-Scraper Search</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.name),empty_setting)</visible>
-                          <property name="setting_label">Open External Scraper Settings</property>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.multi_search),true)</visible>
+                          <property name="setting_label">Search Mode</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.run_mode_name)]</property>
+                          <property name="setting_description">[B]Parallel (All Enabled Slots)[/B] runs every enabled slot at the same time — how many run is automatic (2 enabled = 2 parallel, 3 enabled = 3 parallel). Same as 1.6.0 when all slots are on.[CR][CR][B]Series (Fallback by Slot Order)[/B] is separate: runs slot 1 first, then slot 2 only if slot 1 returned no torrents, then slot 3 only if slot 2 returned nothing. Slower; useful for obscure titles or when your primary scraper often misses results.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=external_scraper.run_mode)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">External Scraper Slot 1</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot1.module),empty_setting)</visible>
+                          <property name="setting_label">Enable Slot 1</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.slot1.enabled)]</property>
+                          <property name="setting_description">Include this scraper module in source searches when enabled.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=external_scraper.slot1.enabled)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Choose Module (Slot 1)</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.slot1.name)]</property>
+                          <property name="setting_description">Choose the external scraper module for slot 1 (e.g. Gears, Magneto, Coco).</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_choice&amp;slot=1)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot1.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot1.enabled),true)</visible>
+                          <property name="setting_label">Open Slot 1 Module Settings</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Open the External Scraper settings. The settings of the module chosen above will be opened</property>
+                          <property name="setting_description">Open the settings for the scraper module assigned to slot 1.</property>
                           <onclick>back</onclick>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=open_external_scraper_settings)</onclick>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=open_external_scraper_settings&amp;slot=1)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot1.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot1.enabled),true)</visible>
+                          <property name="setting_label">Clear Slot 1</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Remove the scraper module from slot 1.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_clear_slot&amp;slot=1)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">External Scraper Slot 2</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.module),empty_setting)</visible>
+                          <property name="setting_label">Enable Slot 2</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.slot2.enabled)]</property>
+                          <property name="setting_description">Include this scraper module in source searches when enabled.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=external_scraper.slot2.enabled)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Choose Module (Slot 2)</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.slot2.name)]</property>
+                          <property name="setting_description">Choose the external scraper module for slot 2.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_choice&amp;slot=2)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.enabled),true)</visible>
+                          <property name="setting_label">Open Slot 2 Module Settings</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Open the settings for the scraper module assigned to slot 2.</property>
+                          <onclick>back</onclick>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=open_external_scraper_settings&amp;slot=2)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.enabled),true)</visible>
+                          <property name="setting_label">Move Slot 2 Up</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Swap slot 2 with slot 1 (search order).</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_move_slot&amp;slot=2&amp;direction=up)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot2.enabled),true)</visible>
+                          <property name="setting_label">Clear Slot 2</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Remove the scraper module from slot 2.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_clear_slot&amp;slot=2)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">External Scraper Slot 3</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.module),empty_setting)</visible>
+                          <property name="setting_label">Enable Slot 3</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.slot3.enabled)]</property>
+                          <property name="setting_description">Include this scraper module in source searches when enabled.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=external_scraper.slot3.enabled)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <property name="setting_label">Choose Module (Slot 3)</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.external_scraper.slot3.name)]</property>
+                          <property name="setting_description">Choose the external scraper module for slot 3.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_choice&amp;slot=3)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.enabled),true)</visible>
+                          <property name="setting_label">Open Slot 3 Module Settings</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Open the settings for the scraper module assigned to slot 3.</property>
+                          <onclick>back</onclick>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=open_external_scraper_settings&amp;slot=3)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.enabled),true)</visible>
+                          <property name="setting_label">Move Slot 3 Up</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Swap slot 3 with slot 2 (search order).</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_move_slot&amp;slot=3&amp;direction=up)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.external),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.module),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.external_scraper.slot3.enabled),true)</visible>
+                          <property name="setting_label">Clear Slot 3</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Remove the scraper module from slot 3.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_clear_slot&amp;slot=3)</onclick>
                       </item>
         <!-- All Debrid -->
                      <item>

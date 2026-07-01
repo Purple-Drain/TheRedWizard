@@ -243,6 +243,7 @@ class Movies:
 			else: url_params = play_params
 			cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
 			cm_append(['playback_options', ('[B]Play Options[/B]', 'RunPlugin(%s)' % playback_options_params)])
+			settings.append_external_scraper_settings_cm(cm_append, self.build_url)
 			if belongs_to_movieset == 'true' and not self.movieset_list_active and not self.open_movieset:
 				browse_movie_set_params = self.build_url({'mode': 'build_movie_list', 'action': 'tmdb_movies_sets', 'key_id': movieset_id,
 										'name': movieset_name, 'is_external': self.is_external})

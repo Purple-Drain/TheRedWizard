@@ -508,12 +508,36 @@ def limit_number_total_choice(params):
 
 def external_scraper_choice(params):
 	from modules.utils import append_module_to_syspath, manual_function_import
+	try: slot = int(params.get('slot', '1'))
+	except: slot = 1
+	slot = max(1, min(slot, settings.EXTERNAL_SCRAPER_SLOT_COUNT))
 	try:
 		results = kodi_utils.jsonrpc_get_addons('xbmc.python.module')
 		results = [i for i in results if kodi_utils.addon_enabled(i['addonid'])]
 	except: return
-	list_items = [{'line1': i['name'], 'icon': i['thumbnail']} for i in results]
-	kwargs = {'items': json.dumps(list_items)}
+	used = {}
+	for other_slot in range(1, settings.EXTERNAL_SCRAPER_SLOT_COUNT + 1):
+		if other_slot == slot: continue
+		data = settings.external_scraper_slot_data(other_slot)
+		if data['module']: used[data['module']] = other_slot
+	results = [i for i in results if i['addonid'] not in used]
+	if not results:
+		kodi_utils.ok_dialog(text='Every installed scraper module is already assigned to another slot.[CR]Clear a slot or install another module.')
+		return
+	current_module = settings.external_scraper_slot_data(slot)['module']
+	list_items = []
+	preselect_index = None
+	for idx, item in enumerate(results):
+		entry = {'line1': item['name'], 'icon': item['thumbnail']}
+		if current_module and item['addonid'] == current_module:
+			entry['line2'] = 'Current selection for slot %d' % slot
+			preselect_index = idx
+		list_items.append(entry)
+	kwargs = {'items': json.dumps(list_items), 'heading': 'External Scraper Slot %d' % slot}
+	if preselect_index is not None:
+		kwargs['multi_line'] = 'true'
+		kwargs['preselect'] = [preselect_index]
+		kwargs['set_focus'] = preselect_index
 	choice = kodi_utils.select_dialog(results, **kwargs)
 	if choice == None: return
 	module_id, module_name = choice['addonid'], choice['name']
@@ -526,14 +550,43 @@ def external_scraper_choice(params):
 	except: pass
 	if success:
 		try:
-			set_setting('external_scraper.module', module_id)
-			set_setting('external_scraper.name', module_name)
+			if not settings.set_external_scraper_slot(slot, module_id, module_name, enable=True):
+				other_slot = settings.external_scraper_module_in_use(module_id, exclude_slot=slot)
+				kodi_utils.ok_dialog(text='[B]%s[/B] is already assigned to slot %d.[CR]Choose a different module or clear that slot first.' % (module_name, other_slot))
+				return
 			set_setting('provider.external', 'true')
-			kodi_utils.ok_dialog(text='Success.[CR][B]%s[/B] set as External Scraper' % module_name)
+			kodi_utils.ok_dialog(text='Success.[CR][B]%s[/B] set as External Scraper slot %d' % (module_name, slot))
+			try:
+				from caches.settings_cache import refresh_settings_manager_properties
+				refresh_settings_manager_properties()
+			except: pass
 		except: kodi_utils.ok_dialog(text='Error')
 	else:
 		kodi_utils.ok_dialog(text='The [B]%s[/B] Module is not compatible.[CR]Please choose a different Module...' % module_name.upper())
 		return external_scraper_choice(params)
+
+def external_scraper_clear_slot(params):
+	try: slot = int(params.get('slot', '1'))
+	except: return
+	slot = max(1, min(slot, settings.EXTERNAL_SCRAPER_SLOT_COUNT))
+	settings.set_external_scraper_slot(slot, '', '', enable=False)
+	try:
+		from caches.settings_cache import refresh_settings_manager_properties
+		refresh_settings_manager_properties()
+	except: pass
+
+def external_scraper_move_slot(params):
+	try:
+		slot = int(params.get('slot', '1'))
+		direction = params.get('direction', 'up')
+	except: return
+	target = slot - 1 if direction == 'up' else slot + 1
+	if target < 1 or target > settings.EXTERNAL_SCRAPER_SLOT_COUNT: return
+	settings.swap_external_scraper_slots(slot, target)
+	try:
+		from caches.settings_cache import refresh_settings_manager_properties
+		refresh_settings_manager_properties()
+	except: pass
 
 def audio_filters_choice(params={}):
 	from modules.source_utils import audio_filter_choices
@@ -1075,7 +1128,10 @@ def options_menu_choice(params, meta=None):
 		if menu_type in ('tvshow', 'season', 'episode'): listing_append(('TV Shows Progress Manager', '', 'nextep_manager'))
 		listing_append(('Open Download Manager', '', 'open_download_manager'))
 		listing_append(('Open Tools', '', 'open_tools'))
-		if menu_type in ('movie', 'episode') or menu_type in single_ep_list: listing_append(('Open External Scraper Settings', '', 'open_external_scraper_settings'))
+		if menu_type in ('movie', 'episode', 'tvshow', 'season') or menu_type in single_ep_list:
+			configured_scrapers = settings.configured_external_scraper_slots()
+			if configured_scrapers:
+				listing_append((settings.external_scraper_settings_options_label(), '', 'open_external_scraper_settings'))
 		listing_append(('Open Settings', '', 'open_settings'))
 	list_items = [{'line1': item[0], 'line2': item[1] or item[0], 'icon': poster} for item in listing]
 	heading = rootname or 'Options...'

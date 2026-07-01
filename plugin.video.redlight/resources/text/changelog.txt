@@ -1,3 +1,17 @@
+[COLOR red][B]Version 1.6.2[/B][/COLOR]
+- [B]Tools[/B] and [B]Options[/B]: [B]External Scraper(s) Settings[/B] opens a picker when more than one scraper module is configured (lists each slot by name; disabled slots marked). One module configured opens that module's settings directly. Per-slot [B]Open[/B] under [B]Sources Accounts[/B] is unchanged.
+- [B]Context Menu[/B]: [B]External Scraper(s) Settings[/B] on movie, TV show, season, and episode rows (after [B]Play Options[/B] where shown). Same picker behaviour. Toggle visibility under [B]Settings > General > Context Menu[/B]. [B]Options[/B] on TV shows and seasons includes the same entry.
+
+[COLOR red][B]Version 1.6.1[/B][/COLOR]
+- [B]External Scrapers[/B] ([B]test[/B]): [B]Search Mode[/B] under [B]Sources Accounts[/B] when two or more slots are enabled — [B]Parallel (All Enabled Slots)[/B] runs every enabled slot together (2 enabled = 2 parallel, 3 enabled = 3 parallel; same as 1.6.0). [B]Series (Fallback by Slot Order)[/B] runs one slot at a time and tries the next only when the previous slot returned no torrents. Setting hidden with a single enabled slot. [B]ScrapeExternalWave[/B] lines in [B]kodi.log[/B] when [B]Series[/B] is active.
+- [B]External Scrapers[/B]: [B]Choose Module[/B] list marks the current slot assignment with a red indicator and [B]Current selection for slot N[/B] subtitle; list opens focused on that row.
+
+[COLOR red][B]Version 1.6.0[/B][/COLOR] — [I]Development line: multiple external scrapers[/I]
+- [B]External Scrapers[/B]: up to [B]3 scraper module slots[/B] under [B]Sources Accounts[/B]. Assign a different package per slot (e.g. Gears, Magneto, Coco), enable or disable each slot, and reorder with [B]Move Up[/B]. Enabled slots run in [B]parallel[/B] with one shared [B]Results > Timeout[/B] budget; results merge into a single deduped list (hash-level). External cache keys are namespaced per module so provider labels cannot collide. Existing single-module installs migrate automatically into slot 1.
+- [B]External Scrapers[/B]: [B]Choose Module[/B] hides scrapers already assigned to another slot so the same package cannot be selected twice; a guard on save shows a clear message if a duplicate is attempted.
+- [B]External Scrapers[/B]: progress bar thread labels show [B]provider [module][/B] when multiple packages are active. Global [B]Limit Concurrent Threads[/B] applies to external provider threads. Source results and [B]Sources Info[/B] show [B]Scraper: module[/B] (e.g. Gears, Magneto, Coco) on external torrent rows so you can see which slot pulled each result. Slot [B]Open[/B], [B]Move[/B], and [B]Clear[/B] rows hide when that slot is disabled.
+- Fixed upgrade from pre-1.6.0: [B]SyncSettings[/B] inserted empty slot defaults after the scraper migration ran, overwriting slot 1; migration now runs after new rows are added and re-runs when slot 1 is still empty but the legacy [B]external_scraper.module[/B] value exists (repairs installs already hit by the bug).
+
 [COLOR red][B]Version 1.5.9[/B][/COLOR]
 - [B]Skip Intro[/B] [B]Prompt[/B]: one dialog per play with a [B]15[/B]-second countdown; timing out no longer opens a second prompt (logs [B]Intro skip: timed out[/B]).
 - Fixed [B]Skip Intro[/B] [B]Prompt[/B] on resume: waits for playback position to settle (e.g. [B]Unpause Jumpback[/B] / Kodi bookmark seek) before prompting, and skips the prompt when the resume point is already past the intro.
