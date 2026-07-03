@@ -155,13 +155,14 @@ def _download_subtitle_content(file_id):
 
 def fetch_alert_subtitle(imdb_id, season=None, episode=None, year=None, playing_filename=None, playing_item=None):
 	if not st.opensubs_configured(): return None
-	from indexers.subtitles import _looks_like_subtitle_content, _opensubs_alert_path
+	from indexers.subtitles import _looks_like_subtitle_content, _opensubs_alert_path, playback_release_context
+	release_context = playback_release_context(playing_filename, playing_item)
 	results = _search_subtitles(imdb_id, year, season, episode, _subtitle_language_code())
 	match = _pick_best_subtitle(results, playing_filename, playing_item, season, episode)
 	if not match: return None
 	content = _download_subtitle_content(match.get('file_id'))
 	if not _looks_like_subtitle_content(content): return None
-	final_path = _opensubs_alert_path(imdb_id, season, episode)
+	final_path = _opensubs_alert_path(imdb_id, season, episode, release_context)
 	try:
 		with ku.open_file(final_path, 'w') as file: file.write(content)
 		ku.set_property('redlight.active_subtitle_path', final_path)

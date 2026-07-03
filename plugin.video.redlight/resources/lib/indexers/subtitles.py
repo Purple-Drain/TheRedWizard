@@ -17,14 +17,15 @@ _SUB_EXTS = ('.srt', '.ass', '.ssa', '.sub', '.vtt')
 _ACTIVE_SUB_PROP = 'redlight.active_subtitle_path'
 _SUBMAKER_SKIP_LANGS = frozenset(('sub toolbox',))
 _RELEASE_SOURCE_PATTERNS = (
-	('BLURAY', ('bluray', 'blu.ray', 'bdrip', 'bd.rip')),
-	('REMUX', ('remux', 'bdremux')),
+	('BLURAY', ('bluray', 'blu.ray', 'blu-ray', 'bdrip', 'bd.rip', 'bdr')),
+	('REMUX', ('remux', 'bdremux', 'bluray.remux', 'uhd.remux', 'complete.remux', '2160p.remux')),
 	('WEB', ('webdl', 'web.dl', 'web-dl', 'webrip', 'web.rip', '.web.')),
 	('HDTV', ('hdtv',)),
 	('DVD', ('dvdrip', 'dvd.rip')),
 	('HDRIP', ('hdrip', 'hd.rip')),
 )
 _PRIMARY_RELEASE_SOURCES = ('BLURAY', 'REMUX', 'WEB', 'HDTV', 'DVD', 'HDRIP')
+_BLURAY_SOURCE_FAMILY = frozenset(('BLURAY', 'REMUX'))
 
 def _normalize_release_text(text):
 	return re.sub(r'[^a-z0-9.]+', '.', (text or '').lower()).strip('.')
@@ -48,6 +49,38 @@ def _primary_release_source(tags):
 	for tag in _PRIMARY_RELEASE_SOURCES:
 		if tag in tags: return tag
 	return None
+
+def _release_sources_compatible(play_primary, sub_primary):
+	if not play_primary or not sub_primary: return False
+	if play_primary == sub_primary: return True
+	if play_primary in _BLURAY_SOURCE_FAMILY and sub_primary in _BLURAY_SOURCE_FAMILY: return True
+	return False
+
+def _subtitle_cache_release_tag(release_context):
+	tags = (release_context or {}).get('tags') or set()
+	if 'REMUX' in tags: return 'remux'
+	if 'BLURAY' in tags: return 'bluray'
+	primary = _primary_release_source(tags)
+	return primary.lower() if primary else ''
+
+def _subtitle_base_filename(imdb_id, season, episode):
+	if season: return 'RedLightSubs_%s_%s_%s' % (imdb_id, season, episode)
+	return 'RedLightSubs_%s' % imdb_id
+
+def _subtitle_search_filename(imdb_id, season, episode, release_context=None):
+	filename_lang = st.subs_language_for_download().replace(' ', '_')
+	base = _subtitle_base_filename(imdb_id, season, episode)
+	tag = _subtitle_cache_release_tag(release_context)
+	if tag: return '%s_%s_%s.srt' % (base, filename_lang, tag)
+	return '%s_%s.srt' % (base, filename_lang)
+
+def _subtitle_cache_lookup_names(imdb_id, season, episode, release_context):
+	tagged = _subtitle_search_filename(imdb_id, season, episode, release_context)
+	if _subtitle_cache_release_tag(release_context):
+		return [tagged]
+	legacy = _subtitle_search_filename(imdb_id, season, episode)
+	if legacy != tagged: return [tagged, legacy]
+	return [tagged]
 
 def playback_release_context(playing_filename=None, playing_item=None):
 	parts = []
@@ -84,8 +117,13 @@ def _score_subtitle_release_match(sub_ref, release_context):
 	play_primary = _primary_release_source(play_tags)
 	sub_primary = _primary_release_source(sub_tags)
 	if play_primary and sub_primary:
-		if play_primary == sub_primary: score += 0.35
-		else: score -= 0.35
+		if _release_sources_compatible(play_primary, sub_primary): score += 0.55
+		elif play_primary in _BLURAY_SOURCE_FAMILY and sub_primary == 'WEB': score -= 0.65
+		elif play_primary == 'WEB' and sub_primary in _BLURAY_SOURCE_FAMILY: score -= 0.45
+		else: score -= 0.4
+	elif play_primary and not sub_primary and play_primary in _BLURAY_SOURCE_FAMILY:
+		if any(tag in sub_tags for tag in _BLURAY_SOURCE_FAMILY): score += 0.35
+		elif 'WEB' in sub_tags: score -= 0.35
 	if 'proper' in release_context.get('text', '') and 'proper' in sub_norm: score += 0.08
 	if 'repack' in release_context.get('text', '') and 'repack' in sub_norm: score += 0.08
 	return score
@@ -135,12 +173,20 @@ def _looks_like_subtitle_content(content):
 	return bool(re.search(r'\d{1,2}:\d{2}:\d{2}', content))
 
 def _download_submaker_content(download_fn, subs, language, release_context=None):
-	for item in _submaker_ranked_subs(subs, language, release_context=release_context):
+	ranked = _submaker_ranked_subs(subs, language, release_context=release_context)
+	for item in ranked:
 		response = download_fn(item.get('url'))
 		if isinstance(response, str) or not getattr(response, 'ok', False): continue
 		try: content = response.text
 		except: content = response.content
-		if _looks_like_subtitle_content(content): return content
+		if _looks_like_subtitle_content(content):
+			try:
+				label = _subtitle_candidate_text(item)
+				if len(label) > 120: label = label[:117] + '...'
+				play_tag = _subtitle_cache_release_tag(release_context) or 'unknown'
+				ku.logger('Red Light', 'SubMaker pick (%s): %s' % (play_tag, label))
+			except: pass
+			return content
 	return None
 
 def _get(url, stream=False, retry=False, quiet=False):
@@ -224,20 +270,22 @@ def enable_local_subtitles(player, poster=None, notify=True, is_episode=False):
 		return True
 	return False
 
-def _alert_sub_filename(imdb_id, season, episode):
-	filename_lang = st.subs_language_for_download().replace(' ', '_')
-	if season: sub_filename = 'RedLightSubs_%s_%s_%s' % (imdb_id, season, episode)
-	else: sub_filename = 'RedLightSubs_%s' % imdb_id
-	return sub_filename + '_%s.srt' % filename_lang
+def _alert_sub_filename(imdb_id, season, episode, release_context=None):
+	return _subtitle_search_filename(imdb_id, season, episode, release_context)
 
-def _opensubs_alert_filename(imdb_id, season, episode):
-	filename_lang = st.subs_language_for_download().replace(' ', '_')
-	if season: sub_filename = 'RedLightOpenSubs_%s_%s_%s' % (imdb_id, season, episode)
-	else: sub_filename = 'RedLightOpenSubs_%s' % imdb_id
-	return sub_filename + '_%s.srt' % filename_lang
+def _opensubs_base_filename(imdb_id, season, episode):
+	if season: return 'RedLightOpenSubs_%s_%s_%s' % (imdb_id, season, episode)
+	return 'RedLightOpenSubs_%s' % imdb_id
 
-def _opensubs_alert_path(imdb_id, season, episode):
-	return '%s%s' % ('special://temp/', _opensubs_alert_filename(imdb_id, season, episode))
+def _opensubs_alert_filename(imdb_id, season, episode, release_context=None):
+	filename_lang = st.subs_language_for_download().replace(' ', '_')
+	base = _opensubs_base_filename(imdb_id, season, episode)
+	tag = _subtitle_cache_release_tag(release_context)
+	if tag: return '%s_%s_%s.srt' % (base, filename_lang, tag)
+	return '%s_%s.srt' % (base, filename_lang)
+
+def _opensubs_alert_path(imdb_id, season, episode, release_context=None):
+	return '%s%s' % ('special://temp/', _opensubs_alert_filename(imdb_id, season, episode, release_context))
 
 def _looks_like_subtitle_path(value):
 	if not value or value.strip() in ('(External)',): return False
@@ -333,13 +381,34 @@ def _sidecar_subtitle_paths(playing_filename=None, playing_url=None):
 		except: pass
 	return _dedupe_paths(paths)
 
-def _alert_temp_paths(imdb_id, season, episode):
+def _opensubs_cache_lookup_names(imdb_id, season, episode, release_context):
+	tagged = _opensubs_alert_filename(imdb_id, season, episode, release_context)
+	if _subtitle_cache_release_tag(release_context):
+		return [tagged]
+	legacy = _opensubs_alert_filename(imdb_id, season, episode)
+	if legacy != tagged: return [tagged, legacy]
+	return [tagged]
+
+def _alert_temp_paths(imdb_id, season, episode, playing_filename=None, playing_item=None):
 	if not imdb_id: return []
 	paths = []
+	base = _subtitle_base_filename(imdb_id, season, episode)
+	release_context = playback_release_context(playing_filename, playing_item) if (playing_filename or playing_item) else None
 	if st.submaker_manifest_configured():
-		paths.append('%s%s' % ('special://temp/', _alert_sub_filename(imdb_id, season, episode)))
+		seen_names = set()
+		for name in _subtitle_cache_lookup_names(imdb_id, season, episode, release_context):
+			seen_names.add(name)
+			paths.append('%s%s' % ('special://temp/', name))
+		try:
+			temp = ku.translate_path('special://temp/')
+			if os.path.isdir(temp):
+				for name in os.listdir(temp):
+					if name.startswith(base) and name.endswith('.srt') and name not in seen_names:
+						paths.append('%s%s' % ('special://temp/', name))
+		except: pass
 	if st.opensubs_configured():
-		paths.append('%s%s' % ('special://temp/', _opensubs_alert_filename(imdb_id, season, episode)))
+		for name in _opensubs_cache_lookup_names(imdb_id, season, episode, release_context):
+			paths.append('%s%s' % ('special://temp/', name))
 	return paths
 
 def _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at=None):
@@ -353,7 +422,7 @@ def _collect_subtitle_candidates(player, playing_filename, imdb_id, season, epis
 		if key in seen: return
 		seen.add(key)
 		paths.append(path)
-	for path in _alert_temp_paths(imdb_id, season, episode): add(path)
+	for path in _alert_temp_paths(imdb_id, season, episode, playing_filename, playing_item): add(path)
 	for path in _active_subtitle_paths_from_player(): add(path, require_episode_match=True)
 	active_prop = ku.get_property(_ACTIVE_SUB_PROP)
 	if active_prop: add(active_prop, require_episode_match=True)
@@ -546,7 +615,8 @@ def _subs_alert_fetch_order():
 
 def _fetch_submaker_alert_subtitle(imdb_id, season, episode, year=None, playing_filename=None, playing_item=None):
 	if not st.submaker_manifest_configured(): return None
-	search_filename = _alert_sub_filename(imdb_id, season, episode)
+	release_context = playback_release_context(playing_filename, playing_item)
+	search_filename = _alert_sub_filename(imdb_id, season, episode, release_context)
 	final_path = '%s%s' % ('special://temp/', search_filename)
 	if season: params = 'subtitles/series/%s:%s:%s' % (imdb_id, season, episode)
 	else: params = 'subtitles/movie/%s' % imdb_id
@@ -554,7 +624,6 @@ def _fetch_submaker_alert_subtitle(imdb_id, season, episode, year=None, playing_
 	except requests.RequestException: return None
 	if not response.ok: return None
 	subs = response.json().get('subtitles', [])
-	release_context = playback_release_context(playing_filename, playing_item)
 	content = _download_submaker_content(lambda url: _get(url, stream=True, retry=True, quiet=True), subs, st.subs_language_for_download(), release_context=release_context)
 	if not content: return None
 	try:
@@ -639,15 +708,17 @@ class Subtitles(xbmc.Player):
 		return enable_local_subtitles(self._player, poster=self.poster, is_episode=self.is_episode)
 
 	def _downloaded_subs(self):
+		release_context = playback_release_context(self.playing_filename, self.playing_item)
 		files = ku.list_dirs(self.subtitle_path)[1]
-		final_match = next((i for i in files if i == self.search_filename), None)
-		if not final_match: return False
-		subtitle = '%s%s' % (self.subtitle_path, final_match)
-		try:
-			with ku.open_file(subtitle) as file: content = file.read()
-			if not _looks_like_subtitle_content(content): return False
-		except: return False
-		return subtitle
+		for name in _subtitle_cache_lookup_names(self.imdb_id, self.season, self.episode, release_context):
+			if name not in files: continue
+			subtitle = '%s%s' % (self.subtitle_path, name)
+			try:
+				with ku.open_file(subtitle) as file: content = file.read()
+				if not _looks_like_subtitle_content(content): continue
+			except: continue
+			return subtitle
+		return False
 
 	def _searched_subs(self):
 		subs = self.subtitles_search()
@@ -672,11 +743,9 @@ class Subtitles(xbmc.Player):
 		self.is_episode = season is not None and episode is not None
 		self._player = active_player or self
 		self.language = st.subs_language_for_download()
-		filename_lang = self.language.replace(' ', '_')
 		self.subtitle_path = 'special://temp/'
-		if season: self.sub_filename = 'RedLightSubs_%s_%s_%s' % (self.imdb_id, self.season, self.episode)
-		else: self.sub_filename = 'RedLightSubs_%s' % self.imdb_id
-		self.search_filename = self.sub_filename + '_%s.srt' % filename_lang
+		release_context = playback_release_context(playing_filename, playing_item)
+		self.search_filename = _subtitle_search_filename(imdb_id, season, episode, release_context)
 		ku.sleep(2500)
 		if st.submaker_prefer_local():
 			subtitle = self._video_file_subs()

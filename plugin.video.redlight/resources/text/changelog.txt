@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.6.8[/B][/COLOR]
+- [B]Subtitles[/B] ([B]SubMaker[/B] / [B]OpenSubtitles[/B]): treats [B]BluRay[/B] and [B]Remux[/B] as the same family (including remux-only stream names with no [B]BluRay[/B] tag). [B]WEB[/B] subs are penalised when playing disc/remux; cached files are stored per release type ([B]_bluray[/B], [B]_remux[/B], [B]_web[/B]) so an old [B]WEB[/B] file is not reused. Applies to on-screen auto-download and [B]Subtitles Info[/B] alert-timing fetches. [B]SubMaker pick[/B] is logged to [B]kodi.log[/B].
+
 [COLOR red][B]Version 1.6.7[/B][/COLOR]
 - [B]External Scrapers[/B]: two new [B]Search Mode[/B] options when multiple slots are enabled — [B]Series (All Slots in Order)[/B] runs every slot one after another with no early stop; [B]Primary Slot + Parallel Fallback[/B] gives slot 1 a full dedicated timeout then runs slots 2–3 in parallel with a second timeout. [B]Series (Fallback by Slot Order)[/B] remains the default.
 - [B]External Scrapers[/B]: choosing any [B]Search Mode[/B] other than [B]Series (Fallback by Slot Order)[/B] shows a reminder about volunteer-run indexers and that the chosen mode may query the same indexers multiple times — [B]Series (Fallback by Slot Order)[/B] is the recommended default. [B]Series (Fallback)[/B] or [B]Continue[/B]; [B]Back[/B] keeps your current mode.
