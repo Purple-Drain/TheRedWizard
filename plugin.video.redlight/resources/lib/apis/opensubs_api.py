@@ -2,7 +2,6 @@
 import os
 import re
 import xbmc
-from difflib import SequenceMatcher
 import requests
 from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils as ku, settings as st
@@ -118,24 +117,19 @@ def _episode_in_filename(season, episode, filename):
 	return any(re.search(pattern, lower) for pattern in patterns)
 
 
-def _pick_best_subtitle(results, playing_filename, season, episode):
+def _pick_best_subtitle(results, playing_filename=None, playing_item=None, season=None, episode=None):
 	if not results: return None
-	if len(results) == 1: return results[0]
-	playing_stem = ''
-	if playing_filename:
-		playing_stem = os.path.splitext(os.path.basename(playing_filename.split('|')[0].split('?')[0]))[0].lower()
-	matches = []
+	from indexers.subtitles import playback_release_context, _score_subtitle_release_match
+	release_context = playback_release_context(playing_filename, playing_item)
+	filtered = []
 	for item in results:
 		file_name = item.get('file_name') or ''
 		if season not in (None, '') and episode not in (None, '') and not _episode_in_filename(season, episode, file_name):
 			continue
-		ratio = SequenceMatcher(None, playing_stem, os.path.splitext(file_name)[0].lower()).ratio() if playing_stem else 0.0
-		matches.append((ratio, item))
-	if not matches:
-		for item in results:
-			matches.append((0.0, item))
-	matches.sort(key=lambda row: row[0], reverse=True)
-	return matches[0][1]
+		filtered.append(item)
+	pool = filtered or list(results)
+	pool.sort(key=lambda item: _score_subtitle_release_match(item, release_context), reverse=True)
+	return pool[0]
 
 
 def _download_subtitle_content(file_id):
@@ -159,11 +153,11 @@ def _download_subtitle_content(file_id):
 	except: return None
 
 
-def fetch_alert_subtitle(imdb_id, season=None, episode=None, year=None, playing_filename=None):
+def fetch_alert_subtitle(imdb_id, season=None, episode=None, year=None, playing_filename=None, playing_item=None):
 	if not st.opensubs_configured(): return None
 	from indexers.subtitles import _looks_like_subtitle_content, _opensubs_alert_path
 	results = _search_subtitles(imdb_id, year, season, episode, _subtitle_language_code())
-	match = _pick_best_subtitle(results, playing_filename, season, episode)
+	match = _pick_best_subtitle(results, playing_filename, playing_item, season, episode)
 	if not match: return None
 	content = _download_subtitle_content(match.get('file_id'))
 	if not _looks_like_subtitle_content(content): return None

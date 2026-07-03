@@ -214,9 +214,9 @@ class RedLightPlayer(xbmc.Player):
 			self._intro_skip_fetch_started = False
 			if st.auto_enable_subs() and st.subtitles_source() == '0':
 				try:
-					from indexers.subtitles import enable_local_subtitles
-					poster = self.meta.get('poster') if getattr(self, 'meta', None) else None
-					enable_local_subtitles(self, poster=poster or ku.get_icon('box_office'))
+					from indexers.subtitles import enable_local_subtitles, subtitle_notify_poster
+					poster = subtitle_notify_poster(self.meta, self.media_type) if getattr(self, 'meta', None) else ku.get_icon('box_office')
+					enable_local_subtitles(self, poster=poster, is_episode=self.media_type == 'episode')
 				except:
 					self.showSubtitles(True)
 			while self.isPlayingVideo():
@@ -263,12 +263,18 @@ class RedLightPlayer(xbmc.Player):
 				except: pass
 				if not self.subs_searched: self.run_subtitles()
 			ku.hide_busy_dialog()
-			if self.autoplay_nextep and not getattr(self, '_nextep_alert_shown', False):
+			if self.autoplay_nextep:
 				try:
-					from modules.sources import clear_nextep_autoplay_stash
-					clear_nextep_autoplay_stash()
+					from modules.sources import clear_nextep_autoplay_stash, peek_nextep_autoplay_stash, schedule_nextep_stashed_play, take_nextep_autoplay_stash
+					if getattr(self, '_nextep_alert_shown', False):
+						if peek_nextep_autoplay_stash():
+							stash = take_nextep_autoplay_stash()
+							if stash:
+								self._log_nextep('Autoplay next episode: playing stashed resolve at episode end')
+								schedule_nextep_stashed_play(stash)
+					else:
+						clear_nextep_autoplay_stash()
 				except: pass
-				ku.clear_property(PROP_NEXTEP_PREP_SCHEDULED)
 			if not self.media_marked: self.media_watched_marker()
 			self.clear_playback_properties(clear_navigation=False)
 		except:
@@ -489,7 +495,8 @@ class RedLightPlayer(xbmc.Player):
 			season = self.season if self.media_type == 'episode' else None
 			episode = self.episode if self.media_type == 'episode' else None
 			remaining = subtitle_seconds_remaining_before_end(float(self.total_time), self.imdb_id, season, episode, fetch=fetch,
-				player=self, playing_filename=getattr(self, 'playing_filename', None), playback_started_at=getattr(self, '_playback_started_at', None),
+				player=self, playing_filename=getattr(self, 'playing_filename', None), playing_item=getattr(self, 'playing_item', None),
+				playback_started_at=getattr(self, '_playback_started_at', None),
 				year=getattr(self, 'year', None), credits_entry=True, quiet=quiet)
 		except:
 			remaining = None
@@ -527,17 +534,21 @@ class RedLightPlayer(xbmc.Player):
 		ku.set_property(PROP_NEXTEP_PENDING, 'true')
 		meta = dict(self.meta) if getattr(self, 'meta', None) else {}
 		nextep_settings = dict(self.nextep_settings) if getattr(self, 'nextep_settings', None) else None
+		playing_item = dict(getattr(self, 'playing_item', None) or {})
+		if playing_item.get('scrape_provider') == 'folders':
+			meta['playing_scrape_provider'] = 'folders'
 		def _work():
 			try:
 				from modules.episode_tools import EpisodeTools
 				if not self.media_marked:
 					try: self.media_watched_marker(force_watched=True)
 					except: pass
-				EpisodeTools(meta, nextep_settings).auto_nextep()
+				EpisodeTools(meta, nextep_settings, playing_item=playing_item).auto_nextep()
 			except Exception as exc:
 				ku.logger('Red Light', 'Next episode prep failed: %s' % exc)
 			finally:
 				ku.clear_property(PROP_NEXTEP_PENDING)
+				ku.clear_property(PROP_NEXTEP_PREP_SCHEDULED)
 		Thread(target=_work, daemon=True).start()
 
 	def _maybe_log_nextep_alert_pending(self):
@@ -616,7 +627,12 @@ class RedLightPlayer(xbmc.Player):
 			try: self.pause()
 			except: pass
 			return
-		self._log_nextep('Autoplay next episode alert action: %s' % action)
+		if action == 'close':
+			self._log_nextep('Autoplay next episode alert action: close (waiting for episode end)')
+			return
+		if action != 'play':
+			return
+		self._log_nextep('Autoplay next episode alert action: play')
 		stash = take_nextep_autoplay_stash()
 		if not stash: return
 		try:
@@ -730,10 +746,11 @@ class RedLightPlayer(xbmc.Player):
 		episode = self.episode if self.media_type == 'episode' else None
 		year = getattr(self, 'year', None)
 		playing_filename = getattr(self, 'playing_filename', None)
+		playing_item = getattr(self, 'playing_item', None)
 		def _work():
 			try:
 				from indexers.subtitles import fetch_subtitle_for_alert_timing
-				fetch_subtitle_for_alert_timing(self.imdb_id, season, episode, year, playing_filename)
+				fetch_subtitle_for_alert_timing(self.imdb_id, season, episode, year, playing_filename, playing_item)
 			except: pass
 			finally:
 				self._subtitle_alert_fetch_done = True
@@ -751,7 +768,8 @@ class RedLightPlayer(xbmc.Player):
 			season = self.season if self.media_type == 'episode' else None
 			episode = self.episode if self.media_type == 'episode' else None
 			remaining = subtitle_seconds_remaining_before_end(float(self.total_time), self.imdb_id, season, episode, fetch=fetch,
-				player=self, playing_filename=getattr(self, 'playing_filename', None), playback_started_at=getattr(self, '_playback_started_at', None),
+				player=self, playing_filename=getattr(self, 'playing_filename', None), playing_item=getattr(self, 'playing_item', None),
+				playback_started_at=getattr(self, '_playback_started_at', None),
 				year=getattr(self, 'year', None), for_alert=for_alert)
 		except:
 			remaining = None
@@ -1142,6 +1160,10 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if curr < start_sec:
 			return
+		if curr >= end_sec:
+			self._intro_skip_done = True
+			self._log_intro_skip('Intro skip: already past intro (%.1fs >= %.1fs)' % (curr, end_sec))
+			return
 		try:
 			if self._execute_intro_skip_seek(start_sec, end_sec, segment.get('source', '?')):
 				self._intro_skip_done = True
@@ -1155,17 +1177,19 @@ class RedLightPlayer(xbmc.Player):
 		if not st.auto_enable_subs(): return
 		if not self.imdb_id: return
 		try:
-			poster = self.meta.get('poster') or ku.get_icon('box_office')
+			from indexers.subtitles import subtitle_notify_poster
+			poster = subtitle_notify_poster(self.meta, self.media_type)
 			season = self.season if self.media_type == 'episode' else None
 			episode = self.episode if self.media_type == 'episode' else None
 			year = getattr(self, 'year', None)
 			playing_filename = getattr(self, 'playing_filename', None)
+			playing_item = getattr(self, 'playing_item', None)
 			if st.submaker_enabled():
 				from indexers.subtitles import Subtitles
-				Thread(target=Subtitles().run, args=(self.imdb_id, season, episode, poster)).start()
+				Thread(target=Subtitles().run, args=(self.imdb_id, season, episode, poster, playing_filename, playing_item, self)).start()
 			elif st.opensubs_enabled():
 				from indexers.subtitles import OpenSubtitlesSubs
-				Thread(target=OpenSubtitlesSubs().run, args=(self.imdb_id, season, episode, poster, year, playing_filename)).start()
+				Thread(target=OpenSubtitlesSubs().run, args=(self.imdb_id, season, episode, poster, year, playing_filename, playing_item, self)).start()
 		except: pass
 
 	def set_playback_properties(self):

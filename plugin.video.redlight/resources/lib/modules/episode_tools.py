@@ -11,28 +11,72 @@ from modules.utils import adjust_premiered_date, get_datetime, title_key, TaskPo
 from modules import kodi_utils
 # logger = kodi_utils.logger
 
+def _literal_next_episode(season, episode, season_data):
+	if not season_data:
+		return None, None
+	try:
+		season, episode = int(season), int(episode)
+		episode_count = next((i['episode_count'] for i in season_data if int(i['season_number']) == season), None)
+	except:
+		return None, None
+	if episode_count and episode < int(episode_count):
+		return season, episode + 1
+	next_seasons = sorted([i for i in season_data if int(i['season_number']) > season and int(i['season_number']) > 0], key=lambda i: i['season_number'])
+	if not next_seasons:
+		return None, None
+	return int(next_seasons[0]['season_number']), 1
+
+def _log_nextep_skip(title, season, episode, reason):
+	try:
+		kodi_utils.logger('Red Light', 'Next episode prep skipped: %s S%02dE%02d (%s)' % (title, int(season), int(episode), reason))
+	except:
+		pass
+
 class EpisodeTools:
-	def __init__(self, meta, nextep_settings=None):
+	def __init__(self, meta, nextep_settings=None, playing_item=None):
 		self.meta = meta
 		self.meta_get = self.meta.get
 		self.nextep_settings = nextep_settings
+		playing_item = playing_item or {}
+		self.folders_playback = playing_item.get('scrape_provider') == 'folders' or self.meta_get('playing_scrape_provider') == 'folders'
 
 	def next_episode_info(self):
+		title = self.meta_get('title') or ''
+		current_season, current_episode = 0, 0
 		try:
 			play_type = self.nextep_settings['play_type']
 			season_data = self.meta_get('season_data')
 			watch_count = self.meta_get('watch_count')
 			current_season, current_episode = int(self.meta_get('season')), int(self.meta_get('episode'))
 			watched_info = watched_info_episode(self.meta_get('tmdb_id'))
-			season, episode = get_next(current_season, current_episode, watched_info, season_data, 0)
+			if self.folders_playback:
+				if not season_data:
+					_log_nextep_skip(title, current_season, current_episode, 'no season metadata (folders playback)')
+					return 'no_next_episode'
+				season, episode = _literal_next_episode(current_season, current_episode, season_data)
+				if season is None or episode is None:
+					_log_nextep_skip(title, current_season, current_episode, 'series end (folders playback)')
+					return 'no_next_episode'
+				kodi_utils.logger('Red Light', 'Next episode prep target: %s S%02dE%02d (literal next after folders playback)' % (title, season, episode))
+			else:
+				season, episode = get_next(current_season, current_episode, watched_info, season_data, 0)
+				if season is None or episode is None:
+					_log_nextep_skip(title, current_season, current_episode, 'no unwatched next episode')
+					return 'no_next_episode'
 			playcount = get_watched_status_episode(watched_info, (season, episode))
 			ep_data = episodes_meta(season, self.meta)
-			if not ep_data: return 'no_next_episode'
+			if not ep_data:
+				_log_nextep_skip(title, season, episode, 'episode list unavailable')
+				return 'no_next_episode'
 			ep_data = next((i for i in ep_data if i['episode'] == episode), None)
-			if not ep_data: return 'no_next_episode'
+			if not ep_data:
+				_log_nextep_skip(title, season, episode, 'episode not in metadata')
+				return 'no_next_episode'
 			adjust_hours, current_date = date_offset(), get_datetime()
 			episode_date, premiered = adjust_premiered_date(ep_data['premiered'], adjust_hours)
-			if not episode_date or current_date < episode_date: return 'no_next_episode'
+			if not episode_date or current_date < episode_date:
+				_log_nextep_skip(title, season, episode, 'episode not aired yet')
+				return 'no_next_episode'
 			custom_title = self.meta_get('custom_title', None)
 			title = custom_title or self.meta_get('title')
 			display_name = '%s - %dx%.2d' % (title, int(season), int(episode))
@@ -43,7 +87,9 @@ class EpisodeTools:
 			if play_type == 'autoscrape_nextep': url_params['prescrape'] = 'false'
 			if custom_title: url_params['custom_title'] = custom_title
 			if 'custom_year' in self.meta: url_params['custom_year'] = self.meta_get('custom_year')
-		except: url_params = 'error'
+		except Exception as exc:
+			kodi_utils.logger('Red Light', 'Next episode prep error: %s S%02dE%02d (%s)' % (title, current_season, current_episode, exc))
+			url_params = 'error'
 		return self.add_playback_key(url_params)
 
 	def get_random_episode(self, continual=False, first_run=True):

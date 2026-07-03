@@ -912,12 +912,17 @@ def _dialog_needs_scroll(text):
 	wrapped = sum(max(1, (len(line) + _DIALOG_CONFIRM_CHARS_PER_LINE - 1) // _DIALOG_CONFIRM_CHARS_PER_LINE) for line in lines)
 	return wrapped > _DIALOG_CONFIRM_VISIBLE_LINES
 
-def confirm_dialog(heading='', text='Are you sure?', ok_label='OK', cancel_label='Cancel', default_control=11, scroll=False):
+def confirm_dialog(heading='', text='Are you sure?', ok_label='OK', cancel_label='Cancel', default_control=11, scroll=False, third_label=None):
 	from windows.base_window import open_window
 	needs_scroll = scroll and _dialog_needs_scroll(text)
 	kwargs = {'heading': heading, 'text': text, 'ok_label': ok_label, 'cancel_label': cancel_label, 'default_control': default_control,
-				'scroll': 'true' if needs_scroll else 'false', 'scroll_focus': 'true' if needs_scroll else 'false'}
-	return open_window(('windows.default_dialogs', 'Confirm'), 'confirm.xml', **kwargs)
+				'third_label': third_label or '', 'scroll': 'true' if needs_scroll else 'false', 'scroll_focus': 'false'}
+	raw = open_window(('windows.default_dialogs', 'Confirm'), 'confirm.xml', **kwargs)
+	if third_label:
+		return raw
+	if raw is True or raw is False:
+		return raw
+	return None
 
 def ok_dialog(heading='', text='No Results', ok_label='OK', scroll=False):
 	from windows.base_window import open_window

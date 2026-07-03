@@ -789,8 +789,15 @@ class Sources():
 	def external_orchestration(self):
 		groups = self.external_module_groups()
 		if len(groups) <= 1: return None
-		if not settings.external_scraper_run_mode_series(): return None
-		return {'groups': groups, 'max_parallel': 1, 'skip_threshold': 0}
+		mode = settings.external_scraper_run_mode()
+		if mode == '0': return None
+		if mode == '1':
+			return {'groups': groups, 'max_parallel': 1, 'skip_threshold': 0, 'early_stop': True, 'primary_dedicated': False, 'mode': 'series_fallback'}
+		if mode == '2':
+			return {'groups': groups, 'max_parallel': 1, 'skip_threshold': 0, 'early_stop': False, 'primary_dedicated': False, 'mode': 'series_full'}
+		if mode == '3':
+			return {'groups': groups, 'max_parallel': max(1, len(groups) - 1), 'skip_threshold': 0, 'early_stop': False, 'primary_dedicated': True, 'mode': 'primary_parallel'}
+		return None
 
 	def external_sources(self):
 		merged = []

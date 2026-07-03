@@ -707,8 +707,17 @@ def append_external_scraper_settings_cm(cm_append, build_url_fn):
 	cm_append(['external_scraper_settings', ('[B]%s[/B]' % external_scraper_settings_tools_label(),
 		'RunPlugin(%s)' % build_url_fn({'mode': 'open_external_scraper_settings'}))])
 
+def external_scraper_run_mode():
+	return str(get_setting('redlight.external_scraper.run_mode', '1'))
+
 def external_scraper_run_mode_series():
-	return get_setting('redlight.external_scraper.run_mode', '1') == '1'
+	return external_scraper_run_mode() == '1'
+
+def external_scraper_run_mode_parallel():
+	return external_scraper_run_mode() == '0'
+
+def external_scraper_run_mode_orchestrated():
+	return external_scraper_run_mode() in ('1', '2', '3')
 
 def refresh_external_scraper_properties():
 	from modules.kodi_utils import set_property

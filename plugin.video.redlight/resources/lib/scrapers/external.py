@@ -117,11 +117,56 @@ class source:
 				random.shuffle(self.source_dict)
 				self.source_dict.sort(key=lambda k: k[2])
 
+	def _log_scrape_external_wave(self, wave_idx, wave_labels, wave_new, wave_total, skip_threshold, mode, stop_reason):
+		try:
+			kodi_utils.logger('ScrapeExternalWave', 'wave=%d modules=%s wave_new=%d total=%d threshold=%d mode=%s stop=%s' % (
+				wave_idx, ','.join(wave_labels), wave_new, wave_total, skip_threshold, mode, stop_reason))
+		except: pass
+
+	def _finish_orchestrated_scrape(self, stop_reason):
+		try:
+			kodi_utils.logger('ScrapeExternalWave', 'finished total=%d reason=%s' % (len(self.sources), stop_reason))
+		except: pass
+		current_results = list(self.sources)
+		if current_results: return self.process_results(current_results)
+		return []
+
+	def _get_sources_primary_dedicated(self, orch):
+		groups = orch['groups']
+		skip_threshold = int(orch.get('skip_threshold', 0))
+		mode = orch.get('mode', 'primary_parallel')
+		stop_reason = 'exhausted'
+		wave_idx = 0
+		primary = groups[0]
+		wave_idx += 1
+		baseline = len(self.sources)
+		self._run_provider_batch(list(primary['entries']), float(self.timeout), [primary['display_name']])
+		wave_total = len(self.sources)
+		wave_new = wave_total - baseline
+		self._log_scrape_external_wave(wave_idx, [primary['display_name']], wave_new, wave_total, skip_threshold, mode, 'primary_done')
+		fallback_groups = groups[1:]
+		if fallback_groups:
+			wave_idx += 1
+			baseline = len(self.sources)
+			batch_entries, wave_labels = [], []
+			for group in fallback_groups:
+				wave_labels.append(group['display_name'])
+				batch_entries.extend(group['entries'])
+			self._run_provider_batch(batch_entries, float(self.timeout), wave_labels)
+			wave_total = len(self.sources)
+			wave_new = wave_total - baseline
+			self._log_scrape_external_wave(wave_idx, wave_labels, wave_new, wave_total, skip_threshold, '%s_fallback' % mode, 'exhausted')
+		return self._finish_orchestrated_scrape(stop_reason)
+
 	def _get_sources_orchestrated(self):
 		orch = self.external_orchestration
+		if orch.get('primary_dedicated'):
+			return self._get_sources_primary_dedicated(orch)
 		groups = orch['groups']
 		max_parallel = max(1, int(orch.get('max_parallel', 1)))
 		skip_threshold = int(orch.get('skip_threshold', 0))
+		early_stop = bool(orch.get('early_stop', False))
+		mode = orch.get('mode', 'series')
 		series_mode = max_parallel <= 1
 		wave_step = 1 if series_mode else max_parallel
 		phase_deadline = time.time() + self.timeout
@@ -142,23 +187,14 @@ class source:
 			self._run_provider_batch(batch_entries, remaining, wave_labels)
 			wave_total = len(self.sources)
 			wave_new = wave_total - baseline
-			if series_mode:
-				if wave_new > 0:
-					stop_reason = 'series_hit'
+			if series_mode and early_stop and wave_new > 0:
+				stop_reason = 'series_hit'
 			elif skip_threshold > 0 and wave_total > skip_threshold:
 				stop_reason = 'threshold'
-			try:
-				kodi_utils.logger('ScrapeExternalWave', 'wave=%d modules=%s wave_new=%d total=%d threshold=%d series=%s stop=%s' % (
-					wave_idx, ','.join(wave_labels), wave_new, wave_total, skip_threshold, series_mode, stop_reason))
-			except: pass
+			self._log_scrape_external_wave(wave_idx, wave_labels, wave_new, wave_total, skip_threshold, mode, stop_reason)
 			if stop_reason in ('series_hit', 'threshold'):
 				break
-		try:
-			kodi_utils.logger('ScrapeExternalWave', 'finished total=%d reason=%s' % (len(self.sources), stop_reason))
-		except: pass
-		current_results = list(self.sources)
-		if current_results: return self.process_results(current_results)
-		return []
+		return self._finish_orchestrated_scrape(stop_reason)
 
 	def _run_provider_batch(self, batch_entries, batch_timeout, wave_labels):
 		def _scraperDialog():

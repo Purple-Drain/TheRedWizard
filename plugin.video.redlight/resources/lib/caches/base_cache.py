@@ -241,6 +241,11 @@ def clear_cache(cache_type, silent=False):
 		if not _confirm(): return
 		from apis.imdb_api import clear_imdb_cache
 		success = clear_imdb_cache()
+	elif cache_type == 'subtitles':
+		if not _confirm(): return
+		from indexers.subtitles import clear_subtitles_cache
+		clear_subtitles_cache()
+		success = True
 	elif cache_type == 'pm_cloud':
 		if not _confirm(): return
 		from apis.premiumize_api import Premiumize
@@ -289,10 +294,11 @@ def clear_all_cache():
 	from modules.search import clear_easynews_search_history
 	progressDialog = kodi_utils.progress_dialog()
 	line = 'Clearing....[CR]%s'
-	caches = (('meta', 'Meta Cache'), ('internal_scrapers', 'Internal Scrapers Cache'), ('external_scrapers', 'External Scrapers Cache'), ('trakt', 'Trakt Cache'),
-			('simkl', 'Simkl Cache'), ('mdblist', 'MDBList Cache'), ('imdb', 'IMDb Cache'), ('list', 'List Data Cache'), ('ai_functions', 'AI Data Cache'), ('tmdb_list', 'TMDb Personal List Cache'), ('main', 'Main Cache'),
-			('pm_cloud', 'Premiumize Cloud'), ('rd_cloud', 'Real Debrid Cloud'), ('ad_cloud', 'All Debrid Cloud'),
-			('oc_cloud', 'Offcloud Cloud'), ('tb_cloud', 'TorBox Cloud'))
+	caches = (('meta', 'Meta Cache'), ('ai_functions', 'AI Data Cache'), ('list', 'List Data Cache'), ('main', 'Main Cache'),
+			('tmdb_list', 'TMDb Personal List Cache'), ('imdb', 'IMDb Cache'), ('mdblist', 'MDBList Cache'), ('simkl', 'Simkl Cache'),
+			('trakt', 'Trakt Cache'), ('subtitles', 'Subtitles Cache'), ('internal_scrapers', 'Internal Scrapers Cache'),
+			('external_scrapers', 'External Scrapers Cache'), ('ad_cloud', 'All Debrid Cloud'), ('oc_cloud', 'Offcloud Cloud'),
+			('pm_cloud', 'Premiumize Cloud'), ('rd_cloud', 'Real Debrid Cloud'), ('tb_cloud', 'TorBox Cloud'))
 	for count, cache_type in enumerate(caches, 1):
 		try:
 			progressDialog.update(line % (cache_type[1]), int(float(count) / float(len(caches)) * 100))

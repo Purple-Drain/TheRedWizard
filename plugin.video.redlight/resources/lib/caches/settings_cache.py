@@ -152,6 +152,11 @@ def sanitize_setting_value(setting_id, value, setting_info=None, validate_paths=
 		if value == '2':
 			return '1' if '1' in opts else '0'
 		return default if default in opts else ('1' if '1' in opts else '0')
+	if setting_id == 'external_scraper.run_mode':
+		value = str(value)
+		opts = default_setting_values(setting_id)
+		if opts and value in opts.get('settings_options', {}): return value
+		return default if default in (opts or {}).get('settings_options', {}) else '1'
 	if setting_id in _CREDENTIAL_STRING_SETTINGS:
 		if value in (None, 'empty_setting', ''): return default if value is None else value
 		return normalize_credential_string(value)
@@ -718,25 +723,58 @@ def set_from_list(params):
 		settings_list.sort(key=lambda item: item[0].lower())
 	elif setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
 		settings_list.sort(key=lambda item: item[0].lower())
+	elif setting_id == 'external_scraper.run_mode':
+		_mode_order = ('1', '2', '3', '0')
+		settings_list.sort(key=lambda item: _mode_order.index(item[1]) if item[1] in _mode_order else 99)
 	new_value = kodi_utils.select_dialog(settings_list, **{'items': json.dumps([{'line1': item[0]} for item in settings_list]), 'narrow_window': 'true'})
 	if not new_value: return
 	setting_value = new_value[1]
-	if setting_id == 'external_scraper.run_mode' and setting_value == '0':
-		current = get_setting('redlight.external_scraper.run_mode', '1')
+	if setting_id == 'external_scraper.run_mode' and setting_value != '1':
+		mode_opts = dict(default_setting_values(setting_id)['settings_options'])
+		mode_label = mode_opts.get(setting_value, '')
+		current = str(get_setting('redlight.external_scraper.run_mode', '1'))
+		warning_text = (
+			'Many indexers are volunteer-run community resources. '
+			'[B]%s[/B] can query the same indexers multiple times. [B]Series (Fallback by Slot Order)[/B] is the recommended default.[CR][CR]'
+			'Please scrape responsibly.' % mode_label
+		)
 		if current == '1':
-			if not kodi_utils.confirm_dialog(
+			confirmed = kodi_utils.confirm_dialog(
 				heading='Search Mode',
-				text=('Many indexers used by external scrapers are non-profit community resources maintained by volunteers.[CR][CR]'
-					'[B]Parallel (All Enabled Slots)[/B] runs every enabled scraper module at the same time. If the same indexers are enabled on each module, that increases load on those indexers.[CR][CR]'
-					'Please use external scrapers responsibly. [B]Series (Fallback by Slot Order)[/B] runs one slot at a time and is gentler on shared indexers.'),
-				ok_label='Switch to Parallel',
-				cancel_label='Keep Series',
+				text=warning_text,
+				ok_label='Continue',
+				cancel_label='Cancel',
 				default_control=11,
-				scroll=True
-			):
+			)
+			if confirmed is None or not confirmed:
+				return
+		else:
+			confirmed = kodi_utils.confirm_dialog(
+				heading='Search Mode',
+				text=warning_text,
+				ok_label='Series (Fallback)',
+				cancel_label='Continue',
+				default_control=10,
+			)
+			if confirmed is None:
+				return
+			if confirmed:
+				set_setting('external_scraper.run_mode', '1')
+				try:
+					settings_cache.set_memory_cache('external_scraper.run_mode', '1')
+					settings_cache.set_memory_cache('external_scraper.run_mode_name', mode_opts.get('1', ''))
+				except:
+					pass
 				return
 	prev_value = get_setting('redlight.%s' % setting_id) if setting_id == 'watched_indicators' else None
 	set_setting(setting_id, setting_value)
+	if setting_id == 'external_scraper.run_mode':
+		try:
+			mode_opts = dict(default_setting_values(setting_id)['settings_options'])
+			settings_cache.set_memory_cache(setting_id, str(setting_value))
+			settings_cache.set_memory_cache('%s_name' % setting_id, mode_opts.get(str(setting_value), ''))
+		except:
+			pass
 	if setting_id == 'watched_indicators' and setting_value == '3' and str(prev_value) != '3':
 		try:
 			from apis.mdblist_api import mdblist_sync_activities
@@ -972,7 +1010,7 @@ def default_settings():
 {'setting_id': 'external_scraper.slot3.module', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'external_scraper.slot3.name', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'external_scraper.slot3.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'external_scraper.run_mode', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Parallel (All Enabled Slots)', '1': 'Series (Fallback by Slot Order)'}},
+{'setting_id': 'external_scraper.run_mode', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'1': 'Series (Fallback by Slot Order)', '2': 'Series (All Slots in Order)', '3': 'Primary Slot + Parallel Fallback', '0': 'Parallel (All Enabled Slots)'}},
 {'setting_id': 'migration.external_scraper_slots_v160', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.cache_check_pm_oc_tb_v129e', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.my_content_nav_mode_v136', 'setting_type': 'boolean', 'setting_default': 'false'},

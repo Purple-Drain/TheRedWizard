@@ -498,7 +498,9 @@ def _find_next_unwatched_episode(season, episode, watched_info, season_data):
 	return None, None
 
 def get_next(season, episode, watched_info, season_data, nextep_content):
-	if episode == 0: episode = 1
+	start_fresh = episode == 0
+	if start_fresh:
+		return _find_next_unwatched_episode(season or 1, 0, watched_info, season_data)
 	if nextep_content == 0:
 		try:
 			episode_count = next((i['episode_count'] for i in season_data if i['season_number'] == season), None)
@@ -507,6 +509,7 @@ def get_next(season, episode, watched_info, season_data, nextep_content):
 		except: pass
 		if not get_watched_status_episode(watched_info, (season, episode)):
 			return season, episode
+	if episode == 0: episode = 1
 	return _find_next_unwatched_episode(season, episode, watched_info, season_data)
 
 def _movie_progress_list(dbcon):

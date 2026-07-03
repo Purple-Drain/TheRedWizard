@@ -6,7 +6,8 @@ THEINTRODB_URL = 'https://api.theintrodb.org/v3/media'
 INTRODB_URL = 'https://api.introdb.app/segments'
 _CACHE_HOURS = 168
 _API_TIMEOUT = 6
-_MIN_SEGMENT_SEC = 3
+_MIN_SEGMENT_SEC = 10
+_MIN_END_SEC = 15
 _MAX_SEGMENT_SEC = 600
 
 
@@ -18,7 +19,7 @@ def _outro_cache_key(tmdb_id, imdb_id, season, episode):
 	return 'outro_credits_%s_%s_%s_%s' % (tmdb_id, imdb_id or '', season, episode)
 
 
-def peek_intro_segment_cache(tmdb_id, imdb_id, season, episode):
+def peek_intro_segment_cache(tmdb_id, imdb_id, season, episode, duration_sec=None):
 	try:
 		season, episode = int(season), int(episode)
 	except:
@@ -26,7 +27,13 @@ def peek_intro_segment_cache(tmdb_id, imdb_id, season, episode):
 	cached = main_cache.get(_intro_cache_key(tmdb_id, imdb_id, season, episode))
 	if cached is None:
 		return '__miss__'
-	return cached or None
+	if not cached:
+		return None
+	segment = _valid_segment(cached.get('start_sec'), cached.get('end_sec'), duration_sec)
+	if segment:
+		segment['source'] = cached.get('source', 'introdb')
+		return segment
+	return None
 
 
 def prefetch_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None):
@@ -51,7 +58,13 @@ def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None):
 	cache_key = _intro_cache_key(tmdb_id, imdb_id, season, episode)
 	cached = main_cache.get(cache_key)
 	if cached is not None:
-		return cached or None
+		if not cached:
+			return None
+		segment = _valid_segment(cached.get('start_sec'), cached.get('end_sec'), duration_sec)
+		if segment:
+			segment['source'] = cached.get('source', 'introdb')
+			return segment
+		main_cache.set(cache_key, '', expiration=_CACHE_HOURS)
 	segment = None
 	if tmdb_id not in (None, '', 'None', '0000000'):
 		segment = _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec)
@@ -105,6 +118,8 @@ def _valid_segment(start_sec, end_sec, duration_sec=None):
 		return None
 	length = end_sec - start_sec
 	if length < _MIN_SEGMENT_SEC or length > _MAX_SEGMENT_SEC:
+		return None
+	if end_sec < _MIN_END_SEC:
 		return None
 	if duration_sec:
 		try:
