@@ -118,6 +118,15 @@ def _video_extension(name):
 		return ext
 	return ''
 
+def _release_name_from_source(source_json):
+	try:
+		source = json.loads(source_json) if isinstance(source_json, str) else (source_json or {})
+		for key in ('name', 'display_name'):
+			val = (source.get(key) or '').strip()
+			if val: return val
+	except: pass
+	return ''
+
 class Downloader:
 	def __init__(self, params):
 		self.params = params
@@ -171,6 +180,9 @@ class Downloader:
 		self.provider = self.params_get('provider')
 		self.action = self.params_get('action')
 		self.source = self.params_get('source')
+		if self.action == 'meta.single' and self.source:
+			release = _release_name_from_source(self.source)
+			if release: self.name = release
 		self.final_name = None
 
 	def download_runner(self):
@@ -323,7 +335,21 @@ class Downloader:
 		else:
 			name_url = unquote(self.url)
 			file_name = clean_title(name_url.split('/')[-1])
-			if clean_title(self.title).lower() in file_name.lower():
+			if self.action == 'meta.single':
+				release = _release_name_from_source(self.source)
+				if release:
+					base = os.path.splitext(release)[0] or release
+					final_name = _sanitize_path_name(base) or _sanitize_path_name(release)
+				elif clean_title(self.title).lower() in file_name.lower():
+					final_name = os.path.splitext(urlparse(name_url).path)[0].split('/')[-1]
+				else:
+					name_ref = (self.name or self.title or '').strip()
+					if name_ref:
+						base = os.path.splitext(name_ref)[0] or name_ref
+						final_name = _sanitize_path_name(base) or _sanitize_path_name(name_ref)
+					else:
+						final_name = os.path.splitext(urlparse(name_url).path)[0].split('/')[-1]
+			elif clean_title(self.title).lower() in file_name.lower():
 				final_name = os.path.splitext(urlparse(name_url).path)[0].split('/')[-1]
 			else:
 				name_ref = (self.name or self.title or '').strip()
@@ -332,8 +358,8 @@ class Downloader:
 					final_name = _sanitize_path_name(base) or _sanitize_path_name(name_ref)
 				else:
 					final_name = os.path.splitext(urlparse(name_url).path)[0].split('/')[-1]
-				if not final_name:
-					final_name = os.path.splitext(urlparse(name_url).path)[0].split('/')[-1] or 'download'
+			if not final_name:
+				final_name = os.path.splitext(urlparse(name_url).path)[0].split('/')[-1] or 'download'
 		self.final_name = safe_string(remove_accents(final_name))
 
 	def get_extension(self):

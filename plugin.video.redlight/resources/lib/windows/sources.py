@@ -334,7 +334,8 @@ class SourcesResults(BaseDialog):
 		choices = []
 		choices_append = choices.append
 		if not uncached and scrape_provider != 'folders':
-			down_file_params = {'mode': 'downloader.runner', 'action': 'meta.single', 'name': self.meta.get('rootname', ''), 'source': source,
+			release_name = item_get('name') or item_get('display_name') or self.meta.get('rootname', '')
+			down_file_params = {'mode': 'downloader.runner', 'action': 'meta.single', 'name': release_name, 'source': source,
 								'url': None, 'provider': scrape_provider, 'meta': meta_json}
 		if 'package' in item and not uncached:
 			pack_provider = item_get('debrid') or cache_provider
