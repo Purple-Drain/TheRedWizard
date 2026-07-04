@@ -4,8 +4,10 @@ import json
 import os
 import re
 import xbmc
+import xbmcgui
 import requests
 from difflib import SequenceMatcher
+from urllib.parse import quote, unquote
 from modules import kodi_utils as ku, settings as st
 
 timeout = 20.0
@@ -48,6 +50,7 @@ def _detect_release_source_tags(text):
 	return tags
 
 def _primary_release_source(tags):
+	if 'REMUX' in tags: return 'REMUX'
 	for tag in _PRIMARY_RELEASE_SOURCES:
 		if tag in tags: return tag
 	return None
@@ -84,18 +87,20 @@ def _subtitle_cache_lookup_names(imdb_id, season, episode, release_context):
 	if legacy != tagged: return [tagged, legacy]
 	return [tagged]
 
-def playback_release_context(playing_filename=None, playing_item=None):
+def playback_release_context(playing_filename=None, playing_item=None, season=None, episode=None):
 	parts = []
+	best_filename = _best_play_filename(playing_filename, playing_item, season, episode)
 	if playing_item:
 		for key in ('name', 'display_name', 'extraInfo', 'quality'):
 			val = playing_item.get(key)
 			if val: parts.append(str(val))
-	if playing_filename: parts.append(str(playing_filename))
+	if best_filename: parts.append(str(best_filename))
+	elif playing_filename: parts.append(str(playing_filename))
 	combined = ' '.join(parts)
-	stem = _release_filename_stem(playing_filename)
+	stem = _release_filename_stem(best_filename or playing_filename)
 	if not stem and playing_item:
 		stem = _release_filename_stem(playing_item.get('name') or playing_item.get('display_name'))
-	return {'stem': stem, 'tags': _detect_release_source_tags(combined), 'text': _normalize_release_text(combined)}
+	return {'stem': stem, 'tags': _detect_release_source_tags(combined), 'text': _normalize_release_text(combined), 'filename': best_filename or ''}
 
 def _flatten_string_values(obj, max_depth=4):
 	parts = []
@@ -120,6 +125,91 @@ def _scs_payload_from_url(url):
 		return json.loads(raw.decode('utf-8', 'ignore'))
 	except: return None
 
+def _decode_v3_token(token):
+	try:
+		pad = '=' * (-len(token) % 4)
+		return base64.urlsafe_b64decode(token + pad).decode('utf-8', 'ignore')
+	except: return ''
+
+def _v3_url_from_sub_ref(sub_ref):
+	if not isinstance(sub_ref, dict): return ''
+	for val in (sub_ref.get('id'), sub_ref.get('url')):
+		if not val: continue
+		match = re.search(r'v3_([A-Za-z0-9+/=_-]+)', str(val))
+		if match: return _decode_v3_token(match.group(1))
+	return ''
+
+def _filename_from_v3_url(v3_url):
+	if not v3_url: return ''
+	for pattern in (r'[?&]filename=([^&]+)', r'[?&]file_name=([^&]+)'):
+		match = re.search(pattern, v3_url, re.I)
+		if match:
+			name = unquote(match.group(1)).strip()
+			if name: return name
+	if '://' in v3_url:
+		base = os.path.basename(v3_url.split('?')[0].split('#')[0])
+		if base and '.' in base and not base.isdigit(): return base
+	return ''
+
+def _episode_in_release_text(season, episode, text):
+	if not text or season in (None, '') or episode in (None, ''): return False
+	norm = _normalize_release_text(text)
+	patterns = (
+		's%02de%02d' % (int(season), int(episode)),
+		's%d[eexx]%d' % (int(season), int(episode)),
+		'%dx%d' % (int(season), int(episode)),
+	)
+	return any(pattern in norm for pattern in patterns)
+
+def _release_filename_candidates(playing_filename=None, playing_item=None):
+	candidates = []
+	def add(raw):
+		if not raw: return
+		raw = str(raw).split('|')[0].split('?')[0].strip()
+		if not raw: return
+		base = os.path.basename(raw) if '://' in raw else raw
+		if base and base not in candidates: candidates.append(base)
+	add(playing_filename)
+	try: add(ku.get_property('subs.player_filename'))
+	except: pass
+	if playing_item:
+		for key in ('url', 'name', 'display_name', 'resolve_display', 'download_url', 'link'):
+			add(playing_item.get(key))
+	return candidates
+
+def _best_play_filename(playing_filename=None, playing_item=None, season=None, episode=None):
+	best, best_score = '', -999
+	for candidate in _release_filename_candidates(playing_filename, playing_item):
+		score = 0
+		lower = candidate.lower()
+		if '://' in candidate: score += 4
+		if lower.endswith(('.mkv', '.mp4', '.avi', '.m2ts', '.ts', '.wmv')): score += 6
+		if season not in (None, '') and episode not in (None, ''):
+			if _episode_in_release_text(season, episode, candidate): score += 12
+			elif re.search(r's%02d[.\s_-]' % int(season), _normalize_release_text(candidate)) and not _episode_in_release_text(season, episode, candidate):
+				score -= 8
+		if score > best_score:
+			best_score, best = score, candidate
+	return best
+
+def _subtitle_display_name(sub_ref):
+	if not isinstance(sub_ref, dict): return str(sub_ref or '')
+	for key in ('file_name', 'filename', 'name', 'title', 'label', 'release'):
+		val = sub_ref.get(key)
+		if val and not str(val).startswith('http'): return str(val)
+	v3_url = _v3_url_from_sub_ref(sub_ref)
+	if v3_url:
+		name = _filename_from_v3_url(v3_url)
+		if name: return name
+		file_match = re.search(r'/file/(\d+)', v3_url)
+		if file_match: return 'opensubs_file_%s' % file_match.group(1)
+		return v3_url if len(v3_url) <= 120 else v3_url[:117] + '...'
+	sub_id = str(sub_ref.get('id') or '')
+	if sub_id and not sub_id.startswith('http'): return sub_id
+	url = str(sub_ref.get('url') or '')
+	if url: return url if len(url) <= 120 else url[:117] + '...'
+	return sub_id or '?'
+
 def _subtitle_candidate_text(sub_ref):
 	parts = []
 	if isinstance(sub_ref, dict):
@@ -128,27 +218,36 @@ def _subtitle_candidate_text(sub_ref):
 			if val: parts.append(str(val))
 		payload = _scs_payload_from_url(sub_ref.get('url') or '')
 		if payload: parts.extend(_flatten_string_values(payload))
+		v3_url = _v3_url_from_sub_ref(sub_ref)
+		if v3_url:
+			parts.append(v3_url)
+			name = _filename_from_v3_url(v3_url)
+			if name: parts.append(name)
 	elif sub_ref:
 		parts.append(str(sub_ref))
 	return ' '.join(parts)
 
-def _score_subtitle_release_match(sub_ref, release_context):
+def _score_subtitle_release_details(sub_ref, release_context):
 	if not release_context: release_context = playback_release_context()
 	sub_text = _subtitle_candidate_text(sub_ref)
-	if not sub_text: return 0.0
+	details = {'score': 0.0, 'stem_ratio': 0.0, 'token_hits': 0, 'play_primary': '', 'sub_primary': '', 'name': _subtitle_display_name(sub_ref)}
+	if not sub_text: return details
 	sub_norm = _normalize_release_text(sub_text)
 	sub_stem = _release_filename_stem(sub_text)
 	score = 0.0
+	stem_ratio = 0.0
+	token_hits = 0
 	if release_context.get('stem') and sub_stem:
-		score += SequenceMatcher(None, release_context['stem'], sub_stem).ratio()
+		stem_ratio = SequenceMatcher(None, release_context['stem'], sub_stem).ratio()
+		score += stem_ratio
 	if release_context.get('stem') and sub_norm:
 		play_parts = [part for part in release_context['stem'].split('.') if len(part) > 2]
-		hits = sum(1 for part in play_parts if part in sub_norm)
-		if hits: score += min(hits * 0.04, 0.2)
+		token_hits = sum(1 for part in play_parts if part in sub_norm)
+		if token_hits: score += min(token_hits * 0.04, 0.2)
 	sub_tags = _detect_release_source_tags(sub_text)
 	play_tags = release_context.get('tags') or set()
-	play_primary = _primary_release_source(play_tags)
-	sub_primary = _primary_release_source(sub_tags)
+	play_primary = _primary_release_source(play_tags) or ''
+	sub_primary = _primary_release_source(sub_tags) or ''
 	if play_primary and sub_primary:
 		if _release_sources_compatible(play_primary, sub_primary): score += 0.55
 		elif play_primary in _BLURAY_SOURCE_FAMILY and sub_primary == 'WEB': score -= 0.65
@@ -160,10 +259,35 @@ def _score_subtitle_release_match(sub_ref, release_context):
 		elif not sub_tags: score -= 0.15
 	if 'proper' in release_context.get('text', '') and 'proper' in sub_norm: score += 0.08
 	if 'repack' in release_context.get('text', '') and 'repack' in sub_norm: score += 0.08
-	return score
+	details.update({'score': score, 'stem_ratio': stem_ratio, 'token_hits': token_hits, 'play_primary': play_primary, 'sub_primary': sub_primary or 'unknown'})
+	return details
+
+def _score_subtitle_release_match(sub_ref, release_context):
+	return _score_subtitle_release_details(sub_ref, release_context).get('score', 0.0)
 
 def _submaker_api_url(manifest, params):
 	return manifest.replace('manifest', params)
+
+def _playing_basename(playing_filename=None, playing_item=None, season=None, episode=None):
+	return _best_play_filename(playing_filename, playing_item, season, episode)
+
+def _submaker_search_params(imdb_id, season, episode, playing_filename=None, playing_item=None):
+	if season not in (None, '') and episode not in (None, ''):
+		base = 'subtitles/series/%s:%s:%s' % (imdb_id, season, episode)
+	else:
+		base = 'subtitles/movie/%s' % imdb_id
+	basename = _playing_basename(playing_filename, playing_item, season, episode)
+	if not basename: return base
+	return '%s/filename=%s.json' % (base, quote(basename, safe=''))
+
+def _fetch_submaker_subtitles(imdb_id, season, episode, playing_filename=None, playing_item=None, quiet=False):
+	if not st.submaker_manifest_configured(): return None
+	params = _submaker_search_params(imdb_id, season, episode, playing_filename, playing_item)
+	try: response = _get(_submaker_api_url(st.submaker_manifest(), params), retry=True, quiet=quiet)
+	except requests.RequestException as e:
+		return str(e) if not quiet else None
+	if not response.ok: return response.reason if not quiet else None
+	return response.json().get('subtitles', [])
 
 def _submaker_language_matches(candidate_lang, preferred_language):
 	if not candidate_lang: return False
@@ -172,8 +296,17 @@ def _submaker_language_matches(candidate_lang, preferred_language):
 	if lang == preferred_language: return True
 	try: pref_iso = xbmc.convertLanguage(preferred_language, xbmc.ISO_639_1)
 	except: pref_iso = ''
-	if not pref_iso: return False
-	if lang.lower() == pref_iso.lower(): return True
+	if pref_iso and lang.lower() == pref_iso.lower(): return True
+	if pref_iso:
+		try:
+			cand_iso = xbmc.convertLanguage(lang, xbmc.ISO_639_1)
+			if cand_iso and cand_iso.lower() == pref_iso.lower(): return True
+		except: pass
+		if len(lang) == 3:
+			try:
+				pref_iso2 = xbmc.convertLanguage(preferred_language, xbmc.ISO_639_2)
+				if pref_iso2 and lang.lower() == pref_iso2.lower(): return True
+			except: pass
 	try:
 		if xbmc.convertLanguage(lang, xbmc.ENGLISH_NAME).lower() == preferred_language.lower(): return True
 	except: pass
@@ -188,32 +321,30 @@ def _submaker_usable_subs(subs):
 		results.append(item)
 	return results
 
-def _submaker_ranked_subs(subs, language, release_context=None):
+def _submaker_filter_stats(subs):
+	raw = list(subs or [])
+	usable = _submaker_usable_subs(raw)
+	filtered = {}
+	for item in raw:
+		if item in usable: continue
+		label = (item.get('lang') or item.get('id') or '?').strip()
+		filtered[label] = filtered.get(label, 0) + 1
+	return len(raw), len(usable), filtered
+
+def _submaker_split_subs(subs, language):
 	usable = _submaker_usable_subs(subs)
 	preferred = [i for i in usable if _submaker_language_matches(i.get('lang'), language)]
 	other = [i for i in usable if i not in preferred]
+	return usable, preferred, other
+
+def _submaker_ranked_subs(subs, language, release_context=None, preferred_only=False):
+	usable, preferred, other = _submaker_split_subs(subs, language)
 	ctx = release_context or playback_release_context()
 	sort_key = lambda item: _score_subtitle_release_match(item, ctx)
 	preferred.sort(key=sort_key, reverse=True)
 	other.sort(key=sort_key, reverse=True)
+	if preferred_only: return preferred
 	return preferred + other
-
-def _submaker_item_log_label(item, release_context=None):
-	lang = (item.get('lang') or '?') if isinstance(item, dict) else '?'
-	text = _subtitle_candidate_text(item)
-	if len(text) > 80: text = text[:77] + '...'
-	score = _score_subtitle_release_match(item, release_context or playback_release_context())
-	sub_src = _primary_release_source(_detect_release_source_tags(text)) or 'unknown'
-	return '%s score=%.2f src=%s %s' % (lang, score, sub_src, text)
-
-def _log_submaker_rank_preview(ranked, release_context, limit=5):
-	if not ranked: return
-	try:
-		preview = [_submaker_item_log_label(item, release_context) for item in ranked[:limit]]
-		play_tag = _subtitle_cache_release_tag(release_context) or 'unknown'
-		ku.logger('Red Light', 'SubMaker rank (%s, top %d/%d): %s' % (
-			play_tag, min(len(ranked), limit), len(ranked), ' | '.join(preview)))
-	except: pass
 
 def _looks_like_subtitle_content(content):
 	if not content: return False
@@ -224,22 +355,32 @@ def _looks_like_subtitle_content(content):
 	if sample.startswith('<!doctype') or sample.startswith('<html'): return False
 	return bool(re.search(r'\d{1,2}:\d{2}:\d{2}', content))
 
-def _download_submaker_content(download_fn, subs, language, release_context=None):
-	ranked = _submaker_ranked_subs(subs, language, release_context=release_context)
-	_log_submaker_rank_preview(ranked, release_context)
+def _download_submaker_content(download_fn, subs, language, release_context=None, search_params='', quiet=False):
+	usable, preferred, other = _submaker_split_subs(subs, language)
+	if not preferred:
+		if not quiet:
+			raw_count, _, _ = _submaker_filter_stats(subs)
+			if raw_count and not usable:
+				ku.logger('Red Light', 'SubMaker: only filtered placeholder results returned (configure SubMaker providers)')
+			else:
+				ku.logger('Red Light', 'SubMaker: no %s subs in response (%d other languages ignored)' % (language, len(other)))
+		return None
+	ranked = _submaker_ranked_subs(subs, language, release_context=release_context, preferred_only=True)
 	for item in ranked:
 		response = download_fn(item.get('url'))
-		if isinstance(response, str) or not getattr(response, 'ok', False): continue
+		if isinstance(response, str) or not getattr(response, 'ok', False):
+			continue
 		try: content = response.text
 		except: content = response.content
 		if _looks_like_subtitle_content(content):
-			try:
-				label = _subtitle_candidate_text(item)
-				if len(label) > 120: label = label[:117] + '...'
-				play_tag = _subtitle_cache_release_tag(release_context) or 'unknown'
-				lang = (item.get('lang') or '?') if isinstance(item, dict) else '?'
-				ku.logger('Red Light', 'SubMaker pick (%s) [%s]: %s' % (play_tag, lang, label))
-			except: pass
+			if not quiet:
+				try:
+					label = _subtitle_display_name(item)
+					if len(label) > 120: label = label[:117] + '...'
+					play_tag = _subtitle_cache_release_tag(release_context) or 'unknown'
+					lang = (item.get('lang') or '?') if isinstance(item, dict) else '?'
+					ku.logger('Red Light', 'SubMaker pick (%s) [%s]: %s' % (play_tag, lang, label))
+				except: pass
 			return content
 	return None
 
@@ -447,7 +588,7 @@ def _alert_temp_paths(imdb_id, season, episode, playing_filename=None, playing_i
 	if not imdb_id: return []
 	paths = []
 	base = _subtitle_base_filename(imdb_id, season, episode)
-	release_context = playback_release_context(playing_filename, playing_item) if (playing_filename or playing_item) else None
+	release_context = playback_release_context(playing_filename, playing_item, season, episode) if (playing_filename or playing_item) else None
 	if st.submaker_manifest_configured():
 		seen_names = set()
 		for name in _subtitle_cache_lookup_names(imdb_id, season, episode, release_context):
@@ -465,7 +606,7 @@ def _alert_temp_paths(imdb_id, season, episode, playing_filename=None, playing_i
 			paths.append('%s%s' % ('special://temp/', name))
 	return paths
 
-def _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at=None):
+def _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at=None, playing_item=None):
 	paths, seen = [], set()
 	def add(path, require_episode_match=False):
 		if not path: return
@@ -669,16 +810,15 @@ def _subs_alert_fetch_order():
 
 def _fetch_submaker_alert_subtitle(imdb_id, season, episode, year=None, playing_filename=None, playing_item=None):
 	if not st.submaker_manifest_configured(): return None
-	release_context = playback_release_context(playing_filename, playing_item)
+	release_context = playback_release_context(playing_filename, playing_item, season, episode)
 	search_filename = _alert_sub_filename(imdb_id, season, episode, release_context)
 	final_path = '%s%s' % ('special://temp/', search_filename)
-	if season: params = 'subtitles/series/%s:%s:%s' % (imdb_id, season, episode)
-	else: params = 'subtitles/movie/%s' % imdb_id
-	try: response = _get(_submaker_api_url(st.submaker_manifest(), params), retry=True, quiet=True)
-	except requests.RequestException: return None
-	if not response.ok: return None
-	subs = response.json().get('subtitles', [])
-	content = _download_submaker_content(lambda url: _get(url, stream=True, retry=True, quiet=True), subs, st.subs_language_for_download(), release_context=release_context)
+	search_params = _submaker_search_params(imdb_id, season, episode, playing_filename, playing_item)
+	subs = _fetch_submaker_subtitles(imdb_id, season, episode, playing_filename, playing_item, quiet=True)
+	if not isinstance(subs, list): return None
+	content = _download_submaker_content(
+		lambda url: _get(url, stream=True, retry=True, quiet=True), subs, st.subs_language_for_download(),
+		release_context=release_context, search_params=search_params, quiet=True)
 	if not content: return None
 	try:
 		with ku.open_file(final_path, 'w') as file: file.write(content)
@@ -699,7 +839,7 @@ def subtitle_seconds_remaining_before_end(total_time, imdb_id, season=None, epis
 		playing_filename=None, playing_item=None, playback_started_at=None, year=None, for_alert=False, credits_entry=False, quiet=False):
 	if not total_time: return None
 	log_label = 'Subtitle credits entry' if credits_entry else 'Subtitle alert timing'
-	for sub_path in _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at):
+	for sub_path in _collect_subtitle_candidates(player, playing_filename, imdb_id, season, episode, playback_started_at, playing_item):
 		remaining = _seconds_remaining_before_end(sub_path, total_time, for_alert=for_alert, credits_entry=credits_entry)
 		if remaining is not None:
 			if not quiet:
@@ -752,17 +892,18 @@ class Subtitles(xbmc.Player):
 		return response if response.ok else response.reason
 
 	def subtitles_search(self):
-		if self.season: params = 'subtitles/series/%s:%s:%s' % (self.imdb_id, self.season, self.episode)
-		else: params = 'subtitles/movie/%s' % self.imdb_id
-		try: response = _get(_submaker_api_url(self.manifest, params), retry=True)
+		search_params = _submaker_search_params(self.imdb_id, self.season, self.episode, self.playing_filename, self.playing_item)
+		try: response = _get(_submaker_api_url(self.manifest, search_params), retry=True)
 		except requests.RequestException as e: return str(e)
-		return response.json().get('subtitles', []) if response.ok else response.reason
+		if not response.ok: return response.reason
+		self._last_search_params = search_params
+		return response.json().get('subtitles', [])
 
 	def _video_file_subs(self):
 		return enable_local_subtitles(self._player, poster=self.poster, is_episode=self.is_episode)
 
 	def _downloaded_subs(self):
-		release_context = playback_release_context(self.playing_filename, self.playing_item)
+		release_context = playback_release_context(self.playing_filename, self.playing_item, self.season, self.episode)
 		files = ku.list_dirs(self.subtitle_path)[1]
 		for name in _subtitle_cache_lookup_names(self.imdb_id, self.season, self.episode, release_context):
 			if name not in files: continue
@@ -780,8 +921,17 @@ class Subtitles(xbmc.Player):
 			return ku.notification('SubMaker error: %s' % subs, settle_ms=150)
 		if not subs:
 			return ku.notification('No subtitles found', icon=self.poster, settle_ms=150)
-		release_context = playback_release_context(self.playing_filename, self.playing_item)
-		content = _download_submaker_content(self.subtitles_download, subs, self.language, release_context=release_context)
+		release_context = playback_release_context(self.playing_filename, self.playing_item, self.season, self.episode)
+		search_params = getattr(self, '_last_search_params', '') or _submaker_search_params(
+			self.imdb_id, self.season, self.episode, self.playing_filename, self.playing_item)
+		content = _download_submaker_content(
+			self.subtitles_download, subs, self.language, release_context=release_context, search_params=search_params)
+		if not content and st.opensubs_configured():
+			try:
+				from apis.opensubs_api import fetch_alert_subtitle
+				path = fetch_alert_subtitle(self.imdb_id, self.season, self.episode, None, self.playing_filename, self.playing_item, log_pick=True)
+				if path: return path
+			except: pass
 		if not content:
 			return ku.notification('No subtitles found', icon=self.poster, settle_ms=150)
 		final_path = '%s%s' % (self.subtitle_path, self.search_filename)
@@ -798,7 +948,7 @@ class Subtitles(xbmc.Player):
 		self._player = active_player or self
 		self.language = st.subs_language_for_download()
 		self.subtitle_path = 'special://temp/'
-		release_context = playback_release_context(playing_filename, playing_item)
+		release_context = playback_release_context(playing_filename, playing_item, season, episode)
 		self.search_filename = _subtitle_search_filename(imdb_id, season, episode, release_context)
 		ku.sleep(2500)
 		if st.submaker_prefer_local():
@@ -829,7 +979,7 @@ class OpenSubtitlesSubs(xbmc.Player):
 			return ku.notification('OpenSubtitles username and password required', icon=poster, settle_ms=500 if self.is_episode else 200)
 		try:
 			from apis.opensubs_api import fetch_alert_subtitle
-			path = fetch_alert_subtitle(imdb_id, season, episode, year, playing_filename, playing_item)
+			path = fetch_alert_subtitle(imdb_id, season, episode, year, playing_filename, playing_item, log_pick=True)
 		except: path = None
 		if not path:
 			return ku.notification('No subtitles found', icon=poster, settle_ms=500 if self.is_episode else 200)

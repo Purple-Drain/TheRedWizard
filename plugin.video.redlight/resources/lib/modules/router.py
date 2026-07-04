@@ -27,6 +27,11 @@ def prepare_directory_listing(mode):
 def routing(sys):
 	params = dict(parse_qsl(sys.argv[2][1:], keep_blank_values=True))
 	mode = params.get('mode', 'navigator.main')
+	try:
+		from caches.settings_cache import sync_kodi_profile_context
+		sync_kodi_profile_context()
+	except Exception as e:
+		kodi_utils.logger('routing', 'profile context: %s' % e)
 	prepare_directory_listing(mode)
 	from caches.settings_cache import ensure_settings_properties_loaded, should_block_bootstrap_on_entry
 	if should_block_bootstrap_on_entry(mode):

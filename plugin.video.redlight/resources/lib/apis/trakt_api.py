@@ -4,7 +4,12 @@ import time
 import requests
 from urllib.parse import unquote, quote_plus
 from caches import trakt_cache
-from caches.settings_cache import get_setting, set_setting
+from caches.settings_cache import get_setting, set_setting, settings_cache
+
+def _trakt_setting(setting_id, fallback=''):
+	val = settings_cache.read_db_value(setting_id)
+	if val in (None, '', '0', 'empty_setting'): return fallback
+	return val
 from caches.main_cache import cache_object
 from caches.lists_cache import lists_cache_object
 from modules import kodi_utils, settings
@@ -15,6 +20,13 @@ from modules.utils import sort_list, sort_for_article, get_datetime, timedelta, 
 
 # Trakt API max per-page limit (reducing to 250; see https://github.com/trakt/trakt-api/discussions/681 / #775)
 TRAKT_PAGE_LIMIT = 250
+# extended=progress on watched/shows is capped at 100 per page (discussion #775)
+TRAKT_WATCHED_PROGRESS_PAGE_LIMIT = 100
+
+def _trakt_fetch_page_limit(base_params):
+	ext = str((base_params or {}).get('extended') or '').lower()
+	if 'progress' in ext: return TRAKT_WATCHED_PROGRESS_PAGE_LIMIT
+	return TRAKT_PAGE_LIMIT
 
 def no_client_key():
 	kodi_utils.notification('Please set a valid Trakt Client ID Key')
@@ -35,12 +47,13 @@ def get_trakt_all(params):
 	path = params['path'] % params.get('path_insert', '')
 	base_params = dict(params.get('params') or {})
 	method = params.get('method')
+	page_limit = _trakt_fetch_page_limit(base_params)
 	sort_by, sort_how = 'rank', 'asc'
 	all_items = []
 	page_no, page_count = 1, 1
 	while page_no <= page_count:
 		query = dict(base_params)
-		query['limit'] = TRAKT_PAGE_LIMIT
+		query['limit'] = page_limit
 		page_method = method if page_no == 1 else (None if method == 'sort_by_headers' else method)
 		result, page_count = call_trakt(path, params=query, data=params.get('data'), is_delete=params.get('is_delete', False),
 						with_auth=params.get('with_auth', False), method=page_method, pagination=True, page_no=page_no)
@@ -56,7 +69,6 @@ def get_trakt_all(params):
 		else: break
 		if not chunk: break
 		all_items.extend(chunk)
-		if len(chunk) < TRAKT_PAGE_LIMIT: break
 		page_no += 1
 		if page_no > 1: kodi_utils.sleep(100)
 	if method == 'sort_by_headers':
@@ -70,10 +82,10 @@ def call_trakt(path, params={}, data=None, is_delete=False, with_auth=True, meth
 			while kodi_utils.get_property('redlight.trakt_refreshing_token') == 'true':
 				kodi_utils.logger('refreshing trakt token', '')
 				kodi_utils.sleep(250)
-			try: expires_at = float(get_setting('redlight.trakt.expires'))
+			try: expires_at = float(_trakt_setting('trakt.expires', '0'))
 			except: expires_at = 0.0
 			if time.time() > expires_at: trakt_refresh_token()
-			token = get_setting('redlight.trakt.token')
+			token = _trakt_setting('trakt.token')
 			if token: headers['Authorization'] = 'Bearer ' + token
 		try:
 			if method:
@@ -204,7 +216,7 @@ def trakt_refresh_token():
 		kodi_utils.set_property('redlight.trakt_refreshing_token', 'true')
 		data = {        
 			'client_id': CLIENT_ID, 'client_secret': CLIENT_SECRET, 'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob',
-			'grant_type': 'refresh_token', 'refresh_token': get_setting('redlight.trakt.refresh')}
+			'grant_type': 'refresh_token', 'refresh_token': _trakt_setting('trakt.refresh')}
 		response = call_trakt("oauth/token", data=data, with_auth=False)
 		if response:
 			set_setting('trakt.token', response['access_token'])
@@ -228,6 +240,10 @@ def trakt_authenticate(dummy=''):
 			user = call_trakt('/users/me')
 			set_setting('trakt.user', str(user['username']))
 		except: set_setting('trakt.user', 'Trakt User')
+		try:
+			from caches.settings_cache import sync_kodi_profile_context
+			sync_kodi_profile_context()
+		except: pass
 		settings.offer_watched_provider(1, 'Trakt')
 		kodi_utils.sleep(1000)
 		kodi_utils.notification('Trakt Account Authorised', 3000)
@@ -249,7 +265,7 @@ def trakt_revoke_authentication(dummy=''):
 	if CLIENT_ID in (None, 'empty_setting', ''): return no_client_key()
 	CLIENT_SECRET = settings.trakt_secret()
 	if CLIENT_SECRET in (None, 'empty_setting', ''): return no_secret_key()
-	data = {'token': get_setting('redlight.trakt.token'), 'client_id': CLIENT_ID, 'client_secret': CLIENT_SECRET}
+	data = {'token': _trakt_setting('trakt.token'), 'client_id': CLIENT_ID, 'client_secret': CLIENT_SECRET}
 	response = call_trakt("oauth/revoke", data=data, with_auth=False)
 
 def trakt_movies_related(imdb_id):
@@ -739,7 +755,7 @@ def trakt_indicators_tv():
 	try:
 		insert_list = []
 		insert_append = insert_list.append
-		params = {'path': 'users/me/watched/shows?extended=full%s', 'with_auth': True, 'fetch_all': True}
+		params = {'path': 'sync/watched/shows%s', 'params': {'extended': 'progress'}, 'with_auth': True, 'fetch_all': True}
 		result = get_trakt(params)
 		if result is None: return
 		threads = TaskPool().tasks(_process, result, min(len(result), settings.max_threads()))

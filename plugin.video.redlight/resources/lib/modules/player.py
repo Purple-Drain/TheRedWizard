@@ -1197,7 +1197,17 @@ class RedLightPlayer(xbmc.Player):
 			trakt_ids = {'tmdb': self.tmdb_id, 'imdb': self.imdb_id, 'slug': make_trakt_slug(self.title)}
 			if self.media_type == 'episode': trakt_ids['tvdb'] = self.tvdb_id
 			ku.set_property('script.trakt.ids', json.dumps(trakt_ids))
-			if self.playing_filename: ku.set_property('subs.player_filename', self.playing_filename)
+			if self.playing_filename or getattr(self, 'playing_item', None):
+				try:
+					from indexers.subtitles import _best_play_filename
+					season = self.season if self.media_type == 'episode' else None
+					episode = self.episode if self.media_type == 'episode' else None
+					best = _best_play_filename(self.playing_filename, getattr(self, 'playing_item', None), season, episode)
+					ku.set_property('subs.player_filename', best or self.playing_filename)
+				except:
+					if self.playing_filename: ku.set_property('subs.player_filename', self.playing_filename)
+			elif self.playing_filename:
+				ku.set_property('subs.player_filename', self.playing_filename)
 		except: pass
 
 	def safe_stop(self):

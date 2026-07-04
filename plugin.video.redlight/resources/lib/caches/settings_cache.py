@@ -376,7 +376,40 @@ def _defaultsettings_ids(d_settings):
 	defaultsettings_ids.extend(['%s_name' % i for i in defaultsettings_names])
 	return defaultsettings_ids
 
+_ACTIVE_KODI_PROFILE = 'redlight.active_kodi_profile'
+
+def sync_kodi_profile_context():
+	"""Reload settings properties when the active Kodi profile changes (multi-profile / shared Trakt)."""
+	try:
+		current = kodi_utils.translate_path(kodi_utils.addon_info('profile'))
+	except:
+		return False
+	if not current:
+		return False
+	kodi_utils.set_property('redlight.addon_profile', current)
+	previous = kodi_utils.get_property(_ACTIVE_KODI_PROFILE) or ''
+	if previous != current:
+		kodi_utils.set_property(_ACTIVE_KODI_PROFILE, current)
+		kodi_utils.clear_property(_SETTINGS_PROPERTIES_LOADED)
+		settings_cache.clear_db_cache()
+		if kodi_utils.get_property(_SETTINGS_DB_SYNCED) == 'true':
+			_apply_settings_properties_from_db()
+		else:
+			bootstrap_settings_properties(force=True)
+		return True
+	if not _properties_loaded():
+		kodi_utils.set_property(_ACTIVE_KODI_PROFILE, current)
+		if kodi_utils.get_property(_SETTINGS_DB_SYNCED) == 'true':
+			_apply_settings_properties_from_db()
+		else:
+			bootstrap_settings_properties(force=True)
+		return True
+	if not previous:
+		kodi_utils.set_property(_ACTIVE_KODI_PROFILE, current)
+	return False
+
 def ensure_settings_properties_loaded():
+	sync_kodi_profile_context()
 	if _properties_loaded(): return False
 	with _bootstrap_lock:
 		if _properties_loaded(): return False

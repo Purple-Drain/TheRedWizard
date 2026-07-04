@@ -141,6 +141,8 @@ class TraktMonitor:
 			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
 			wait_time = 1800
 			try:
+				from caches.settings_cache import sync_kodi_profile_context
+				sync_kodi_profile_context()
 				sync_interval, wait_time = trakt_sync_interval()
 				next_update_string = update_string % sync_interval
 				if trakt_user_active(): status = trakt_sync_activities()
