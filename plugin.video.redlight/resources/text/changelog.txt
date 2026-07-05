@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.7.4[/B][/COLOR]
+- Fixed [B]Autoscrape Next Episode[/B] [B]Confirm Before Autoscrape?[/B] prompt re-opening every few seconds after choosing [B]No[/B] (or letting the countdown expire): declining now cancels background prep for the rest of the current episode instead of clearing the scheduled flag and immediately asking again.
+
 [COLOR red][B]Version 1.7.3[/B][/COLOR]
 - [B]Set Views[/B]: [B]Next Episodes[/B] (and other episode lists such as [B]In Progress[/B]) now use your [B]Set Episodes[/B] view when [B]Set Episode Lists[/B] was never configured separately.
 - [B]Autoplay Next Episode[/B] / [B]Autoscrape Next Episode[/B]: background prep again targets the literal next episode ([B]S/E+1[/B]) regardless of Trakt (or other indicator) watch history — same as Fen Light — so rewatching and online/debrid playback queue the following episode even when it is already marked watched.

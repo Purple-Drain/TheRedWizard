@@ -242,6 +242,7 @@ class Sources():
 			self._prefetch_nextep_segment_data()
 		if self.background and self.autoplay_nextep and self.nextep_settings and not getattr(self, '_nextep_alert_handled', False):
 			if not self.still_watching_check():
+				self._decline_nextep_prep('still watching')
 				kodi_utils.notification('Cancel Autoplay', icon=self.meta.get('poster'))
 				return
 		if getattr(self, '_nextep_stash_results', None):
@@ -2155,9 +2156,20 @@ class Sources():
 		self._make_resolve_dialog()
 		return True
 
+	def _decline_nextep_prep(self, reason):
+		try:
+			player = kodi_utils.kodi_player()
+			if isinstance(player, RedLightPlayer):
+				player.decline_nextep_prep(reason)
+				return
+		except: pass
+		kodi_utils.set_property('redlight.nextep_prep_declined', 'true')
+		kodi_utils.logger('Red Light', 'Next episode prep declined: %s' % reason)
+
 	def autoscrape_nextep_handler(self):
 		if settings.autoscrape_confirm():
 			if not self._make_still_watching_dialog('Autoscrape Next Episode of [B]%s[/B]?', heading='Autoscrape Next Episode?', right_align=True):
+				self._decline_nextep_prep('autoscrape confirm')
 				return
 		player = kodi_utils.kodi_player()
 		if not self._player_episode_active(player):
