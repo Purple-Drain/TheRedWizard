@@ -1,3 +1,10 @@
+[COLOR red][B]Version 1.7.5[/B][/COLOR]
+- Fixed [B]Autoplay Next Episode[/B] flashing the episode list when choosing [B]Close[/B] (or at natural episode end): stashed resolve now starts a few seconds before fullscreen closes so the resolver covers the transition instead of [B]DialogBusy[/B] (which Kodi tears down when playback stops).
+- Fixed [B]Autoplay Next Episode[/B] [B]Cancel[/B] on the alert still autoplaying after the current episode ended.
+- Fixed [B]Autoplay Next Episode[/B] default [B]Pause & Wait[/B]: no longer clears the stashed next-episode results; default focus no longer maps to [B]Cancel[/B].
+- Fixed background next-episode prep dismissing the on-screen busy overlay while the current episode was still playing.
+- Fixed [B]Autoscrape Next Episode[/B] [B]Confirm Before Autoscrape?[/B] prompt re-opening every few seconds after choosing [B]No[/B] (or letting the countdown expire): declining now cancels background prep for the rest of the current episode instead of clearing the scheduled flag and immediately asking again.
+
 [COLOR red][B]Version 1.7.4[/B][/COLOR]
 - Fixed [B]Autoscrape Next Episode[/B] [B]Confirm Before Autoscrape?[/B] prompt re-opening every few seconds after choosing [B]No[/B] (or letting the countdown expire): declining now cancels background prep for the rest of the current episode instead of clearing the scheduled flag and immediately asking again.
 

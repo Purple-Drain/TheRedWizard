@@ -460,6 +460,20 @@ def set_property(prop, value):
 def clear_property(prop):
 	return kodi_window().clearProperty(prop)
 
+def sync_scrape_progress_ui(percent=0, results_sd=0, results_720p=0, results_1080p=0, results_4k=0, results_total=0):
+	set_property('redlight.scrape.percent', str(int(percent)))
+	set_property('redlight.scrape.results_sd', str(results_sd))
+	set_property('redlight.scrape.results_720p', str(results_720p))
+	set_property('redlight.scrape.results_1080p', str(results_1080p))
+	set_property('redlight.scrape.results_4k', str(results_4k))
+	set_property('redlight.scrape.results_total', str(results_total))
+
+def clear_scrape_progress_ui():
+	for prop in ('redlight.scrape.percent', 'redlight.scrape.results_sd', 'redlight.scrape.results_720p',
+			'redlight.scrape.results_1080p', 'redlight.scrape.results_4k', 'redlight.scrape.results_total',
+			'redlight.scrape.ready'):
+		clear_property(prop)
+
 def clear_all_properties():
 	return kodi_window().clearProperties()
 

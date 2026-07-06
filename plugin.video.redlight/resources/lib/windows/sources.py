@@ -63,6 +63,7 @@ class SourcesResults(BaseDialog):
 
 	def onInit(self):
 		self.filter_applied = False
+		hide_busy_dialog()
 		if self.make_poster: self.set_poster()
 		self.add_items(self.window_id, self.item_list)
 		self.add_items(self.filter_window_id, self.filter_list)
@@ -72,7 +73,9 @@ class SourcesResults(BaseDialog):
 		self.doModal()
 		self.clearProperties()
 		self.clear_home_property('window_theme.sources')
-		hide_busy_dialog()
+		action = self.selected[0] if self.selected else None
+		if action != 'play':
+			hide_busy_dialog()
 		return self.selected
 
 	def get_provider_and_path(self, provider):
@@ -148,7 +151,10 @@ class SourcesResults(BaseDialog):
 				})
 			try:
 				if self.sources_ref:
-					self.sources_ref._prepare_resolve_ui()
+					if getattr(self.sources_ref, 'background', False):
+						self.sources_ref._make_resolve_dialog()
+					else:
+						self.sources_ref._prepare_resolve_ui()
 			except:
 				pass
 			self.selected = ('play', chosen_source)
@@ -393,6 +399,9 @@ class SourcesPlayback(BaseDialog):
 		self.addon_fanart = addon_fanart()
 		self.enable_scraper()
 
+	def onInit(self):
+		hide_busy_dialog()
+
 	def run(self):
 		self.doModal()
 		self.clearProperties()
@@ -459,6 +468,12 @@ class SourcesPlayback(BaseDialog):
 		self.setProperty('clearlogo', clearlogo)
 		self.setProperty('title', title)
 		self.setProperty('genre', ', '.join(genre))
+		self.setProperty('results_4k', '0')
+		self.setProperty('results_1080p', '0')
+		self.setProperty('results_720p', '0')
+		self.setProperty('results_sd', '0')
+		self.setProperty('results_total', '0')
+		self.setProperty('percent', '0')
 
 	def set_resolver_properties(self):
 		if self.meta_get('media_type') == 'movie': self.text = self.meta_get('plot')
@@ -482,11 +497,11 @@ class SourcesPlayback(BaseDialog):
 		self.setProperty('results_720p', str(results_720p))
 		self.setProperty('results_sd', str(results_sd))
 		self.setProperty('results_total', str(results_total))
-		self.setProperty('percent', str(percent))
+		self.setProperty('percent', str(int(percent)))
 		self.set_text(2001, content)
 
 	def update_resolver(self, text='', percent=0):
-		try: self.setProperty('percent', str(percent))
+		try: self.setProperty('percent', str(int(percent)))
 		except: pass
 		if text: self.set_text(2002, text)
 

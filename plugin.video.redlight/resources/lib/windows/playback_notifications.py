@@ -22,7 +22,7 @@ class NextEpisode(BaseDialog):
 		self.set_properties()
 
 	def onInit(self):
-		focus_map = {'play': 11, 'cancel': 12, 'pause': 12, 'close': 10}
+		focus_map = {'play': 11, 'cancel': 12, 'pause': 10, 'close': 10}
 		self.setFocusId(focus_map.get(self.selected, 12))
 		Thread(target=self.monitor, daemon=True).start()
 

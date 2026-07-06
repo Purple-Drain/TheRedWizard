@@ -61,19 +61,48 @@ class source:
 			return self._get_sources_orchestrated()
 		return self._get_sources_flat()
 
+	def _counts_from_sources_list(self, sources):
+		if not sources:
+			return 0, 0, 0, 0, 0
+		return (
+			self._quality_length_sd(sources, None),
+			self._quality_length(sources, '720p'),
+			self._quality_length(sources, '1080p'),
+			self._quality_length(sources, '4K'),
+			len(sources),
+		)
+
+	def _ui_scrape_counts(self):
+		live = self._counts_from_sources_list(self.sources)
+		if live[4] >= self.sources_total:
+			return live
+		return (self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total)
+
+	def _push_scrape_progress(self, line1, percent):
+		try:
+			counts = self._ui_scrape_counts()
+			self.progress_dialog.update_scraper(counts[0], counts[1], counts[2], counts[3], counts[4], line1, percent)
+		except:
+			pass
+
+	def _push_debrid_progress(self, line1, percent):
+		# Keep scrape totals on screen during cache check; final_* only counts cached
+		# subsets and uses a different basis (deduped hashes), which made totals drop.
+		self._push_scrape_progress(line1, percent)
+
 	def _get_sources_flat(self):
 		def _scraperDialog():
 			kodi_utils.hide_busy_dialog()
-			kodi_utils.sleep(200)
 			start_time = time.time()
+			self._push_scrape_progress('', 0)
 			while not self.progress_dialog.iscanceled() and not self.monitor.abortRequested():
 				try:
 					alive_threads = [x.getName() for x in self.threads if x.is_alive()]
 					if self.internal_activated or self.internal_prescraped: alive_threads.extend(self.process_internal_results())
 					self.poll_cloud_scrapers()
 					line1 =  ', '.join(alive_threads).upper()
-					percent = (max((time.time() - start_time), 0)/float(self.timeout))*100
-					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
+					percent = min(100, int((max((time.time() - start_time), 0) / float(self.timeout)) * 100))
+					self._push_scrape_progress(line1, percent)
 					if self.threads_completed:
 						len_alive_threads = len(alive_threads)
 						if len_alive_threads == 0: break
@@ -199,9 +228,9 @@ class source:
 	def _run_provider_batch(self, batch_entries, batch_timeout, wave_labels):
 		def _scraperDialog():
 			kodi_utils.hide_busy_dialog()
-			kodi_utils.sleep(200)
 			batch_start = time.time()
 			line1_prefix = ' | '.join(wave_labels).upper()
+			self._push_scrape_progress(line1_prefix, 0)
 			while not self.progress_dialog.iscanceled() and not self.monitor.abortRequested():
 				try:
 					alive_threads = [x.getName() for x in self.threads if x.is_alive()]
@@ -211,7 +240,7 @@ class source:
 					if alive_threads: line1 = '%s: %s' % (line1_prefix, ', '.join(alive_threads).upper())
 					elapsed = max((time.time() - batch_start), 0)
 					percent = min(100, (elapsed / float(batch_timeout)) * 100)
-					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
+					self._push_scrape_progress(line1, percent)
 					if self.threads_completed:
 						if len(alive_threads) == 0: break
 					if time.time() >= batch_start + batch_timeout:
@@ -373,6 +402,7 @@ class source:
 				final_results.extend(batch)
 		def _debrid_check_dialog(debrid_deadline):
 			self.progress_dialog.reset_is_cancelled()
+			self._push_scrape_progress('Checking cache...', 0)
 			start_time = time.time()
 			debrid_timeout = max(1.0, debrid_deadline - start_time)
 			while not self.progress_dialog.iscanceled() and not self.monitor.abortRequested():
@@ -381,7 +411,7 @@ class source:
 					current_progress = max((time.time() - start_time), 0)
 					line1 = ', '.join(remaining_debrids).upper()
 					percent = min(100, int((current_progress / float(debrid_timeout)) * 100))
-					self.progress_dialog.update_scraper(self.final_sd, self.final_720p, self.final_1080p, self.final_4k, self.final_total, line1, percent)
+					self._push_debrid_progress(line1, percent)
 					kodi_utils.sleep(100)
 					if len(remaining_debrids) == 0: break
 					if time.time() >= debrid_deadline: break
