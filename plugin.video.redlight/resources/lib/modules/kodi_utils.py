@@ -999,8 +999,9 @@ LIST_ITEM_NOT_IN_LIST = 'Item not in list'
 
 def notification(line1, time=5000, icon=None, settle_ms=0):
 	# Brief delay helps Kodi show the toast after select/confirm dialogs close (rapid calls can drop it otherwise).
+	# sound=False: silent toast — especially during playback (Next Episode Ready, Next Up).
 	if settle_ms: sleep(settle_ms)
-	kodi_dialog().notification('Red Light', line1, icon or addon_icon(), time)
+	kodi_dialog().notification('Red Light', line1, icon or addon_icon(), time, False)
 
 def player_check(mode, params):
 	from modules.settings import playback_key

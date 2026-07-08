@@ -2000,6 +2000,131 @@
                           <property name="setting_description">Remove the scraper module from slot 3.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=external_scraper_clear_slot&amp;slot=3)</onclick>
                       </item>
+        <!-- AIOStreams (hidden while aiostreams_api.ENABLED is false) -->
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <property name="setting_label">AIOStreams</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <property name="setting_label">Enable</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.provider.aiostreams)]</property>
+                          <property name="setting_description">Enable AIOStreams as an optional source provider alongside Debrid, EasyNews, and external scrapers. Requires your AIOStreams instance username and password (HTTP Basic Auth).</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=provider.aiostreams)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <property name="setting_label">Instance</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.instance_name)]</property>
+                          <property name="setting_description">Each preset shows its base URL in the picker and below. UUID and password are remembered per instance when you switch presets. Choose Custom to enter your own base URL.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=aiostreams.instance)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.aiostreams.instance),4)</visible>
+                          <property name="setting_label">    - Active base URL</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.base_url)]</property>
+                          <property name="setting_description">The base URL Red Light uses for /api/v1/search on this scrape. Updates when you change Instance. API calls go to this host plus /api/v1/search.</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.instance),4)</visible>
+                          <property name="setting_label">    - Custom URL</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.custom_url)]</property>
+                          <property name="setting_description">Base URL for your custom AIOStreams instance (no trailing slash), e.g. https://aiostreams.example.com</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=aiostreams.custom_url)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <property name="setting_label">Username</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.username)]</property>
+                          <property name="setting_description">HTTP Basic Auth username for your AIOStreams instance.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=aiostreams.username)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <property name="setting_label">Password</property>
+                          <property name="setting_type">password</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.password)]</property>
+                          <property name="setting_description">HTTP Basic Auth password for your AIOStreams instance.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=aiostreams.password)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
+                          <property name="setting_label">Filter Results by Name</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.title_filter)]</property>
+                          <property name="setting_description">After AIOStreams returns results, match filenames against the movie or episode title (and aliases). Disable if valid links go missing.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=aiostreams.title_filter)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
+                          <property name="setting_label">Preserve Instance Sort Order</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.preserve_order)]</property>
+                          <property name="setting_description">Keep the order returned by your AIOStreams instance (filters and sorting configured in AIOStreams). Red Light quality, size, and audio filters are skipped for AIO rows when enabled.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=aiostreams.preserve_order)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
+                          <property name="setting_label">Check Before Full Search</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.check.aiostreams)]</property>
+                          <property name="setting_description">Query AIOStreams early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.aiostreams)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.check.aiostreams),true)</visible>
+                          <property name="setting_label">    - Autoplay Result</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.aiostreams)]</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top AIOStreams result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.aiostreams)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
+                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
+                          <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aio.priority)]</property>
+                          <property name="setting_description">Choose the order in which AIOStreams results appear in relation to any other active accounts. The lower the number, the higher the sort order.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=aio.priority)</onclick>
+                      </item>
         <!-- All Debrid -->
                      <item>
                          <visible>Container(2000).HasFocus(60)</visible>
@@ -2074,7 +2199,7 @@
                           <property name="setting_label">    - Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.ad_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will search for results in your All Debrid Cloud before checking other enabled scrapers</property>
+                          <property name="setting_description">Search your All Debrid cloud early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Cloud Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.ad_cloud)</onclick>
                       </item>
                       <item>
@@ -2086,7 +2211,7 @@
                           <property name="setting_label">    - Autoplay Cloud Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.ad_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will Autoplay the top result found from the All Debrid Cloud</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top All Debrid cloud result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.ad_cloud)</onclick>
                       </item>
                       <item>
@@ -2232,7 +2357,7 @@
                           <property name="setting_label">Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.easynews)]</property>
-                          <property name="setting_description">Query EasyNews early in the source search, before external torrent scrapers and the rest of the internal scrape list. The progress window can show EasyNews quality counts (4K, 1080p, etc.) while torrent scrapers are still running. If EasyNews returns results during this prescrape step, you may get playable links sooner instead of waiting for the full scrape to finish. Does not replace external scrapers — it runs EasyNews first, then the normal search continues. Often used in conjunction with Autoplay Result, below (when Check Before Full Search is enabled).</property>
+                          <property name="setting_description">Query EasyNews early in the source search, before external torrent scrapers and the rest of the internal scrape list. The progress window can show EasyNews quality counts (4K, 1080p, etc.) while torrent scrapers are still running. If EasyNews returns results during prescrape, you may get playable links sooner instead of waiting for the full scrape to finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.easynews)</onclick>
                       </item>
                       <item>
@@ -2243,7 +2368,7 @@
                           <property name="setting_label">    - Autoplay Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.easynews)]</property>
-                          <property name="setting_description">Enable this and Red Light will Autoplay the top result found from EasyNews</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top EasyNews result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.easynews)</onclick>
                       </item>
                       <item>
@@ -2363,8 +2488,20 @@
                           <property name="setting_label">    - Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.oc_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will search your Offcloud cloud before checking other enabled scrapers</property>
+                          <property name="setting_description">Search your Offcloud cloud early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Cloud Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.oc_cloud)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(60)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.oc.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.oc.enabled),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.oc_cloud),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.check.oc_cloud),true)</visible>
+                          <property name="setting_label">    - Autoplay Cloud Result</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.oc_cloud)]</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top Offcloud cloud result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.oc_cloud)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(60)</visible>
@@ -2484,7 +2621,7 @@
                           <property name="setting_label">    - Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.pm_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will search for results in your Premiumize Cloud before checking other enabled scrapers</property>
+                          <property name="setting_description">Search your Premiumize cloud early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Cloud Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.pm_cloud)</onclick>
                       </item>
                       <item>
@@ -2496,7 +2633,7 @@
                           <property name="setting_label">    - Autoplay Cloud Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.pm_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will Autoplay the top result found from the Premiumize Cloud</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top Premiumize cloud result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.pm_cloud)</onclick>
                       </item>
                       <item>
@@ -2605,7 +2742,7 @@
                           <property name="setting_label">    - Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.rd_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will search for results in your Real Debrid Cloud before checking other enabled scrapers</property>
+                          <property name="setting_description">Search your Real Debrid cloud early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Cloud Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.rd_cloud)</onclick>
                       </item>
                       <item>
@@ -2617,7 +2754,7 @@
                           <property name="setting_label">    - Autoplay Cloud Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.rd_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will Autoplay the top result found from the Real Debrid Cloud</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top Real Debrid cloud result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.rd_cloud)</onclick>
                       </item>
                       <item>
@@ -2768,7 +2905,7 @@
                           <property name="setting_label">    - Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.tb_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will search for results in your TorBox Cloud before checking other enabled scrapers</property>
+                          <property name="setting_description">Search your TorBox cloud early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Cloud Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.tb_cloud)</onclick>
                       </item>
                       <item>
@@ -2780,7 +2917,7 @@
                           <property name="setting_label">    - Autoplay Cloud Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.tb_cloud)]</property>
-                          <property name="setting_description">Enable this and Red Light will Autoplay the top result found from the TorBox Cloud</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top TorBox cloud result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.tb_cloud)</onclick>
                       </item>
                       <item>
@@ -2803,119 +2940,6 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.tb.priority)]</property>
                           <property name="setting_description">Choose the order in which TorBox results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=tb.priority)</onclick>
-                      </item>
-        <!-- AIOStreams (hidden while aiostreams_api.ENABLED is false) -->
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <property name="setting_label">AIOStreams</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <property name="setting_label">Enable</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.provider.aiostreams)]</property>
-                          <property name="setting_description">Enable AIOStreams as an optional source provider alongside Debrid, EasyNews, and external scrapers. Requires your AIOStreams instance username and password (HTTP Basic Auth).</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=provider.aiostreams)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <property name="setting_label">Instance</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.instance_name)]</property>
-                          <property name="setting_description">Each preset shows its base URL in the picker and in this row. Kuu = aiostreams.stremio.ru | ElfHosted = aiostreams.elfhosted.com | Yeb = aiostreams.fortheweak.cloud | Midnight = aiostreamsfortheweebsstable.midnightignite.me | Custom = your own host (set URL below).</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=aiostreams.instance)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <property name="setting_label">    - Active base URL</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.base_url)]</property>
-                          <property name="setting_description">The base URL Red Light uses for /api/v1/search on this scrape. Updates when you change Instance or Custom URL. API calls go to this host plus /api/v1/search.</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.instance),4)</visible>
-                          <property name="setting_label">    - Custom URL</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.custom_url)]</property>
-                          <property name="setting_description">Base URL for your custom AIOStreams instance (no trailing slash), e.g. https://aiostreams.example.com</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=aiostreams.custom_url)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <property name="setting_label">Username</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.username)]</property>
-                          <property name="setting_description">HTTP Basic Auth username for your AIOStreams instance.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=aiostreams.username)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <property name="setting_label">Password</property>
-                          <property name="setting_type">password</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.password)]</property>
-                          <property name="setting_description">HTTP Basic Auth password for your AIOStreams instance.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=aiostreams.password)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
-                          <property name="setting_label">Filter Results by Name</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aiostreams.title_filter)]</property>
-                          <property name="setting_description">After AIOStreams returns results, match filenames against the movie or episode title (and aliases). Disable if valid links go missing.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=aiostreams.title_filter)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
-                          <property name="setting_label">Check Before Full Search</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.check.aiostreams)]</property>
-                          <property name="setting_description">Query AIOStreams early in the source search, before external torrent scrapers finish. Does not replace Debrid, EasyNews, or external scrapers. Often used with Autoplay Result below.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.aiostreams)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.check.aiostreams),true)</visible>
-                          <property name="setting_label">    - Autoplay Result</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.aiostreams)]</property>
-                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top AIOStreams result if one is found during prescrape.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.aiostreams)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(60)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
-                          <visible>![String.IsEmpty(Window(10000).Property(redlight.aiostreams.username)) + String.IsEmpty(Window(10000).Property(redlight.aiostreams.password))]</visible>
-                          <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.aio.priority)]</property>
-                          <property name="setting_description">Choose the order in which AIOStreams results appear in relation to any other active accounts. The lower the number, the higher the sort order.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=aio.priority)</onclick>
                       </item>
         <!-- Local Media Folders -->
                       <item>
@@ -2956,7 +2980,7 @@
                           <property name="setting_label">Check Before Full Search</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.check.folders)]</property>
-                          <property name="setting_description">Enable this and Red Light will search for results from your local media folders before checking other enabled scrapers</property>
+                          <property name="setting_description">Search your local media folders early in the source search, before external torrent scrapers and the rest of the internal scrape list finish. Does not replace other providers — the full source search continues afterward. Pair with Autoplay Result below (shown when Check Before Full Search is enabled) to autoplay a prescrape hit from this source.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=check.folders)</onclick>
                       </item>
                       <item>
@@ -2966,7 +2990,7 @@
                           <property name="setting_label">    - Autoplay Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.folders)]</property>
-                          <property name="setting_description">Enable this and Red Light will Autoplay the top result found from Local Folders</property>
+                          <property name="setting_description">When Check Before Full Search is enabled, autoplay the top local media folders result found during prescrape instead of opening the results list. Requires Autoplay under Playback > Movies or Episodes, and respects Limit Autoplay Quality there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay.folders)</onclick>
                       </item>
                       <item>
@@ -3269,20 +3293,11 @@
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
-                          <property name="setting_label">    - Real Debrid Color</property>
+                          <property name="setting_label">    - AIOStreams Color</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.rd_highlight)]]$INFO[Window(10000).Property(redlight.provider.rd_highlight)][/COLOR]</property>
-                          <property name="setting_description">Choose Real Debrid color</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.rd_highlight)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(70)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
-                          <property name="setting_label">    - Premiumize Color</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.pm_highlight)]]$INFO[Window(10000).Property(redlight.provider.pm_highlight)][/COLOR]</property>
-                          <property name="setting_description">Choose Premiumize color</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.pm_highlight)</onclick>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.aiostreams_highlight)]]$INFO[Window(10000).Property(redlight.provider.aiostreams_highlight)][/COLOR]</property>
+                          <property name="setting_description">Choose AIOStreams color</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.aiostreams_highlight)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
@@ -3296,20 +3311,11 @@
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
-                          <property name="setting_label">    - Offcloud Color</property>
+                          <property name="setting_label">    - Debrid Cloud Color</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.oc_highlight)]]$INFO[Window(10000).Property(redlight.provider.oc_highlight)][/COLOR]</property>
-                          <property name="setting_description">Choose Offcloud color</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.oc_highlight)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(70)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
-                          <property name="setting_label">    - TorBox Color</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.tb_highlight)]]$INFO[Window(10000).Property(redlight.provider.tb_highlight)][/COLOR]</property>
-                          <property name="setting_description">Choose TorBox color</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.tb_highlight)</onclick>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.debrid_cloud_highlight)]]$INFO[Window(10000).Property(redlight.provider.debrid_cloud_highlight)][/COLOR]</property>
+                          <property name="setting_description">Choose Debrid Cloud color</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.debrid_cloud_highlight)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
@@ -3323,21 +3329,38 @@
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.aiostreams.available),true)</visible>
-                          <property name="setting_label">    - AIOStreams Color</property>
+                          <property name="setting_label">    - Offcloud Color</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.aiostreams_highlight)]]$INFO[Window(10000).Property(redlight.provider.aiostreams_highlight)][/COLOR]</property>
-                          <property name="setting_description">Choose AIOStreams color</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.aiostreams_highlight)</onclick>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.oc_highlight)]]$INFO[Window(10000).Property(redlight.provider.oc_highlight)][/COLOR]</property>
+                          <property name="setting_description">Choose Offcloud color</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.oc_highlight)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
-                          <property name="setting_label">    - Debrid Cloud Color</property>
+                          <property name="setting_label">    - Premiumize Color</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.debrid_cloud_highlight)]]$INFO[Window(10000).Property(redlight.provider.debrid_cloud_highlight)][/COLOR]</property>
-                          <property name="setting_description">Choose Debrid Cloud color</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.debrid_cloud_highlight)</onclick>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.pm_highlight)]]$INFO[Window(10000).Property(redlight.provider.pm_highlight)][/COLOR]</property>
+                          <property name="setting_description">Choose Premiumize color</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.pm_highlight)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(70)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
+                          <property name="setting_label">    - Real Debrid Color</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.rd_highlight)]]$INFO[Window(10000).Property(redlight.provider.rd_highlight)][/COLOR]</property>
+                          <property name="setting_description">Choose Real Debrid color</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.rd_highlight)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(70)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.highlight.type),0)</visible>
+                          <property name="setting_label">    - TorBox Color</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.provider.tb_highlight)]]$INFO[Window(10000).Property(redlight.provider.tb_highlight)][/COLOR]</property>
+                          <property name="setting_description">Choose TorBox color</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=provider.tb_highlight)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
@@ -3420,10 +3443,10 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <property name="setting_label">Auto Play</property>
+                          <property name="setting_label">Autoplay</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.auto_play_movie)]</property>
-                          <property name="setting_description">Enable this for Movies to play automatically when selected</property>
+                          <property name="setting_description">Enable this for Movies to autoplay automatically when selected</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=auto_play_movie)</onclick>
                       </item>
                       <item>
@@ -3438,7 +3461,7 @@
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_movie),true)</visible>
-                          <property name="setting_label">Limit Auto Play Quality</property>
+                          <property name="setting_label">Limit Autoplay Quality</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_quality_movie)]</property>
                           <property name="setting_description">Choose the Quality properties allowed for autoplay results</property>
@@ -3487,10 +3510,10 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <property name="setting_label">Auto Play</property>
+                          <property name="setting_label">Autoplay</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.auto_play_episode)]</property>
-                          <property name="setting_description">Enable this for Episodes to play automatically when selected</property>
+                          <property name="setting_description">Enable this for Episodes to autoplay automatically when selected</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=auto_play_episode)</onclick>
                       </item>
                       <item>
@@ -3505,7 +3528,7 @@
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true)</visible>
-                          <property name="setting_label">Limit Auto Play Quality</property>
+                          <property name="setting_label">Limit Autoplay Quality</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_quality_episode)]</property>
                           <property name="setting_description">Choose the Quality properties allowed for autoplay results</property>
@@ -3616,7 +3639,7 @@
                           <property name="setting_label">    - Check Still Watching After... (0=Off)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_watching_check)]</property>
-                          <property name="setting_description">Choose after how many auto played episodes Red Light will ask if you are still watching. Set to 0 to disable</property>
+                          <property name="setting_description">Choose after how many autoplayed episodes Red Light will ask if you are still watching. Set to 0 to disable</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoplay_watching_check)</onclick>
                       </item>
                       <item>

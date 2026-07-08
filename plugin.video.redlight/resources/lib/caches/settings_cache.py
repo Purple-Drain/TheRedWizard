@@ -236,7 +236,22 @@ class SettingsCache:
 		setting_type, setting_default = setting_info['setting_type'], setting_info['setting_default']
 		if setting_value is None: setting_value = setting_default
 		setting_value = sanitize_setting_value(setting_id, setting_value, setting_info)
+		instance_switch = None
+		if setting_id == 'aiostreams.instance':
+			old_instance = str(self.read_db_value('aiostreams.instance') or '0')
+			new_instance = str(setting_value)
+			if old_instance != new_instance:
+				instance_switch = new_instance
+				try:
+					from apis.aiostreams_api import persist_active_profile
+					persist_active_profile(old_instance)
+				except: pass
 		dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', (setting_id, setting_type, setting_default, setting_value))
+		if instance_switch is not None:
+			try:
+				from apis.aiostreams_api import apply_profile
+				apply_profile(instance_switch)
+			except: pass
 		if _properties_loaded():
 			self.set_memory_cache(setting_id, setting_value)
 		if setting_type == 'action' and 'settings_options' in setting_info:
@@ -702,6 +717,11 @@ def set_string(params):
 	if setting_id == 'playback.submaker_manifest' and new_value:
 		new_value = new_value.strip()
 	set_setting(setting_id, new_value or 'empty_setting')
+	if setting_id in ('aiostreams.username', 'aiostreams.password', 'aiostreams.custom_url'):
+		try:
+			from apis.aiostreams_api import persist_active_profile
+			persist_active_profile()
+		except: pass
 	if setting_id in ('playback.submaker_manifest', 'playback.opensubs_username', 'playback.opensubs_password'):
 		try:
 			refresh_settings_manager_properties()
@@ -749,25 +769,29 @@ def set_path(params):
 
 def set_from_list(params):
 	setting_id = params['setting_id']
-	if setting_id == 'watched_indicators':
+	if setting_id == 'aiostreams.instance':
+		from apis.aiostreams_api import instance_picker_list
+		settings_list = instance_picker_list()
+	elif setting_id == 'watched_indicators':
 		from modules.settings import watched_provider_options
 		settings_options = watched_provider_options().items()
+		settings_list = [(v, k) for k, v in settings_options]
+		settings_list.sort(key=lambda item: item[0].lower())
 	elif setting_id == 'playback.subs_source':
 		from modules.settings import subtitles_source_options
 		settings_options = subtitles_source_options().items()
+		settings_list = [(v, k) for k, v in settings_options]
 	elif setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
 		from modules.settings import alert_timing_options
 		settings_options = alert_timing_options(next_episode=(setting_id != 'stinger_alert.alert_timing')).items()
+		settings_list = [(v, k) for k, v in settings_options]
+		settings_list.sort(key=lambda item: item[0].lower())
 	else:
 		settings_options = default_setting_values(setting_id)['settings_options'].items()
-	settings_list = [(v, k) for k, v in settings_options]
-	if setting_id == 'watched_indicators':
-		settings_list.sort(key=lambda item: item[0].lower())
-	elif setting_id in ('stinger_alert.alert_timing', 'autoplay_alert_timing', 'autoscrape_alert_timing'):
-		settings_list.sort(key=lambda item: item[0].lower())
-	elif setting_id == 'external_scraper.run_mode':
-		_mode_order = ('1', '2', '3', '0')
-		settings_list.sort(key=lambda item: _mode_order.index(item[1]) if item[1] in _mode_order else 99)
+		settings_list = [(v, k) for k, v in settings_options]
+		if setting_id == 'external_scraper.run_mode':
+			_mode_order = ('1', '2', '3', '0')
+			settings_list.sort(key=lambda item: _mode_order.index(item[1]) if item[1] in _mode_order else 99)
 	new_value = kodi_utils.select_dialog(settings_list, **{'items': json.dumps([{'line1': item[0]} for item in settings_list]), 'narrow_window': 'true'})
 	if not new_value: return
 	setting_value = new_value[1]
@@ -1142,16 +1166,17 @@ def default_settings():
 {'setting_id': 'provider.aiostreams', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'aiostreams.instance', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {
 	'0': 'Kuu — https://aiostreams.stremio.ru',
-	'1': 'ElfHosted — https://aiostreams.elfhosted.com',
+	'1': 'Viren — https://aiostreams.viren070.me',
 	'2': 'Yeb — https://aiostreams.fortheweak.cloud',
 	'3': 'Midnight — https://aiostreamsfortheweebsstable.midnightignite.me',
 	'4': 'Custom — set URL below',
 }},
-{'setting_id': 'aiostreams.instance_schema', 'setting_type': 'string', 'setting_default': '2'},
+{'setting_id': 'aiostreams.profiles', 'setting_type': 'string', 'setting_default': '{}'},
 {'setting_id': 'aiostreams.custom_url', 'setting_type': 'string', 'setting_default': ''},
 {'setting_id': 'aiostreams.username', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'aiostreams.password', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'aiostreams.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'aiostreams.preserve_order', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'check.aiostreams', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoplay.aiostreams', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'aio.priority', 'setting_type': 'action', 'setting_default': '7', 'min_value': '1', 'max_value': '10'},

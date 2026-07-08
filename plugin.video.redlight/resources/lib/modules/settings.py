@@ -511,6 +511,9 @@ def aiostreams_active():
 	if get_setting('redlight.provider.aiostreams', 'false') == 'true': return aiostreams_authorized()
 	return False
 
+def aiostreams_preserve_order():
+	return get_setting('redlight.aiostreams.preserve_order', 'true') == 'true'
+
 def extras_enable_extra_ratings():
 	return get_setting('redlight.extras.enable_extra_ratings', 'true') == 'true'
 

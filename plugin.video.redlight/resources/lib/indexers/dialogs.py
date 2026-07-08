@@ -415,7 +415,7 @@ def preferred_filters_choice(params):
 		filters_choice = [i for i in filters_choice if not i[1] in disabled_filters]
 		unused_filters = [i for i in filters_choice if not i[1] in auto_settings]
 		param_list_items = [{'line1': i[0], 'line2': i[1]} for i in unused_filters]
-		param_kwargs = {'items': json.dumps(param_list_items), 'multi_line': 'true', 'heading': 'Choose Sort to Top Params for Autoplay', 'narrow_window': 'true'}
+		param_kwargs = {'items': json.dumps(param_list_items), 'multi_line': 'true', 'heading': 'Choose Sort To Top Parameters', 'narrow_window': 'true'}
 		param_choice = kodi_utils.select_dialog(unused_filters, **param_kwargs)
 		if param_choice == None: return ''
 		choice['value'] = param_choice[1]
@@ -427,7 +427,7 @@ def preferred_filters_choice(params):
 	auto_settings = settings.preferred_filters()
 	choices = params.get('choices') or _beginning_choices()
 	list_items = [{'line1': i['name'], 'line2': i['value']} for i in choices]
-	kwargs = {'items': json.dumps(list_items), 'multi_line': 'true', 'heading': 'Choose Sort to Top Params for Autoplay', 'narrow_window': 'true'}
+	kwargs = {'items': json.dumps(list_items), 'multi_line': 'true', 'heading': 'Choose Sort To Top Parameters', 'narrow_window': 'true'}
 	choice = kodi_utils.select_dialog(choices, **kwargs)
 	if choice == None: return _make_settings()
 	choice, ask_params = _rechoose_checker(choice)

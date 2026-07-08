@@ -299,9 +299,9 @@ class Sources():
 		if self.active_external:
 			self.debrid_enabled = debrid.debrid_enabled()
 			if not self.debrid_enabled:
-				return self.disable_external('No Debrid Services Enabled' if all(scraper == 'external' for scraper in self.active_internal_scrapers) else 'EN used only')
+				return self.disable_external()
 			self.external_modules = settings.active_external_modules()
-			if not self.external_modules: return self.disable_external('Error Importing External Module')
+			if not self.external_modules: return self.disable_external()
 			self.ext_folder = self.external_modules[0]['module_id']
 			self.ext_name = self.external_modules[0]['folder_name']
 
@@ -361,13 +361,9 @@ class Sources():
 				return self._finish_scrape_cancel()
 			if not results:
 				if self.check_prescrape_ran and self._can_continue_full_scrape():
+					self._kill_progress_dialog(join_timeout=1.0)
 					self._reset_scrape_progress_counts()
-					if self.progress_dialog:
-						try:
-							self.progress_dialog.update_scraper(0, 0, 0, 0, 0, '', 0)
-						except:
-							pass
-					elif not self.background:
+					if not self.progress_dialog and not self.background:
 						self._make_progress_dialog()
 					self._refresh_results_settings()
 				if not settings.auto_play(self.media_type) and not self.cloud_prescrape_autoplay and not self._random_playback() and not self._explicit_autoplay_request():
@@ -479,13 +475,23 @@ class Sources():
 		results = [i for i in results if i not in strip_uncached]
 		cloud_scrapers = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
 		cloud_results = [i for i in results if i.get('scrape_provider') in cloud_scrapers]
+		aio_preserve_results = []
+		if self._aiostreams_preserve_order():
+			aio_preserve_results = sorted([i for i in results if i.get('scrape_provider') == 'aiostreams'], key=lambda k: k.get('aio_order', 999999))
+		filter_exempt = cloud_results + aio_preserve_results
 		if self.ignore_scrape_filters: self.filters_ignored = True
 		else:
-			scrape_results = [i for i in results if i not in cloud_results]
+			scrape_results = [i for i in results if i not in filter_exempt]
 			scrape_results = self.filter_results(scrape_results)
 			scrape_results = self.filter_audio(scrape_results)
 			for file_type in self.filter_keys: scrape_results = self.special_filter(scrape_results, file_type)
 			results = scrape_results + cloud_results
+			if aio_preserve_results:
+				non_aio = [self._enrich_sort_fields(i) for i in results if i.get('scrape_provider') != 'aiostreams']
+				non_aio.sort(key=self.sort_function)
+				non_aio = self._sort_uncached_results(non_aio)
+				aio_block = [self._enrich_sort_fields(i) for i in aio_preserve_results]
+				results = self._merge_aiostreams_at_provider_rank(non_aio, aio_block)
 		if self.prescrape:
 			self.all_scrapers = self.active_internal_scrapers
 			if self.autoplay:
@@ -535,12 +541,16 @@ class Sources():
 		except: pass
 
 	def sort_results(self, results):
-		results = [dict(i, **{
-			'provider_rank': self._get_provider_rank(i['debrid'].lower()), 'quality_rank': self._get_quality_rank(i.get('quality', 'SD')),
-			'size_rank': self._get_size_rank(i)}) for i in results]
-		results.sort(key=self.sort_function)
-		results = self._sort_uncached_results(results)
-		return results
+		aio_block, other = self._split_aiostreams_preserve(results)
+		if other:
+			other = [self._enrich_sort_fields(i) for i in other]
+			other.sort(key=self.sort_function)
+			other = self._sort_uncached_results(other)
+		if aio_block:
+			aio_block = [self._enrich_sort_fields(i) for i in aio_block]
+			if other: return self._merge_aiostreams_at_provider_rank(other, aio_block)
+			return aio_block
+		return other
 
 	def filter_results(self, results):
 		if self.folders_ignore_filters:
@@ -655,17 +665,21 @@ class Sources():
 		return results
 
 	def _sort_with_pref_boost(self, results):
-		results = [dict(i, **{
-			'provider_rank': self._get_provider_rank(i['debrid'].lower()),
-			'quality_rank': self._get_quality_rank(i.get('quality', 'SD')),
-			'size_rank': self._get_size_rank(i)}) for i in results]
+		aio_block, other = self._split_aiostreams_preserve(results)
+		if not other: return aio_block if aio_block else results
+		other = [self._enrich_sort_fields(i) for i in other]
+		aio_pref, aio_nonpref = [], []
+		if aio_block:
+			aio_block = [self._enrich_sort_fields(i) for i in aio_block]
+			aio_pref = [i for i in aio_block if i.get('pref_includes', 0) > 0]
+			aio_nonpref = [i for i in aio_block if i.get('pref_includes', 0) == 0]
 		groups = {}
-		for item in results:
+		for item in other:
 			groups.setdefault(item['quality_rank'], []).append(item)
-		with_pref_all = []
+		with_pref_all = list(aio_pref)
 		for quality_rank in sorted(groups.keys()):
 			with_pref_all.extend([i for i in groups[quality_rank] if i.get('pref_includes', 0) > 0])
-		with_pref_all.sort(key=lambda k: (-k.get('pref_includes', 0), k['quality_rank']) + self.sort_function(k)[1:])
+		with_pref_all.sort(key=self._pref_boost_sort_key)
 		without_sorted = []
 		for quality_rank in sorted(groups.keys()):
 			without_pref = [i for i in groups[quality_rank] if i.get('pref_includes', 0) == 0]
@@ -674,7 +688,15 @@ class Sources():
 			non_sdr.sort(key=self.sort_function)
 			sdr.sort(key=self.sort_function)
 			without_sorted.extend(non_sdr + sdr)
-		return self._sort_uncached_results(with_pref_all + without_sorted)
+		sorted_other = self._sort_uncached_results(with_pref_all + without_sorted)
+		if aio_nonpref:
+			return self._merge_aiostreams_at_provider_rank(sorted_other, aio_nonpref)
+		return sorted_other
+
+	def _pref_boost_sort_key(self, item):
+		if item.get('scrape_provider') == 'aiostreams' and self._aiostreams_preserve_order():
+			return (-item.get('pref_includes', 0), item['quality_rank'], item.get('aio_order', 999999))
+		return (-item.get('pref_includes', 0),) + self.sort_function(item)
 
 	def _custom_pref_sort_active(self):
 		return self._pref_sort_should_run()
@@ -769,10 +791,9 @@ class Sources():
 
 	def activate_external_providers(self):
 		self.external_providers = self.external_sources()
-		if not self.external_providers: self.disable_external('No External Providers Enabled')
+		if not self.external_providers: self.disable_external()
 
-	def disable_external(self, line1=''):
-		if line1: kodi_utils.notification(line1, 2000)
+	def disable_external(self):
 		try: self.active_internal_scrapers.remove('external')
 		except: pass
 		self.active_external, self.external_providers = False, []
@@ -852,15 +873,15 @@ class Sources():
 		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
 
 	def _prescrape_autoplay_candidates(self, results):
-		autoplay_scrapers = self._cloud_scrapers() + ('easynews',)
+		autoplay_scrapers = self._cloud_scrapers() + ('easynews', 'aiostreams', 'folders')
 		return [i for i in results if i.get('scrape_provider') in autoplay_scrapers and settings.autoplay_prescrape(i['scrape_provider'])]
 
 	def _is_cloud_result(self, item):
 		return item.get('scrape_provider') in self._cloud_scrapers()
 
 	def _external_autoplay_candidates(self, results):
-		"""Global Autoplay Movie/Episode — external scrapers only, not debrid cloud library rows."""
-		return [i for i in results if not self._is_cloud_result(i)]
+		"""Global Autoplay Movie/Episode — external scrapers only, not debrid cloud / AIO / EN / folders."""
+		return [i for i in results if i.get('scrape_provider') == 'external']
 
 	def _release_empty_prescrape_cloud_scrapers(self):
 		"""Let cloud scrapers run again during full scrape when prescrape found nothing."""
@@ -963,9 +984,9 @@ class Sources():
 			kodi_utils.sleep(100)
 
 	def display_results(self, results):
+		if self.autoscrape_nextep:
+			kodi_utils.show_busy_dialog()
 		while True:
-			if self.autoscrape_nextep:
-				kodi_utils.show_busy_dialog()
 			window_format, window_number = settings.results_format()
 			window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
 					window_format=window_format, window_id=window_number, results=results, meta=self.meta, sources_ref=self, episode_group_label=self.episode_group_label,
@@ -989,16 +1010,12 @@ class Sources():
 				return
 			elif action == 'play':
 				kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
+				self._log_nextep_resolve_diag(chosen_item, phase='pick')
 				self.play_file(results, chosen_item)
 				return
 			elif self.prescrape and action == 'perform_full_search':
-				self._reset_scrape_progress_counts()
-				if self.progress_dialog:
-					try:
-						self.progress_dialog.update_scraper(0, 0, 0, 0, 0, '', 0)
-					except:
-						pass
-				elif not self.background:
+				self._kill_progress_dialog(join_timeout=1.0)
+				if not self.progress_dialog and not self.background:
 					self._make_progress_dialog()
 				# Mirror empty-prescrape → full scrape: keep remove_scrapers and prescrape_sources
 				# so cloud scrapers stay finished and progress shows external/cache only.
@@ -1350,6 +1367,48 @@ class Sources():
 		rank = self.provider_sort_ranks.get(account_type)
 		return 11 if rank is None else rank
 
+	def _aiostreams_preserve_order(self):
+		return settings.aiostreams_preserve_order()
+
+	def _enrich_sort_fields(self, item):
+		return dict(item, **{
+			'provider_rank': self._get_provider_rank(item['debrid'].lower()),
+			'quality_rank': self._get_quality_rank(item.get('quality', 'SD')),
+			'size_rank': self._get_size_rank(item)})
+
+	def _split_aiostreams_preserve(self, results):
+		if not self._aiostreams_preserve_order(): return [], results
+		aio = sorted([i for i in results if i.get('scrape_provider') == 'aiostreams'], key=lambda k: k.get('aio_order', 999999))
+		other = [i for i in results if i.get('scrape_provider') != 'aiostreams']
+		return aio, other
+
+	def _merge_aiostreams_at_provider_rank(self, sorted_other, aio_block):
+		if not aio_block: return sorted_other
+		if not sorted_other: return aio_block
+		aio_rank = self._get_provider_rank('aiostreams')
+		other_by_quality, aio_by_quality = {}, {}
+		for item in sorted_other:
+			other_by_quality.setdefault(item['quality_rank'], []).append(item)
+		for item in aio_block:
+			aio_by_quality.setdefault(item['quality_rank'], []).append(item)
+		merged = []
+		for quality_rank in sorted(set(other_by_quality) | set(aio_by_quality)):
+			band = other_by_quality.get(quality_rank, [])
+			aio_in_band = aio_by_quality.get(quality_rank, [])
+			if not aio_in_band:
+				merged.extend(band)
+				continue
+			if not band:
+				merged.extend(aio_in_band)
+				continue
+			insert_at = len(band)
+			for idx, item in enumerate(band):
+				if item['provider_rank'] > aio_rank:
+					insert_at = idx
+					break
+			merged.extend(band[:insert_at] + aio_in_band + band[insert_at:])
+		return merged
+
 	def _sort_folder_to_top(self, provider):
 		if provider == 'folders': return 0
 		else: return 1
@@ -1479,9 +1538,18 @@ class Sources():
 	def _make_progress_dialog(self):
 		self._ensure_progress_dialog_dead()
 		self._reset_scrape_progress_counts()
+		kodi_utils.clear_scrape_progress_ui()
+		kodi_utils.sync_scrape_progress_ui(0, 0, 0, 0, 0, 0)
 		self.progress_dialog = create_window(('windows.sources', 'SourcesPlayback'), 'sources_playback.xml', meta=self.meta, sources_ref=self)
 		self.progress_thread = Thread(target=self.progress_dialog.run)
 		self.progress_thread.start()
+		for _ in range(40):
+			try:
+				if kodi_utils.get_property('redlight.scrape.ready') == 'true':
+					break
+			except:
+				pass
+			kodi_utils.sleep(50)
 
 	def _prepare_resolve_ui(self):
 		try:
@@ -1786,7 +1854,9 @@ class Sources():
 				self._stop_active_playback()
 			retry_easynews = settings.easynews_playback_method('retry')
 			retry_easynews_limit = settings.easynews_playback_method_retries()
+			kodi_utils.hide_busy_dialog()
 			if not source: source = playable_results[0]
+			self._log_nextep_resolve_diag(source, phase='play_start')
 			items = [source]
 			if not self.limit_resolve:
 				source_index = playable_results.index(source)
@@ -1801,6 +1871,7 @@ class Sources():
 				provider = item['scrape_provider']
 				if provider == 'external': provider = item['debrid'].replace('.me', '')
 				elif provider == 'folders': provider = item['source']
+				elif provider == 'aiostreams': provider = item.get('aio_source_label') or provider
 				provider_text = provider.upper()
 				extra_info = '[B]%s[/B] | [B]%s[/B] | %s' %  (item['quality'], item['size_label'], item['extraInfo'])
 				display_name = item['display_name'].upper()
@@ -1832,6 +1903,7 @@ class Sources():
 				try:
 					if self._resolve_user_cancelled or self.cancel_all_playback:
 						break
+					kodi_utils.hide_busy_dialog()
 					if not self.progress_dialog:
 						if self._user_cancelled_resolve():
 							self._resolve_user_cancelled = True
@@ -1983,6 +2055,66 @@ class Sources():
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), self.play_type))
 		except: pass
 
+	def _nextep_resolve_diag_enabled(self):
+		if self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
+			return True
+		if self.background or getattr(self, '_nextep_stash_results', None):
+			return True
+		if getattr(self, '_nextep_alert_handled', False):
+			return True
+		return False
+
+	def _fmt_nextep_se(self, season, episode):
+		try:
+			if season in (None, '') or episode in (None, ''):
+				return '-'
+			return 'S%02dE%02d' % (int(season), int(episode))
+		except:
+			return 'S%sE%s' % (season, episode)
+
+	def _nextep_resolve_url_id(self, url):
+		if not url or not isinstance(url, str):
+			return ''
+		try:
+			for part in url.split('/'):
+				token = (part or '').split('?')[0]
+				if len(token) >= 32 and '-' in token:
+					return token[:36]
+		except:
+			pass
+		return ''
+
+	def _log_nextep_resolve_diag(self, item=None, phase='resolve', url=None, resolve_se=None):
+		if not self._nextep_resolve_diag_enabled():
+			return
+		try:
+			meta = self.meta or {}
+			si = getattr(self, 'search_info', None) or {}
+			item = item or {}
+			resolve_label = ''
+			if resolve_se:
+				resolve_label = self._fmt_nextep_se(resolve_se[0], resolve_se[1])
+			kodi_utils.logger('NextEpResolve', '%s phase=%s play_type=%s background=%s autoplay=%s autoscrape=%s self=%s meta=%s custom=%s search_info=%s get=%s resolve=%s provider=%s hash=%s pack=%s name=%s url_id=%s' % (
+				meta.get('title', ''),
+				phase,
+				self.play_type or '',
+				self.background,
+				self.autoplay_nextep,
+				self.autoscrape_nextep,
+				self._fmt_nextep_se(self.season, self.episode),
+				self._fmt_nextep_se(meta.get('season'), meta.get('episode')),
+				self._fmt_nextep_se(meta.get('custom_season'), meta.get('custom_episode')),
+				self._fmt_nextep_se(si.get('season'), si.get('episode')),
+				self._fmt_nextep_se(self.get_season(), self.get_episode()),
+				resolve_label,
+				(item.get('debrid') or item.get('cache_provider') or '')[:24],
+				(item.get('hash') or '')[:8],
+				'package' in item,
+				(item.get('display_name') or item.get('name') or '')[:72],
+				self._nextep_resolve_url_id(url),
+			))
+		except: pass
+
 	def _prefetch_intro_segment_async(self):
 		if self.media_type != 'episode':
 			return
@@ -2052,6 +2184,24 @@ class Sources():
 		kodi_utils.clear_property(PROP_AUTOSCRAPE_NEXTEP_READY)
 		kodi_utils.notification('[B]Next Episode Ready:[/B] %s S%02dE%02d' \
 				% (meta.get('title'), meta.get('season'), meta.get('episode')), 6500, meta.get('poster') or None)
+
+	def _sync_autoscrape_ready_notified_player(self):
+		try:
+			player = kodi_utils.kodi_player()
+			if isinstance(player, RedLightPlayer):
+				player._autoscrape_ready_notified = True
+		except:
+			pass
+
+	def _notify_autoscrape_ready_immediate(self, remaining, window_time):
+		if getattr(self, '_autoscrape_ready_notified', False):
+			return
+		kodi_utils.logger('Red Light', 'Autoscrape next episode ready (confirm): %s S%02dE%02d remaining=%ss alert_window=%ss' % (
+			self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), remaining, window_time))
+		self._autoscrape_ready_notified = True
+		self._mark_autoscrape_nextep_ready()
+		self._show_autoscrape_ready_notification()
+		self._sync_autoscrape_ready_notified_player()
 
 	def _notify_autoscrape_ready(self, remaining, window_time):
 		kodi_utils.logger('Red Light', 'Autoscrape next episode ready: %s S%02dE%02d remaining=%ss alert_window=%ss' % (
@@ -2141,10 +2291,12 @@ class Sources():
 		kodi_utils.logger('Red Light', 'Next episode prep declined: %s' % reason)
 
 	def autoscrape_nextep_handler(self):
+		autoscrape_confirmed = False
 		if settings.autoscrape_confirm():
 			if not self._make_still_watching_dialog('Autoscrape Next Episode of [B]%s[/B]?', heading='Autoscrape Next Episode?', right_align=True):
 				self._decline_nextep_prep('autoscrape confirm')
 				return
+			autoscrape_confirmed = True
 		player = kodi_utils.kodi_player()
 		if not self._player_episode_active(player):
 			return
@@ -2164,16 +2316,16 @@ class Sources():
 			else:
 				kodi_utils.logger('Red Light', 'Autoscrape next episode ready (stopped during scrape): %s S%02dE%02d remaining=%ss alert_window=%ss' % (
 					self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), remaining, window_time))
-			kodi_utils.show_busy_dialog()
 			return self.display_results(results)
-		if remaining is not None and remaining <= int(window_time):
+		if autoscrape_confirmed:
+			self._notify_autoscrape_ready_immediate(remaining, window_time)
+		elif remaining is not None and remaining <= int(window_time):
 			self._notify_autoscrape_ready(remaining, window_time)
 		else:
 			remaining, should_notify = self._wait_autoscrape_pop_window(player, window_time)
 			if should_notify:
 				self._notify_autoscrape_ready(remaining, window_time)
 		while self._player_episode_active(player): kodi_utils.sleep(100)
-		kodi_utils.show_busy_dialog()
 		if kodi_utils.get_property(PROP_AUTOSCRAPE_NEXTEP_READY):
 			self._show_autoscrape_ready_notification()
 		self.display_results(results)
@@ -2206,7 +2358,9 @@ class Sources():
 					else: title, season, episode, pack = self.get_ep_name(), self.get_season(), self.get_episode(), 'package' in item
 				else: title, season, episode, pack = self.get_search_title(), None, None, False
 				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox'):
+					self._log_nextep_resolve_diag(item, phase='resolve', resolve_se=(season, episode))
 					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack)
+					self._log_nextep_resolve_diag(item, phase='resolved', url=url, resolve_se=(season, episode))
 			else: url = item['url']
 		except: pass
 		if self._user_cancelled_resolve():

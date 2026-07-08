@@ -90,7 +90,7 @@
                     <textcolor>FFCCCCCC</textcolor>
                     <align>left</align>
                     <aligny>center</aligny>
-                    <label>[UPPERCASE][COLOR $INFO[Window.Property(highlight)]][B]Scraper: [/B][/COLOR]$INFO[Window.Property(scraper_module)][/UPPERCASE]</label>
+                    <label>[UPPERCASE][COLOR $INFO[Window.Property(highlight)]][B]$INFO[Window.Property(scraper_module_label)]: [/B][/COLOR]$INFO[Window.Property(scraper_module)][/UPPERCASE]</label>
                 </control>
                 <control type="label">
                     <top>150</top>

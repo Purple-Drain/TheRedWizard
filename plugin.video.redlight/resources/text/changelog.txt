@@ -1,3 +1,33 @@
+[COLOR red][B]Version 1.7.9[/B][/COLOR]
+- [B]AIOStreams[/B]: Hoster row — [B]USENET[/B] for usenet-only [B]AIO+[/B] streams; [B]DIRECT[/B] for EasyNews and other non-debrid services (even when AIO tags the stream as usenet); [B]CACHED[/B]/[B]UNCACHED[/B] only for torrent debrid (TB, PM, RD, etc.).
+- [B]Results[/B]: fixed [B]Set Filters for Sort to Top[/B] dialog title (was garbled Fen Light wording); now reads [B]Choose Sort To Top Parameters[/B].
+
+[COLOR red][B]Version 1.7.8[/B][/COLOR]
+- [B]Autoscrape Next Episode[/B] (diagnostics): [B]kodi.log[/B] lines tagged [B]NextEpResolve[/B] when background next-episode prep resolves a source — logs [B]play_type[/B], [B]background[/B], [B]self[/B]/[B]meta[/B]/[B]search_info[/B]/[B]get_season[/B] S/E, debrid hash prefix, pack flag, and resolved CDN id (for correlation with [B]VideoPlayer::OpenFile[/B]). No behaviour change.
+- [B]Autoscrape Next Episode[/B]: with [B]Confirm Before Autoscrape[/B] enabled, [B]Next Episode Ready[/B] shows as soon as the background scrape finishes after you tap [B]Yes[/B] (while credits are still rolling). Without confirm, the ready toast still waits for the alert window only.
+- [B]Notifications[/B]: Red Light toasts (including [B]Next Episode Ready[/B] / [B]Next Up[/B] during playback) no longer play the Kodi notification sound.
+- [B]AIOStreams[/B]: when [B]Instance[/B] is [B]Custom[/B], the read-only [B]Active base URL[/B] row is hidden — only [B]Custom URL[/B] appears in that slot (no duplicate URL rows).
+- [B]AIOStreams[/B]: fixed left-panel badge on custom instances still showing [B]AIO / AIOStreams[/B] — generic [B]service[/B] ids from the API are now ignored (same as addon names) so the inner debrid/indexer label ([B]PM[/B], [B]TB[/B], [B]NZB[/B], etc.) is used; [B]info[/B] blocks are merged when present.
+- [B]AIOStreams[/B]: left-panel badge follows AIO Streams convention — [B]AIO / TB+[/B] cached debrid, [B]AIO / TB[/B] uncached, [B]AIO+[/B] for usenet-only streams (no debrid service).
+
+[COLOR red][B]Version 1.7.7[/B][/COLOR]
+- [B]AIOStreams[/B]: [B]Preserve Instance Sort Order[/B] ([B]Tools > Settings > Sources Accounts > AIOStreams[/B]) keeps the result order from your AIOStreams instance and skips Red Light quality, size, and audio filters for AIO rows. Enabled by default.
+- [B]AIOStreams[/B]: results suffix row shows the release [B]Group[/B] (e.g. Hone, NTb, Flux) from AIOStreams filename parsing instead of the instance preset name (Viren, Kuu, etc.).
+- [B]Sources[/B]: removed provider skip toasts (e.g. [B]EN used only[/B], [B]AIOStreams used only[/B]) when External Scrapers are dropped — scrape continues silently with whatever direct sources you have enabled.
+- [B]AIOStreams[/B]: fixed source-search crash when [B]Preserve Instance Sort Order[/B] is on ([B]unhashable type: 'dict'[/B] during result filtering).
+- [B]AIOStreams[/B]: fixed left-panel provider label on custom instances showing [B]AIO / AIOStreams[/B] — [B]streamData[/B] fields (debrid service, cached) are merged into each result and generic addon names are ignored so the inner provider (e.g. [B]PM[/B], [B]TB[/B], [B]NZB[/B]) displays correctly.
+
+[COLOR red][B]Version 1.7.6[/B][/COLOR]
+- [B]AIOStreams[/B]: re-enabled as a native Red Light source provider ([B]Tools > Settings > Sources Accounts > AIOStreams[/B]). Uses HTTP Basic Auth (UUID + password from your AIOStreams dashboard) against your chosen instance.
+- [B]AIOStreams[/B]: result parsing ([B]parsedFile[/B] merge, [B]requestHeaders[/B] on direct play, P2P rows skipped). Optional title filter, prescrape, autoplay, and highlight colour unchanged.
+- [B]AIOStreams[/B]: credentials and custom URL are stored per instance preset — switching between Kuu, Midnight, Viren, Yeb, or Custom restores that instance's saved UUID, password, and self-hosted URL.
+- [B]AIOStreams[/B]: results list shows the inner source on the left panel (e.g. [B]AIO / TB[/B], [B]AIO / PM[/B], [B]AIO / Torrentio[/B]) instead of repeating AIOStreams.
+- [B]AIOStreams[/B]: Site row shows the indexer when AIO provides it (e.g. TorrentGalaxy); Hoster shows [B]CACHED[/B] or [B]DIRECT[/B] based on the stream type.
+- [B]AIOStreams[/B]: results show the active AIO instance (e.g. Midnight, Yeb) in the same suffix row as external [B]Scraper:[/B] labels.
+- [B]Sources Accounts[/B]: [B]AIOStreams[/B] section moved above [B]All Debrid[/B] (External Scrapers → AIOStreams → debrid/EasyNews providers → Local Media Folders).
+- [B]AIOStreams[/B]: [B]kodi.log[/B] now includes the API error message from failed HTTP responses (e.g. [B]Search API is disabled[/B]) instead of only the status code and URL.
+- [B]Sources Accounts[/B] / [B]Playback[/B]: standardised [B]Autoplay[/B] naming in settings labels and help (matches [B]Autoscrape[/B]). Prescrape help pairs [B]Autoplay Result[/B] / [B]Autoplay Cloud Result[/B] below with [B]Autoplay[/B] under [B]Playback[/B]; added missing [B]Autoplay Cloud Result[/B] row for Offcloud.
+
 [COLOR red][B]Version 1.7.5[/B][/COLOR]
 - Fixed [B]Autoplay Next Episode[/B] flashing the episode list when choosing [B]Close[/B] (or at natural episode end): stashed resolve now starts a few seconds before fullscreen closes so the resolver covers the transition instead of [B]DialogBusy[/B] (which Kodi tears down when playback stops).
 - Fixed [B]Autoplay Next Episode[/B] [B]Cancel[/B] on the alert still autoplaying after the current episode ended.

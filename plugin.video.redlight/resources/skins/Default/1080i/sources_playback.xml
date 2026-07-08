@@ -110,147 +110,147 @@
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),1)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),1)</visible>
                     </control>
                     <control type="image">
                         <left>20</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),5)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),5)</visible>
                     </control>
                     <control type="image">
                         <left>40</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),10)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),10)</visible>
                     </control>
                     <control type="image">
                         <left>60</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),15)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),15)</visible>
                     </control>
                     <control type="image">
                         <left>80</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),20)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),20)</visible>
                     </control>
                     <control type="image">
                         <left>100</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),25)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),25)</visible>
                     </control>
                     <control type="image">
                         <left>120</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),30)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),30)</visible>
                     </control>
                     <control type="image">
                         <left>140</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),35)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),35)</visible>
                     </control>
                     <control type="image">
                         <left>160</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),40)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),40)</visible>
                     </control>
                     <control type="image">
                         <left>180</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),45)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),45)</visible>
                     </control>
                     <control type="image">
                         <left>200</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),50)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),50)</visible>
                     </control>
                     <control type="image">
                         <left>220</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),55)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),55)</visible>
                     </control>
                     <control type="image">
                         <left>240</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),60)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),60)</visible>
                     </control>
                     <control type="image">
                         <left>260</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),65)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),65)</visible>
                     </control>
                     <control type="image">
                         <left>280</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),70)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),70)</visible>
                     </control>
                     <control type="image">
                         <left>300</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),75)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),75)</visible>
                     </control>
                     <control type="image">
                         <left>320</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),80)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),80)</visible>
                     </control>
                     <control type="image">
                         <left>340</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),85)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),85)</visible>
                     </control>
                     <control type="image">
                         <left>360</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),90)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),90)</visible>
                     </control>
                     <control type="image">
                         <left>380</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),95)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),95)</visible>
                     </control>
                     <control type="image">
                         <left>400</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF434343">redlight_common/white.png</texture>
-                        <visible>Integer.IsLess(Window().Property(percent),99)</visible>
+                        <visible>Integer.IsLess(Window(10000).Property(redlight.scrape.percent),99)</visible>
                     </control>
                 </control>
                 <control type="group">
@@ -259,147 +259,147 @@
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),1)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),1)</visible>
                     </control>
                     <control type="image">
                         <left>20</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),5)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),5)</visible>
                     </control>
                     <control type="image">
                         <left>40</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),10)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),10)</visible>
                     </control>
                     <control type="image">
                         <left>60</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),15)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),15)</visible>
                     </control>
                     <control type="image">
                         <left>80</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),20)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),20)</visible>
                     </control>
                     <control type="image">
                         <left>100</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),25)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),25)</visible>
                     </control>
                     <control type="image">
                         <left>120</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),30)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),30)</visible>
                     </control>
                     <control type="image">
                         <left>140</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),35)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),35)</visible>
                     </control>
                     <control type="image">
                         <left>160</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),40)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),40)</visible>
                     </control>
                     <control type="image">
                         <left>180</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),45)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),45)</visible>
                     </control>
                     <control type="image">
                         <left>200</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),50)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),50)</visible>
                     </control>
                     <control type="image">
                         <left>220</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),55)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),55)</visible>
                     </control>
                     <control type="image">
                         <left>240</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),60)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),60)</visible>
                     </control>
                     <control type="image">
                         <left>260</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),65)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),65)</visible>
                     </control>
                     <control type="image">
                         <left>280</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),70)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),70)</visible>
                     </control>
                     <control type="image">
                         <left>300</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),75)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),75)</visible>
                     </control>
                     <control type="image">
                         <left>320</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),80)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),80)</visible>
                     </control>
                     <control type="image">
                         <left>340</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),85)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),85)</visible>
                     </control>
                     <control type="image">
                         <left>360</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),90)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),90)</visible>
                     </control>
                     <control type="image">
                         <left>380</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),95)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),95)</visible>
                     </control>
                     <control type="image">
                         <left>400</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window().Property(percent),99)</visible>
+                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),99)</visible>
                     </control>
                 </control>
             </control>
@@ -429,7 +429,7 @@
                             <align>center</align>
                             <aligny>center</aligny>
                             <font>font12</font> <!-- REDLIGHT_26 -->
-                            <label>[COLOR FFFFFFFF][B]$INFO[Window.Property(results_4k)][/B][/COLOR]</label>
+                            <label>[COLOR FFFFFFFF][B]$INFO[Window(10000).Property(redlight.scrape.results_4k)][/B][/COLOR]</label>
                         </control>
                     </control>
                     <control type="group">
@@ -452,7 +452,7 @@
                             <align>center</align>
                             <aligny>center</aligny>
                             <font>font12</font> <!-- REDLIGHT_26 -->
-                            <label>[COLOR FFFFFFFF][B]$INFO[Window.Property(results_1080p)][/B][/COLOR]</label>
+                            <label>[COLOR FFFFFFFF][B]$INFO[Window(10000).Property(redlight.scrape.results_1080p)][/B][/COLOR]</label>
                         </control>
                     </control>
                     <control type="group">
@@ -475,7 +475,7 @@
                             <align>center</align>
                             <aligny>center</aligny>
                             <font>font12</font> <!-- REDLIGHT_26 -->
-                            <label>[COLOR FFFFFFFF][B]$INFO[Window.Property(results_720p)][/B][/COLOR]</label>
+                            <label>[COLOR FFFFFFFF][B]$INFO[Window(10000).Property(redlight.scrape.results_720p)][/B][/COLOR]</label>
                         </control>
                     </control>
                     <control type="group">
@@ -498,7 +498,7 @@
                             <align>center</align>
                             <aligny>center</aligny>
                             <font>font12</font> <!-- REDLIGHT_26 -->
-                            <label>[COLOR FFFFFFFF][B]$INFO[Window.Property(results_sd)][/B][/COLOR]</label>
+                            <label>[COLOR FFFFFFFF][B]$INFO[Window(10000).Property(redlight.scrape.results_sd)][/B][/COLOR]</label>
                         </control>
                     </control>
                     <control type="group">
@@ -521,7 +521,7 @@
                             <align>center</align>
                             <aligny>center</aligny>
                             <font>font12</font> <!-- REDLIGHT_26 -->
-                            <label>[COLOR FFFFFFFF][B]$INFO[Window.Property(results_total)][/B][/COLOR]</label>
+                            <label>[COLOR FFFFFFFF][B]$INFO[Window(10000).Property(redlight.scrape.results_total)][/B][/COLOR]</label>
                         </control>
                     </control>
                 </control>
