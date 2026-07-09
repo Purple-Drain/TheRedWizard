@@ -40,7 +40,7 @@ class Navigator:
 					item['iconImage'] = icon
 					listitem = self.make_listitem()
 					listitem.setLabel(item.get('name', ''))
-					listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': self.fanart, 'banner': icon, 'landscape': icon})
+					k.set_list_item_art(listitem, icon, fanart=self.fanart)
 					info_tag = listitem.getVideoInfoTag(True)
 					info_tag.setPlot(' ')
 					if not self.is_external: listitem.addContextMenuItems(cm_items)
@@ -390,13 +390,13 @@ class Navigator:
 		self.end_directory()
 
 	def set_view_modes(self):
-		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.main', 'content': 'files', 'name': 'menus'}, 'Set Menus', 'folder')
+		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.main', 'content': k.MENU_FOLDER_CONTENT, 'name': 'menus'}, 'Set Menus', 'folder')
 		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.movies', 'content': 'movies'}, 'Set Movies', 'movies')
 		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.tvshows', 'content': 'tvshows'}, 'Set TV Shows', 'tv')
 		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.seasons', 'content': 'seasons'}, 'Set Seasons', 'ontheair')
 		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.episodes', 'content': 'episodes'}, 'Set Episodes (show seasons)', 'next_episodes')
 		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.episodes_single', 'content': 'episodes', 'name': 'episode lists'}, 'Set Episode Lists (Next Episodes, etc.)', 'calender')
-		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.premium', 'content': 'files', 'name': 'premium files'}, 'Set Premium Files', 'premium')
+		self.add({'mode': 'navigator.choose_view', 'view_type': 'view.premium', 'content': k.MENU_FOLDER_CONTENT, 'name': 'premium files'}, 'Set Premium Files', 'premium')
 		self.end_directory()
 
 	def changelog_utils(self):
@@ -558,9 +558,12 @@ class Navigator:
 
 	def choose_view(self):
 		handle = int(sys.argv[1])
-		content = self.params.get('content', 'files')
 		view_type = self.params.get('view_type', 'view.main')
-		name = self.params.get('name') or content
+		if view_type in ('view.main', 'view.premium'):
+			content = k.MENU_FOLDER_CONTENT
+		else:
+			content = self.params.get('content', 'files')
+		name = self.params.get('name') or content or 'menus'
 		self.add({'mode': 'navigator.set_view', 'view_type': view_type, 'name': name, 'isFolder': 'false'}, 'Set view and then click here', 'settings')
 		k.set_content(handle, content)
 		k.end_directory(handle)
@@ -749,7 +752,7 @@ class Navigator:
 		url = k.build_folder_url(folder_params) if isFolder else k.build_url(folder_params)
 		listitem = self.make_listitem()
 		listitem.setLabel(list_name)
-		listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': self.fanart, 'banner': icon, 'landscape': icon})
+		k.set_list_item_art(listitem, icon, fanart=self.fanart)
 		info_tag = listitem.getVideoInfoTag(True)
 		info_tag.setPlot(' ')
 		if not self.is_external:
@@ -764,8 +767,8 @@ class Navigator:
 
 	def end_directory(self, cache_to_disc=True, update_listing=False, skip_view_mode=False):
 		handle = int(sys.argv[1])
-		k.set_content(handle, 'files')
+		k.set_content(handle, k.MENU_FOLDER_CONTENT)
 		k.set_category(handle, self.category_name)
 		k.end_directory(handle, updateListing=update_listing, cacheToDisc=cache_to_disc)
 		if not skip_view_mode:
-			k.set_view_mode('view.main', 'files')
+			k.set_view_mode('view.main', k.MENU_FOLDER_CONTENT)

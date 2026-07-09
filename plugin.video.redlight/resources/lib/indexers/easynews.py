@@ -21,9 +21,9 @@ def search_easynews(params):
 		files = EasyNews.search(search_name)
 		easynews_file_browser(files, handle)
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 def easynews_file_browser(files, handle):
 	def _builder():

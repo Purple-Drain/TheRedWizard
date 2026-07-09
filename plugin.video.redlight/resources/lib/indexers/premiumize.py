@@ -54,9 +54,9 @@ def pm_cloud(folder_id=None, folder_name=None):
 	except: cloud_files = []
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 def pm_transfers():
 	def _transfer_progress(status, progress):
@@ -152,9 +152,9 @@ def pm_transfers():
 		kodi_utils.notification('Premiumize: Transfers found but could not be listed', 3500)
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, items)
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 def pm_rename(file_type, file_id, current_name):
 	new_name = kodi_utils.kodi_dialog().input('RedLight', defaultt=current_name)

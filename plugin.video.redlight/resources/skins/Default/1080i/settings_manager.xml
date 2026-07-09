@@ -560,7 +560,7 @@
                           <property name="setting_label">Refresh Widgets After MDBList Sync</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.mdblist.refresh_widgets)]</property>
-                          <property name="setting_description">Refresh widgets after an MDBList sync when changes were detected</property>
+                          <property name="setting_description">Refresh widgets after an MDBList sync when changes were detected. Only runs when [B]Watched Indicators[/B] is set to [B]MDBList[/B].</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=mdblist.refresh_widgets)</onclick>
                       </item>
                       <item>
@@ -603,7 +603,7 @@
                           <property name="setting_label">Refresh Widgets After Simkl Sync</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.simkl.refresh_widgets)]</property>
-                          <property name="setting_description">Enable this and Red Light will refresh widgets after performing a Simkl Sync if there were any changes</property>
+                          <property name="setting_description">Refresh widgets after a Simkl sync when changes were detected. Only runs when [B]Watched Indicators[/B] is set to [B]Simkl[/B].</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=simkl.refresh_widgets)</onclick>
                       </item>
                       <item>
@@ -646,7 +646,7 @@
                           <property name="setting_label">Refresh Widgets After Trakt Sync</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.refresh_widgets)]</property>
-                          <property name="setting_description">Enable this and Red Light will refresh widgets after performing a Trakt Sync if there were any changes</property>
+                          <property name="setting_description">Refresh widgets after a Trakt sync when changes were detected. Only runs when [B]Watched Indicators[/B] is set to [B]Trakt[/B].</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=trakt.refresh_widgets)</onclick>
                       </item>
                       <item>

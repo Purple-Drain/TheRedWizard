@@ -27,6 +27,14 @@ PROP_NEXTEP_AUTOPLAY_CANCELLED = 'redlight.nextep_autoplay_cancelled'
 PROP_AUTOSCRAPE_NEXTEP_READY = 'redlight.autoscrape_nextep_ready'
 _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
+_NEXTEP_STASH_PLAY_IN_FLIGHT = False
+
+def _nextep_stash_play_in_flight():
+	return _NEXTEP_STASH_PLAY_IN_FLIGHT
+
+def _set_nextep_stash_play_in_flight(active):
+	global _NEXTEP_STASH_PLAY_IN_FLIGHT
+	_NEXTEP_STASH_PLAY_IN_FLIGHT = bool(active)
 
 def _nextep_play_stash_path():
 	global _NEXTEP_PLAY_STASH_PATH
@@ -59,8 +67,17 @@ def consume_persisted_nextep_play_stash():
 		return None
 
 def schedule_nextep_stashed_play(stash, show_busy=None):
-	if not stash or not persist_nextep_play_stash(stash):
+	if not stash:
 		return False
+	if _nextep_stash_play_in_flight():
+		try:
+			kodi_utils.logger('Red Light', 'Autoplay next episode play: skipped duplicate schedule (stash resolve in flight)')
+		except:
+			pass
+		return False
+	if not persist_nextep_play_stash(stash):
+		return False
+	_set_nextep_stash_play_in_flight(True)
 	if show_busy is None:
 		# DialogBusy is torn down when fullscreen closes; prefer the resolve modal while still playing.
 		show_busy = not kodi_utils.get_visibility('Window.IsActive(fullscreenvideo)')
@@ -92,6 +109,7 @@ def nextep_autoplay_cancelled():
 
 def mark_nextep_autoplay_cancelled():
 	kodi_utils.set_property(PROP_NEXTEP_AUTOPLAY_CANCELLED, 'true')
+	_set_nextep_stash_play_in_flight(False)
 	clear_nextep_autoplay_stash()
 	clear_orphan_nextep_play_stash()
 
@@ -130,6 +148,7 @@ def clear_orphan_nextep_play_stash():
 			os.remove(path)
 	except:
 		pass
+	_set_nextep_stash_play_in_flight(False)
 
 class Sources():
 	def __init__(self):
@@ -194,6 +213,9 @@ class Sources():
 	def playback_prep(self, params=None):
 		if params: self.params = params
 		params_get = self.params.get
+		if params_get('nextep_stash_play') != 'true':
+			if not (params_get('background', 'false') == 'true' and params_get('play_type', '') in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual')):
+				clear_orphan_nextep_play_stash()
 		# Background next-episode prep runs while the current episode is still playing;
 		# do not dismiss the end-of-episode busy cover (or other playback busy state).
 		if params_get('nextep_stash_play') != 'true' and not (
@@ -202,8 +224,15 @@ class Sources():
 		):
 			kodi_utils.hide_busy_dialog()
 		if params_get('nextep_stash_play') == 'true':
+			if _nextep_stash_play_in_flight() and not os.path.isfile(_nextep_play_stash_path()):
+				try:
+					kodi_utils.logger('Red Light', 'Autoplay next episode play: skipped duplicate stash resolve (already in flight)')
+				except:
+					pass
+				return
 			stash = consume_persisted_nextep_play_stash()
 			if not stash:
+				_set_nextep_stash_play_in_flight(False)
 				kodi_utils.logger('Red Light', 'Autoplay next episode play: no persisted stash')
 				return
 			self.params = dict(stash.get('params') or {})
@@ -311,7 +340,6 @@ class Sources():
 		return settings.any_external_cache_check()
 
 	def _playback_skips_prescrape_override(self):
-		if self.play_type == 'autoscrape_nextep': return True
 		if self.disabled_ext_ignored or self.ignore_scrape_filters: return True
 		if 'disabled_ext_ignored' in self.params or 'ignore_scrape_filters' in self.params: return True
 		return False
@@ -905,6 +933,10 @@ class Sources():
 			return self._finish_scrape_cancel()
 		self._clear_stale_resolve_busy()
 		if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true':
+			try:
+				kodi_utils.logger('Red Light', 'Play source skipped: resolve already in progress')
+			except:
+				pass
 			return
 		if self.background:
 			autoplay_queue = results
@@ -984,8 +1016,6 @@ class Sources():
 			kodi_utils.sleep(100)
 
 	def display_results(self, results):
-		if self.autoscrape_nextep:
-			kodi_utils.show_busy_dialog()
 		while True:
 			window_format, window_number = settings.results_format()
 			window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
@@ -1892,7 +1922,10 @@ class Sources():
 				self._stop_active_playback(light=True)
 			if not self.progress_dialog and not self.background:
 				self._make_progress_dialog()
-			self.playback_percent = self.get_playback_percent()
+			if self._nextep_aio_en_fresh_start(source):
+				self.playback_percent = 0.0
+			else:
+				self.playback_percent = self.get_playback_percent()
 			if self.playback_percent == None:
 				self._finish_resolve_cancel()
 				return
@@ -1967,7 +2000,10 @@ class Sources():
 								self._resolve_user_cancelled = True
 								self.cancel_all_playback = True
 								break
-							if self.background:
+							if self._nextep_aio_en_fresh_start(item):
+								self.playback_percent = 0.0
+								self._stop_active_playback()
+							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
 							player.run(url, self)
 						else: continue
@@ -1986,6 +2022,8 @@ class Sources():
 					self.playback_successful, bool(url), bool(self.progress_dialog)))
 				self.playback_failed_action()
 		finally:
+			if self.params.get('nextep_stash_play') == 'true':
+				_set_nextep_stash_play_in_flight(False)
 			self._release_resolve_busy()
 			try: del monitor
 			except: pass
@@ -2055,12 +2093,33 @@ class Sources():
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), self.play_type))
 		except: pass
 
-	def _nextep_resolve_diag_enabled(self):
+	def _is_nextep_playback(self):
 		if self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
 			return True
-		if self.background or getattr(self, '_nextep_stash_results', None):
+		if self.params.get('nextep_stash_play') == 'true':
+			return True
+		if getattr(self, '_nextep_stash_results', None):
 			return True
 		if getattr(self, '_nextep_alert_handled', False):
+			return True
+		return False
+
+	def _nextep_aio_en_fresh_start(self, item=None):
+		if not self._is_nextep_playback():
+			return False
+		item = item or getattr(self, 'playing_item', None)
+		if not item:
+			return False
+		try:
+			from apis.aiostreams_api import is_direct_easynews_item
+			return is_direct_easynews_item(item)
+		except:
+			return False
+
+	def _nextep_resolve_diag_enabled(self):
+		if self._is_nextep_playback():
+			return True
+		if self.background:
 			return True
 		return False
 
@@ -2316,7 +2375,7 @@ class Sources():
 			else:
 				kodi_utils.logger('Red Light', 'Autoscrape next episode ready (stopped during scrape): %s S%02dE%02d remaining=%ss alert_window=%ss' % (
 					self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), remaining, window_time))
-			return self.display_results(results)
+			return self._display_results_nextep_handoff(results)
 		if autoscrape_confirmed:
 			self._notify_autoscrape_ready_immediate(remaining, window_time)
 		elif remaining is not None and remaining <= int(window_time):
@@ -2326,9 +2385,12 @@ class Sources():
 			if should_notify:
 				self._notify_autoscrape_ready(remaining, window_time)
 		while self._player_episode_active(player): kodi_utils.sleep(100)
-		if kodi_utils.get_property(PROP_AUTOSCRAPE_NEXTEP_READY):
+		if kodi_utils.get_property(PROP_AUTOSCRAPE_NEXTEP_READY) and kodi_utils.get_property(kodi_utils.PROP_AUTOSCRAPE_TOAST_SHOWN) != 'true':
 			self._show_autoscrape_ready_notification()
-		self.display_results(results)
+		self._display_results_nextep_handoff(results)
+
+	def _display_results_nextep_handoff(self, results):
+		return self.display_results(results)
 
 	def debrid_importer(self, debrid_provider):
 		return manual_function_import(*self.debrids[debrid_provider])

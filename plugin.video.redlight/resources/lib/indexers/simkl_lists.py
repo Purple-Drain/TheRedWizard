@@ -2,7 +2,7 @@
 import sys
 from apis.simkl_api import simkl_search_my_lists
 from modules import settings
-from modules.kodi_utils import add_items, set_content, set_category, end_directory, build_url, make_listitem, get_icon, get_addon_fanart, set_view_mode
+from modules.kodi_utils import add_items, set_content, set_category, end_directory, build_url, make_listitem, get_icon, get_addon_fanart, set_view_mode, MENU_FOLDER_CONTENT
 # from modules.kodi_utils import logger
 
 def search_simkl_lists(params):
@@ -35,7 +35,7 @@ def search_simkl_lists(params):
 		else: results = simkl_search_my_lists(search_title)
 		add_items(handle, list(_builder()))
 	except: pass
-	set_content(handle, 'files')
+	set_content(handle, MENU_FOLDER_CONTENT)
 	set_category(handle, search_title.capitalize())
 	end_directory(handle)
-	set_view_mode('view.main')
+	set_view_mode('view.main', MENU_FOLDER_CONTENT)

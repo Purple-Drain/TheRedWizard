@@ -66,9 +66,9 @@ def ad_cloud(folder_id=None):
 		kodi_utils.hide_busy_dialog()
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 
 def ad_downloads():
@@ -156,9 +156,9 @@ def ad_downloads():
 			kodi_utils.notification('All Debrid: No transfers in history', 2500)
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 
 def ad_saved_links():
@@ -195,9 +195,9 @@ def ad_saved_links():
 		kodi_utils.hide_busy_dialog()
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 
 def browse_ad_cloud(folder_id):
@@ -232,9 +232,9 @@ def browse_ad_cloud(folder_id):
 	handle = int(sys.argv[1])
 	icon, fanart = kodi_utils.get_icon('alldebrid'), kodi_utils.get_addon_fanart()
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 
 def resolve_ad(params):

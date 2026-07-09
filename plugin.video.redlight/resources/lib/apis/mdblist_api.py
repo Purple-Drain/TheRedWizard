@@ -175,6 +175,29 @@ def _mdbl_item_to_list_entry(item, media_kind):
 		except: pass
 	return None
 
+def mdbl_list_media_type(list_item, fallback='movie'):
+	"""Route param for build_mdbl_list: movie | tvshow from MDBList list metadata."""
+	if not isinstance(list_item, dict):
+		return 'tvshow' if fallback in ('tv', 'tvshow', 'show', 'shows', 'series') else 'movie'
+	mediatype = (list_item.get('mediatype') or list_item.get('media_type') or '').lower()
+	if mediatype in ('show', 'shows', 'tvshow', 'tv', 'series'):
+		return 'tvshow'
+	if mediatype in ('movie', 'movies'):
+		return 'movie'
+	if fallback in ('tv', 'tvshow', 'show', 'shows', 'series'):
+		return 'tvshow'
+	return 'movie'
+
+def mdbl_unified_item_tmdb_id(item):
+	"""Resolve TMDb id from unified list item payloads (nested show/movie blocks)."""
+	entry = _mdbl_item_to_list_entry(item, _mdbl_item_media_kind(item))
+	if not entry or not entry.get('id'):
+		return None
+	try:
+		return int(entry['id'])
+	except:
+		return None
+
 def _mdbl_personal_list(original_list, media_kind):
 	is_movie = media_kind in ('movie', 'movies')
 	key = 'movies' if is_movie else 'shows'

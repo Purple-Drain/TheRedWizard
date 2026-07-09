@@ -55,9 +55,9 @@ def tb_cloud():
 			kodi_utils.notification(msg, 4000)
 		folders.sort(key=lambda k: str(k.get('updated_at') or ''), reverse=True)
 		kodi_utils.add_items(handle, list(_builder()))
-		kodi_utils.set_content(handle, 'files')
+		kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 		kodi_utils.end_directory(handle, cacheToDisc=False)
-		kodi_utils.set_view_mode('view.premium')
+		kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 	except Exception as e:
 		kodi_utils.notification('TorBox: %s' % str(e), 4000)
 		kodi_utils.end_directory(handle)
@@ -127,9 +127,9 @@ def tb_history():
 			kodi_utils.notification('TorBox: No transfers in history', 2500)
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 
 def browse_tb_cloud(folder_id, media_type):
@@ -188,9 +188,9 @@ def browse_tb_cloud(folder_id, media_type):
 				pass
 
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 
 def tb_delete(folder_id, media_type):

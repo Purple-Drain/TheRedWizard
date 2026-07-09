@@ -527,10 +527,10 @@ def viewer(params):
 	item_list = list(_process())
 	kodi_utils.add_items(handle, item_list)
 	kodi_utils.set_sort_method(handle, 'files')
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('name'))
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main', 'files', False)
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT, False)
 
 def manager(foo=None):
 	from windows.base_window import open_window

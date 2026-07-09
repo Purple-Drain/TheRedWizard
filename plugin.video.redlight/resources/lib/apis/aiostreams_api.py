@@ -2,6 +2,7 @@
 ENABLED = True
 
 import json
+import time
 import requests
 from urllib.parse import urlencode
 from caches.settings_cache import get_setting
@@ -449,33 +450,114 @@ def _format_payload_entries(items):
 		lines.append('%s: %s' % (title, desc) if desc else str(title))
 	return lines
 
-def _log_http_error(response, search_link):
+_AIO_RETRY_PAUSE_SEC = 2.0
+
+def _aio_connect_timeout(read_timeout):
+	"""Seconds to wait for TCP/TLS; keep modest so read budget stays on the instance."""
+	return min(15, max(5, int(read_timeout) // 4))
+
+def _aio_read_timeout(read_timeout):
+	return max(1, int(read_timeout))
+
+def _aio_request_timeouts(read_timeout):
+	read_timeout = max(1, int(read_timeout))
+	return (_aio_connect_timeout(read_timeout), read_timeout)
+
+def _timeout_message(exc):
+	try:
+		parts = []
+		seen = set()
+		current = exc
+		while current is not None and id(current) not in seen:
+			seen.add(id(current))
+			parts.append(str(current))
+			for arg in getattr(current, 'args', ()) or ():
+				parts.append(str(arg))
+			current = getattr(current, '__cause__', None) or getattr(current, '__context__', None)
+		return ' '.join(parts).lower()
+	except:
+		return str(exc).lower()
+
+def _timeout_kind(exc):
+	if isinstance(exc, requests.exceptions.ConnectTimeout):
+		return 'connect'
+	if isinstance(exc, requests.exceptions.ReadTimeout):
+		return 'read'
+	if isinstance(exc, requests.exceptions.Timeout):
+		return 'timeout'
+	text = _timeout_message(exc)
+	if 'read operation timed out' in text or 'read timed out' in text:
+		return 'read'
+	if 'connect' in text and 'timed out' in text:
+		return 'connect'
+	if isinstance(exc, requests.exceptions.ConnectionError) and 'timed out' in text:
+		return 'read'
+	return None
+
+def _retryable_aio_timeout(exc):
+	return _timeout_kind(exc) is not None
+
+def _request_url(exc, fallback):
+	try:
+		req = getattr(exc, 'request', None)
+		if req is not None and getattr(req, 'url', None):
+			return req.url
+	except:
+		pass
+	return fallback
+
+def _log_aio_request_error(instance, elapsed_ms, kind, exc, search_link):
+	url = _request_url(exc, search_link)
+	if kind:
+		logger('aiostreams API', '%s timeout | instance=%s | elapsed=%sms | %s | %s' % (
+			kind, instance, elapsed_ms, url, exc))
+	else:
+		logger('aiostreams API', 'request failed | instance=%s | elapsed=%sms | %s | %s' % (
+			instance, elapsed_ms, url, exc))
+
+def _aio_get(search_link, params, credentials, read_timeout, fresh_connection=False):
+	kwargs = {'params': params, 'auth': credentials, 'timeout': _aio_request_timeouts(read_timeout)}
+	if fresh_connection:
+		session = requests.Session()
+		try:
+			session.headers['Connection'] = 'close'
+			return session.get(search_link, **kwargs)
+		finally:
+			try:
+				session.close()
+			except:
+				pass
+	return requests.get(search_link, **kwargs)
+
+def _log_http_error(response, search_link, instance=None):
+	prefix = 'instance=%s | ' % instance if instance else ''
 	try:
 		body = response.json()
 		err = body.get('error')
 		if isinstance(err, dict):
-			logger('aiostreams API', 'HTTP %s | %s: %s | %s' % (
-				response.status_code, err.get('code', ''), err.get('message', ''), response.url))
+			logger('aiostreams API', '%sHTTP %s | %s: %s | %s' % (
+				prefix, response.status_code, err.get('code', ''), err.get('message', ''), response.url))
 			return
 		if isinstance(err, str) and err.strip():
-			logger('aiostreams API', 'HTTP %s | %s | %s' % (response.status_code, err.strip(), response.url))
+			logger('aiostreams API', '%sHTTP %s | %s | %s' % (prefix, response.status_code, err.strip(), response.url))
 			return
 		detail = body.get('detail')
 		if detail:
-			logger('aiostreams API', 'HTTP %s | %s | %s' % (response.status_code, detail, response.url))
+			logger('aiostreams API', '%sHTTP %s | %s | %s' % (prefix, response.status_code, detail, response.url))
 			return
 		if body.get('success') is False:
-			logger('aiostreams API', 'HTTP %s | success=false | %s' % (response.status_code, response.url))
+			logger('aiostreams API', '%sHTTP %s | success=false | %s' % (prefix, response.status_code, response.url))
 			return
 	except: pass
-	logger('aiostreams API', 'HTTP %s | %s' % (response.status_code, getattr(response, 'url', search_link)))
+	logger('aiostreams API', '%sHTTP %s | %s' % (prefix, response.status_code, getattr(response, 'url', search_link)))
 
-def _log_search_response(response, payload, results):
-	elapsed = response.elapsed.total_seconds()
+def _log_search_response(response, payload, results, instance=None):
+	elapsed_ms = int(response.elapsed.total_seconds() * 1000)
 	filtered = payload.get('filtered', 0) or 0
 	errors = payload.get('errors') or []
 	statistics = payload.get('statistics') or []
-	logger('aiostreams API', '%.3fs | %s results | filtered=%s | %s' % (elapsed, len(results), filtered, response.url))
+	logger('aiostreams API', 'instance=%s | %sms | %s results | filtered=%s | %s' % (
+		instance or active_instance_label(), elapsed_ms, len(results), filtered, response.url))
 	for line in _format_payload_entries(errors):
 		logger('aiostreams API', 'source error: %s' % line)
 	for line in _format_payload_entries(statistics):
@@ -505,27 +587,58 @@ def search(media_type, imdb_id, season=None, episode=None, timeout=30):
 	else:
 		params = {'type': 'series', 'id': '%s:%s:%s' % (imdb_id, season, episode)}
 	search_link = '%s/api/v1/search' % base
-	try:
-		response = requests.get(search_link, params=params, auth=credentials, timeout=timeout)
-		if not response.ok:
-			_log_http_error(response, search_link)
-			response.raise_for_status()
-		body = response.json()
-		if body.get('success') is False:
-			err = body.get('error') or {}
-			if isinstance(err, dict):
-				logger('aiostreams API', 'success=false | %s: %s | %s' % (
-					err.get('code', ''), err.get('message', ''), response.url))
-			elif isinstance(err, str) and err.strip():
-				logger('aiostreams API', 'success=false | %s | %s' % (err.strip(), response.url))
-		payload = body.get('data', {}) or {}
-		results = payload.get('results', []) or []
-		errors = _parse_api_errors(payload)
-		_log_search_response(response, payload, results)
-		return results, errors
-	except requests.exceptions.RequestException as e:
-		logger('aiostreams API', '%s\n%s' % (e, getattr(getattr(e, 'request', None), 'url', search_link)))
-		return [], []
+	instance = active_instance_label()
+	read_s = _aio_read_timeout(timeout)
+	last_exc = None
+	for attempt in range(2):
+		attempt_connect_s = _aio_connect_timeout(read_s)
+		started = time.perf_counter()
+		try:
+			response = _aio_get(search_link, params, credentials, read_s, fresh_connection=True)
+			if not response.ok:
+				_log_http_error(response, search_link, instance)
+				response.raise_for_status()
+			body = response.json()
+			if body.get('success') is False:
+				err = body.get('error') or {}
+				if isinstance(err, dict):
+					logger('aiostreams API', 'instance=%s | success=false | %s: %s | %s' % (
+						instance, err.get('code', ''), err.get('message', ''), response.url))
+				elif isinstance(err, str) and err.strip():
+					logger('aiostreams API', 'instance=%s | success=false | %s | %s' % (instance, err.strip(), response.url))
+			payload = body.get('data', {}) or {}
+			results = payload.get('results', []) or []
+			errors = _parse_api_errors(payload)
+			if attempt:
+				logger('aiostreams API', 'instance=%s | retry succeeded | fresh_connection | connect=%ss read=%ss | %s' % (
+					instance, attempt_connect_s, read_s, response.url))
+			_log_search_response(response, payload, results, instance)
+			return results, errors
+		except requests.exceptions.RequestException as e:
+			last_exc = e
+			elapsed_ms = int((time.perf_counter() - started) * 1000)
+			kind = _timeout_kind(e)
+			if attempt == 0 and _retryable_aio_timeout(e):
+				logger('aiostreams API', '%s timeout | instance=%s | elapsed=%sms | connect=%ss read=%ss | %s | retrying once (fresh connection, read=%ss, pause=%ss)' % (
+					kind, instance, elapsed_ms, attempt_connect_s, read_s, _request_url(e, search_link), read_s, _AIO_RETRY_PAUSE_SEC))
+				time.sleep(_AIO_RETRY_PAUSE_SEC)
+				continue
+			_log_aio_request_error(instance, elapsed_ms, kind, e, search_link)
+			return [], []
+	if last_exc is not None:
+		_log_aio_request_error(instance, 0, _timeout_kind(last_exc), last_exc, search_link)
+	return [], []
+
+def is_direct_easynews_item(item):
+	"""True for AIOStreams direct EasyNews rows (AIO / EN badge)."""
+	if not item or not isinstance(item, dict):
+		return False
+	if item.get('scrape_provider') != 'aiostreams':
+		return False
+	if str(item.get('aio_source') or '').strip().upper() == 'EN':
+		return True
+	url = str(item.get('url_dl') or item.get('url') or '').lower()
+	return 'easynews' in url
 
 def resolve_playback_url(item):
 	url = item.get('url_dl') or item.get('url')

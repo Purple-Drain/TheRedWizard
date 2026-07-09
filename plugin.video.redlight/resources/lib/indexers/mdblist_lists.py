@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
-from apis.mdblist_api import mdbl_get_lists, mdbl_get_liked_lists, mdbl_top_lists, get_mdbl_list_contents
+from apis.mdblist_api import mdbl_get_lists, mdbl_get_liked_lists, mdbl_top_lists, get_mdbl_list_contents, mdbl_list_media_type, mdbl_unified_item_tmdb_id
 from indexers.movies import Movies
 from indexers.tvshows import TVShows
 from modules import kodi_utils, settings
@@ -40,7 +40,8 @@ def get_mdbl_lists(params):
 				display = '%s (x%s)' % (name, count)
 				if list_type == 'external': display = '[COLOR cyan][I]%s[/I][/COLOR]' % display
 				elif item.get('dynamic'): display = '[COLOR magenta][I]%s[/I][/COLOR]' % display
-				url = build_url({'mode': 'mdblist.build_mdbl_list', 'list_id': list_id, 'list_type': list_type, 'list_name': name, 'media_type': params.get('media_type', 'movie')})
+				url = build_url({'mode': 'mdblist.build_mdbl_list', 'list_id': list_id, 'list_type': list_type, 'list_name': name,
+					'media_type': mdbl_list_media_type(item, params.get('media_type', 'movie'))})
 				listitem = kodi_utils.make_listitem()
 				listitem.setLabel(display)
 				listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': fanart, 'banner': fanart})
@@ -53,10 +54,10 @@ def get_mdbl_lists(params):
 	icon, fanart, build_url = kodi_utils.get_icon('mdblist'), kodi_utils.get_addon_fanart(), kodi_utils.build_url
 	lists = mdbl_get_lists('my_lists') + mdbl_get_lists('external')
 	kodi_utils.add_items(handle, list(_process()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('name', 'MDBList Lists'))
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def get_mdbl_liked_lists(params):
 	def _process():
@@ -81,11 +82,11 @@ def get_mdbl_liked_lists(params):
 	media_type = params.get('media_type', 'movie')
 	lists = mdbl_get_liked_lists(media_type)
 	kodi_utils.add_items(handle, list(_process()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	label = 'Movies Liked Lists' if media_type in ('movie', 'movies') else 'TV Shows Liked Lists'
 	kodi_utils.set_category(handle, params.get('name', label))
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def get_mdbl_top_lists(params):
 	def _process():
@@ -95,7 +96,8 @@ def get_mdbl_top_lists(params):
 				user = item.get('user_name', '')
 				count = item.get('items', '?')
 				display = '[B]%s[/B] | [I](x%s) - %s[/I]' % (name, count, user)
-				url = build_url({'mode': 'mdblist.build_mdbl_list', 'list_id': list_id, 'list_type': 'user_lists', 'list_name': name, 'media_type': params.get('media_type', 'movie')})
+				url = build_url({'mode': 'mdblist.build_mdbl_list', 'list_id': list_id, 'list_type': 'user_lists', 'list_name': name,
+					'media_type': mdbl_list_media_type(item, params.get('media_type', 'movie'))})
 				listitem = kodi_utils.make_listitem()
 				listitem.setLabel(display)
 				listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': fanart, 'banner': fanart})
@@ -108,20 +110,24 @@ def get_mdbl_top_lists(params):
 	icon, fanart, build_url = kodi_utils.get_icon('mdblist'), kodi_utils.get_addon_fanart(), kodi_utils.build_url
 	lists = mdbl_top_lists()
 	kodi_utils.add_items(handle, list(_process()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('name', 'Popular MDBLists'))
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def _mdbl_item_tmdb_id(item):
-	if not isinstance(item, dict): return None
-	tmdb_id = item.get('tmdb') or item.get('id')
-	if not tmdb_id:
-		tmdb_id = (item.get('ids') or {}).get('tmdb')
-	if tmdb_id:
-		try: return int(tmdb_id)
-		except: pass
-	return None
+	return mdbl_unified_item_tmdb_id(item)
+
+def _mdbl_route_media_type(params, items):
+	media_type = params.get('media_type', 'movie')
+	if media_type in ('tv', 'tvshow', 'show', 'shows', 'series'):
+		return 'tvshow'
+	if media_type in ('movie', 'movies') and items:
+		from apis.mdblist_api import _mdbl_item_media_kind
+		kinds = {_mdbl_item_media_kind(i) for i in items[:10] if isinstance(i, dict)}
+		if kinds and kinds <= {'show'}:
+			return 'tvshow'
+	return 'movie'
 
 def build_mdbl_watchlist(params):
 	_set_mdbl_list_exit_params(params)
@@ -155,18 +161,14 @@ def build_mdbl_list(params):
 	_set_mdbl_list_exit_params(params)
 	list_id = params.get('list_id')
 	list_type = params.get('list_type', 'my_lists')
-	media_type = params.get('media_type', 'movie')
 	items = get_mdbl_list_contents(list_type, list_id)
-	if media_type in ('movie', 'movies'):
-		id_list = []
-		for i in items:
-			tmdb_id = i.get('tmdb') or i.get('id')
-			if tmdb_id: id_list.append(int(tmdb_id))
-		params.update({'list': id_list, 'action': 'mdblist_user_list', 'category_name': params.get('list_name', 'MDBList')})
-		return Movies(params).fetch_list()
+	media_type = _mdbl_route_media_type(params, items)
 	id_list = []
 	for i in items:
-		tmdb_id = i.get('tmdb') or i.get('id')
-		if tmdb_id: id_list.append(int(tmdb_id))
+		tmdb_id = mdbl_unified_item_tmdb_id(i)
+		if tmdb_id:
+			id_list.append(tmdb_id)
 	params.update({'list': id_list, 'action': 'mdblist_user_list', 'category_name': params.get('list_name', 'MDBList')})
-	return TVShows(params).fetch_list()
+	if media_type == 'tvshow':
+		return TVShows(params).fetch_list()
+	return Movies(params).fetch_list()

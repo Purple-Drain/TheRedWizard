@@ -8,7 +8,6 @@ from modules.utils import TaskPool
 from modules.source_utils import source_filters
 from modules.settings import provider_sort_ranks, avoid_episode_spoilers, max_threads
 from modules.kodi_utils import get_icon, kodi_dialog, hide_busy_dialog, show_busy_dialog, addon_fanart, select_dialog, ok_dialog, notification
-# from modules.kodi_utils import logger
 
 def _highlight_with_alpha(color, alpha):
 	if not color: return color or 'FFCCCCCC'

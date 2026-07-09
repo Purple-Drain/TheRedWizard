@@ -37,9 +37,9 @@ def rd_cloud():
 	icon, fanart = kodi_utils.get_icon('realdebrid'), kodi_utils.get_addon_fanart()
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 def rd_downloads():
 	def _builder():
@@ -80,9 +80,9 @@ def rd_downloads():
 		downloads = []
 	handle = int(sys.argv[1])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 def browse_rd_cloud(folder_id):
 	def _builder():
@@ -114,9 +114,9 @@ def browse_rd_cloud(folder_id):
 	file_info = [dict(i, **{'url_link': cloud_files['links'][idx]}) for idx, i in enumerate(files)]
 	pack_info = sorted(file_info, key=lambda k: k['path'])
 	kodi_utils.add_items(handle, list(_builder()))
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium')
+	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
 
 def rd_delete(file_id, cache_type):
 	if not kodi_utils.confirm_dialog(): return

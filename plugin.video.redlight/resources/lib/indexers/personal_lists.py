@@ -80,11 +80,11 @@ def get_personal_lists(params):
 		else: result = list(_new_process())
 		kodi_utils.add_items(handle, result)
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, 'Personal Lists')
 	if shuffle_lists and not returning_to_list: kodi_utils.focus_index(0)
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def build_personal_list(params):
 	def _process(function, _list):

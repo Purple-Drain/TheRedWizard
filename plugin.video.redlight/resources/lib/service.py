@@ -154,8 +154,13 @@ class TraktMonitor:
 						kodi_utils.logger('Red Light', trakt_service_string % ('Success. %s' % trakt_success_line_dict[status], next_update_string))
 					else:
 						kodi_utils.logger('Red Light', trakt_service_string % ('Success. No Changes Needed', next_update_string))# 'not needed'
-					if status == 'success' and get_setting('redlight.trakt.refresh_widgets', 'false') == 'true' and not kodi_utils.service_shutting_down(monitor):
-						if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+					if status == 'success' and not kodi_utils.service_shutting_down(monitor):
+						from modules.settings import provider_sync_refresh_widgets
+						if provider_sync_refresh_widgets(1):
+							try:
+								if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+							except Exception as exc:
+								kodi_utils.logger('Red Light', 'Trakt widget refresh skipped: %s' % exc)
 			except Exception as e: kodi_utils.logger('Red Light', trakt_service_string % ('Failed', 'The following Error Occured: %s' % str(e)))
 			wait_for_abort(wait_time)
 		try: del player
@@ -183,8 +188,13 @@ class SimklMonitor:
 				if status == 'failed': kodi_utils.logger('Red Light', 'Simkl Sync Failed')
 				elif status == 'no_auth': kodi_utils.logger('Red Light', 'Simkl Sync Not Run - No Account')
 				else: kodi_utils.logger('Red Light', 'Simkl Sync %s - %s' % ('OK' if status == 'success' else 'No Changes', next_update_string))
-				if status == 'success' and get_setting('redlight.simkl.refresh_widgets', 'false') == 'true' and not kodi_utils.service_shutting_down(monitor):
-					if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+				if status == 'success' and not kodi_utils.service_shutting_down(monitor):
+					from modules.settings import provider_sync_refresh_widgets
+					if provider_sync_refresh_widgets(2):
+						try:
+							if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+						except Exception as exc:
+							kodi_utils.logger('Red Light', 'Simkl widget refresh skipped: %s' % exc)
 			except Exception as e: kodi_utils.logger('Red Light', 'Simkl Sync Failed: %s' % str(e))
 			wait_for_abort(wait_time)
 		try: del player
@@ -212,8 +222,13 @@ class MdblistMonitor:
 				if status == 'failed': kodi_utils.logger('Red Light', 'MDBList Sync Failed')
 				elif status == 'no_auth': kodi_utils.logger('Red Light', 'MDBList Sync Not Run - No Account')
 				else: kodi_utils.logger('Red Light', 'MDBList Sync %s - %s' % ('OK' if status == 'success' else 'No Changes', next_update_string))
-				if status == 'success' and get_setting('redlight.mdblist.refresh_widgets', 'false') == 'true' and not kodi_utils.service_shutting_down(monitor):
-					if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+				if status == 'success' and not kodi_utils.service_shutting_down(monitor):
+					from modules.settings import provider_sync_refresh_widgets
+					if provider_sync_refresh_widgets(3):
+						try:
+							if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+						except Exception as exc:
+							kodi_utils.logger('Red Light', 'MDBList widget refresh skipped: %s' % exc)
 			except Exception as e: kodi_utils.logger('Red Light', 'MDBList Sync Failed: %s' % str(e))
 			wait_for_abort(wait_time)
 		try: del player

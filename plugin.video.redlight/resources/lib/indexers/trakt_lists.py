@@ -53,10 +53,10 @@ def search_trakt_lists(params):
 			kodi_utils.add_dir(handle, {'mode': mode, 'key_id': search_title, 'new_page': new_page}, 'Next Page (%s) >>' % new_page,
 								'nextpage', kodi_utils.get_icon('nextpage_landscape'))
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, search_title.capitalize())
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def search_trakt_my_lists(params):
 	"""Search the authenticated user's Trakt lists by name (not global Trakt list search)."""
@@ -117,10 +117,10 @@ def search_trakt_my_lists(params):
 			data.sort(key=lambda k: k['name'])
 		kodi_utils.add_items(handle, list(_builder()))
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, search_title.capitalize() if search_title else 'Search My Trakt Lists')
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def get_trakt_lists(params):
 	def get_custom_image(list_name, list_type, user, image_type, images):
@@ -203,11 +203,11 @@ def get_trakt_lists(params):
 		else: result = list(_new_process())
 		kodi_utils.add_items(handle, result)
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('category_name', ''))
 	if shuffle_lists and not returning_to_list: kodi_utils.focus_index(0)
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def get_trakt_user_lists(params):
 	def _process():
@@ -252,10 +252,10 @@ def get_trakt_user_lists(params):
 		kodi_utils.add_dir(handle, {'mode': 'trakt.list.get_trakt_user_lists', 'list_type': list_type, 'new_page': new_page},
 				'Next Page (%s) >>' % new_page, 'nextpage', kodi_utils.get_icon('nextpage_landscape'))
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('category_name', 'Trakt Lists'))
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def in_trakt_lists(params):
 	def _process():
@@ -283,10 +283,10 @@ def in_trakt_lists(params):
 		lists = trakt_lists_with_media(params['media_type'], params['imdb_id'])
 		kodi_utils.add_items(handle, list(_process()))
 	except: pass
-	kodi_utils.set_content(handle, 'files')
+	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('category_name', 'Trakt Lists'))
 	kodi_utils.end_directory(handle)
-	kodi_utils.set_view_mode('view.main')
+	kodi_utils.set_view_mode('view.main', kodi_utils.MENU_FOLDER_CONTENT)
 
 def build_trakt_list(params):
 	def _process(function, _list, _type):

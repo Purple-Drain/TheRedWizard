@@ -346,6 +346,7 @@ class RedLightPlayer(xbmc.Player):
 			director, writer, country = self.meta_get('director', ''), self.meta_get('writer', ''), self.meta_get('country', '')
 			cast = self.meta_get('short_cast', []) or self.meta_get('cast', []) or []
 			listitem.setLabel(self.title)
+			fresh_start = False
 			if self.media_type == 'movie':
 				plot = self.meta_get('plot')
 				listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo})
@@ -368,10 +369,19 @@ class RedLightPlayer(xbmc.Player):
 				info_tag.setStudios(studio), info_tag.setIMDBNumber(self.imdb_id), info_tag.setGenres(genre), info_tag.setWriters(writer)
 				info_tag.setDirectors(director), info_tag.setUniqueIDs({'imdb': self.imdb_id, 'tmdb': str(self.tmdb_id), 'tvdb': str(self.tvdb_id)})
 				info_tag.setCast([ku.kodi_actor()(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
-				info_tag.setFilenameAndPath(self.url)
+				fresh_start = self._nextep_aio_en_fresh_start()
+				if fresh_start:
+					self.playback_percent = 0.0
+					try:
+						info_tag.setFilenameAndPath('%s S%02dE%02d %s' % (
+							self.title or '', int(self.season), int(self.episode), (self.playing_filename or '')[:120]))
+					except:
+						info_tag.setFilenameAndPath(self.url)
+				else:
+					info_tag.setFilenameAndPath(self.url)
 			self.set_resume_point(listitem)
 			if self.url and str(self.url).startswith('http'):
-				self._disable_kodi_url_resume(listitem, keep_start_percent=True)
+				self._disable_kodi_url_resume(listitem, keep_start_percent=not fresh_start)
 			self.set_playback_properties()
 		return listitem
 
@@ -481,6 +491,8 @@ class RedLightPlayer(xbmc.Player):
 			self._log_nextep('Next episode prep declined: %s' % reason)
 
 	def _should_prep_next_ep(self):
+		if getattr(self, '_nextep_stash_play_scheduled', False):
+			return False
 		if ku.get_property(PROP_NEXTEP_PREP_DECLINED) == 'true':
 			return False
 		if ku.get_property(PROP_NEXTEP_AUTOPLAY_CANCELLED) == 'true':
@@ -645,6 +657,7 @@ class RedLightPlayer(xbmc.Player):
 		except:
 			pass
 		ku.clear_property(PROP_AUTOSCRAPE_NEXTEP_READY)
+		ku.set_property(ku.PROP_AUTOSCRAPE_TOAST_SHOWN, 'true')
 		title = meta.get('title') or self.meta_get('title', '')
 		season = meta.get('season', self.season)
 		episode = meta.get('episode', self.episode)
@@ -732,7 +745,9 @@ class RedLightPlayer(xbmc.Player):
 		if not stash: return
 		try:
 			from modules.sources import schedule_nextep_stashed_play
-			if not schedule_nextep_stashed_play(stash):
+			if schedule_nextep_stashed_play(stash):
+				self._nextep_stash_play_scheduled = True
+			else:
 				ku.logger('Red Light', 'Autoplay next episode play failed: could not schedule resolve')
 		except Exception as exc:
 			ku.logger('Red Light', 'Autoplay next episode play failed: %s' % exc)
@@ -763,6 +778,15 @@ class RedLightPlayer(xbmc.Player):
 
 	def set_resume_point(self, listitem):
 		if self.playback_percent > 0.0: listitem.setProperty('StartPercent', str(self.playback_percent))
+
+	def _nextep_aio_en_fresh_start(self):
+		try:
+			sources = self.sources_object
+			if not sources or not getattr(sources, '_nextep_aio_en_fresh_start', None):
+				return False
+			return sources._nextep_aio_en_fresh_start(getattr(self, 'playing_item', None))
+		except:
+			return False
 
 	def _disable_kodi_url_resume(self, listitem, keep_start_percent=False):
 		# Kodi stores resume by stream URL/filename; debrid links reuse the same name and can reopen near EOF.
@@ -1036,6 +1060,7 @@ class RedLightPlayer(xbmc.Player):
 			ku.clear_property(PROP_NEXTEP_PREP_DECLINED)
 			ku.clear_property(PROP_AUTOSCRAPE_NEXTEP_READY)
 			ku.clear_property(PROP_NEXTEP_AUTOPLAY_CANCELLED)
+			ku.clear_property(ku.PROP_AUTOSCRAPE_TOAST_SHOWN)
 			self._autoscrape_ready_notified = False
 			self._nextep_alert_pending_logged = False
 			self._nextep_close_wait = False
