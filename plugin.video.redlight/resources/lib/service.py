@@ -47,6 +47,7 @@ class SetAddonConstants:
 		kodi_utils.clear_property('redlight.language_invoker_ready')
 		kodi_utils.clear_property('redlight.addon_xml_applied')
 		kodi_utils.clear_property(kodi_utils.SHUTTING_DOWN_PROP)
+		kodi_utils.reset_boot_sync_gate()
 		try:
 			from modules.utils import _prune_qr_cache
 			_prune_qr_cache(kodi_utils.translate_path(kodi_utils.addon_info('profile')))
@@ -154,6 +155,8 @@ class TraktMonitor:
 						kodi_utils.logger('Red Light', trakt_service_string % ('Success. %s' % trakt_success_line_dict[status], next_update_string))
 					else:
 						kodi_utils.logger('Red Light', trakt_service_string % ('Success. No Changes Needed', next_update_string))# 'not needed'
+					if status in ('success', 'not needed'):
+						kodi_utils.mark_boot_trakt_sync_ready()
 					if status == 'success' and not kodi_utils.service_shutting_down(monitor):
 						from modules.settings import provider_sync_refresh_widgets
 						if provider_sync_refresh_widgets(1):

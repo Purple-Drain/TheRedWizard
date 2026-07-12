@@ -90,7 +90,7 @@
             </control>
             <!-- Busy Spinner -->
             <control type="image">
-                <visible>String.IsEqual(Window.Property(enable_busy_spinner),true)</visible>
+                <visible>String.IsEqual(Window.Property(window_mode),resolver) + String.IsEqual(Window.Property(enable_busy_spinner),true)</visible>
                 <left>715</left>
                 <top>552</top>
                 <width>30</width>
@@ -102,6 +102,7 @@
             </control>
             <!-- Progress -->
             <control type="group">
+                <visible>String.IsEqual(Window.Property(window_mode),scraper) | String.IsEqual(Window.Property(window_mode),resolver)</visible>
                 <top>560</top>
                 <left>750</left>
                 <control type="group">
@@ -562,19 +563,19 @@
                 </control>
             </control>
             <!-- Resume -->
-            <control type="grouplist">
-                <visible>String.IsEqual(Window.Property(window_mode),resume)</visible>
+            <control type="grouplist" id="3001">
+                <visible>String.IsEqual(Window.Property(window_mode),resume) + String.IsEqual(Window.Property(resume_ready),true)</visible>
                 <top>620</top>
                 <left>650</left>
                 <orientation>horizontal</orientation>
                 <itemgap>10</itemgap>
-                <control type="button" id="10">
+                <control type="button" id="3010">
                     <description>Resume</description>
                     <width>200</width>
                     <height>60</height>
-                    <onleft>12</onleft>
-                    <onright>11</onright>
-                    <label>Resume $INFO[Window.Property(resume_percent)]%</label>
+                    <onleft>3012</onleft>
+                    <onright>3011</onright>
+                    <label>$INFO[Window.Property(resume_btn_label)]</label>
                     <font>font12</font> <!-- REDLIGHT_26 -->
                     <textcolor>FFCCCCCC</textcolor>
                     <focusedcolor>FF1F2020</focusedcolor>
@@ -583,13 +584,13 @@
                     <align>center</align>
                     <aligny>center</aligny>
                 </control>
-                <control type="button" id="11">
+                <control type="button" id="3011">
                     <description>Start Over</description>
                     <width>200</width>
                     <height>60</height>
-                    <onleft>10</onleft>
-                    <onright>12</onright>
-                    <label>Start Over</label>
+                    <onleft>3010</onleft>
+                    <onright>3012</onright>
+                    <label>$INFO[Window.Property(startover_btn_label)]</label>
                     <font>font12</font> <!-- REDLIGHT_26 -->
                     <textcolor>FFCCCCCC</textcolor>
                     <focusedcolor>FF1F2020</focusedcolor>
@@ -598,13 +599,13 @@
                     <align>center</align>
                     <aligny>center</aligny>
                 </control>
-                <control type="button" id="12">
+                <control type="button" id="3012">
                     <description>Cancel</description>
                     <width>200</width>
                     <height>60</height>
-                    <onleft>11</onleft>
-                    <onright>10</onright>
-                    <label>Cancel</label>
+                    <onleft>3011</onleft>
+                    <onright>3010</onright>
+                    <label>$INFO[Window.Property(cancel_btn_label)]</label>
                     <font>font12</font> <!-- REDLIGHT_26 -->
                     <textcolor>FFCCCCCC</textcolor>
                     <focusedcolor>FF1F2020</focusedcolor>

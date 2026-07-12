@@ -318,8 +318,6 @@ class Sources():
 			self._nextep_alert_handled = True
 			params_get = self.params.get
 		self.background = params_get('background', 'false') == 'true'
-		if not self.background and params_get('nextep_stash_play') != 'true' and self._playback_already_active():
-			return
 		self.play_type = params_get('play_type', '')
 		if 'prescrape' in self.params:
 			self.prescrape = params_get('prescrape') == 'true'
@@ -1599,7 +1597,7 @@ class Sources():
 		if kodi_utils.get_property(PROP_SOURCES_BUSY) != 'true':
 			return False
 		try:
-			if kodi_utils.kodi_player().isPlayingVideo() and kodi_utils.playback_is_paused():
+			if kodi_utils.kodi_player().isPlayingVideo():
 				kodi_utils.clear_property(PROP_SOURCES_BUSY)
 				kodi_utils.clear_property(PROP_SOURCES_OWNER)
 				return True
@@ -1686,8 +1684,16 @@ class Sources():
 
 	def _make_resume_dialog(self, percent):
 		if not self.progress_dialog: self._make_progress_dialog()
+		kodi_utils.hide_busy_dialog()
 		self.progress_dialog.enable_resume(percent)
-		return self.progress_dialog.resume_choice
+		for _ in range(150):
+			choice = self.progress_dialog.resume_choice
+			if choice is not None:
+				return choice
+			if self._user_cancelled_resolve() or self.progress_dialog.iscanceled():
+				return 'cancel'
+			kodi_utils.sleep(100)
+		return self.progress_dialog.resume_choice or 'resume'
 
 	def _make_still_watching_dialog(self, check_text, heading='Still Watching?', right_align=False):
 		try: action = open_window(('windows.playback_notifications', 'StillWatching'), 'playback_notifications.xml', meta=self.meta, check_text=check_text,
@@ -1761,6 +1767,7 @@ class Sources():
 				if not playing:
 					stable_idle += 1
 					if stable_idle >= 3:
+						kodi_utils.hide_busy_dialog()
 						kodi_utils.sleep(200)
 						return
 				else:
@@ -1967,7 +1974,6 @@ class Sources():
 		try:
 			self.playback_successful, self.cancel_all_playback = None, False
 			self._resolve_user_cancelled = False
-			self._prepare_resolve_ui()
 			defer_stop_for_nextep = getattr(self, '_nextep_alert_handled', False) or (self.background and (self.autoplay_nextep or self.autoscrape_nextep or self.play_type == 'random_continual' or self.random_continual))
 			if not defer_stop_for_nextep:
 				self._stop_active_playback()
@@ -2018,6 +2024,7 @@ class Sources():
 			if self.playback_percent == None:
 				self._finish_resolve_cancel()
 				return
+			self._prepare_resolve_ui()
 			if not self.resolve_dialog_made: self._make_resolve_dialog()
 			if self.background: kodi_utils.sleep(1000)
 			monitor = kodi_utils.kodi_monitor()

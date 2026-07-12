@@ -647,6 +647,33 @@ SHUTTING_DOWN_PROP = 'redlight.shutting_down'
 PROP_AUTOSCRAPE_TOAST_SHOWN = 'redlight.autoscrape_nextep_toast_shown'
 PLAYBACK_WIDGET_REFRESH_PROP = 'redlight.playback_widget_refresh_at'
 PLAYBACK_WIDGET_REFRESH_COOLDOWN_SEC = 120
+BOOT_SYNC_STARTED_PROP = 'redlight.boot_sync_started_at'
+BOOT_TRAKT_SYNC_READY_PROP = 'redlight.boot_trakt_sync_ready'
+BOOT_SYNC_GATE_TIMEOUT_SEC = 180
+
+def reset_boot_sync_gate():
+	try:
+		from time import time
+		set_property(BOOT_SYNC_STARTED_PROP, str(time()))
+	except:
+		pass
+	clear_property(BOOT_TRAKT_SYNC_READY_PROP)
+
+def mark_boot_trakt_sync_ready():
+	set_property(BOOT_TRAKT_SYNC_READY_PROP, 'true')
+
+def boot_trakt_list_refresh_allowed():
+	if get_property(BOOT_TRAKT_SYNC_READY_PROP) == 'true':
+		return True
+	try:
+		from time import time
+		started = float(get_property(BOOT_SYNC_STARTED_PROP) or 0)
+		if started and (time() - started) >= BOOT_SYNC_GATE_TIMEOUT_SEC:
+			return True
+	except:
+		pass
+	return False
+
 def service_shutting_down(monitor=None):
 	if monitor and monitor.abortRequested(): return True
 	return get_property(SHUTTING_DOWN_PROP) == 'true'

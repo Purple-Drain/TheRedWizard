@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+from threading import Thread
 from windows.base_window import BaseDialog
 from caches.settings_cache import get_setting, set_setting
 from modules.debrid import debrid_cache_check_available
@@ -443,7 +444,9 @@ class SourcesPlayback(BaseDialog):
 		self.clear_modals()
 
 	def onClick(self, controlID):
-		self.resume_choice = {10: 'resume', 11: 'start_over', 12: 'cancel'}[controlID]
+		if self.window_mode == 'resume' and self.getProperty('resume_ready') != 'true':
+			return
+		self.resume_choice = {3010: 'resume', 3011: 'start_over', 3012: 'cancel'}.get(controlID)
 
 	def onAction(self, action):
 		if action in self.closing_actions:
@@ -489,8 +492,13 @@ class SourcesPlayback(BaseDialog):
 		self.set_resolver_properties()
 
 	def enable_resume(self, percent):
+		self.is_canceled = False
+		self.skip_resolve = False
+		self.resume_choice = None
+		self.busy_spinner('false')
 		self.window_mode = 'resume'
 		self.set_resume_properties(percent)
+		Thread(target=self._resume_countdown, daemon=True).start()
 
 	def busy_spinner(self, toggle='true'):
 		self.setProperty('enable_busy_spinner', toggle)
@@ -520,11 +528,31 @@ class SourcesPlayback(BaseDialog):
 		self.setProperty('text', self.text)
 
 	def set_resume_properties(self, percent):
+		percent_str = str(percent)
+		self.setProperty('resume_ready', 'false')
 		self.setProperty('window_mode', self.window_mode)
-		self.setProperty('resume_percent', percent)
-		self.setProperty('percent', '0')
-		self.setFocusId(10)
-		self.update_resumer()
+		self.setProperty('resume_percent', percent_str)
+		self.setProperty('resume_btn_label', 'Resume %s%%' % percent_str)
+		self.setProperty('startover_btn_label', 'Start Over')
+		self.setProperty('cancel_btn_label', 'Cancel')
+		self.setProperty('resume_timeout_percent', '0')
+		self.setProperty('text', '')
+		for _ in range(4):
+			hide_busy_dialog()
+			self.sleep(80)
+		self.setProperty('resume_ready', 'true')
+		self.setFocusId(3010)
+
+	def _resume_countdown(self):
+		count = 0
+		while self.resume_choice is None:
+			timeout_percent = int((float(count) / _RESUME_CHOICE_TIMEOUT_MS) * 100)
+			if timeout_percent >= 100:
+				self.resume_choice = 'resume'
+				break
+			self.setProperty('resume_timeout_percent', str(timeout_percent))
+			count += 100
+			self.sleep(100)
 
 	def update_scraper(self, results_sd, results_720p, results_1080p, results_4k, results_total, content='', percent=0):
 		from modules.kodi_utils import sync_scrape_progress_ui
@@ -546,16 +574,6 @@ class SourcesPlayback(BaseDialog):
 			self.setProperty('percent', str(pct))
 		except: pass
 		if text: self.set_text(2002, text)
-
-	def update_resumer(self):
-		count = 0
-		while self.resume_choice is None:
-			percent = int((float(count) / _RESUME_CHOICE_TIMEOUT_MS) * 100)
-			if percent >= 100:
-				self.resume_choice = 'resume'
-			self.setProperty('percent', str(percent))
-			count += 100
-			self.sleep(100)
 
 class SourcesInfo(BaseDialog):
 	def __init__(self, *args, **kwargs):

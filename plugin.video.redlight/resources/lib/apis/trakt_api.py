@@ -964,6 +964,7 @@ def trakt_force_sync(params=None):
 		kodi_utils.close_progress_dialog(progress)
 	if status == 'failed': kodi_utils.notification('Trakt Sync Failed', 3000)
 	else:
+		kodi_utils.mark_boot_trakt_sync_ready()
 		kodi_utils.notification('Trakt Sync Complete', 3000)
 		kodi_utils.kodi_refresh()
 	return status

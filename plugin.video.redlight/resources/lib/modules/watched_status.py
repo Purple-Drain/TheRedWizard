@@ -525,6 +525,8 @@ def _movie_progress_list(dbcon):
 def _refresh_trakt_movie_progress():
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
+		from modules.kodi_utils import boot_trakt_list_refresh_allowed
+		if not boot_trakt_list_refresh_allowed(): return
 		from apis.trakt_api import trakt_playback_progress, trakt_progress_movies
 		trakt_progress_movies(trakt_playback_progress())
 	except: pass
@@ -565,6 +567,8 @@ def _refresh_mdblist_episode_progress():
 def _refresh_trakt_episode_progress():
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
+		from modules.kodi_utils import boot_trakt_list_refresh_allowed
+		if not boot_trakt_list_refresh_allowed(): return
 		from apis.trakt_api import trakt_playback_progress, trakt_progress_tv
 		trakt_progress_tv(trakt_playback_progress())
 	except: pass
@@ -572,6 +576,8 @@ def _refresh_trakt_episode_progress():
 def _refresh_trakt_tvshow_watched():
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
+		from modules.kodi_utils import boot_trakt_list_refresh_allowed
+		if not boot_trakt_list_refresh_allowed(): return
 		from apis.trakt_api import trakt_indicators_tv
 		trakt_indicators_tv()
 	except: pass

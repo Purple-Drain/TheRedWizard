@@ -282,6 +282,11 @@ def _download_subtitle_content(file_id):
 def fetch_alert_subtitle(imdb_id, season=None, episode=None, year=None, playing_filename=None, playing_item=None, log_pick=False):
 	if not st.opensubs_configured(): return None
 	from indexers.subtitles import _looks_like_subtitle_content, _opensubs_alert_path, playback_release_context, _subtitle_cache_release_tag
+	from indexers.subtitles import _existing_release_tagged_subtitle_cache, remember_active_subtitle_path
+	cached = _existing_release_tagged_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+	if cached:
+		remember_active_subtitle_path(cached)
+		return cached
 	release_context = playback_release_context(playing_filename, playing_item, season, episode)
 	results = _search_subtitles(imdb_id, year, season, episode, _subtitle_language_code(), playing_filename, playing_item)
 	match = _pick_best_subtitle(results, playing_filename, playing_item, season, episode)
