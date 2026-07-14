@@ -1,3 +1,6 @@
+2026.07.17
+- fix single-track downloads from album pages with collaborative/contributing artists using the track artist as the folder owner — they now store beside full-album downloads under the album artist + album title folder (thanks JMAN730)
+
 2026.07.16
 - fix album downloads from different artists with the same title overwriting each other — album folders are keyed by album artist plus album title again (thanks Cursor daily review)
 - album playback and stream-cache paths use the same album storage helper and track-numbered filenames as album downloads
