@@ -501,18 +501,21 @@ def sync_scrape_progress_ui(percent=0, results_sd=0, results_720p=0, results_108
 		set_property('redlight.scrape.progress_1080p_color', get_setting('redlight.scraper_1080p_highlight', 'FFE6B800'))
 		set_property('redlight.scrape.progress_720p_color', get_setting('redlight.scraper_720p_highlight', 'FF3C9900'))
 		set_property('redlight.scrape.progress_sd_color', get_setting('redlight.scraper_SD_highlight', 'FF0166FF'))
+		set_property('redlight.scrape.progress_total_color', get_setting('redlight.scraper_total_highlight', 'FFFFFFFF'))
 	else:
 		white = 'FFFFFFFF'
 		set_property('redlight.scrape.progress_4k_color', white)
 		set_property('redlight.scrape.progress_1080p_color', white)
 		set_property('redlight.scrape.progress_720p_color', white)
 		set_property('redlight.scrape.progress_sd_color', white)
+		set_property('redlight.scrape.progress_total_color', white)
 
 def clear_scrape_progress_ui():
 	for prop in ('redlight.scrape.percent', 'redlight.scrape.results_sd', 'redlight.scrape.results_720p',
 			'redlight.scrape.results_1080p', 'redlight.scrape.results_4k', 'redlight.scrape.results_total',
 			'redlight.scrape.progress_4k_color', 'redlight.scrape.progress_1080p_color',
 			'redlight.scrape.progress_720p_color', 'redlight.scrape.progress_sd_color',
+			'redlight.scrape.progress_total_color',
 			'redlight.scrape.ready'):
 		clear_property(prop)
 

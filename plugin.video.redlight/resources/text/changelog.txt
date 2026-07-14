@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.8.7[/B][/COLOR]
+- [B]Scrape Progress[/B]: [B]TOTAL[/B] results count on the scrape progress dialog has its own colour picker ([B]Scrape Progress TOTAL Count Color[/B], default white). The [B]TOTAL[/B] label stays muted grey; only the number is coloured (when [B]Scrape Progress Count Colours[/B] is on).
+
 [COLOR red][B]Version 1.8.6[/B][/COLOR]
 - [B]TorBox Cloud[/B]: sources context menu [B]Delete from TorBox Cloud[/B] (same idea as RD Cloud) — removes the cached torrent / usenet / webdl transfer from your TorBox account.
 - [B]AIOStreams[/B]: [B]ElfHosted[/B] added but disabled in the instance picker (public host returns [B]Search API is disabled[/B]); preset id reserved so it can be re-enabled later without remapping other instances.

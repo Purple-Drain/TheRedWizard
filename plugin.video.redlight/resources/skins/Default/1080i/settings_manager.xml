@@ -3686,6 +3686,15 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.highlight.scrape_progress_colours),true)</visible>
+                          <property name="setting_label">    - Scrape Progress TOTAL Count Color</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">[COLOR $INFO[Window(10000).Property(redlight.scraper_total_highlight)]]$INFO[Window(10000).Property(redlight.scraper_total_highlight)][/COLOR]</property>
+                          <property name="setting_description">Colour for the TOTAL results count on the scrape progress dialog (TOTAL label stays muted grey). Default is white</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=scraper_color_choice&amp;setting_id=scraper_total_highlight)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(70)</visible>
                           <property name="setting_label">Tint Focused Result Background</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.highlight.tint_focused_background)]</property>

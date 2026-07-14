@@ -522,7 +522,7 @@
                             <align>center</align>
                             <aligny>center</aligny>
                             <font>font12</font> <!-- REDLIGHT_26 -->
-                            <label>[COLOR FFFFFFFF][B]$INFO[Window(10000).Property(redlight.scrape.results_total)][/B][/COLOR]</label>
+                            <label>[COLOR $INFO[Window(10000).Property(redlight.scrape.progress_total_color)]][B]$INFO[Window(10000).Property(redlight.scrape.results_total)][/B][/COLOR]</label>
                         </control>
                     </control>
                 </control>
