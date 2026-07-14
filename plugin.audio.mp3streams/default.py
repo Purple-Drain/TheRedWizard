@@ -37,6 +37,33 @@ artbillboard = os.path.join(_addon_path, 'art', 'billboard') + os.sep
 urllist = os.path.join(_addon_path, 'lists', 'mp3url.list')
 audio_fanart = ""
 
+def _genre_slug(text, albums_parent=False):
+    text = text or ''
+    if albums_parent:
+        text = text.replace('and', '&')
+    return text.replace(' ', '').replace('&amp;', '_').replace('&', '_').lower()
+
+def genre_icon(parent=None, child=None, top=False, albums=False):
+    """Local art/genre icon with fallbacks (parent face / root genre jpg)."""
+    candidates = []
+    if parent is None and child:
+        slug = _genre_slug(child)
+        candidates.append(os.path.join(artgenre, slug + '.jpg'))
+    elif parent and top:
+        for pslug in dict.fromkeys([_genre_slug(parent, albums_parent=albums), _genre_slug(parent, albums_parent=False)]):
+            candidates.append(os.path.join(artgenre, pslug, 'top' + pslug + '.jpg'))
+            candidates.append(os.path.join(artgenre, pslug + '.jpg'))
+            candidates.append(os.path.join(artgenre, pslug, 'all' + pslug + '.jpg'))
+    elif parent and child:
+        cslug = _genre_slug(child)
+        for pslug in dict.fromkeys([_genre_slug(parent, albums_parent=albums), _genre_slug(parent, albums_parent=False)]):
+            candidates.append(os.path.join(artgenre, pslug, cslug + '.jpg'))
+            candidates.append(os.path.join(artgenre, pslug + '.jpg'))
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return art + 'artists.jpg'
+
 def download_lock_path():
     return os.path.join(settings.music_dir(), 'downloading.txt')
 xbmc_version=xbmc.getInfoLabel("System.BuildVersion")[:4]
@@ -297,9 +324,8 @@ def artists(url):
     addDir('All Artists','http://musicmp3.ru/main_artists.html?type=artist&page=1',31,art + 'allartists.jpg','')
     sub_dir = re.compile('<li class="menu_sub__item"><a class="menu_sub__link" href="(.+?)">(.+?)</a></li>').findall(link)
     for url1, title in sub_dir:
-        iconimage = 'http://musicmp3.ru/i' + url1.replace('.html', '.jpg').replace('artists', 'genres').replace('tracks', 'track')
         if title != 'Other':
-            addDir(title,'https://musicmp3.ru' + url1,41,artgenre + title.replace(' ','').replace('&amp;','_').lower() + '.jpg','')
+            addDir(title,'https://musicmp3.ru' + url1,41,genre_icon(child=title),'')
     setView('', 'default')
 
 def all_artists(name, url):
@@ -317,10 +343,10 @@ def all_artists(name, url):
 
 def sub_dir(name, url, icon):
     link = GET_url(url)#.decode('utf-8')
-    addDir('Top ' + name + ' Artists',url + '?page=1',31,artgenre + name.replace(' ','').replace('&amp;','_').lower() +'/' + 'top' + name.replace(' ','').replace('&amp;','_').lower() + '.jpg','')
+    addDir('Top ' + name + ' Artists',url + '?page=1',31,genre_icon(parent=name, top=True),'')
     sub_dir = re.compile('<li class="menu_sub__item"><a class="menu_sub__link" href="(.+?)">(.+?)</a></li>').findall(link)
     for url, title in sub_dir:
-        addDir(title,'http://musicmp3.ru' + url + '?page=1',31,artgenre + name.replace(' ','').replace('&amp;','_').lower() +'/' + title.replace(' ','').replace('&amp;','_').lower() + '.jpg','')
+        addDir(title,'http://musicmp3.ru' + url + '?page=1',31,genre_icon(parent=name, child=title),'')
 
 def genres(name, url):
     link = GET_url(url)#.decode('utf-8')
@@ -330,8 +356,7 @@ def genres(name, url):
         addDir('New Albums',url + '?page=1',15,art + 'allnewalbums.jpg','')
     sub_dir = re.compile('<li class="menu_sub__item"><a class="menu_sub__link" href="(.+?)">(.+?)</a></li>').findall(link)
     for url1, title in sub_dir:
-        iconimage = 'http://musicmp3.ru/i' + url1.replace('.html', '.jpg').replace('tracks', 'track')
-        addDir(title,'http://musicmp3.ru' + url1,14,artgenre + title.replace(' ','').replace('&amp;','_').lower() + '.jpg','')
+        addDir(title,'http://musicmp3.ru' + url1,14,genre_icon(child=title),'')
 
 def all_genres(name, url):
     nxtpgnum = int(url.replace('http://musicmp3.ru/main_albums.html?gnr_id=2&sort=top&type=album&page=', '')) + 1
@@ -344,10 +369,10 @@ def all_genres(name, url):
 
 def genre_sub_dir(name, url, icon):
     link = GET_url(url)#.decode('utf-8')
-    addDir('Top ' + name + ' Albums',url + '?page=1',15,artgenre + name.replace('and','&').replace(' ','').replace('&amp;','_').lower() +'/' + 'top' + name.replace('and','_').replace(' ','').replace('&amp;','_').lower() + '.jpg','')
+    addDir('Top ' + name + ' Albums',url + '?page=1',15,genre_icon(parent=name, top=True, albums=True),'')
     sub_dir = re.compile('<li class="menu_sub__item"><a class="menu_sub__link" href="(.+?)">(.+?)</a></li>').findall(link)
     for url, title in sub_dir:
-        addDir(title,'http://musicmp3.ru' + url + '?page=1',15,artgenre + name.replace('and','&').replace(' ','').replace('&amp;','_').lower() +'/' + title.replace(' ','').replace('&amp;','_').lower() + '.jpg','')
+        addDir(title,'http://musicmp3.ru' + url + '?page=1',15,genre_icon(parent=name, child=title, albums=True),'')
 
 def genre_sub_dir2(name, url, icon):
     link = GET_url(url)#.decode('utf-8')
