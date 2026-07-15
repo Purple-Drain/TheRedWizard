@@ -601,8 +601,9 @@ class RedLightPlayer(xbmc.Player):
 	def _pop_window_seconds(self, nextep_settings, total_time):
 		return self._alert_window_time(nextep_settings, 90, total_time, still_watching_check=0)
 
-	def _start_prep_seconds(self, nextep_settings, pop_at, play_type):
-		pipeline = st.nextep_pipeline_headroom(play_type, nextep_settings['scraper_time'], self._still_watching_due(nextep_settings))
+	def _start_prep_seconds(self, nextep_settings, pop_at, play_type, include_still_watching=True):
+		still_watching_due = self._still_watching_due(nextep_settings) if include_still_watching else False
+		pipeline = st.nextep_pipeline_headroom(play_type, nextep_settings['scraper_time'], still_watching_due)
 		return int(pop_at) + pipeline
 
 	def _resolve_subtitle_pop_at(self, sub_tail, credits_entry):
@@ -636,7 +637,8 @@ class RedLightPlayer(xbmc.Player):
 		else: play_type = 'autoscrape_nextep'
 		nextep_settings = st.auto_nextep_settings(play_type)
 		pop_at, _timing_source = self._pop_window_seconds(nextep_settings, self.total_time)
-		self.random_continual_start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type)
+		include_still_watching = st.random_continual_still_watching_enabled()
+		self.random_continual_start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching)
 
 	def _should_prep_random_continual(self):
 		if getattr(self, 'random_continual_triggered', False): return False

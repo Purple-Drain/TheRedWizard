@@ -543,6 +543,21 @@
                           <property name="setting_description">Choose the Opacity Red Light will use for custom window themes. Choose between 10% - 100%</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=window_theme_choice&amp;type=opacity)</onclick>
                       </item>
+        <!-- My Services -->
+                      <item>
+                          <visible>Container(2000).HasFocus(10)</visible>
+                          <property name="setting_label">My Services</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(10)</visible>
+                          <property name="setting_label">Alert When Service Expires Within (Days)</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert_days)]</property>
+                          <property name="setting_description">On Kodi startup, notify when authorised Debrid and EasyNews accounts expire within this many days. Set to 0 to disable. Each service alerts once per remaining-day count.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=services.expiry_alert_days)</onclick>
+                      </item>
         <!-- Watched Indicators -->
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
@@ -3918,6 +3933,15 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_watching_check)]</property>
                           <property name="setting_description">Choose after how many autoplayed episodes Red Light will ask if you are still watching. Set to 0 to disable</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoplay_watching_check)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true) + Integer.IsGreater(Window(10000).Property(redlight.autoplay_watching_check),0)</visible>
+                          <property name="setting_label">    - Use Still Watching with Continual Random Play</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_random_continual_watching_check)]</property>
+                          <property name="setting_description">When off, Continual Random Play does not use Check Still Watching After X (including during no-results skip chains). Autoplay Next Episode is unchanged</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay_random_continual_watching_check)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>

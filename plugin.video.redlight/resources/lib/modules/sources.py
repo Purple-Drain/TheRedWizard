@@ -2469,9 +2469,11 @@ class Sources():
 	def still_watching_check(self):
 		watching_check = self.nextep_settings.get('watching_check', 0)
 		if watching_check == 0: return True
+		if self.play_type == 'random_continual' and not settings.random_continual_still_watching_enabled():
+			return True
 		player = kodi_utils.kodi_player()
 		# Autoplay next-episode idle edge case: don't prompt/count when nothing is playing.
-		# Continual random must still count skipped episodes toward the binge threshold (#62),
+		# Continual random counts skipped episodes toward Still Watching when enabled (#62),
 		# including cold-start skip chains where playback never started.
 		if not player.isPlayingVideo() and self.play_type != 'random_continual':
 			return bool(self.background)

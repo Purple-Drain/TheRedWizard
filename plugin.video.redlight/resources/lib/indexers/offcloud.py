@@ -194,10 +194,10 @@ def oc_account_info():
 		append = body.append
 		append('[B]Email[/B]: %s' % account_info.get('email', ''))
 		append('[B]User ID[/B]: %s' % account_info.get('user_id') or account_info.get('userId', ''))
+		from modules.service_expiry import append_expiry_lines, fetch_expiry_summary
 		is_premium = account_info.get('is_premium') if 'is_premium' in account_info else account_info.get('isPremium', '')
 		append('[B]Premium[/B]: %s' % is_premium)
-		expires = account_info.get('expiration_date') or account_info.get('expirationDate', '')
-		append('[B]Expires[/B]: %s' % expires)
+		append_expiry_lines(body, fetch_expiry_summary('oc'))
 		if 'can_download' in account_info:
 			append('[B]Can Download[/B]: %s' % account_info.get('can_download'))
 		cloud_limit = (account_info.get('limits') or {}).get('cloud', 0) or 0

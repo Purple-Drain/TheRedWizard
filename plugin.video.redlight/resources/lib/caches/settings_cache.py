@@ -1149,6 +1149,8 @@ def default_settings():
 {'setting_id': 'tb.priority', 'setting_type': 'action', 'setting_default': '10', 'min_value': '1', 'max_value': '10'},
 #==================== EasyNews
 {'setting_id': 'provider.easynews', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'services.expiry_alert_days', 'setting_type': 'action', 'setting_default': '7', 'min_value': '0', 'max_value': '90'},
+{'setting_id': 'services.expiry_alert_state', 'setting_type': 'string', 'setting_default': '{}'},
 {'setting_id': 'easynews_user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'easynews_password', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'easynews.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
@@ -1304,6 +1306,7 @@ def default_settings():
 {'setting_id': 'autoplay_skip_intro', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '2': 'Auto', '1': 'Prompt'}},
 {'setting_id': 'skip_intro_all_episodes', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'autoplay_watching_check', 'setting_type': 'action', 'setting_default': '3', 'min_value': '0', 'max_value': '5'},
+{'setting_id': 'autoplay_random_continual_watching_check', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'autoscrape_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoscrape_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
 {'setting_id': 'autoscrape_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},

@@ -72,13 +72,14 @@ class Navigator:
 		self.end_directory()
 
 	def premium(self):
-		if s.authorized_debrid_check('ad'): self.add({'mode': 'navigator.alldebrid'}, 'All Debrid', 'alldebrid')
-		if s.easynews_authorized(): self.add({'mode': 'navigator.easynews'}, 'EasyNews', 'easynews')
+		from modules.service_expiry import premium_menu_label
+		if s.authorized_debrid_check('ad'): self.add({'mode': 'navigator.alldebrid'}, premium_menu_label('ad', 'All Debrid'), 'alldebrid')
+		if s.easynews_authorized(): self.add({'mode': 'navigator.easynews'}, premium_menu_label('easynews', 'EasyNews'), 'easynews')
 		if s.nzb_indexer_active(): self.add({'mode': 'navigator.nzb_indexers'}, 'NZB Indexers', 'search')
-		if s.authorized_debrid_check('oc'): self.add({'mode': 'navigator.offcloud'}, 'Offcloud', 'offcloud')
-		if s.authorized_debrid_check('pm'): self.add({'mode': 'navigator.premiumize'}, 'Premiumize', 'premiumize')
-		if s.authorized_debrid_check('rd'): self.add({'mode': 'navigator.real_debrid'}, 'Real Debrid', 'realdebrid')
-		if s.authorized_debrid_check('tb'): self.add({'mode': 'navigator.torbox'}, 'TorBox', 'torbox')
+		if s.authorized_debrid_check('oc'): self.add({'mode': 'navigator.offcloud'}, premium_menu_label('oc', 'Offcloud'), 'offcloud')
+		if s.authorized_debrid_check('pm'): self.add({'mode': 'navigator.premiumize'}, premium_menu_label('pm', 'Premiumize'), 'premiumize')
+		if s.authorized_debrid_check('rd'): self.add({'mode': 'navigator.real_debrid'}, premium_menu_label('rd', 'Real Debrid'), 'realdebrid')
+		if s.authorized_debrid_check('tb'): self.add({'mode': 'navigator.torbox'}, premium_menu_label('tb', 'TorBox'), 'torbox')
 		self.end_directory()
 
 	def easynews(self):

@@ -293,8 +293,9 @@ def tb_account_info():
 		append = body.append
 		append('[B]Email[/B]: %s' % account_info.get('email', ''))
 		append('[B]Customer[/B]: %s' % account_info.get('customer', ''))
+		from modules.service_expiry import append_expiry_lines, fetch_expiry_summary
 		append('[B]Plan[/B]: %s' % plans.get(account_info.get('plan'), 'Unknown'))
-		append('[B]Expires[/B]: %s' % account_info.get('premium_expires_at', ''))
+		append_expiry_lines(body, fetch_expiry_summary('tb'))
 		append('[B]Downloaded[/B]: {:,}'.format(account_info.get('total_downloaded', 0)))
 		kodi_utils.hide_busy_dialog()
 		return kodi_utils.show_text('TorBox'.upper(), '\n\n'.join(body), font_size='large')

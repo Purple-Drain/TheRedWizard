@@ -296,6 +296,16 @@ class AutoStart:
 			kodi_utils.run_addon()
 		return kodi_utils.logger('Red Light', 'AutoStart Service Finished')
 
+class ServiceExpiryAlerts:
+	def run(self, monitor):
+		kodi_utils.logger('Red Light', 'ServiceExpiryAlerts Service Starting')
+		from modules.service_expiry import run_expiry_alerts
+		monitor.waitForAbort(60)
+		if not monitor.abortRequested() and not kodi_utils.service_shutting_down(monitor):
+			try: run_expiry_alerts()
+			except Exception as e: kodi_utils.logger('ServiceExpiryAlerts', str(e))
+		return kodi_utils.logger('Red Light', 'ServiceExpiryAlerts Service Finished')
+
 class AddonXMLCheck:
 	def run(self):
 		kodi_utils.logger('Red Light', 'AddonXMLCheck Service Starting')
@@ -329,6 +339,7 @@ class RedLightMonitor(Monitor):
 		_start_daemon(lambda: WidgetRefresher().run(self))
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))
+		_start_daemon(lambda: ServiceExpiryAlerts().run(self))
 
 	def onNotification(self, sender, method, data):
 		if method in ('GUI.OnScreensaverActivated', 'System.OnSleep'):

@@ -1,3 +1,9 @@
+[COLOR red][B]Version 1.8.9[/B][/COLOR]
+- [B]My Services[/B]: shared expiry formatting across Account Info for Real Debrid, Premiumize, All Debrid, EasyNews, TorBox, and Offcloud ([B]Expires[/B] as a friendly date plus [B]Days Remaining[/B]).
+- [B]My Services[/B]: menu labels show cached days remaining (e.g. [B]EasyNews · 42 days[/B]) — 12-hour cache, no API call on every menu open.
+- [B]My Services[/B]: [B]Alert When Service Expires Within (Days)[/B] under [B]General > My Services[/B] (default 7; 0 = off). Startup notification for authorised Debrid and EasyNews accounts; each remaining-day count alerts once. Fixed repeat alerts on every boot when the day count had not changed.
+- [B]Continual Random Play[/B]: optional [B]Use Still Watching with Continual Random Play[/B] under [B]Playback > Episodes[/B] (visible when [B]Autoplay Next Episode[/B] and [B]Check Still Watching After X[/B] are enabled). When off, continual random skip chains no longer trigger the Still Watching prompt; normal Autoplay Next Episode is unchanged (#62 follow-up).
+
 [COLOR red][B]Version 1.8.8[/B][/COLOR]
 - [B]Extras[/B]: [B]Play[/B] / [B]Play Next Episode[/B] / [B]Play Options[/B] close the Extras window before scrape starts — fixes the movie playing behind Extras / sources UI (Extras was left stacked over fullscreen).
 

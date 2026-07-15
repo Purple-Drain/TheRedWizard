@@ -258,31 +258,19 @@ def ad_delete(file_id):
 
 def ad_account_info():
 	try:
+		from modules.service_expiry import append_expiry_lines, fetch_expiry_summary
 		kodi_utils.show_busy_dialog()
 		account_info = AllDebrid.account_info()['user']
 		username = account_info['username']
 		email = account_info['email']
 		status = 'Premium' if account_info['isPremium'] else 'Not Active'
-		expires = datetime.fromtimestamp(account_info['premiumUntil'])
-		days_remaining = (expires - datetime.today()).days
 		body = []
 		append = body.append
 		append('[B]Username:[/B] %s' % username)
 		append('[B]Email:[/B] %s' % email)
 		append('[B]Status:[/B] %s' % status)
-		append('[B]Expires:[/B] %s' % expires)
-		append('[B]Days Remaining:[/B] %s' % days_remaining)
+		append_expiry_lines(body, fetch_expiry_summary('ad'))
 		kodi_utils.hide_busy_dialog()
 		return kodi_utils.show_text('ALL DEBRID', '\n\n'.join(body), font_size='large')
 	except:
 		kodi_utils.hide_busy_dialog()
-
-
-def active_days():
-	try:
-		account_info = AllDebrid.account_info()['user']
-		expires = datetime.fromtimestamp(account_info['premiumUntil'])
-		days_remaining = (expires - datetime.today()).days
-	except:
-		days_remaining = 0
-	return days_remaining

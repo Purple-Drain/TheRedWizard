@@ -177,31 +177,20 @@ def pm_delete(file_type, file_id):
 
 def pm_account_info():
 	try:
+		from modules.service_expiry import append_expiry_lines, fetch_expiry_summary
 		kodi_utils.show_busy_dialog()
 		account_info = Premiumize.account_info()
 		customer_id = account_info['customer_id']
-		expires = datetime.fromtimestamp(account_info['premium_until'])
-		days_remaining = (expires - datetime.today()).days
 		points_used = int(math.floor(float(account_info['space_used']) / 1073741824.0))
 		space_used = float(int(account_info['space_used']))/1073741824
 		percentage_used = str(round(float(account_info['limit_used']) * 100.0, 1))
 		body = []
 		append = body.append
 		append('[B]Customer ID:[/B] %s' % customer_id)
-		append('[B]Expires:[/B] %s' % expires)
-		append('[B]Days Remaining:[/B] %s' % days_remaining)
+		append_expiry_lines(body, fetch_expiry_summary('pm'))
 		append('[B]Points Used:[/B] %.f' % points_used)
 		append('[B]Space Used:[/B] %.2f' % space_used)
 		append('[B]Fair Use (Percentage Used):[/B] %s%%' % percentage_used)
 		kodi_utils.hide_busy_dialog()
 		return kodi_utils.show_text('PREMIUMIZE', '\n\n'.join(body), font_size='large')
 	except: kodi_utils.hide_busy_dialog()
-
-
-def active_days():
-	try:
-		account_info = Premiumize.account_info()
-		expires = datetime.fromtimestamp(account_info['premium_until'])
-		days_remaining = (expires - datetime.today()).days
-	except: days_remaining = 0
-	return days_remaining
