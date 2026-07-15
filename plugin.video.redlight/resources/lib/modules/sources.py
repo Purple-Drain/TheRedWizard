@@ -1091,6 +1091,14 @@ class Sources():
 	def _wait_active_playback_end(self):
 		player = kodi_utils.kodi_player()
 		monitor = kodi_utils.kodi_monitor()
+		# Pack Browse closes sources before the player may report isPlaying — wait briefly
+		# for start so we do not immediately reopen the results list over the stream.
+		for _ in range(50):
+			if monitor.abortRequested():
+				return
+			if player.isPlayingVideo() or player.isPlaying():
+				break
+			kodi_utils.sleep(100)
 		while player.isPlayingVideo() or player.isPlaying():
 			if monitor.abortRequested():
 				return
@@ -1837,7 +1845,8 @@ class Sources():
 		"""Explicitly dismiss scrape/resolve/results modals (Android can ignore Dialog.Close(all) over fullscreen)."""
 		if retries is None:
 			retries = 6 if kodi_utils.is_android() else 3
-		dialogs = ('sources_playback.xml', 'sources_results.xml')
+		# extras.xml: Play from Extras used to leave it stacked over fullscreen video.
+		dialogs = ('sources_playback.xml', 'sources_results.xml', 'extras.xml')
 		for _ in range(retries):
 			for name in dialogs:
 				try:

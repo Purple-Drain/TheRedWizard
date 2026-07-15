@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.8.8[/B][/COLOR]
+- [B]Extras[/B]: [B]Play[/B] / [B]Play Next Episode[/B] / [B]Play Options[/B] close the Extras window before scrape starts — fixes the movie playing behind Extras / sources UI (Extras was left stacked over fullscreen).
+
 [COLOR red][B]Version 1.8.7[/B][/COLOR]
 - [B]Scrape Progress[/B]: [B]TOTAL[/B] results count on the scrape progress dialog has its own colour picker ([B]Scrape Progress TOTAL Count Color[/B], default white). The [B]TOTAL[/B] label stays muted grey; only the number is coloured (when [B]Scrape Progress Count Colours[/B] is on).
 

@@ -6,7 +6,6 @@ from apis import tmdb_api, imdb_api, omdb_api, ai_api, trakt_api
 from indexers import dialogs, people
 from indexers.images import Images
 from modules import kodi_utils, settings, watched_status
-from modules.sources import Sources
 from modules.utils import change_image_resolution, adjust_premiered_date, get_datetime, make_thread_list_enumerate, batch_replace, get_current_timestamp
 from modules.meta_lists import networks, movie_genres, tvshow_genres
 from modules.metadata import movieset_meta, episodes_meta, movie_meta, tvshow_meta
@@ -634,7 +633,14 @@ class Extras(BaseDialog):
 		self.close()
 
 	def movies_play(self):
-		Sources().playback_prep({'media_type': 'movie', 'tmdb_id': self.tmdb_id, self.playback_key: self.playback_key})
+		# Close Extras before scrape/play — otherwise results/resolve (and then the movie)
+		# sit under extras.xml and playback looks like it is running "behind" the UI.
+		self.close_all()
+		self.selected = 'RunPlugin(%s)' % self.build_url({
+			'mode': 'playback.%s' % self.playback_key, 'media_type': 'movie', 'tmdb_id': self.tmdb_id,
+			self.playback_key: self.playback_key
+		})
+		self.close()
 
 	def show_plot(self):
 		return self.show_text_media(text=self.plot)
@@ -676,8 +682,13 @@ class Extras(BaseDialog):
 
 	def play_nextep(self):
 		if self.nextep_season == None: return kodi_utils.ok_dialog(text='No Episodes Available')
-		Sources().playback_prep({'media_type': 'episode', 'tmdb_id': self.tmdb_id, 'season': self.nextep_season, 'episode': self.nextep_episode,
-								'autoplay': 'true', self.playback_key: self.playback_key})
+		self.close_all()
+		self.selected = 'RunPlugin(%s)' % self.build_url({
+			'mode': 'playback.%s' % self.playback_key, 'media_type': 'episode', 'tmdb_id': self.tmdb_id,
+			'season': self.nextep_season, 'episode': self.nextep_episode, 'autoplay': 'true',
+			self.playback_key: self.playback_key
+		})
+		self.close()
 
 	def play_random_episode(self):
 		self.close_all()
@@ -798,8 +809,10 @@ class Extras(BaseDialog):
 		return dialogs.favorites_manager_choice({'media_type': self.media_type, 'tmdb_id': str(self.tmdb_id), 'title': self.title, 'refresh': 'false'})
 
 	def playback_choice(self):
-		params = {'media_type': self.media_type, 'meta': self.meta, 'season': None, 'episode': None}
-		dialogs.playback_choice(params)
+		self.close_all()
+		params = {'mode': 'playback_choice', 'media_type': self.media_type, 'meta': self.tmdb_id}
+		self.selected = 'RunPlugin(%s)' % self.build_url(params)
+		self.close()
 
 	def assign_buttons(self):
 		setting_id_base = 'redlight.extras.%s.button' % self.media_type
