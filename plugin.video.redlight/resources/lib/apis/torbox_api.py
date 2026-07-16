@@ -679,12 +679,13 @@ class TorBoxAPI:
 		if max_attempts is None:
 			try: max_attempts = min(120, max(20, int(get_setting('redlight.results.timeout', '20')) * 3))
 			except: max_attempts = 45
-		usenet_id = None
+		usenet_id, cleanup_usenet = None, False
 		try:
 			result = self.add_nzb(nzb_link, name=title or '')
 			usenet_id = self._usenet_id_from_create(result)
 			if not usenet_id:
 				return None
+			cleanup_usenet = not store_to_cloud
 			extensions = supported_video_extensions()
 			extras_filter = extras()
 			extras_filtering_list = tuple(i for i in extras_filter if i not in (title or '').lower())
@@ -716,14 +717,12 @@ class TorBoxAPI:
 			file_url = self.coerce_play_url(file_url) or file_url
 			if file_url and store_to_cloud:
 				self.clear_cache()
-			elif file_url and not store_to_cloud:
-				Thread(target=self.delete_usenet, args=(usenet_id,)).start()
 			return file_url
 		except Exception:
-			if usenet_id and not store_to_cloud:
-				try: self.delete_usenet(usenet_id)
-				except: pass
 			return None
+		finally:
+			if cleanup_usenet and usenet_id:
+				Thread(target=self.delete_usenet, args=(usenet_id,), daemon=True).start()
 
 	# ----------- CACHED CHECK -----------
 	def check_cache_single(self, _hash):
@@ -749,11 +748,12 @@ class TorBoxAPI:
 
 	# ----------- RESOLVE -----------
 	def resolve_magnet(self, magnet_url, info_hash, store_to_cloud, title, season, episode):
-		torrent_id = None
+		torrent_id, cleanup_torrent = None, False
 		prior_mylist_ids = self._mylist_torrent_ids(fresh=False)
 		try:
-			if info_hash and not self.hash_is_cached(info_hash):
-				return None
+			# Do not hard-bail on hash_is_cached: scrape cache checks can disagree with a
+			# live single-hash probe (Download File / play then fail with "No URL found").
+			# Always attempt add_magnet; TorBox rejects truly uncached magnets itself.
 			extensions = supported_video_extensions()
 			extras_filter = extras()
 			extras_filtering_list = tuple(i for i in extras_filter if i not in (title or '').lower())
@@ -761,6 +761,7 @@ class TorBoxAPI:
 			torrent_id = self._torrent_id_from_create(torrent)
 			if not torrent_id:
 				return None
+			cleanup_torrent = (not store_to_cloud and str(torrent_id) not in prior_mylist_ids)
 			_item = self._torrent_item_from_info(self.torrent_info_fresh(torrent_id))
 			files = (_item or {}).get('files') or []
 			if not files:
@@ -793,13 +794,12 @@ class TorBoxAPI:
 			file_url = self.unrestrict_link(file_key)
 			if store_to_cloud:
 				self.monitor_torrent_cloud_ready(torrent_id, title)
-			elif str(torrent_id) not in prior_mylist_ids:
-				Thread(target=self.delete_torrent, args=(torrent_id,)).start()
 			return file_url
 		except Exception:
-			if torrent_id:
-				self.delete_torrent(torrent_id)
 			return None
+		finally:
+			if cleanup_torrent and torrent_id:
+				Thread(target=self.delete_torrent, args=(torrent_id,), daemon=True).start()
 
 	def _wait_for_torrent_files(self, torrent_id, max_attempts=45):
 		for attempt in range(max_attempts):
@@ -815,7 +815,7 @@ class TorBoxAPI:
 
 	def parse_magnet_pack(self, magnet_url, info_hash):
 		'''List pack files via create_transfer; caller removes transfer when Store Resolved to Cloud is off.'''
-		torrent_id = None
+		torrent_id, keep_transfer = None, False
 		try:
 			extensions = supported_video_extensions()
 			torrent_id = self.create_transfer(magnet_url)
@@ -839,12 +839,14 @@ class TorBoxAPI:
 					'size': file_item.get('size', 0),
 					'torrent_id': torrent_id,
 				})
+			keep_transfer = bool(pack_files)
 			return pack_files or None
 		except Exception:
-			if torrent_id:
+			return None
+		finally:
+			if torrent_id and not keep_transfer:
 				try: self.delete_torrent(torrent_id)
 				except: pass
-			return None
 
 	def display_magnet_pack(self, magnet_url, info_hash):
 		return self.parse_magnet_pack(magnet_url, info_hash)

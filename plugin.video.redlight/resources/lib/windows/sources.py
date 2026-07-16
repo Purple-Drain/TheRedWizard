@@ -8,7 +8,7 @@ from modules.settings import debrid_cache_check, external_module_display_name
 from modules.utils import TaskPool
 from modules.source_utils import source_filters
 from modules.settings import provider_sort_ranks, avoid_episode_spoilers, max_threads
-from modules.kodi_utils import get_icon, kodi_dialog, hide_busy_dialog, show_busy_dialog, addon_fanart, select_dialog, ok_dialog, notification
+from modules.kodi_utils import get_icon, kodi_dialog, hide_busy_dialog, show_busy_dialog, addon_fanart, select_dialog, ok_dialog, notification, clear_property
 
 def _highlight_with_alpha(color, alpha):
 	if not color: return color or 'FFCCCCCC'
@@ -392,6 +392,7 @@ class SourcesResults(BaseDialog):
 		if self.window_id == 2000: self.set_image(200, self.poster)
 
 	def context_menu(self, item):
+		# Pre-regression handoff: full source + meta in RunPlugin; downloader resolves.
 		down_file_params, down_pack_params, browse_pack_params, add_magnet_to_cloud_params, uncached_download = None, None, None, None, None
 		item_get = item.get
 		item_id, name, magnet_url, info_hash = item_get('id', None), item_get('name'), item_get('url', 'None'), item_get('hash', 'None')

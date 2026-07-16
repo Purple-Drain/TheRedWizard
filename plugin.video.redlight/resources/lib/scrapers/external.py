@@ -11,6 +11,18 @@ from modules.settings import debrid_cache_check, max_threads
 from modules.utils import clean_file_name
 # logger = kodi_utils.logger
 
+_INTERNAL_PROGRESS_LABELS = {
+	'aiostreams': 'AIOStreams',
+	'easynews': 'EasyNews',
+	'nzb': 'NZB',
+	'rd_cloud': 'RD Cloud',
+	'pm_cloud': 'PM Cloud',
+	'ad_cloud': 'AD Cloud',
+	'oc_cloud': 'OC Cloud',
+	'tb_cloud': 'TB Cloud',
+	'folders': 'Folders',
+}
+
 class source:
 	def __init__(self, meta, source_dict, active_debrid, cache_check_override, internal_scrapers, prescrape_sources, progress_dialog, disabled_ext_ignored=False, cloud_scrapers=None, external_orchestration=None):
 		self.monitor = kodi_utils.kodi_monitor()
@@ -38,6 +50,34 @@ class source:
 								'AllDebrid': ('AllDebrid', AD_check), 'Offcloud': ('Offcloud', OC_check), 'TorBox': ('TorBox', TB_check)}
 		self.cloud_scrapers = [i for i in (cloud_scrapers or []) if i != 'external']
 		self.processed_cloud_scrapers = set()
+
+	def _internal_progress_label(self, scraper_id):
+		return _INTERNAL_PROGRESS_LABELS.get(scraper_id, scraper_id.replace('_', ' ').title())
+
+	def _progress_poll_state(self):
+		external_threads = [x.getName() for x in self.threads if x.is_alive()]
+		internal_pending = []
+		if self.internal_activated or self.internal_prescraped:
+			internal_pending = self.process_internal_results()
+		self.poll_cloud_scrapers()
+		return external_threads, internal_pending
+
+	def _format_progress_line1(self, external_threads, internal_pending, wave_prefix=None):
+		external_part = ', '.join(external_threads).upper() if external_threads else ''
+		internal_part = ', '.join([self._internal_progress_label(i) for i in internal_pending]).upper() if internal_pending else ''
+		segments = []
+		if wave_prefix:
+			if external_part:
+				segments.append('%s: %s' % (wave_prefix, external_part))
+			elif not internal_part:
+				segments.append(wave_prefix)
+		elif external_part:
+			segments.append(external_part)
+		if internal_part:
+			segments.append(internal_part)
+		if not segments and wave_prefix:
+			segments.append(wave_prefix)
+		return ' | '.join(segments)
 
 	def results(self, info):
 		if not self.source_dict: return
@@ -68,15 +108,12 @@ class source:
 			start_time = time.time()
 			while not self.progress_dialog.iscanceled() and not self.monitor.abortRequested():
 				try:
-					alive_threads = [x.getName() for x in self.threads if x.is_alive()]
-					if self.internal_activated or self.internal_prescraped: alive_threads.extend(self.process_internal_results())
-					self.poll_cloud_scrapers()
-					line1 =  ', '.join(alive_threads).upper()
+					external_threads, internal_pending = self._progress_poll_state()
+					line1 = self._format_progress_line1(external_threads, internal_pending)
 					percent = min(100, int((max((time.time() - start_time), 0) / float(self.timeout)) * 100))
 					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
 					if self.threads_completed:
-						len_alive_threads = len(alive_threads)
-						if len_alive_threads == 0: break
+						if not external_threads and not internal_pending: break
 					if percent >= 100:
 						self._join_scraper_threads_grace(8)
 						break
@@ -100,9 +137,17 @@ class source:
 			Thread(target=self.process_episode_threads).start()
 		if self.background: _background()
 		else: _scraperDialog()
+		if self._scrape_was_cancelled():
+			return []
 		current_results = list(self.sources)
 		if current_results: return self.process_results(current_results)
 		return []
+
+	def _scrape_was_cancelled(self):
+		try:
+			return bool(self.progress_dialog and self.progress_dialog.iscanceled())
+		except:
+			return False
 
 	def _prepare_episode_source_dict(self):
 		self.source_dict = [i for i in self.source_dict if i[1].hasEpisodes]
@@ -127,6 +172,8 @@ class source:
 		try:
 			kodi_utils.logger('ScrapeExternalWave', 'finished total=%d reason=%s' % (len(self.sources), stop_reason))
 		except: pass
+		if self._scrape_was_cancelled():
+			return []
 		current_results = list(self.sources)
 		if current_results: return self.process_results(current_results)
 		return []
@@ -141,6 +188,8 @@ class source:
 		wave_idx += 1
 		baseline = len(self.sources)
 		self._run_provider_batch(list(primary['entries']), float(self.timeout), [primary['display_name']])
+		if self._scrape_was_cancelled():
+			return self._finish_orchestrated_scrape('cancelled')
 		wave_total = len(self.sources)
 		wave_new = wave_total - baseline
 		self._log_scrape_external_wave(wave_idx, [primary['display_name']], wave_new, wave_total, skip_threshold, mode, 'primary_done')
@@ -185,6 +234,9 @@ class source:
 			for group in wave:
 				batch_entries.extend(group['entries'])
 			self._run_provider_batch(batch_entries, remaining, wave_labels)
+			if self._scrape_was_cancelled():
+				stop_reason = 'cancelled'
+				break
 			wave_total = len(self.sources)
 			wave_new = wave_total - baseline
 			if series_mode and early_stop and wave_new > 0:
@@ -204,16 +256,13 @@ class source:
 			line1_prefix = ' | '.join(wave_labels).upper()
 			while not self.progress_dialog.iscanceled() and not self.monitor.abortRequested():
 				try:
-					alive_threads = [x.getName() for x in self.threads if x.is_alive()]
-					if self.internal_activated or self.internal_prescraped: alive_threads.extend(self.process_internal_results())
-					self.poll_cloud_scrapers()
-					line1 = line1_prefix
-					if alive_threads: line1 = '%s: %s' % (line1_prefix, ', '.join(alive_threads).upper())
+					external_threads, internal_pending = self._progress_poll_state()
+					line1 = self._format_progress_line1(external_threads, internal_pending, wave_prefix=line1_prefix)
 					elapsed = max((time.time() - batch_start), 0)
 					percent = min(100, (elapsed / float(batch_timeout)) * 100)
 					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
 					if self.threads_completed:
-						if len(alive_threads) == 0: break
+						if not external_threads and not internal_pending: break
 					if time.time() >= batch_start + batch_timeout:
 						self._join_scraper_threads_grace(8)
 						break
@@ -327,6 +376,8 @@ class source:
 		del module
 
 	def process_results(self, results):
+		if self._scrape_was_cancelled():
+			return []
 		def _process_duplicates(all_results):
 			unique_urls, unique_hashes = set(), set()
 			unique_urls_add, unique_hashes_add = unique_urls.add, unique_hashes.add
@@ -372,6 +423,10 @@ class source:
 			with final_lock:
 				final_results.extend(batch)
 		def _debrid_check_dialog(debrid_deadline):
+			# Do not clear a user Back/cancel from the scrape phase — that made cancel
+			# look ignored while cache-check continued and could reopen progress UI.
+			if self.progress_dialog.iscanceled():
+				return
 			self.progress_dialog.reset_is_cancelled()
 			start_time = time.time()
 			debrid_timeout = max(1.0, debrid_deadline - start_time)

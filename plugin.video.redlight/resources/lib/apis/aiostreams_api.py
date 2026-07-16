@@ -652,3 +652,109 @@ def resolve_playback_url(item):
 	headers = playback_headers(item)
 	if headers: return '%s|%s' % (url, urlencode(headers))
 	return url
+
+_DOWNLOAD_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+_RESOLVER_HOST_TOKENS = (
+	'strem.fun', 'stremio.ru', 'torrentsdb.com', 'comet.strem', 'elfhosted.com',
+	'/resolve/', '/redirect/', '/debrid/',
+)
+
+def _download_request_headers(item, pipe_headers=None):
+	headers = dict(pipe_headers or {})
+	playback = playback_headers(item)
+	if playback:
+		headers.update(playback)
+	headers.setdefault('User-Agent', _DOWNLOAD_UA)
+	return headers
+
+def _needs_download_materialize(url):
+	lower = (url or '').lower()
+	if not lower.startswith('http'):
+		return False
+	return any(token in lower for token in _RESOLVER_HOST_TOKENS)
+
+def _debrid_service_key(item, url=''):
+	for val in (item.get('aio_source_name'), item.get('aio_source'), item.get('aio_hoster')):
+		norm = _norm_source_key(str(val or '').rstrip('+'))
+		if norm in _DEBRID_CACHE_HOSTER_TOKENS:
+			return norm
+	label = _label_from_url(url)
+	if label:
+		norm = _norm_source_key(label[1])
+		if norm in _DEBRID_CACHE_HOSTER_TOKENS:
+			return norm
+	lower = _norm_source_key(url)
+	for token in _DEBRID_CACHE_HOSTER_TOKENS:
+		if token in lower:
+			return token
+	return None
+
+def _materialize_download_url(url, headers):
+	try:
+		resp = requests.get(url, headers=headers, allow_redirects=True, stream=True, timeout=30)
+		try:
+			final = (resp.url or url).strip()
+			if not final.startswith('http'):
+				return None
+			if final != url:
+				return final
+			content_type = (resp.headers.get('content-type') or '').lower()
+			if 'json' in content_type and resp.ok:
+				data = resp.json()
+				if isinstance(data, dict):
+					for key in ('url', 'link', 'download', 'download_url', 'stream_url'):
+						val = data.get(key)
+						if isinstance(val, str) and val.startswith('http'):
+							return val
+			if resp.ok and not _needs_download_materialize(final):
+				return final
+		finally:
+			resp.close()
+	except Exception as exc:
+		logger('aiostreams download resolve', str(exc))
+	return None
+
+def _apply_debrid_download_headers(service_key, url):
+	if not url or not service_key:
+		return url
+	try:
+		if service_key == 'premiumize':
+			from apis.premiumize_api import PremiumizeAPI
+			return PremiumizeAPI().add_headers_to_url(url)
+		if service_key == 'torbox':
+			from apis.torbox_api import TorBoxAPI
+			return TorBoxAPI().add_headers_to_url(url)
+	except Exception as exc:
+		logger('aiostreams download headers', str(exc))
+	return url
+
+def resolve_download_url(item, url=None):
+	"""Turn an AIO play/redirect URL into a downloader-ready direct link (+ headers)."""
+	if not item or not isinstance(item, dict):
+		return url
+	if is_direct_easynews_item(item):
+		from indexers.easynews import resolve_easynews
+		return resolve_easynews({'url_dl': item.get('url_dl') or item.get('url'), 'play': 'false'}) or url
+	if not url:
+		url = resolve_playback_url(item)
+	if not url:
+		return None
+	pipe_headers = None
+	base = url
+	if '|' in url:
+		try:
+			from urllib.parse import parse_qsl
+			base, header_part = url.rsplit('|', 1)
+			pipe_headers = dict(parse_qsl(header_part))
+		except Exception:
+			base = url.split('|')[0]
+	req_headers = _download_request_headers(item, pipe_headers)
+	final_url = base
+	if _needs_download_materialize(base):
+		materialized = _materialize_download_url(base, req_headers)
+		if not materialized:
+			return None
+		final_url = materialized
+	service = _debrid_service_key(item, final_url)
+	return _apply_debrid_download_headers(service, final_url) or final_url

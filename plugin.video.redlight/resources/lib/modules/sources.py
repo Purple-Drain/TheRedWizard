@@ -237,6 +237,18 @@ class Sources():
 		self.progress_dialog, self.progress_thread = None, None
 		self.playing_filename = ''
 		self._resolve_user_cancelled, self.cancel_all_playback = False, False
+		# Defaults so Download File (fresh Sources()) can resolve without playback_prep.
+		self.background = False
+		self.play_type = ''
+		self.autoplay_nextep = False
+		self.autoscrape_nextep = False
+		self.autoscrape = False
+		self.autoplay = False
+		self.random = False
+		self.random_continual = False
+		self.season, self.episode = '', ''
+		self.media_type = ''
+		self.meta = {}
 		self.count_tuple = (('sources_4k', '4K', self._quality_length), ('sources_1080p', '1080p', self._quality_length), ('sources_720p', '720p', self._quality_length),
 							('sources_sd', '', self._quality_length_sd), ('sources_total', '', self._quality_length_final))
 		self.filter_keys = include_exclude_filters()
@@ -439,6 +451,8 @@ class Sources():
 			allow_concurrent = self._allow_concurrent_scrape()
 			self._clear_stale_resolve_busy()
 			self._clear_stale_sources_busy()
+			# Stale cancel from a prior resolve/nextep must not poison Download File / a new scrape.
+			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
 			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
 				if not self.background:
 					kodi_utils.notification('Resolve or playback in progress.', 2500)
@@ -1104,6 +1118,15 @@ class Sources():
 				return
 			kodi_utils.sleep(100)
 
+	def _reclaim_sources_busy(self):
+		'''Re-take scrape lock after releasing it during browse playback wait.'''
+		if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true':
+			return False
+		self._sources_busy_owner = str(id(self))
+		kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
+		kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
+		return True
+
 	def display_results(self, results):
 		while True:
 			window_format, window_number = settings.results_format()
@@ -1118,7 +1141,14 @@ class Sources():
 			if not action:
 				if kodi_utils.get_property(PROP_BROWSE_RETURN_SOURCES) == 'true':
 					kodi_utils.clear_property(PROP_BROWSE_RETURN_SOURCES)
+					# Release busy while browsing so a hung/long wait does not block scrapes
+					# with "Source search already running" until Kodi restart.
+					self._release_sources_busy()
 					self._wait_active_playback_end()
+					if not self._reclaim_sources_busy():
+						self._kill_progress_dialog(join_timeout=1.0)
+						self.resolve_dialog_made = False
+						return
 					continue
 				if self._playback_already_active():
 					self._kill_progress_dialog(join_timeout=1.0)
@@ -1383,6 +1413,13 @@ class Sources():
 			except: ep_name = safe_string(ep_name)
 		return ep_name
 
+	def _resolve_episode_labels(self):
+		'''Show title + S/E for debrid magnet resolve (must match play/search_info, not ep_name).'''
+		if hasattr(self, 'search_info') and self.search_info:
+			si = self.search_info
+			return si.get('title'), si.get('season'), si.get('episode')
+		return self.get_search_title(), self.get_season(), self.get_episode()
+
 	def _wait_for_cloud_threads(self, timeout=None):
 		"""Keep the scraper progress bar alive while parallel cloud threads finish after external."""
 		if not self.threads:
@@ -1634,6 +1671,8 @@ class Sources():
 	def _clear_stale_sources_busy(self):
 		if kodi_utils.get_property(PROP_SOURCES_BUSY) != 'true':
 			return False
+		# Browse closes the results window under playback while get_sources may still be
+		# waiting — clear so a new scrape is not blocked until restart.
 		try:
 			if kodi_utils.kodi_player().isPlayingVideo():
 				kodi_utils.clear_property(PROP_SOURCES_BUSY)
@@ -1649,8 +1688,10 @@ class Sources():
 		kodi_utils.set_property(PROP_RESOLVE_OWNER, self._resolve_busy_owner)
 
 	def _on_scrape_dialog_cancel(self):
+		# Keep sources_busy until get_sources finishes cancel cleanup — releasing early
+		# lets a new scrape start while this one still runs debrid-cache / force-closes
+		# overlay windows (cancel looks ignored; "already running" / zombie results).
 		self._scrape_user_cancelled = True
-		self._release_sources_busy()
 
 	def _on_resolve_dialog_cancel(self):
 		self._resolve_user_cancelled = True
@@ -1972,10 +2013,7 @@ class Sources():
 			return None
 		try:
 			if self.meta.get('media_type') == 'episode':
-				if hasattr(self, 'search_info'):
-					title, season, episode = self.search_info['title'], self.search_info['season'], self.search_info['episode']
-				else:
-					title, season, episode = self.get_ep_name(), self.get_season(), self.get_episode()
+				title, season, episode = self._resolve_episode_labels()
 				pack = 'package' in source_item
 			else:
 				title, season, episode, pack = self.get_search_title(), None, None, 'package' in source_item
@@ -2265,9 +2303,10 @@ class Sources():
 		except: pass
 
 	def _is_nextep_playback(self):
-		if self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
+		play_type = getattr(self, 'play_type', '') or ''
+		if play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
 			return True
-		if self.params.get('nextep_stash_play') == 'true':
+		if (getattr(self, 'params', None) or {}).get('nextep_stash_play') == 'true':
 			return True
 		if getattr(self, '_nextep_stash_results', None):
 			return True
@@ -2288,10 +2327,13 @@ class Sources():
 			return False
 
 	def _nextep_resolve_diag_enabled(self):
-		if self._is_nextep_playback():
-			return True
-		if self.background:
-			return True
+		try:
+			if self._is_nextep_playback():
+				return True
+			if getattr(self, 'background', False):
+				return True
+		except Exception:
+			return False
 		return False
 
 	def _fmt_nextep_se(self, season, episode):
@@ -2315,10 +2357,13 @@ class Sources():
 		return ''
 
 	def _log_nextep_resolve_diag(self, item=None, phase='resolve', url=None, resolve_se=None):
-		if not self._nextep_resolve_diag_enabled():
+		try:
+			if not self._nextep_resolve_diag_enabled():
+				return
+		except Exception:
 			return
 		try:
-			meta = self.meta or {}
+			meta = getattr(self, 'meta', None) or {}
 			si = getattr(self, 'search_info', None) or {}
 			item = item or {}
 			resolve_label = ''
@@ -2327,11 +2372,11 @@ class Sources():
 			kodi_utils.logger('NextEpResolve', '%s phase=%s play_type=%s background=%s autoplay=%s autoscrape=%s self=%s meta=%s custom=%s search_info=%s get=%s resolve=%s provider=%s hash=%s pack=%s name=%s url_id=%s' % (
 				meta.get('title', ''),
 				phase,
-				self.play_type or '',
-				self.background,
-				self.autoplay_nextep,
-				self.autoscrape_nextep,
-				self._fmt_nextep_se(self.season, self.episode),
+				getattr(self, 'play_type', '') or '',
+				getattr(self, 'background', False),
+				getattr(self, 'autoplay_nextep', False),
+				getattr(self, 'autoscrape_nextep', False),
+				self._fmt_nextep_se(getattr(self, 'season', ''), getattr(self, 'episode', '')),
 				self._fmt_nextep_se(meta.get('season'), meta.get('episode')),
 				self._fmt_nextep_se(meta.get('custom_season'), meta.get('custom_episode')),
 				self._fmt_nextep_se(si.get('season'), si.get('episode')),
@@ -2626,7 +2671,8 @@ class Sources():
 	def resolve_sources(self, item, meta=None):
 		if self._user_cancelled_resolve():
 			return None
-		if meta: self.meta = meta
+		if meta is not None:
+			self.meta = meta
 		url = None
 		scrape_provider = item.get('scrape_provider')
 		try:
@@ -2639,9 +2685,7 @@ class Sources():
 					debrid_function = self.debrid_importer('tb_cloud')
 					store_to_cloud = settings.store_resolved_to_cloud('TorBox', False)
 					if self.meta['media_type'] == 'episode':
-						if hasattr(self, 'search_info'):
-							title, season, episode = self.search_info['title'], self.search_info['season'], self.search_info['episode']
-						else: title, season, episode = self.get_ep_name(), self.get_season(), self.get_episode()
+						title, season, episode = self._resolve_episode_labels()
 					else: title, season, episode = self.get_search_title(), None, None
 					url = debrid_function().resolve_nzb(item.get('nzb_link') or item.get('url_dl'), store_to_cloud, title, season, episode)
 				else:
@@ -2652,14 +2696,15 @@ class Sources():
 					return None
 				cache_provider = debrid.normalize_debrid_provider(raw_cache or item.get('debrid'))
 				if self.meta['media_type'] == 'episode':
-					if hasattr(self, 'search_info'):
-						title, season, episode, pack = self.search_info['title'], self.search_info['season'], self.search_info['episode'], 'package' in item
-					else: title, season, episode, pack = self.get_ep_name(), self.get_season(), self.get_episode(), 'package' in item
+					title, season, episode = self._resolve_episode_labels()
+					pack = 'package' in item
 				else: title, season, episode, pack = self.get_search_title(), None, None, False
 				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox'):
-					self._log_nextep_resolve_diag(item, phase='resolve', resolve_se=(season, episode))
 					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack)
-					self._log_nextep_resolve_diag(item, phase='resolved', url=url, resolve_se=(season, episode))
+					try:
+						self._log_nextep_resolve_diag(item, phase='resolved', url=url, resolve_se=(season, episode))
+					except Exception:
+						pass
 			else: url = item['url']
 		except: pass
 		if self._user_cancelled_resolve():
