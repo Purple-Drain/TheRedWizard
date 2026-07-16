@@ -1,3 +1,6 @@
+2026.07.18
+- legacy Music/<Album>/ local playback kept for older downloads; when ID3 artist/album tags are present they must match so same-title albums from different artists no longer play the wrong file
+
 2026.07.17
 - fix single-track downloads from album pages with collaborative/contributing artists using the track artist as the folder owner — they now store beside full-album downloads under the album artist + album title folder (thanks JMAN730)
 
