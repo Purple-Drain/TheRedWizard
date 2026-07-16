@@ -3963,7 +3963,7 @@
                           <property name="setting_label">Limit Resolve Attempts to Selected Result</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.limit_resolve)]</property>
-                          <property name="setting_description">Enable this and Red Light will limit the playback attempts to only the source result chosen. If disabled, Red Light will potentially try 15 results of similar properties to your chosen source result until it is able to successfully resolve and playback</property>
+                          <property name="setting_description">Enable and Red Light will only attempt to resolve and play the source you chose. If disabled (default), and that source fails to play, Red Light automatically works through your remaining results — starting with the next result down — until a source plays or the list is exhausted. Applies to both manual playback and autoplay.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=playback.limit_resolve)</onclick>
                       </item>
                       <item>
