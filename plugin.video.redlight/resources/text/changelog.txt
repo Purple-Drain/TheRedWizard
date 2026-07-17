@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.9.4[/B][/COLOR]
+- [B]Trakt[/B]: [B]Search User Lists[/B] no longer returns an empty folder — list owners are read from Trakt's nested [B]user[/B] object (same as Popular / Trending), instead of a missing top-level [B]username[/B] field that skipped every result.
+
 [COLOR red][B]Version 1.9.3[/B][/COLOR]
 - [B]Autoscrape Next Episode[/B]: picking a source from the Autoscrape results handoff no longer disables Next Episode for that play — the binge chain continues instead of stopping after one hop ([B]Next episode disabled this play[/B]).
 

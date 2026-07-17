@@ -19,18 +19,25 @@ def search_trakt_lists(params):
 	def _builder():
 		for item in lists:
 			try:
-				list_key = item['type']
-				list_info = item[list_key]
-				if list_key == 'officiallist': continue
-				item_count = list_info['item_count']
-				if list_info['privacy'] == 'private' or item_count == 0: continue
-				list_name, user, list_id = list_info['name'], list_info['username'], list_info['ids']['trakt']
-				if not list_id: continue
+				list_info = item.get('list')
+				if not list_info:
+					list_key = item.get('type')
+					if list_key: list_info = item.get(list_key)
+				if not list_info: continue
+				if list_info.get('type') == 'official': continue
+				item_count = list_info.get('item_count', 0)
+				if list_info.get('privacy') == 'private' or item_count == 0: continue
+				list_name = list_info['name']
+				list_ids = list_info.get('ids') or {}
+				list_id, slug = list_ids.get('trakt'), list_ids.get('slug')
+				user_info = list_info.get('user') or {}
+				user = (user_info.get('ids') or {}).get('slug') or user_info.get('username') or list_info.get('username')
+				if not list_id or not user: continue
 				display = '%s | [I]%s (x%s)[/I]' % (list_name, user, str(item_count))
-				url = build_url({'mode': 'trakt.list.build_trakt_list', 'list_id': list_id, 'list_type': 'user_lists', 'list_name': list_name, 'user': user,
-				'iconImage': 'trakt', 'name': list_name})
-				cm = [('[B]Like List[/B]', 'RunPlugin(%s)' % build_url({'mode': 'trakt.trakt_like_a_list', 'list_id': list_id})),
-				('[B]Unlike List[/B]', 'RunPlugin(%s)' % build_url({'mode': 'trakt.trakt_unlike_a_list', 'list_id': list_id})),
+				url = build_url({'mode': 'trakt.list.build_trakt_list', 'list_id': list_id, 'list_type': 'user_lists', 'list_name': list_name,
+								'user': user, 'slug': slug, 'iconImage': 'trakt', 'name': list_name})
+				cm = [('[B]Like List[/B]', 'RunPlugin(%s)' % build_url({'mode': 'trakt.trakt_like_a_list', 'user': user, 'list_slug': slug, 'list_id': list_id})),
+				('[B]Unlike List[/B]', 'RunPlugin(%s)' % build_url({'mode': 'trakt.trakt_unlike_a_list', 'user': user, 'list_slug': slug, 'list_id': list_id})),
 				('[B]Add to Shortcut Folder[/B]', 'RunPlugin(%s)' % build_url({'mode': 'menu_editor.shortcut_folder_add_known', 'url': url}))]
 				listitem = make_listitem()
 				listitem.setLabel(display)
