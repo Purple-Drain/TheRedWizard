@@ -2693,10 +2693,12 @@ class Sources():
 		if not self._autoscrape_playback_ended_naturally():
 			self._decline_nextep_prep('user stopped')
 			return
+		# Leave background scrape mode, but keep Autoscrape nextep armed so the episode
+		# the user picks from these results still monitors / preps the following episode.
 		self.background = False
 		self.autoscrape = False
-		self.autoscrape_nextep = False
-		self.play_type = ''
+		self.autoscrape_nextep = True
+		self.play_type = 'autoscrape_nextep'
 		return self.display_results(results)
 
 	def debrid_importer(self, debrid_provider):

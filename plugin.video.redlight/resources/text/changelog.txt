@@ -1,3 +1,6 @@
+[COLOR red][B]Version 1.9.3[/B][/COLOR]
+- [B]Autoscrape Next Episode[/B]: picking a source from the Autoscrape results handoff no longer disables Next Episode for that play — the binge chain continues instead of stopping after one hop ([B]Next episode disabled this play[/B]).
+
 [COLOR red][B]Version 1.9.2[/B][/COLOR]
 - [B]Trakt Calendar[/B]: separate episode-title display formats for within the addon and widgets, without changing existing users' effective formatting during upgrade (thanks JMAN730 / #131).
 - [B]Subtitles[/B]: added an overview to [B]Tools > Tips for Use[/B], covering automatic subtitle sources, language and local-subtitle preferences, subtitle-based alert timing, limitations, and cache maintenance.
