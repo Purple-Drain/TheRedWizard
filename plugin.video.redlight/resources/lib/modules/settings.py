@@ -938,6 +938,13 @@ def widget_hide_watched():
 def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
 
+def calendar_date_format():
+	# None means word labels (Today, Tomorrow, weekday names)
+	formats = {1: '%m/%d/%Y', 2: '%d/%m/%Y', 3: '%Y-%m-%d'}
+	try: choice = int(get_setting('redlight.trakt.calendar_date_labels', '0'))
+	except (TypeError, ValueError): return None
+	return formats.get(choice)
+
 def ignore_articles():
 	return get_setting('redlight.ignore_articles', 'false') == 'true'
 

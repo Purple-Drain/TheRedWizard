@@ -220,8 +220,12 @@ def build_single_episode(list_type, params={}):
 				else: highlight_start, highlight_end = '', ''
 				display = '%s%s%s%s%s%s' % (display_premiered, title_str, highlight_start, seas_ep, ep_name, highlight_end)
 			elif list_type_compare == 'trakt_calendar':
-				if episode_date: display_premiered = make_day(current_date, episode_date)
-				else: display_premiered = 'UNKNOWN'
+				if not episode_date:
+					display_premiered = 'UNKNOWN'
+				elif calendar_date_format:
+					display_premiered = make_day(current_date, episode_date, calendar_date_format, use_words=False)
+				else:
+					display_premiered = make_day(current_date, episode_date)
 				display = '[%s] %s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
 			else: display = '%s%s%s' % (title_str, seas_ep, ep_name)
 			if no_spoilers and not playcount: thumb, plot = show_landscape or show_fanart, tvshow_plot or '* Hidden to Prevent Spoilers *'
@@ -306,8 +310,10 @@ def build_single_episode(list_type, params={}):
 	watched_indicators = settings.watched_indicators()
 	if list_type == 'episode.trakt':
 		display_format = settings.calendar_display_format(is_external)
+		calendar_date_format = settings.calendar_date_format()
 	else:
 		display_format = settings.single_ep_display_format(is_external)
+		calendar_date_format = None
 	current_date, current_time, adjust_hours = get_datetime(), get_current_timestamp(), settings.date_offset()
 	unwatched_info = settings.single_ep_unwatched_episodes()
 	hide_watched = is_external and settings.widget_hide_watched() and list_type != 'episode.recently_watched'
@@ -395,7 +401,7 @@ def build_single_episode(list_type, params={}):
 			except:
 				item_list = [i for i in item_list if i.get('first_aired') not in (None, 'None', '')]
 				item_list = sorted(item_list, key=lambda i: i.get('first_aired'), reverse=reverse)
-			if list_type_compare == 'trakt_calendar':
+			if list_type_compare == 'trakt_calendar' and not calendar_date_format:
 				airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
 										key=lambda i: i['first_aired'])
 				item_list = [i for i in item_list if not i in airing_today]

@@ -1054,6 +1054,7 @@ def default_settings():
 {'setting_id': 'trakt.calendar_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'trakt.calendar_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'trakt.calendar_sort_order', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Descending', '1': 'Ascending'}},
+{'setting_id': 'trakt.calendar_date_labels', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Words (Today, Tomorrow, Weekday)', '1': 'MM/DD/YYYY', '2': 'DD/MM/YYYY', '3': 'YYYY-MM-DD'}},
 {'setting_id': 'trakt.calendar_previous_days', 'setting_type': 'action', 'setting_default': '7', 'min_value': '0', 'max_value': '14'},
 {'setting_id': 'trakt.calendar_future_days', 'setting_type': 'action', 'setting_default': '7', 'min_value': '0', 'max_value': '14'},
 
