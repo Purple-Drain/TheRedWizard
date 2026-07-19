@@ -637,8 +637,7 @@ class RedLightPlayer(xbmc.Player):
 		else: play_type = 'autoscrape_nextep'
 		nextep_settings = st.auto_nextep_settings(play_type)
 		pop_at, _timing_source = self._pop_window_seconds(nextep_settings, self.total_time)
-		include_still_watching = st.random_continual_still_watching_enabled()
-		self.random_continual_start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching)
+		self.random_continual_start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching=False)
 
 	def _should_prep_random_continual(self):
 		if getattr(self, 'random_continual_triggered', False): return False

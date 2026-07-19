@@ -400,11 +400,6 @@ def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
 		headroom = max(headroom, NEXTEP_AUTOSCRAPE_MIN_HEADROOM_SEC)
 	return headroom
 
-def random_continual_still_watching_enabled():
-	if not autoplay_next_episode(): return False
-	if int(get_setting('redlight.autoplay_watching_check', '3')) == 0: return False
-	return get_setting('redlight.autoplay_random_continual_watching_check', 'true') == 'true'
-
 def auto_nextep_settings(play_type):
 	play_type = 'autoplay' if play_type == 'autoplay_nextep' else 'autoscrape'
 	window_percentage = 100 - int(get_setting('redlight.%s_next_window_percentage' % play_type, '95'))

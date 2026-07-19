@@ -387,10 +387,7 @@ class Sources():
 		if self.background and self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
 			self._log_nextep_scrape_started()
 			self._prefetch_nextep_segment_data()
-		if self.background and self.play_type == 'random_continual' and not self.nextep_settings:
-			# Continual random reuses Autoplay Next Episode's "Check Still Watching After X".
-			self.nextep_settings = {'watching_check': settings.auto_nextep_settings('autoplay_nextep')['watching_check']}
-		if self.background and (self.autoplay_nextep or self.play_type == 'random_continual') and self.nextep_settings and not getattr(self, '_nextep_alert_handled', False):
+		if self.background and self.autoplay_nextep and self.nextep_settings and not getattr(self, '_nextep_alert_handled', False):
 			if not self.still_watching_check():
 				self._decline_nextep_prep('still watching')
 				kodi_utils.notification('Cancel Autoplay', icon=self.meta.get('poster'))
@@ -1384,7 +1381,7 @@ class Sources():
 		return self._show_modal_message(heading, 'No results found.', '[B]Next Up:[/B] No Results')
 
 	def _random_continual_skip(self):
-		"""Continual random: no links for this episode — try another (capped), keep Still Watching count."""
+		"""Continual random: no links for this episode — try another (capped)."""
 		from modules.episode_tools import EpisodeTools
 		attempts = int(kodi_utils.get_property(PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS) or 0)
 		self._close_progress_before_modal()
@@ -1395,7 +1392,6 @@ class Sources():
 		kodi_utils.logger('Red Light', 'Continual random play: no results for %s S%02dE%02d, skipping to another episode' % (
 			self.meta.get('title', ''), self.meta.get('season', 0), self.meta.get('episode', 0)))
 		meta = metadata.tvshow_meta('tmdb_id', self.tmdb_id, settings.tmdb_api_key(), settings.mpaa_region(), get_datetime())
-		meta['watch_count'] = self.meta.get('watch_count', self.watch_count or 1)
 		return EpisodeTools(meta).play_random_continual(first_run=False)
 
 	def get_search_title(self):
@@ -2534,13 +2530,9 @@ class Sources():
 	def still_watching_check(self):
 		watching_check = self.nextep_settings.get('watching_check', 0)
 		if watching_check == 0: return True
-		if self.play_type == 'random_continual' and not settings.random_continual_still_watching_enabled():
-			return True
 		player = kodi_utils.kodi_player()
 		# Autoplay next-episode idle edge case: don't prompt/count when nothing is playing.
-		# Continual random counts skipped episodes toward Still Watching when enabled (#62),
-		# including cold-start skip chains where playback never started.
-		if not player.isPlayingVideo() and self.play_type != 'random_continual':
+		if not player.isPlayingVideo():
 			return bool(self.background)
 		watch_count = self.meta.get('watch_count')
 		if watch_count is None:

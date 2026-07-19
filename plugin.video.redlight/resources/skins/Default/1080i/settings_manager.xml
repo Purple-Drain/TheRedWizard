@@ -3978,15 +3978,6 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true) + Integer.IsGreater(Window(10000).Property(redlight.autoplay_watching_check),0)</visible>
-                          <property name="setting_label">    - Use Still Watching with Continual Random Play</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_random_continual_watching_check)]</property>
-                          <property name="setting_description">When off, Continual Random Play does not use Check Still Watching After X (including during no-results skip chains). Autoplay Next Episode is unchanged</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay_random_continual_watching_check)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(80)</visible>
                           <property name="setting_label">Automatically Resume Playback</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.auto_resume_episode_name)]</property>

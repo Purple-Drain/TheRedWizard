@@ -7,6 +7,7 @@
 - [B]Trakt Calendar[/B]: [B]Calendar Date Labels[/B] setting — keep word labels ([B]Today[/B] / [B]Tomorrow[/B] / weekday) or use [B]MM/DD/YYYY[/B], [B]DD/MM/YYYY[/B], or [B]YYYY-MM-DD[/B]; date modes skip pin-today so the list stays chronological (thanks JMAN730 / #138).
 - [B]Context Menu[/B]: optional shortcuts under [B]Choose Content for the Context Menu[/B] (not enabled by default) — [B]Trakt Watchlist[/B] / [B]Collection[/B], [B]Simkl Plan to Watch[/B], [B]MDBList Watchlist[/B] / [B]Library[/B], [B]TMDb Watchlist[/B] / [B]Favorites[/B], plus [B]Select Source[/B] and [B]Rescrape & Select Source[/B]. Service shortcuts only appear when that account is authorised; full managers and [B]Play Options[/B] remain unchanged; list shortcuts use a state-aware add/remove confirm.
 - [B]TorBox Cloud[/B] / [B]History[/B]: context [B]Add to Airlock[/B] / [B]Remove from Airlock[/B] for torrents, usenet, and web downloads (live status check on open and on action); airlocked items show an [B]AIRLOCK[/B] label.
+- [B]Continual Random Play[/B]: removed [B]Use Still Watching with Continual Random Play[/B] — Continual Random no longer uses [B]Check Still Watching After X[/B]; Autoplay Next Episode Still Watching is unchanged.
 
 [COLOR red][B]Version 1.9.5[/B][/COLOR]
 - [B]Confirm Autoscrape[/B]: [B]Next Episode Ready[/B] no longer appears as soon as the scrape finishes after [B]Yes[/B] — it waits for the same alert window as Autoscrape without confirm, so Ready means the handoff is imminent (not merely that prep completed).
