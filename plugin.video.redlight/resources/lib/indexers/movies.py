@@ -235,16 +235,24 @@ class Movies:
 			tmdb_manager_params = self.build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'icon': poster})
 			favorites_manager_params = self.build_url({'mode': 'favorites_manager_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'title': title})
 			belongs_to_movieset = 'true' if all([movieset_id, movieset_name]) else 'false'
-			movieset_active = self.open_movieset and belongs_to_movieset == 'true'
-			if self.open_extras or movieset_active: cm_append(['extras', ('[B]Play[/B]', 'RunPlugin(%s)' % play_params)])
-			if not self.open_extras or movieset_active: cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
-			if movieset_active: url_params = self.build_url({'mode': 'open_movieset_choice', 'key_id': movieset_id, 'name': movieset_name, 'is_external': self.is_external})
-			elif self.open_extras: url_params = extras_params
-			else: url_params = play_params
+			skip_special = self.skip_inprogress and progress
+			item_open_extras = self.open_extras and not skip_special
+			item_open_movieset = self.open_movieset and not skip_special
+			movieset_active = item_open_movieset and belongs_to_movieset == 'true'
+			if item_open_extras or movieset_active:
+				cm_append(['extras', ('[B]Play[/B]', 'RunPlugin(%s)' % play_params)])
+			if not item_open_extras or movieset_active:
+				cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
+			if movieset_active:
+				url_params = self.build_url({'mode': 'open_movieset_choice', 'key_id': movieset_id, 'name': movieset_name, 'is_external': self.is_external})
+			elif item_open_extras:
+				url_params = extras_params
+			else:
+				url_params = play_params
 			cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
 			cm_append(['playback_options', ('[B]Play Options[/B]', 'RunPlugin(%s)' % playback_options_params)])
 			settings.append_external_scraper_settings_cm(cm_append, self.build_url)
-			if belongs_to_movieset == 'true' and not self.movieset_list_active and not self.open_movieset:
+			if belongs_to_movieset == 'true' and not self.movieset_list_active and not item_open_movieset:
 				browse_movie_set_params = self.build_url({'mode': 'build_movie_list', 'action': 'tmdb_movies_sets', 'key_id': movieset_id,
 										'name': movieset_name, 'is_external': self.is_external})
 				cm_append(['browse_movie_set', ('[B]Browse Movie Set[/B]', self.window_command % browse_movie_set_params)])
@@ -328,6 +336,7 @@ class Movies:
 		open_action = settings.media_open_action('movie')
 		self.open_movieset = open_action in (2, 3) and not self.movieset_list_active
 		self.open_extras = open_action in (1, 3)
+		self.skip_inprogress = settings.media_open_action_skip_inprogress_movie()
 		if self.custom_order:
 			threads = TaskPool().tasks(self.build_movie_content, self.list, min(len(self.list), settings.max_threads()))
 			[i.join() for i in threads]

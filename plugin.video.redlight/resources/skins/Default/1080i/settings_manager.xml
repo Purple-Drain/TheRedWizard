@@ -857,6 +857,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(20)</visible>
+                          <property name="setting_label">Skip on In-Progress Movies</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.media_open_action_skip_inprogress_movie)]</property>
+                          <property name="setting_description">Choose this and the Movies Open Action (Extras / Movie Set) is skipped for in-progress movies, resuming playback directly. Extras and Movie Set remain available in the context menu</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=media_open_action_skip_inprogress_movie)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(20)</visible>
                           <property name="setting_label">TV Shows</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.media_open_action_tvshow_name)]</property>

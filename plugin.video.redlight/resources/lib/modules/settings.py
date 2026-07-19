@@ -950,6 +950,9 @@ def date_offset():
 def media_open_action(media_type):
 	return int(get_setting('redlight.media_open_action_%s' % media_type, '0'))
 
+def media_open_action_skip_inprogress_movie():
+	return get_setting('redlight.media_open_action_skip_inprogress_movie', 'false') == 'true'
+
 def _resolve_watched_provider():
 	ind = int(get_setting('redlight.watched_indicators', '0'))
 	if ind == 1 and not trakt_user_active(): return 0

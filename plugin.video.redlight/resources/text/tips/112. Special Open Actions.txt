@@ -1,2 +1,4 @@
 
 In Settings-->Features-->Special Open Actions there is a setting to allow Red Light to open the "Extras" and/or "Movie Set" windows when selecting a Movie and the "Extras" window when selecting a TV Show.
+
+The "Skip on In-Progress Movies" toggle makes Red Light skip that Open Action for in-progress movies, resuming playback directly instead. The "Extras" and "Movie Set" remain available in the context menu.
