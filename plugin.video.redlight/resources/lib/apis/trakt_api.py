@@ -421,6 +421,29 @@ def trakt_progress(action, media, media_id, percent, season=None, episode=None, 
 		call_trakt(url, data=data)
 	if refresh_trakt: trakt_sync_activities()
 
+def trakt_reset_scrobble(params):
+	from modules.watched_status import get_database, get_bookmarks_movie, get_bookmarks_episode, erase_bookmark
+	media_type = params.get('media_type') or params.get('content') or 'movie'
+	tmdb_id = params.get('tmdb_id')
+	season, episode = params.get('season'), params.get('episode')
+	try:
+		watched_db = get_database(1)
+		if media_type == 'movie':
+			resume_id = get_bookmarks_movie(watched_db).get(str(tmdb_id), {}).get('resume_id')
+			if resume_id: trakt_progress('clear_progress', 'movie', tmdb_id, 0, resume_id=resume_id)
+			erase_bookmark('movie', tmdb_id, '', '', 'true')
+		elif season not in (None, '', 'None') and episode not in (None, '', 'None'):
+			bookmarks = get_bookmarks_episode(str(tmdb_id), season, watched_db) or {}
+			resume_id = bookmarks.get(int(episode), {}).get('resume_id')
+			if resume_id: trakt_progress('clear_progress', 'episode', tmdb_id, 0, season, episode, resume_id)
+			erase_bookmark('episode', tmdb_id, season, episode, 'true')
+		else:
+			return kodi_utils.notification('Reset Scrobble is only available for movies and episodes', 3500)
+		trakt_sync_activities()
+		kodi_utils.notification('Success', 3000)
+	except:
+		kodi_utils.notification('Error', 3000)
+
 def trakt_collection_lists(media_type, list_type=None):
 	data = trakt_fetch_collection_watchlist('collection', media_type)
 	if list_type == 'recent':
@@ -481,25 +504,103 @@ def remove_from_list(user, slug, data):
 	if kodi_utils.path_check('my_lists') or kodi_utils.external(): kodi_utils.kodi_refresh()
 	return result
 
+def _trakt_media_ids_match(ids, tmdb_id=None, imdb_id=None, tvdb_id=None):
+	ids = ids or {}
+	try:
+		if tmdb_id not in (None, '', 'None') and ids.get('tmdb') not in (None, '', 'None') and int(ids['tmdb']) == int(tmdb_id):
+			return True
+	except: pass
+	if imdb_id not in (None, '', 'None') and ids.get('imdb') and str(ids['imdb']) == str(imdb_id):
+		return True
+	try:
+		if tvdb_id not in (None, '', 'None') and ids.get('tvdb') not in (None, '', 'None') and int(ids['tvdb']) == int(tvdb_id):
+			return True
+	except: pass
+	return False
+
 def trakt_item_in_sync_list(list_type, media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
 	media = 'movie' if media_type in ('movie', 'movies') else 'show'
 	try:
 		data = trakt_fetch_collection_watchlist(list_type, media) or []
 	except:
 		return False
-	for item in data:
-		ids = item.get('media_ids') or {}
-		try:
-			if tmdb_id not in (None, '', 'None') and ids.get('tmdb') not in (None, '', 'None') and int(ids['tmdb']) == int(tmdb_id):
+	return any(_trakt_media_ids_match(item.get('media_ids'), tmdb_id, imdb_id, tvdb_id) for item in data)
+
+def trakt_item_in_favorites(media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+	media = 'movie' if media_type in ('movie', 'movies') else 'show'
+	try:
+		data = trakt_favorites(media, None) or []
+	except:
+		return False
+	return any(_trakt_media_ids_match(item.get('media_ids'), tmdb_id, imdb_id, tvdb_id) for item in data)
+
+def trakt_item_is_dropped(tmdb_id):
+	try:
+		return int(tmdb_id) in (trakt_get_hidden_items('dropped') or [])
+	except:
+		return False
+
+def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+	try:
+		contents = get_trakt_list_contents('my_lists', user, slug, True, list_id=list_id) or []
+	except:
+		return False
+	want_movie = media_type in ('movie', 'movies')
+	for item in contents:
+		item_type = item.get('type') or item.get('media_type')
+		if want_movie:
+			if item_type != 'movie': continue
+			if _trakt_media_ids_match(item.get('media_ids'), tmdb_id, imdb_id, tvdb_id):
 				return True
-		except: pass
-		if imdb_id not in (None, '', 'None') and ids.get('imdb') and str(ids['imdb']) == str(imdb_id):
-			return True
-		try:
-			if tvdb_id not in (None, '', 'None') and ids.get('tvdb') not in (None, '', 'None') and int(ids['tvdb']) == int(tvdb_id):
+			continue
+		if item_type == 'movie': continue
+		if item_type in ('show', 'episode'):
+			if _trakt_media_ids_match(item.get('media_ids'), tmdb_id, imdb_id, tvdb_id):
 				return True
-		except: pass
+		elif item_type == 'season':
+			try:
+				if tmdb_id not in (None, '', 'None') and int(item.get('tmdb_id')) == int(tmdb_id):
+					return True
+			except: pass
 	return False
+
+def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+	results = []
+	results_append = results.append
+	def _check(item):
+		user = item['user']['ids']['slug']
+		slug = item['ids']['slug']
+		list_id = item['ids']['trakt']
+		entry = {
+			'name': item['name'],
+			'display': '[B]PERSONAL:[/B] [I]%s[/I]' % item['name'].upper(),
+			'user': user,
+			'slug': slug,
+			'list_type': 'my_lists',
+			'list_id': list_id,
+			'item_count': item.get('item_count', 0)
+		}
+		is_in = trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id, imdb_id, tvdb_id)
+		results_append((entry, is_in))
+	try:
+		trakt_my_lists = trakt_get_lists('my_lists') or []
+	except:
+		return [], []
+	if not trakt_my_lists: return [], []
+	threads = TaskPool().tasks(_check, trakt_my_lists, min(len(trakt_my_lists), settings.max_threads()) or 1)
+	[i.join() for i in threads]
+	in_lists, out_lists = [], []
+	for entry, is_in in results:
+		(in_lists if is_in else out_lists).append(entry)
+	in_lists.sort(key=lambda k: k['name'])
+	out_lists.sort(key=lambda k: k['name'])
+	return in_lists, out_lists
+
+def select_trakt_personal_lists(lists):
+	if not lists: return None
+	list_items = [{'line1': '%s [I](x%02d)[/I]' % (item['display'], item.get('item_count', 0))} for item in lists]
+	kwargs = {'items': json.dumps(list_items), 'heading': 'Select', 'narrow_window': 'true'}
+	return kodi_utils.select_dialog(lists, **kwargs)
 
 def add_to_watchlist(data):
 	result = call_trakt('/sync/watchlist', data=data)
@@ -533,6 +634,26 @@ def remove_from_collection(data):
 	kodi_utils.notification('Success', 3000)
 	trakt_sync_activities()
 	if kodi_utils.path_check('trakt_collection') or kodi_utils.external(): kodi_utils.kodi_refresh()
+	return result
+
+def add_to_favorites(data):
+	result = call_trakt('/sync/favorites', data=data)
+	if not result: return kodi_utils.notification('Error', 3000)
+	if result.get('existing', {}).get('movies', 0) + result.get('existing', {}).get('shows', 0) > 0:
+		return kodi_utils.notification('Already In List', 3000)
+	if result.get('added', {}).get('movies', 0) + result.get('added', {}).get('shows', 0) == 0:
+		return kodi_utils.notification('Error', 3000)
+	kodi_utils.notification('Success', 3000)
+	trakt_sync_activities()
+	return result
+
+def remove_from_favorites(data):
+	result = call_trakt('/sync/favorites/remove', data=data)
+	if not result or result.get('deleted', {}).get('movies', 0) + result.get('deleted', {}).get('shows', 0) == 0:
+		return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
+	kodi_utils.notification('Success', 3000)
+	trakt_sync_activities()
+	if kodi_utils.path_check('trakt_favorites') or kodi_utils.external(): kodi_utils.kodi_refresh()
 	return result
 
 def hide_unhide_progress_items(params):

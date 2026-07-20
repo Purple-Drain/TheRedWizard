@@ -1,3 +1,7 @@
+[COLOR red][B]Version 1.9.8[/B][/COLOR]
+- [B]Trakt Lists Manager[/B]: state-aware Add/Remove for Watchlist, Collection, and Favorites; Drop/Undrop for shows; personal-list pickers filtered by membership; Mark Watched/Unwatched and Reset Scrobble; Open Watchlist / Collection / Favorites / Liked Lists / My Lists and Refresh Widgets (Simkl/MDBList parity).
+- [B]TMDb Lists Manager[/B]: state-aware Watchlist/Favorites Add or Remove; custom-list pickers filtered by membership using cached list contents (live item status only when a list is not cached).
+
 [COLOR red][B]Version 1.9.7[/B][/COLOR]
 - [B]Trakt Calendar[/B]: [B]Calendar Date Labels[/B] — three groups in matching order ([B]YYYY-MM-DD[/B], [B]MM-DD-YYYY[/B], [B]DD-MM-YYYY[/B]): [B]Words / …[/B] (Today/Tomorrow/weekday for the near week, that format outside it; default [B]Words / YYYY-MM-DD[/B]), date-only, and [B]Day + …[/B] (e.g. [B]TODAY 07-20-2026[/B]). Word and Day + date modes keep pin-today.
 

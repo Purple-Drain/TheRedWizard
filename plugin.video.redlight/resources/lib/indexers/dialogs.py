@@ -235,50 +235,53 @@ def tmdblists_manager_choice(params):
 
 def _tmdblists_manager_choice(params):
 	from caches.tmdb_lists import tmdb_lists_cache
-	from indexers.tmdb_lists import get_all_tmdb_lists, make_new_tmdb_list, add_to_tmdb_list, remove_from_tmdb_list, check_item_status, check_item_status_watchfav, add_remove_watchfavs
+	from indexers.tmdb_lists import (
+		make_new_tmdb_list, add_to_tmdb_list, remove_from_tmdb_list, check_item_status_watchfav,
+		add_remove_watchfavs, tmdb_lists_split_by_membership, select_tmdb_lists
+	)
 	icon = params.get('icon', None) or kodi_utils.get_icon('tmdb')
 	media_type, tmdb_id = params['media_type'], params['tmdb_id']
 	if media_type in ('movie', 'movies'): media_type = 'movie'
 	else: media_type = 'tv'
 	try: tmdb_id = int(tmdb_id)
 	except: return kodi_utils.notification('Error', 3000)
-	choices = [('Add To TMDb List...', 'list_add'), ('Remove From TMDb List...', 'list_remove'), ('Add To [B]NEW[/B] TMDb List...', 'list_add_new'),
-				('Add To [B]Watchlist[/B]', 'watchlist_add'), ('Remove From [B]Watchlist[/B]', 'watchlist_remove'),
-				('Add To [B]Favorites[/B]', 'favorites_add'), ('Remove From [B]Favorites[/B]', 'favorites_remove')]
+	in_watchlist = check_item_status_watchfav('watchlist', media_type, tmdb_id)
+	in_favorites = check_item_status_watchfav('favorites', media_type, tmdb_id)
+	in_lists, out_lists = tmdb_lists_split_by_membership(media_type, tmdb_id)
+	choices = []
+	if in_watchlist:
+		choices.append(('Remove From [B]Watchlist[/B]', 'watchlist_remove'))
+	else:
+		choices.append(('Add To [B]Watchlist[/B]', 'watchlist_add'))
+	if in_favorites:
+		choices.append(('Remove From [B]Favorites[/B]', 'favorites_remove'))
+	else:
+		choices.append(('Add To [B]Favorites[/B]', 'favorites_add'))
+	if out_lists:
+		choices.append(('Add To TMDb List...', 'list_add'))
+	if in_lists:
+		choices.append(('Remove From TMDb List...', 'list_remove'))
+	choices.append(('Add To [B]NEW[/B] TMDb List...', 'list_add_new'))
 	list_items = [{'line1': item[0], 'icon': icon} for item in choices]
 	kwargs = {'items': json.dumps(list_items), 'heading': 'TMDb Lists Manager'}
 	action = kodi_utils.select_dialog([i[1] for i in choices], **kwargs)
 	if action == None: return
 	if action.startswith(('watchlist', 'favorites')):
-		from indexers.tmdb_lists import check_item_status_watchfav
 		list_id = action.split('_')[0]
 		status = True if 'add' in action else False
-		item_in_list = check_item_status_watchfav(list_id, media_type, tmdb_id)
-		if item_in_list and status: return kodi_utils.notification('Item already in %s' % list_id.capitalize())
-		if not item_in_list and not status: return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
 		success = add_remove_watchfavs(media_type, tmdb_id, list_id, status)
 		tmdb_lists_cache.clear_watchfavrecs(list_id, media_type)
 		if not success: return
 		kodi_utils.notification('Success', 3000)
 		return
-	from indexers.tmdb_lists import get_all_tmdb_lists, make_new_tmdb_list, add_to_tmdb_list, remove_from_tmdb_list, check_item_status
-	all_lists = get_all_tmdb_lists('0') or []
 	item_in_list = False
-	if not all_lists and action == 'list_remove':
-		return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000, settle_ms=300)
-	if not all_lists: action = 'list_add_new'
 	if action == 'list_add_new':
 		list_id = make_new_tmdb_list({'external_creation': 'true'})
 		if not list_id: return kodi_utils.notification('Error Creating List')
 		action, item_in_list = 'list_add', False
 	else:
-		choices = [('%s [I](x%02d)[/I]' % (i.get('name') or '', int(i.get('number_of_items') or 0)), i['id']) for i in all_lists if i.get('id')]
-		if not choices: return kodi_utils.notification('Error', 3000)
-		list_items = [{'line1': i[0]} for i in choices]
-		kwargs = {'items': json.dumps(list_items), 'narrow_window': 'true'}
-		list_id = kodi_utils.select_dialog([i[1] for i in choices], **kwargs)
+		list_id = select_tmdb_lists(out_lists if action == 'list_add' else in_lists)
 		if list_id == None: return
-		if action == 'list_add': item_in_list = check_item_status(list_id, media_type, tmdb_id)
 	new_contents = {'items': [{'media_type': media_type, 'media_id': tmdb_id}]}
 	if action == 'list_add':
 		if item_in_list: return kodi_utils.notification('Item already in List')
@@ -668,21 +671,83 @@ def _trakt_manager_payload(params):
 
 def trakt_manager_choice(params):
 	if not settings.trakt_user_active(): return kodi_utils.notification('No Active Trakt Account', 3500)
+	from apis import trakt_api
 	icon = params.get('icon', None) or kodi_utils.get_icon('trakt')
-	choices = [('Add to [B]Watchlist[/B]', 'add_watchlist'), ('Remove from [B]Watchlist[/B]', 'remove_watchlist'),
-				('Add to [B]Collection[/B]', 'add_collection'), ('Remove from [B]Collection[/B]', 'remove_collection'),
-				('Add To [B]Personal List[/B]...', 'add'), ('Remove from [B]Personal List[/B]...', 'remove')]
+	media_type = params.get('media_type') or 'movie'
+	tmdb_id, imdb_id, tvdb_id = params.get('tmdb_id'), params.get('imdb_id'), params.get('tvdb_id')
+	list_media = 'movie' if media_type == 'movie' else 'tvshow'
+	in_lists, out_lists = trakt_api.trakt_personal_lists_split_by_membership(media_type, tmdb_id, imdb_id, tvdb_id)
+	choices = []
+	if trakt_api.trakt_item_in_sync_list('watchlist', media_type, tmdb_id, imdb_id, tvdb_id):
+		choices.append(('Remove from [B]Watchlist[/B]', 'remove_watchlist'))
+	else:
+		choices.append(('Add to [B]Watchlist[/B]', 'add_watchlist'))
+	if trakt_api.trakt_item_in_sync_list('collection', media_type, tmdb_id, imdb_id, tvdb_id):
+		choices.append(('Remove from [B]Collection[/B]', 'remove_collection'))
+	else:
+		choices.append(('Add to [B]Collection[/B]', 'add_collection'))
+	if trakt_api.trakt_item_in_favorites(media_type, tmdb_id, imdb_id, tvdb_id):
+		choices.append(('Remove from [B]Favorites[/B]', 'remove_favorites'))
+	else:
+		choices.append(('Add to [B]Favorites[/B]', 'add_favorites'))
+	if media_type != 'movie':
+		if trakt_api.trakt_item_is_dropped(tmdb_id):
+			choices.append(('Undrop [B]Show[/B]', 'undrop'))
+		else:
+			choices.append(('Drop [B]Show[/B]', 'drop'))
+	if out_lists:
+		choices.append(('Add To [B]Personal List[/B]...', 'add'))
+	if in_lists:
+		choices.append(('Remove from [B]Personal List[/B]...', 'remove'))
+	watchlist_label = 'Movies Watchlist' if list_media == 'movie' else 'TV Shows Watchlist'
+	collection_label = 'Movies Collection' if list_media == 'movie' else 'TV Shows Collection'
+	favorites_label = 'Favorite Movies' if list_media == 'movie' else 'Favorite TV Shows'
+	list_mode = 'build_movie_list' if list_media == 'movie' else 'build_tvshow_list'
+	choices.extend([
+		('Mark as [B]Watched[/B]', 'mark_watched'),
+		('Mark as [B]Unwatched[/B]', 'mark_unwatched'),
+		('Reset [B]Scrobble[/B]', 'reset_scrobble'),
+		('Open [B]Watchlist[/B]', 'open_watchlist'),
+		('Open [B]Collection[/B]', 'open_collection'),
+		('Open [B]Favorites[/B]', 'open_favorites'),
+		('Open [B]Liked Lists[/B]', 'open_liked_lists'),
+		('Open [B]My Lists[/B]', 'open_my_lists'),
+		('Refresh Widgets', 'refresh'),
+	])
 	list_items = [{'line1': item[0], 'icon': icon} for item in choices]
 	kwargs = {'items': json.dumps(list_items), 'heading': 'Trakt Lists Manager'}
 	choice = kodi_utils.select_dialog([i[1] for i in choices], **kwargs)
 	if choice == None: return
-	from apis import trakt_api
+	if choice == 'refresh':
+		kodi_utils.kodi_refresh()
+		return kodi_utils.notification('Widgets Refreshed', 2500)
+	open_modes = {
+		'open_watchlist': {'mode': list_mode, 'action': 'trakt_watchlist', 'category_name': watchlist_label},
+		'open_collection': {'mode': list_mode, 'action': 'trakt_collection', 'category_name': collection_label},
+		'open_favorites': {'mode': list_mode, 'action': 'trakt_favorites', 'category_name': favorites_label},
+		'open_liked_lists': {'mode': 'trakt.list.get_trakt_lists', 'list_type': 'liked_lists', 'category_name': 'Liked Lists'},
+		'open_my_lists': {'mode': 'trakt.list.get_trakt_lists', 'list_type': 'my_lists', 'category_name': 'My Lists'},
+	}
+	if choice in open_modes:
+		return kodi_utils.container_update(open_modes[choice])
+	if choice == 'mark_watched':
+		return _trakt_manager_mark(params, 'mark_as_watched')
+	if choice == 'mark_unwatched':
+		return _trakt_manager_mark(params, 'mark_as_unwatched')
+	if choice == 'reset_scrobble':
+		return trakt_api.trakt_reset_scrobble(params)
 	data = _trakt_manager_payload(params)
 	if choice == 'add_watchlist': return trakt_api.add_to_watchlist(data)
 	if choice == 'remove_watchlist': return trakt_api.remove_from_watchlist(data)
 	if choice == 'add_collection': return trakt_api.add_to_collection(data)
 	if choice == 'remove_collection': return trakt_api.remove_from_collection(data)
-	selected = trakt_api.get_trakt_list_selection(['personal'])
+	if choice == 'add_favorites': return trakt_api.add_to_favorites(data)
+	if choice == 'remove_favorites': return trakt_api.remove_from_favorites(data)
+	if choice in ('drop', 'undrop'):
+		return trakt_api.hide_unhide_progress_items({
+			'action': choice, 'media_type': 'shows', 'media_id': int(tmdb_id), 'section': 'dropped'
+		})
+	selected = trakt_api.select_trakt_personal_lists(out_lists if choice == 'add' else in_lists)
 	if selected == None: return
 	trakt_api.add_to_list(selected['user'], selected['slug'], data) if choice == 'add' else trakt_api.remove_from_list(selected['user'], selected['slug'], data)
 

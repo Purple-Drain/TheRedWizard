@@ -295,8 +295,16 @@ def sort_order_tmdb_list():
 	return sort_order
 
 def check_item_status(list_id, media_type, media_id):
+	media_type = _tmdb_media_type(media_type)
+	try: media_id = int(media_id)
+	except: return False
+	cached = tmdb_lists_cache.get('get_list_details_%s' % list_id)
+	if cached is not None:
+		try:
+			return any(i.get('media_type') == media_type and int(i.get('id')) == media_id for i in cached)
+		except: return False
 	try:
-		item_status = tmdb_list_api.item_status(list_id, _tmdb_media_type(media_type), media_id)
+		item_status = tmdb_list_api.item_status(list_id, media_type, media_id)
 		return item_status.get('success', False) if item_status else False
 	except: return False
 
@@ -306,6 +314,38 @@ def check_item_status_watchfav(list_id, media_type, media_id):
 		items = tmdb_list_api.get_watchfavrecs_list_details(list_id, media_type) or []
 		return int(media_id) in [i['id'] for i in items]
 	except: return False
+
+def tmdb_lists_split_by_membership(media_type, media_id):
+	from modules.utils import TaskPool
+	from modules.settings import max_threads
+	results = []
+	results_append = results.append
+	def _check(item):
+		list_id = item.get('id')
+		if not list_id: return
+		entry = {
+			'name': item.get('name') or '',
+			'id': list_id,
+			'number_of_items': int(item.get('number_of_items') or 0)
+		}
+		results_append((entry, check_item_status(list_id, media_type, media_id)))
+	all_lists = get_all_tmdb_lists('0') or []
+	if not all_lists: return [], []
+	threads = TaskPool().tasks(_check, all_lists, min(len(all_lists), max_threads()) or 1)
+	[i.join() for i in threads]
+	in_lists, out_lists = [], []
+	for entry, is_in in results:
+		(in_lists if is_in else out_lists).append(entry)
+	in_lists.sort(key=lambda k: k['name'])
+	out_lists.sort(key=lambda k: k['name'])
+	return in_lists, out_lists
+
+def select_tmdb_lists(lists):
+	if not lists: return None
+	choices = [('%s [I](x%02d)[/I]' % (i['name'], i.get('number_of_items', 0)), i['id']) for i in lists]
+	list_items = [{'line1': i[0]} for i in choices]
+	kwargs = {'items': json.dumps(list_items), 'narrow_window': 'true'}
+	return kodi_utils.select_dialog([i[1] for i in choices], **kwargs)
 
 def make_new_tmdb_list(params):
 	suggested_list_name, chosen_list = '', None
