@@ -88,11 +88,24 @@ def _schedule_playback_widget_refresh(from_playback):
 		from modules.kodi_utils import schedule_playback_widget_refresh
 		schedule_playback_widget_refresh()
 
+def progress_aired_eps(meta):
+	"""Aired episode total used for show-level In Progress / Watched / progress %."""
+	total = meta.get('total_aired_eps') or 0
+	if not settings.exclude_specials_from_progress(): return total
+	# Still-airing totals from metadata already exclude Season 0.
+	status = meta.get('status', '')
+	extra_info = meta.get('extra_info') or {}
+	if extra_info.get('last_episode_to_air') and status not in ('Ended', 'Canceled'): return total
+	season_data = meta.get('season_data') or []
+	if not season_data: return total
+	regular = sum(i.get('episode_count', 0) for i in season_data if i.get('season_number', 0) != 0)
+	return regular if regular else total
+
 def active_tvshows_information(status_type):
 	def _process(item):
 		media_id = item['media_id']
 		meta = metadata.tvshow_meta('tmdb_id', media_id, api_key, mpaa_region, get_datetime())
-		watched_status = get_watched_status_tvshow(watched_info.get(str(media_id)), meta.get('total_aired_eps'))[0]
+		watched_status = get_watched_status_tvshow(watched_info.get(str(media_id)), progress_aired_eps(meta))[0]
 		airing_status = meta.get('status', '')
 		if status_type == 'watched':
 			if watched_status == 1:
@@ -148,8 +161,18 @@ def get_progress_status_movie(progress_info, media_id):
 def watched_info_tvshow(watched_db=None):
 	if not watched_db: watched_db = get_database()
 	try:
-		data = watched_db.execute('SELECT media_id, season, episode, title, MAX(last_played), COUNT(*) AS COUNTER FROM watched WHERE db_type = ? GROUP BY media_id',
-								('episode',)).fetchall()
+		if settings.exclude_specials_from_progress():
+			data = watched_db.execute(
+				'SELECT media_id, season, episode, title, MAX(last_played), '
+				'SUM(CASE WHEN CAST(season AS INTEGER) > 0 THEN 1 ELSE 0 END) AS COUNTER '
+				'FROM watched WHERE db_type = ? GROUP BY media_id '
+				'HAVING SUM(CASE WHEN CAST(season AS INTEGER) > 0 THEN 1 ELSE 0 END) > 0',
+				('episode',)).fetchall()
+		else:
+			data = watched_db.execute(
+				'SELECT media_id, season, episode, title, MAX(last_played), COUNT(*) AS COUNTER '
+				'FROM watched WHERE db_type = ? GROUP BY media_id',
+				('episode',)).fetchall()
 		return dict([(str(i[0]), {'media_id': str(i[0]), 'season': i[1], 'episode': i[2], 'title': i[3], 'last_played': i[4], 'total_played': i[5]}) for i in data])
 	except: return {}
 
@@ -255,9 +278,9 @@ def _write_local_progress(watched_indicators, media_type, tmdb_id, season, episo
 	dbcon.execute('INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 				(media_type, str(tmdb_id), season, episode, str(resume_point), str(curr_time), last_played, 0, title))
 
-def erase_bookmark(media_type, media_id, season='', episode='', refresh='false'):
+def erase_bookmark(media_type, media_id, season='', episode='', refresh='false', watched_indicators=None):
 	try:
-		watched_indicators = settings.watched_indicators()
+		if watched_indicators is None: watched_indicators = settings.watched_indicators()
 		watched_db = get_database(watched_indicators)
 		if watched_indicators == 1:
 			try:

@@ -472,6 +472,9 @@ def personal_lists_show_author():
 def show_specials():
 	return get_setting('redlight.show_specials', 'false') == 'true'
 
+def exclude_specials_from_progress():
+	return get_setting('redlight.exclude_specials_progress', 'true') == 'true'
+
 def single_ep_unwatched_episodes():
 	return get_setting('redlight.single_ep_unwatched_episodes', 'false') == 'true'
 
