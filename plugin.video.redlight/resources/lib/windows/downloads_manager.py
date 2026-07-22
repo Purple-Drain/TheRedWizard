@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+from threading import Thread
 from windows.base_window import BaseDialog
 from modules.kodi_utils import select_dialog, confirm_dialog, ok_dialog
 # from modules.kodi_utils import logger
@@ -13,7 +14,7 @@ class DownloadsManager(BaseDialog):
 
 	def onInit(self):
 		self.make_active_downloads(first_run=True)
-		self.monitor()
+		Thread(target=self.monitor, daemon=True).start()
 
 	def run(self):
 		self.doModal()
