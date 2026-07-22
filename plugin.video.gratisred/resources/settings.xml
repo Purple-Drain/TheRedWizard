@@ -26,8 +26,8 @@
         <!--<setting id="episode.widget.alt" type="enum" label="Episodes (Widget)" values="Disabled|TVmaze Calendar|TVmaze Episodes|Trakt Progress|Trakt Episodes" default="3" visible="!eq(-2,)" />
         <setting id="episode.widget" type="enum" label="Episodes (Widget)" values="Disabled|TVmaze Calendar|TVmaze Episodes|" default="1" visible="eq(-3,)" />-->
         <setting id="indicators.alt" type="text" label="" default="0" enable="false" visible="false" />
-        <setting id="indicators.alt.name" type="text" label="Indicators" default="Local" enable="false" />
-        <setting id="indicators.choose" type="action" label="Change Indicators" option="close" action="RunPlugin(plugin://plugin.video.gratisred/?action=choose_indicators&amp;source=settings)" subsetting="true" />
+        <setting id="indicators.choose" type="action" label="Indicators" option="close" action="RunPlugin(plugin://plugin.video.gratisred/?action=choose_indicators&amp;source=settings)" />
+        <setting id="indicators.alt.name" type="text" label="Current" default="Local" enable="false" subsetting="true" />
         <setting id="indicators" type="enum" label="Indicators" values="Local" default="0" visible="false" />
         <setting id="items.per.page" type="slider" label="Items Per Page" default="20" range="10,40" option="int" />
         <setting id="prgr.sortorder" type="enum" label="Sort Order for Watched Progress" values="Recently aired|Recently watched" default="1" />
@@ -37,7 +37,7 @@
         <setting id="trakt.synctime" type="slider" label="Delay Trakt Library Sync _ Hour/s" default="0" range="0,24" option="int" subsetting="true" enable="!eq(-1,false)" visible="eq(-1,true)" />
         <setting id="trakt.synctext" type="text" label="0 Value Disables Delay" subsetting="true" enable="!eq(-2,false)" visible="eq(-2,true)" />
         <setting type="lsep" label="Auto Simkl Watched Syncing" />
-        <setting id="simkl.sync" type="bool" label="Simkl Watched Sync on Kodi Startup" default="true" />
+        <setting id="simkl.sync" type="bool" label="Simkl Watched Sync on Kodi Startup" default="false" />
         <setting id="simkl.synctime" type="slider" label="Delay Simkl Watched Sync _ Hour/s" default="0" range="0,24" option="int" subsetting="true" enable="!eq(-1,false)" visible="eq(-1,true)" />
         <setting id="simkl.synctext" type="text" label="0 Value Disables Delay" subsetting="true" enable="!eq(-2,false)" visible="eq(-2,true)" />
         <setting type="lsep" label="Search Tools Metadata" />
