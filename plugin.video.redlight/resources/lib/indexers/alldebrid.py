@@ -240,6 +240,9 @@ def browse_ad_cloud(folder_id):
 def resolve_ad(params):
 	url = params['url']
 	resolved_link = AllDebrid.unrestrict_link(url)
+	if not resolved_link:
+		kodi_utils.ok_dialog(heading='AllDebrid', text='Unable to resolve this cloud link. It may be expired or no longer available.')
+		return None
 	if params.get('play', 'false') != 'true':
 		return resolved_link
 	from modules.player import RedLightPlayer
