@@ -429,6 +429,11 @@ def revokeTrakt(reopen_settings=False):
         control.setSetting('trakt.token', '')
         control.setSetting('trakt.refresh', '')
         control.setSetting('trakt.expires', '')
+        try:
+            from resources.lib.modules import simkl
+            simkl.fallback_indicators_on_revoke('trakt')
+        except Exception:
+            pass
         control.infoDialog('Trakt Account Revoked.', sound=True)
         control.finish_auth_ui(reopen_settings=reopen_settings)
     except Exception:
@@ -495,6 +500,13 @@ def authTrakt(reopen_settings=False):
         control.setSetting('trakt.token', token)
         control.setSetting('trakt.refresh', refresh)
         _set_trakt_expires(token_result.get('expires_in', 7200))
+        if control.yesnoDialog('Set Trakt as your Watched Indicators provider?', heading='Watched Status Provider'):
+            control.setSetting('indicators.alt', '1')
+            try:
+                from resources.lib.modules import simkl
+                simkl.sync_indicators_label()
+            except Exception:
+                pass
         control.infoDialog('Trakt Account Authorised.', sound=True)
         control.finish_auth_ui(reopen_settings=reopen_settings)
     except Exception:
@@ -505,9 +517,13 @@ def authTrakt(reopen_settings=False):
 
 
 def getTraktIndicatorsInfo():
-    indicators = control.setting('indicators') if getTraktCredentialsInfo() == False else control.setting('indicators.alt')
-    indicators = True if indicators == '1' else False
-    return indicators
+    # True only when Indicators is Trakt (not Local / Simkl).
+    try:
+        from resources.lib.modules import simkl
+        return simkl.getIndicatorsProvider() == 'trakt'
+    except Exception:
+        indicators = control.setting('indicators') if getTraktCredentialsInfo() == False else control.setting('indicators.alt')
+        return True if indicators == '1' else False
 
 
 def getTraktAddonMovieInfo():

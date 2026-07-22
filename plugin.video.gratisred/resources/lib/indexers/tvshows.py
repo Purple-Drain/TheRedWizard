@@ -1369,6 +1369,20 @@ class tvshows:
 
     def get(self, url, idx=True, create_directory=True):
         try:
+            if url and str(url).startswith('simkl_'):
+                from resources.lib.modules import simkl as simkl_mod
+                key = str(url)
+                if key.startswith('simkl_trending_'):
+                    period = key.replace('simkl_trending_', '') or 'today'
+                    self.list = simkl_mod.directory_trending('tv', period)
+                else:
+                    status = key[6:]
+                    self.list = simkl_mod.directory_tvshows(status)
+                if idx == True:
+                    self.worker()
+                if idx == True and create_directory == True:
+                    self.tvshowDirectory(self.list)
+                return self.list
             try:
                 url = getattr(self, url + '_link')
             except:
@@ -1458,8 +1472,15 @@ class tvshows:
         traktCredentials = trakt.getTraktCredentialsInfo()
         tmdbCredentials = tmdb_utils.getTMDbCredentialsInfo()
         indicators = playcount.getTVShowIndicators()#refresh=True) if action == 'tvshows' else playcount.getTVShowIndicators()
-        watchedMenu = '[I]Watched in Trakt[/I]' if trakt.getTraktIndicatorsInfo() == True else '[I]Watched in Gratis Red[/I]'
-        unwatchedMenu = '[I]Unwatched in Trakt[/I]' if trakt.getTraktIndicatorsInfo() == True else '[I]Unwatched in Gratis Red[/I]'
+        from resources.lib.modules import simkl as simkl_mod
+        simklCredentials = simkl_mod.getSimklCredentialsInfo()
+        _ind = simkl_mod.getIndicatorsProvider()
+        if _ind == 'trakt':
+            watchedMenu, unwatchedMenu = '[I]Watched in Trakt[/I]', '[I]Unwatched in Trakt[/I]'
+        elif _ind == 'simkl':
+            watchedMenu, unwatchedMenu = '[I]Watched in Simkl[/I]', '[I]Unwatched in Simkl[/I]'
+        else:
+            watchedMenu, unwatchedMenu = '[I]Watched in Gratis Red[/I]', '[I]Unwatched in Gratis Red[/I]'
         nextMenu = '[I]Next Page[/I]'
         try:
             favitems = favorites.getFavorites('tvshow')
@@ -1513,6 +1534,8 @@ class tvshows:
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
                 if traktCredentials == True:
                     cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
+                if simklCredentials == True:
+                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
                     cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
                 libtools.append_tvshow_library_cm(cm, sysaddon, tv_library, i['title'], year, imdb, tmdb)
