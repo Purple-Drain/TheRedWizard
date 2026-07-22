@@ -186,7 +186,7 @@ class TVShows:
 											'Jump To...', 'item_jump', kodi_utils.get_icon('item_jump_landscape'), isFolder=False)
 			if self.new_page and not self.widget_hide_next_page:
 				self.new_page.update({'mode': 'build_tvshow_list', 'action': self.action, 'category_name': self.category_name})
-				if self.is_anime_list is not None: self.new_page['is_anime_list'] == {True: 'true', False: 'false'}[self.is_anime_list]
+				if self.is_anime_list is not None: self.new_page['is_anime_list'] = {True: 'true', False: 'false'}[self.is_anime_list]
 				kodi_utils.add_dir(handle, self.new_page, 'Next Page (%s) >>' % self.new_page['new_page'], 'nextpage', kodi_utils.get_icon('nextpage_landscape'))
 		except Exception as e:
 			if self.action in self.mdblist_personal or self.action == 'mdblist_user_list':
@@ -220,7 +220,7 @@ class TVShows:
 			tmdb_id, total_seasons, total_aired_eps = meta_get('tmdb_id'), meta_get('total_seasons'), meta_get('total_aired_eps')
 			progress_aired_eps = watched_status.progress_aired_eps(meta)
 			unaired = total_aired_eps == 0
-			if unaired: progress, playcount, total_watched, total_unwatched = 0, 0, 0, progress_aired_eps
+			if unaired: progress, playcount, total_watched, total_unwatched, visible_progress = 0, 0, 0, progress_aired_eps, 0
 			else:
 				playcount, total_watched, total_unwatched = watched_status.get_watched_status_tvshow(self.watched_info.get(str(tmdb_id), None), progress_aired_eps)
 				if total_watched: progress = watched_status.get_progress_status_tvshow(total_watched, progress_aired_eps)

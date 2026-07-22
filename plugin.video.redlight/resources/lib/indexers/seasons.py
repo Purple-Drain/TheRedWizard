@@ -31,7 +31,7 @@ def build_season_list(params):
 				except: premiered = ''
 				unaired = aired_eps == 0
 				if unaired or season_special:
-					progress, playcount, total_watched, total_unwatched = 0, 0, 0, aired_eps
+					progress, playcount, watched, unwatched = 0, 0, 0, aired_eps
 					if unaired: title = '[COLOR red][I]%s[/I][/COLOR]' % title
 					else: title = 'Specials'
 				else:
