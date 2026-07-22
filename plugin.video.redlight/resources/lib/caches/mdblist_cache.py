@@ -51,7 +51,6 @@ class MdblistWatched:
 	def _delete(self, command, args):
 		dbcon = connect_database('mdblist_db')
 		dbcon.execute(command, args)
-		dbcon.execute('VACUUM')
 
 mdblist_watched_cache = MdblistWatched()
 

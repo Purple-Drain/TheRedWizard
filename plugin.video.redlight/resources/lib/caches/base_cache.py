@@ -190,11 +190,12 @@ def clean_databases():
 	from caches.lists_cache import lists_cache
 	from caches.meta_cache import meta_cache
 	from caches.debrid_cache import debrid_cache
+	from caches.random_widgets_cache import RandomWidgets
 	clean_cache_list = (('EXTERNAL CACHE', external_cache, database_locations('external_db')),
 						('MAIN CACHE', main_cache, database_locations('maincache_db')), ('LISTS CACHE', lists_cache, database_locations('lists_db')),
 						('TMDB LISTS CACHE', lists_cache, database_locations('tmdb_lists_db')), ('META CACHE', meta_cache, database_locations('metacache_db')),
 						('DEBRID CACHE', debrid_cache, database_locations('debridcache_db')),
-						('RANDOM WIDGETS CACHE', debrid_cache, database_locations('random_widgets_db')))
+						('RANDOM WIDGETS CACHE', RandomWidgets(), database_locations('random_widgets_db')))
 	results = []
 	append = results.append
 	for item in clean_cache_list:
