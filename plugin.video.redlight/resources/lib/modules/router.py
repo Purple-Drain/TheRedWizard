@@ -39,46 +39,46 @@ def routing(sys):
 		except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
 	if 'navigator.' in mode:
 		from indexers.navigator import Navigator
-		return exec('Navigator(params).%s()' % mode.split('.')[1])
+		return getattr(Navigator(params), mode.split('.')[1])()
 	elif 'menu_editor.' in mode:
 		from modules.menu_editor import MenuEditor
-		return exec('MenuEditor(params).%s()' % mode.split('.')[1])
+		return getattr(MenuEditor(params), mode.split('.')[1])()
 	elif 'personal_lists.' in mode:
 		from indexers import personal_lists
-		return exec('personal_lists.%s(params)' % mode.split('.')[1])
+		return getattr(personal_lists, mode.split('.')[1])(params)
 	elif 'tmdblist.' in mode:
 		from indexers import tmdb_lists
-		return exec('tmdb_lists.%s(params)' % mode.split('.')[1])
+		return getattr(tmdb_lists, mode.split('.')[1])(params)
 	elif 'easynews.' in mode:
 		from indexers import easynews
-		return exec('easynews.%s(params)' % mode.split('.')[1])
+		return getattr(easynews, mode.split('.')[1])(params)
 	elif mode.startswith('nzb.'):
 		from indexers import nzb
-		return exec('nzb.%s(params)' % mode.split('.')[1])
+		return getattr(nzb, mode.split('.')[1])(params)
 	elif 'playback.' in mode:
 		from modules.kodi_utils import player_check
 		return player_check(mode, params)
 	elif 'choice' in mode:
 		from indexers import dialogs
-		return exec('dialogs.%s(params)' % mode)
+		return getattr(dialogs, mode)(params)
 	elif 'custom_key.' in mode:
 		from modules import custom_keys
-		return exec('custom_keys.%s()' % mode.split('custom_key.')[1])
+		return getattr(custom_keys, mode.split('custom_key.')[1])()
 	elif 'simkl.' in mode:
 		if '.list.' in mode:
 			from indexers import simkl_lists
-			return exec('simkl_lists.%s(params)' % mode.split('.')[2])
+			return getattr(simkl_lists, mode.split('.')[2])(params)
 		from apis import simkl_api
-		return exec('simkl_api.%s(params)' % mode.split('.')[1])
+		return getattr(simkl_api, mode.split('.')[1])(params)
 	elif 'mdblist.' in mode:
 		from apis import mdblist_api
-		return exec('mdblist_api.%s(params)' % mode.split('.')[1])
+		return getattr(mdblist_api, mode.split('.')[1])(params)
 	elif 'trakt.' in mode:
 		if '.list' in mode:
 			from indexers import trakt_lists
-			return exec('trakt_lists.%s(params)' % mode.split('.')[2])
+			return getattr(trakt_lists, mode.split('.')[2])(params)
 		from apis import trakt_api
-		return exec('trakt_api.%s(params)' % mode.split('.')[1])
+		return getattr(trakt_api, mode.split('.')[1])(params)
 	elif 'build' in mode:
 		if mode == 'build_movie_list':
 			from indexers.movies import Movies
@@ -309,10 +309,10 @@ def routing(sys):
 			return show_text(params.get('heading'), params.get('text', None), params.get('file', None), params.get('meta'), {})
 	elif 'settings_manager.' in mode:
 		from caches import settings_cache
-		return exec('settings_cache.%s(params)' % mode.split('.')[1])
+		return getattr(settings_cache, mode.split('.')[1])(params)
 	elif 'downloader.' in mode:
 		from modules import downloader
-		return exec('downloader.%s(params)' % mode.split('.')[1])
+		return getattr(downloader, mode.split('.')[1])(params)
 	elif 'local_backup.' in mode:
 		from modules import local_backup
 		return getattr(local_backup, mode.split('.', 1)[1])(params)
@@ -378,7 +378,9 @@ def routing(sys):
 		return hide_unhide_progress_items(params)
 	elif mode in ('external_scraper_clear_slot', 'external_scraper_move_slot'):
 		from indexers import dialogs
-		return exec('dialogs.%s(params)' % mode)
+		return getattr(dialogs, mode)(params)
 	elif mode == 'open_external_scraper_settings':
 		from modules.kodi_utils import external_scraper_settings
 		return external_scraper_settings(params)
+	else:
+		kodi_utils.logger('routing', 'unrecognized mode: %s' % mode)
