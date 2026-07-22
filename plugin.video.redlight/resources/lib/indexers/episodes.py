@@ -263,7 +263,7 @@ def build_single_episode(list_type, params={}):
 											'season': season, 'episode': episode, 'refresh': 'true'}))])
 				if unwatched_info:
 					progress_aired_eps = ws.progress_aired_eps(meta)
-					total_unwatched = ws.get_watched_status_tvshow(ws.watched_info_tvshow(watched_db).get(str(tmdb_id), None), progress_aired_eps)[2]
+					total_unwatched = ws.get_watched_status_tvshow(watched_info_tvshow.get(str(tmdb_id), None), progress_aired_eps)[2]
 					if progress_aired_eps != total_unwatched: set_properties({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
 			if list_type_starts_with('next_') and (season, episode) != (1, 1):
 				cm_append(['unmark_previous_episode', ('[B]Unmark Previous Watched[/B]', 'RunPlugin(%s)' % \
@@ -329,6 +329,7 @@ def build_single_episode(list_type, params={}):
 	playback_key = settings.playback_key()
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
+	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
 	if list_type == 'episode.next':
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
 		sort_key, sort_direction = settings.nextep_sort_key(), settings.nextep_sort_direction()
