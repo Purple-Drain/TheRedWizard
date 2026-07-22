@@ -1352,6 +1352,7 @@ def default_settings():
 {'setting_id': 'rescrape.ignore_filters.order', 'setting_type': 'action', 'setting_default': '4', 'min_value': '1', 'max_value': '5'},
 {'setting_id': 'rescrape.full_scrape', 'setting_type': 'action', 'setting_default': '2', 'settings_options': {'0': 'Off', '1': 'Auto', '2': 'Prompt'}},
 {'setting_id': 'rescrape.full_scrape.order', 'setting_type': 'action', 'setting_default': '5', 'min_value': '1', 'max_value': '5'},
+{'setting_id': 'prescrape.sequential', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== Sorting and Filtering
 {'setting_id': 'results.sort_order_display', 'setting_type': 'string', 'setting_default': 'Quality, Size, Provider'},
 {'setting_id': 'results.filter_size_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '1': 'Use Line Speed', '2': 'Use Size'}},

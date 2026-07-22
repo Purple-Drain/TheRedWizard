@@ -557,7 +557,6 @@ class Sources():
 		return self.sources
 
 	def collect_prescrape_results(self):
-		threads_append = self.prescrape_threads.append
 		folder_prescrape = False
 		if self.active_folders:
 			if settings.check_prescrape_sources('folders', self.media_type):
@@ -565,6 +564,9 @@ class Sources():
 				folder_prescrape = True
 		self.prescrape_scrapers.extend(self.internal_sources(True))
 		if not self.prescrape_scrapers and not folder_prescrape: return []
+		if settings.prescrape_sequential():
+			return self._collect_prescrape_results_sequential(folder_prescrape)
+		threads_append = self.prescrape_threads.append
 		for i in self.prescrape_scrapers: threads_append(Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]))
 		[i.start() for i in self.prescrape_threads]
 		if self.background: [i.join() for i in self.prescrape_threads]
@@ -576,6 +578,39 @@ class Sources():
 		if folder_prescrape and 'folders' not in self.remove_scrapers:
 			self.remove_scrapers.append('folders')
 		self.prescrape_ran_scrapers = {i[2] for i in self.prescrape_scrapers}
+		return self.prescrape_sources
+
+	def _prescrape_priority_key(self, scraper_tuple):
+		module_type, scraper_name = scraper_tuple[0], scraper_tuple[2]
+		provider_key = 'folders' if module_type == 'folders' else scraper_name
+		return settings.provider_sort_ranks().get(provider_key, 99)
+
+	def _collect_prescrape_results_sequential(self, folder_prescrape):
+		"""Waterfall prescrape: run providers in priority tiers (lowest number first, per
+		redlight.<provider>.priority) and stop starting the next tier once a tier finds a hit."""
+		tiers = {}
+		for i in self.prescrape_scrapers:
+			tiers.setdefault(self._prescrape_priority_key(i), []).append(i)
+		ran_scrapers = []
+		for priority in sorted(tiers):
+			tier = tiers[priority]
+			tier_threads = [Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]) for i in tier]
+			[t.start() for t in tier_threads]
+			if self.background:
+				[t.join() for t in tier_threads]
+			else:
+				self.prescrape_threads = tier_threads
+				self.scrapers_dialog()
+			ran_scrapers.extend(tier)
+			if self._user_cancelled_scrape() or self.prescrape_sources:
+				break
+		for i in ran_scrapers:
+			scraper_name = i[2]
+			if scraper_name not in self.remove_scrapers:
+				self.remove_scrapers.append(scraper_name)
+		if folder_prescrape and any(i[0] == 'folders' for i in ran_scrapers) and 'folders' not in self.remove_scrapers:
+			self.remove_scrapers.append('folders')
+		self.prescrape_ran_scrapers = {i[2] for i in ran_scrapers}
 		return self.prescrape_sources
 
 	def process_results(self, results):
