@@ -51,7 +51,8 @@ def get_key_id(params):
 		search_easynews_image(key_id)
 		return _refresh_search_history_if_visible()
 	url_params.update({'query': key_id, 'key_id': key_id, 'name': 'Search Results for %s' % key_id})
-	return execute_builtin('ActivateWindow(Videos,%s,return)' if external() else 'Container.Update(%s)' % build_url(url_params))
+	url = build_url(url_params)
+	return execute_builtin(('ActivateWindow(Videos,%s,return)' if external() else 'Container.Update(%s)') % url)
 
 def add_to_search(search_name, search_list):
 	try:

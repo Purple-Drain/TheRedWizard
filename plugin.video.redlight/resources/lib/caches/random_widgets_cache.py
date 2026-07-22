@@ -9,7 +9,7 @@ class RandomWidgets(BaseCache):
 	def clean_database(self):
 		try:
 			dbcon = self.manual_connect('random_widgets_db')
-			dbcon.execute('DELETE from data WHERE CAST(expires AS INT) <= ?', (get_timestamp(),))
+			dbcon.execute('DELETE from random_widgets WHERE CAST(expires AS INT) <= ?', (get_timestamp(),))
 			dbcon.execute('VACUUM')
 			return True
 		except: return False

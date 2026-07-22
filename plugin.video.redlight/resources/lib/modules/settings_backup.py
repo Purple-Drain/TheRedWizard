@@ -199,21 +199,34 @@ def _apply_settings_import(zip_path, inventory):
 			archive.extractall(temp_dir)
 		copied_dbs = []
 		imported_db_keys = []
-		for item in inventory['databases']:
-			src = os.path.join(temp_dir, item['arcname'].replace('/', os.sep))
-			if not os.path.isfile(src):
-				continue
-			db_key = _db_key_for_filename(item['filename'])
-			if not db_key:
-				continue
-			dest = database_locations(db_key)
-			kodi_utils.make_directory(os.path.dirname(dest))
-			if os.path.isfile(dest):
-				kodi_utils.delete_file(dest)
-			shutil.copy2(src, dest)
-			make_database(db_key)
-			copied_dbs.append(item['filename'])
-			imported_db_keys.append(db_key)
+		backups = []
+		try:
+			for item in inventory['databases']:
+				src = os.path.join(temp_dir, item['arcname'].replace('/', os.sep))
+				if not os.path.isfile(src):
+					continue
+				db_key = _db_key_for_filename(item['filename'])
+				if not db_key:
+					continue
+				dest = database_locations(db_key)
+				kodi_utils.make_directory(os.path.dirname(dest))
+				if os.path.isfile(dest):
+					backup = dest + '.redlight.bak'
+					shutil.copy2(dest, backup)
+					backups.append((dest, backup))
+				shutil.copy2(src, dest)
+				make_database(db_key)
+				copied_dbs.append(item['filename'])
+				imported_db_keys.append(db_key)
+		except Exception:
+			for dest, backup in backups:
+				try: shutil.copy2(backup, dest)
+				except Exception: pass
+			raise
+		finally:
+			for _dest, backup in backups:
+				try: os.remove(backup)
+				except Exception: pass
 		copied_images = _import_images(os.path.join(temp_dir, 'images'), os.path.join(profile, 'images'))
 		_reload_settings(imported_db_keys)
 		from caches.base_cache import check_databases_integrity

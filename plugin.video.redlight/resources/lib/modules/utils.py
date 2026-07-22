@@ -397,6 +397,7 @@ def image_from_db(image_url, delete=True):
 	import os
 	import sqlite3 as database
 	from modules.kodi_utils import translate_path
+	dbcon = None
 	try:
 		thumbs_folder = translate_path('special://thumbnails')
 		dbfile = translate_path(os.path.join('special://database', 'Textures13.db'))
@@ -417,6 +418,8 @@ def image_from_db(image_url, delete=True):
 		dbcon.commit()
 		return True
 	except: return False
+	finally:
+		if dbcon is not None: dbcon.close()
 
 def make_image(list_type, image_type, list_name, images, current_image):
 	import os

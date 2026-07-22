@@ -75,7 +75,8 @@ def get_trakt_all(params):
 		return {'sort_by': sort_by, 'sort_how': sort_how, 'data': all_items}
 	return all_items
 
-def call_trakt(path, params={}, data=None, is_delete=False, with_auth=True, method=None, pagination=False, page_no=1):
+def call_trakt(path, params=None, data=None, is_delete=False, with_auth=True, method=None, pagination=False, page_no=1):
+	params = {} if params is None else params
 	def send_query():
 		resp = None
 		if with_auth:
@@ -116,7 +117,9 @@ def call_trakt(path, params={}, data=None, is_delete=False, with_auth=True, meth
 		else: return None
 	elif status_code == 429:
 		if 'Retry-After' in headers:
-			kodi_utils.sleep(1000 * headers['Retry-After'])
+			try: retry_after = int(headers['Retry-After'])
+			except: retry_after = 1
+			kodi_utils.sleep(1000 * retry_after)
 			response = send_query()
 	response.encoding = 'utf-8'
 	result = response.json() if 'json' in headers.get('Content-Type', '') else response.text

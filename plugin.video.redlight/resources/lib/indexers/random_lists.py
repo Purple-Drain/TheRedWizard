@@ -403,7 +403,7 @@ class RandomLists():
 			random.shuffle(result)
 			if paginate(self.is_external): data = random.sample(result, min(len(result), page_limit(self.is_external)))
 			else: data = random.sample(result, len(result))
-			result = [dict(i, **{'order': c}) for c, i in enumerate(result)]
+			result = [dict(i, **{'order': c}) for c, i in enumerate(data)]
 			url_params = {'base_list_name':list_name, 'list_id': list_id, 'result': result}
 			content_type, self.list_items = build_tmdb_list(url_params)
 			if cache_to_memory: set_persistent_content(self.database, '%s_%s' % (self.mode, list_id), {'name': list_name, 'result': result})

@@ -365,7 +365,7 @@ class RealDebridAPI:
 		if '?' not in url: url += '?auth_token=%s' % self.token
 		else: url += '&auth_token=%s' % self.token
 		response = requests.get(url, timeout=20)
-		if any(value in response.text for value in ('bad_token', 'Bad Request')):
+		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
 			if self.refresh_token(): response = self._get(original_url)
 			else: return None
 		try: return response.json()
@@ -378,7 +378,7 @@ class RealDebridAPI:
 		if '?' not in url: url += '?auth_token=%s' % self.token
 		else: url += '&auth_token=%s' % self.token
 		response = requests.post(url, data=post_data, timeout=20)
-		if any(value in response.text for value in ('bad_token', 'Bad Request')):
+		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
 			if self.refresh_token(): response = self._post(original_url, post_data)
 			else: return None
 		try: return response.json()

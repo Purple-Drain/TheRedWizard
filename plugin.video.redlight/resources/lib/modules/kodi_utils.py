@@ -630,7 +630,9 @@ def kodi_version():
 	return int(get_infolabel('System.BuildVersion')[0:2])
 
 def get_video_database_path():
-	return translate_path('special://profile/Database/MyVideos%s.db' % {19: '119', 20: '121', 21: '124'}[kodi_version()])
+	version_map = {19: '119', 20: '121', 21: '124'}
+	db_version = version_map.get(kodi_version()) or version_map[max(version_map)]
+	return translate_path('special://profile/Database/MyVideos%s.db' % db_version)
 
 def show_busy_dialog():
 	return execute_builtin('ActivateWindow(busydialognocancel)')
@@ -1206,10 +1208,13 @@ def upload_logfile(params):
 def fetch_kodi_imagecache(image):
 	import sqlite3 as database
 	result = None
+	dbcon = None
 	try:
 		dbcon = database.connect(translate_path('special://database/Textures13.db'), timeout=40.0)
 		dbcur = dbcon.cursor()
 		dbcur.execute("SELECT cachedurl FROM texture WHERE url = ?", (image,))
 		result = dbcur.fetchone()[0]
 	except: pass
+	finally:
+		if dbcon is not None: dbcon.close()
 	return result
