@@ -120,7 +120,7 @@ class MenuEditor:
 				new_item_name = self._get_external_name_input(item_name)
 				if not new_item_name or new_item_name == item_name: return
 				current_item['name'] = new_item_name
-				list_items[self.position] == current_item
+				list_items[self.position] = current_item
 			elif self.action == 'remove':
 				if not kodi_utils.confirm_dialog(): return kodi_utils.notification('Cancelled', 1500)
 				if self.position < 0 or self.position >= len(list_items): return
