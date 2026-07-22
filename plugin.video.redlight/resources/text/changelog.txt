@@ -1,3 +1,7 @@
+[COLOR red][B]Version 1.9.10[/B][/COLOR]
+- [B]Prescrape[/B]: new opt-in [B]Sequential Prescrape[/B] setting — runs "Check Before Full Search" providers in priority tiers instead of all in parallel; the next tier is skipped entirely once an earlier tier finds a hit (e.g. a fast Folders match can now skip RD Cloud/TorBox instead of waiting for them too). Off by default. See docs/prescrape-and-autoplay-settings.md.
+- Security/stability: closed off unsafe internal route dispatch, DB backup-before-overwrite safety on settings import, several silent metadata/listing bugs (missing genres, wrong studio/network fallback, unaired shows and specials dropping out of listings, discarded random-list pagination), a Trakt rate-limit crash, and various resource leaks and redundant network/regex work.
+
 [COLOR red][B]Version 1.9.9[/B][/COLOR]
 - [B]Progress[/B]: [B]Exclude Specials from Show Progress[/B] (default On) — Season 0 specials no longer count toward TV show watched progress, progress %, or In Progress / Watched classification. Independent of [B]Show Special Episodes When Available[/B]. Turn Off to restore the previous behaviour.
 - [B]Trakt[/B] / [B]Simkl[/B]: [B]Reset Scrobble[/B] now clears that provider's progress DB even when a different watched-status provider is active (avoids deleting the wrong service's resume bookmark).
