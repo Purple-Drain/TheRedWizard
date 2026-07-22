@@ -566,6 +566,9 @@ def prescrape_enabled(media_type, active_scrapers=None):
 		active_scrapers = active_internal_scrapers()
 	return any(check_prescrape_sources(scraper, media_type) for scraper in active_scrapers)
 
+def prescrape_sequential():
+	return get_setting('redlight.prescrape.sequential', 'false') == 'true'
+
 def cloud_scrape_before_external(scraper):
 	"""Run debrid cloud scrapers before external torrent scrapers when the provider is enabled."""
 	cloud_scrapers = {
