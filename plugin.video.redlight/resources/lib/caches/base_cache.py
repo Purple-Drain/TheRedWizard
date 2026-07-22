@@ -272,6 +272,10 @@ def clear_cache(cache_type, silent=False):
 		if not _confirm(): return
 		from apis.torbox_api import TorBox
 		success = TorBox.clear_cache()
+	elif cache_type == 'dl_cloud':
+		if not _confirm(): return
+		from apis.debridlink_api import DebridLink
+		success = DebridLink.clear_cache()
 	elif cache_type == 'folders':
 		if not _confirm(): return
 		from caches.main_cache import main_cache
@@ -304,7 +308,7 @@ def clear_all_cache():
 			('tmdb_list', 'TMDb Personal List Cache'), ('imdb', 'IMDb Cache'), ('mdblist', 'MDBList Cache'), ('simkl', 'Simkl Cache'),
 			('trakt', 'Trakt Cache'), ('subtitles', 'Subtitles Cache'), ('internal_scrapers', 'Internal Scrapers Cache'),
 			('external_scrapers', 'External Scrapers Cache'), ('ad_cloud', 'All Debrid Cloud'), ('oc_cloud', 'Offcloud Cloud'),
-			('pm_cloud', 'Premiumize Cloud'), ('rd_cloud', 'Real Debrid Cloud'), ('tb_cloud', 'TorBox Cloud'))
+			('pm_cloud', 'Premiumize Cloud'), ('rd_cloud', 'Real Debrid Cloud'), ('tb_cloud', 'TorBox Cloud'), ('dl_cloud', 'Debrid-Link Cloud'))
 	for count, cache_type in enumerate(caches, 1):
 		try:
 			progressDialog.update(line % (cache_type[1]), int(float(count) / float(len(caches)) * 100))

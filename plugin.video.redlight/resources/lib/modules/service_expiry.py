@@ -17,6 +17,7 @@ SERVICE_META = (
 	('pm', 'Premiumize', 'premiumize'),
 	('rd', 'Real Debrid', 'realdebrid'),
 	('tb', 'TorBox', 'torbox'),
+	('dl', 'Debrid-Link', 'debridlink'),
 )
 
 
@@ -113,6 +114,14 @@ def _fetch_raw_expiry(service_id):
 			response = TorBox.account_info() or {}
 			if not response.get('success'): return None
 			return (response.get('data') or {}).get('premium_expires_at')
+		if service_id == 'dl':
+			from apis.debridlink_api import DebridLink
+			response = DebridLink.account_info() or {}
+			if not response.get('success'): return None
+			premium_left = (response.get('value') or {}).get('premiumLeft')
+			if not premium_left: return None
+			import time
+			return time.time() + int(premium_left)
 		if service_id == 'oc':
 			from apis.offcloud_api import Offcloud
 			info = Offcloud.account_info() or {}

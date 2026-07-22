@@ -42,7 +42,7 @@ class SourcesResults(BaseDialog):
 		self.item_list, self.filter_list, self.total_results = [], [], '0'
 		self.info_icons_dict = {'easynews': get_icon('easynews'), 'aiostreams': get_icon('premiumize'), 'nzb': get_icon('torbox'), 'alldebrid': get_icon('alldebrid'), 'real-debrid': get_icon('realdebrid'),
 		'premiumize': get_icon('premiumize'), 'offcloud': get_icon('offcloud'), 'torbox': get_icon('torbox'), 'ad_cloud': get_icon('alldebrid'), 'rd_cloud': get_icon('realdebrid'),
-		'pm_cloud': get_icon('premiumize'), 'oc_cloud': get_icon('offcloud'), 'tb_cloud': get_icon('torbox')}
+		'pm_cloud': get_icon('premiumize'), 'oc_cloud': get_icon('offcloud'), 'tb_cloud': get_icon('torbox'), 'debridlink': get_icon('debridlink'), 'dl_cloud': get_icon('debridlink')}
 		self.info_quality_dict = {'4k': get_icon('flag_4k', 'flags'), '1080p': get_icon('flag_1080p', 'flags'), '720p': get_icon('flag_720p', 'flags'),
 		'sd': get_icon('flag_sd', 'flags'), 'cam': get_icon('flag_sd', 'flags'), 'tele': get_icon('flag_sd', 'flags'), 'scr': get_icon('flag_sd', 'flags')}
 		self.tint_focused_background = get_setting('redlight.highlight.tint_focused_background') == 'true'
@@ -225,6 +225,18 @@ class SourcesResults(BaseDialog):
 						return notification('Error', 1200)
 					TorBox.clear_cache()
 					self.delete_single_source(source)
+				if choice == 'dl_cloud_delete':
+					from apis.debridlink_api import DebridLink
+					folder_id = source.get('folder_id')
+					if folder_id is None:
+						raw = source.get('id') or source.get('url_dl') or ''
+						if isinstance(raw, str) and ',' in raw:
+							folder_id = raw.split(',', 1)[0]
+					if folder_id is None:
+						return notification('Error', 1200)
+					DebridLink.delete_torrent(folder_id)
+					DebridLink.clear_cache()
+					self.delete_single_source(source)
 
 	def delete_single_source(self, single_source):
 		self.results.remove(single_source)
@@ -259,7 +271,7 @@ class SourcesResults(BaseDialog):
 						else: set_properties({'source_type': 'UNCACHED'})
 						item_highlight = 'FF7C7C7C'
 					else:
-						provider_check_names = {'REAL-DEBRID': 'Real-Debrid', 'ALLDEBRID': 'AllDebrid', 'TORBOX': 'TorBox', 'PREMIUMIZE': 'Premiumize.me', 'OFFCLOUD': 'Offcloud'}
+						provider_check_names = {'REAL-DEBRID': 'Real-Debrid', 'ALLDEBRID': 'AllDebrid', 'TORBOX': 'TorBox', 'PREMIUMIZE': 'Premiumize.me', 'OFFCLOUD': 'Offcloud', 'DEBRIDLINK': 'DebridLink'}
 						check_provider = provider_check_names.get(provider)
 						if check_provider and self._provider_cache_verified(check_provider): cache_flag = '[B]CACHED[/B]'
 						elif check_provider: cache_flag = 'UNCHECKED'
@@ -439,6 +451,7 @@ class SourcesResults(BaseDialog):
 		if down_file_params: choices_append(('Download File', down_file_params))
 		if provider_source == 'rd_cloud': choices_append(('Delete from RD Cloud', 'rd_cloud_delete'))
 		if provider_source == 'tb_cloud': choices_append(('Delete from TorBox Cloud', 'tb_cloud_delete'))
+		if provider_source == 'dl_cloud': choices_append(('Delete from Debrid-Link Cloud', 'dl_cloud_delete'))
 		list_items = [{'line1': i[0], 'icon': self.poster} for i in choices]
 		kwargs = {'items': json.dumps(list_items)}
 		choice = select_dialog([i[1] for i in choices], **kwargs)

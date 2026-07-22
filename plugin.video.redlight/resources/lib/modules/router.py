@@ -279,6 +279,28 @@ def routing(sys):
 		elif mode == 'torbox.send_webdl':
 			from indexers.torbox import tb_send_webdl
 			tb_send_webdl()
+	elif 'debridlink' in mode:
+		if mode == 'debridlink.dl_cloud':
+			from indexers.debridlink import dl_cloud
+			return dl_cloud()
+		elif mode == 'debridlink.browse_dl_cloud':
+			from indexers.debridlink import browse_dl_cloud
+			return browse_dl_cloud(params.get('id'))
+		elif mode == 'debridlink.resolve_dl':
+			from indexers.debridlink import resolve_dl
+			return resolve_dl(params)
+		elif mode == 'debridlink.dl_account_info':
+			from indexers.debridlink import dl_account_info
+			return dl_account_info()
+		elif mode == 'debridlink.authenticate':
+			from apis.debridlink_api import DebridLinkAPI
+			return DebridLinkAPI().auth()
+		elif mode == 'debridlink.revoke_authentication':
+			from apis.debridlink_api import DebridLinkAPI
+			return DebridLinkAPI().revoke()
+		elif mode == 'debridlink.delete':
+			from indexers.debridlink import dl_delete
+			return dl_delete(params.get('id'))
 	elif 'tmdblist_api' in mode:
 		if mode == 'tmdblist_api.authenticate':
 			from apis.tmdblist_api import TMDbListAPI

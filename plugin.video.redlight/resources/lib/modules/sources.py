@@ -257,13 +257,14 @@ class Sources():
 							('sources_sd', '', self._quality_length_sd), ('sources_total', '', self._quality_length_final))
 		self.filter_keys = include_exclude_filters()
 		self.filter_keys.pop('hybrid')
-		self.default_internal_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'folders')
+		self.default_internal_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud', 'folders')
 		self.debrids = {'Real-Debrid': ('apis.real_debrid_api', 'RealDebridAPI'), 'rd_cloud': ('apis.real_debrid_api', 'RealDebridAPI'),
 		'rd_browse': ('apis.real_debrid_api', 'RealDebridAPI'), 'Premiumize.me': ('apis.premiumize_api', 'PremiumizeAPI'), 'pm_cloud': ('apis.premiumize_api', 'PremiumizeAPI'),
 		'pm_browse': ('apis.premiumize_api', 'PremiumizeAPI'), 'AllDebrid': ('apis.alldebrid_api', 'AllDebridAPI'), 'ad_cloud': ('apis.alldebrid_api', 'AllDebridAPI'),
 		'ad_browse': ('apis.alldebrid_api', 'AllDebridAPI'), 'Offcloud': ('apis.offcloud_api', 'OffcloudAPI'), 'oc_cloud': ('apis.offcloud_api', 'OffcloudAPI'),
 		'oc_browse': ('apis.offcloud_api', 'OffcloudAPI'), 'TorBox': ('apis.torbox_api', 'TorBoxAPI'), 'tb_cloud': ('apis.torbox_api', 'TorBoxAPI'),
-		'tb_browse': ('apis.torbox_api', 'TorBoxAPI')}
+		'tb_browse': ('apis.torbox_api', 'TorBoxAPI'), 'DebridLink': ('apis.debridlink_api', 'DebridLinkAPI'), 'dl_cloud': ('apis.debridlink_api', 'DebridLinkAPI'),
+		'dl_browse': ('apis.debridlink_api', 'DebridLinkAPI')}
 		self.retry_actions = settings.rescrape_settings()
 
 	def _playback_already_active(self):
@@ -633,7 +634,7 @@ class Sources():
 		else:
 			strip_uncached = all_uncached_results
 		results = [i for i in results if i not in strip_uncached]
-		cloud_scrapers = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+		cloud_scrapers = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud')
 		cloud_results = [i for i in results if i.get('scrape_provider') in cloud_scrapers]
 		aio_preserve_results = []
 		if self._aiostreams_preserve_order():
@@ -680,7 +681,7 @@ class Sources():
 	def _log_prescrape_settings(self):
 		try:
 			active = self.active_internal_scrapers or []
-			check_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'folders', 'external')
+			check_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud', 'folders', 'external')
 			check = {s: settings.check_prescrape_sources(s, self.media_type) for s in active if s in check_scrapers}
 			label = '%s tmdb=%s' % (self.media_type, self.tmdb_id)
 			if self.media_type == 'episode':
@@ -726,7 +727,7 @@ class Sources():
 				max_size = ((0.125 * (0.90 * string_to_float(get_setting('results.line_speed', '25'), '25'))) * duration)/1000
 			elif self.filter_size_method == 2:
 				max_size = string_to_float(get_setting('redlight.results.%s_size_max' % self.media_type, '10000'), '10000') / 1000
-			results = [i for i in results if i['scrape_provider'] == 'folders' or i['scrape_provider'] in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') or min_size <= i['size'] <= max_size]
+			results = [i for i in results if i['scrape_provider'] == 'folders' or i['scrape_provider'] in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud') or min_size <= i['size'] <= max_size]
 		results += folder_results
 		return results
 
@@ -872,13 +873,13 @@ class Sources():
 
 	def _pin_scrapers_to_top_enabled(self):
 		if 'folders' in self.all_scrapers and settings.sort_to_top('folders'): return True
-		return any(settings.sort_to_top(p) for p in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') if p in self.all_scrapers)
+		return any(settings.sort_to_top(p) for p in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud') if p in self.all_scrapers)
 
 	def sort_first(self, results):
 		try:
 			sort_first_scrapers = []
 			if 'folders' in self.all_scrapers and settings.sort_to_top('folders'): sort_first_scrapers.append('folders')
-			sort_first_scrapers.extend([i for i in self.all_scrapers if i in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') and settings.sort_to_top(i)])
+			sort_first_scrapers.extend([i for i in self.all_scrapers if i in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud') and settings.sort_to_top(i)])
 			if not sort_first_scrapers: return results
 			sort_first = [i for i in results if i['scrape_provider'] in sort_first_scrapers]
 			sort_first.sort(key=lambda k: (self._sort_folder_to_top(k['scrape_provider']), k['quality_rank']))
@@ -963,7 +964,7 @@ class Sources():
 		self.active_external, self.external_providers = False, []
 
 	def internal_sources(self, prescrape=False, cloud_early=False):
-		active_sources = [i for i in self.active_internal_scrapers if i in ['easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'] and i not in self.remove_scrapers]
+		active_sources = [i for i in self.active_internal_scrapers if i in ['easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud'] and i not in self.remove_scrapers]
 		if not prescrape:
 			prescrape_ran = getattr(self, 'prescrape_ran_scrapers', set()) or set()
 			if prescrape_ran:
@@ -1034,7 +1035,7 @@ class Sources():
 		return sourceDict
 
 	def _cloud_scrapers(self):
-		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud')
 
 	def _prescrape_autoplay_candidates(self, results):
 		autoplay_scrapers = self._cloud_scrapers() + ('easynews', 'aiostreams', 'nzb', 'folders')
@@ -1497,7 +1498,7 @@ class Sources():
 		names.update(i for i in self.remove_scrapers if i not in ('external',))
 		for thread in self.threads:
 			name = thread.getName()
-			if name in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'):
+			if name in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud'):
 				names.add(name)
 		return names
 
@@ -2042,7 +2043,7 @@ class Sources():
 
 	def _cleanup_browse_transfer(self, debrid_provider, debrid_files, is_pack):
 		'''Remove temporary browse transfers when Store Resolved to Cloud does not apply.'''
-		if debrid_provider not in ('TorBox', 'Offcloud'):
+		if debrid_provider not in ('TorBox', 'Offcloud', 'DebridLink'):
 			return
 		if settings.store_resolved_to_cloud(debrid_provider, is_pack):
 			return
@@ -2100,7 +2101,7 @@ class Sources():
 				return None
 			# browse_packs() already notified; do not fall back to full magnet resolve/play.
 			return None
-		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse'}.get(debrid_provider)
+		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse', 'DebridLink': 'dl_browse'}.get(debrid_provider)
 		if download:
 			debrid_files, _pack_api = pack_result
 			return debrid_files, self.debrid_importer(debrid_info)
@@ -2746,7 +2747,7 @@ class Sources():
 					title, season, episode = self._resolve_episode_labels()
 					pack = 'package' in item
 				else: title, season, episode, pack = self.get_search_title(), None, None, False
-				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox'):
+				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox', 'DebridLink'):
 					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack)
 					try:
 						self._log_nextep_resolve_diag(item, phase='resolved', url=url, resolve_se=(season, episode))
@@ -2794,7 +2795,7 @@ class Sources():
 					else:
 						url = tb.unrestrict_link(item_id)
 					url = tb.coerce_play_url(url) or url
-				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_')):
+				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_', 'dl_')):
 					url = debrid_function().unrestrict_link(item_id)
 				else:
 					if '_cloud' in scrape_provider: item_id = debrid_function().get_item_details(item_id)['link']

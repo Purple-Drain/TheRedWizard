@@ -80,6 +80,7 @@ class Navigator:
 		if s.authorized_debrid_check('pm'): self.add({'mode': 'navigator.premiumize'}, premium_menu_label('pm', 'Premiumize'), 'premiumize')
 		if s.authorized_debrid_check('rd'): self.add({'mode': 'navigator.real_debrid'}, premium_menu_label('rd', 'Real Debrid'), 'realdebrid')
 		if s.authorized_debrid_check('tb'): self.add({'mode': 'navigator.torbox'}, premium_menu_label('tb', 'TorBox'), 'torbox')
+		if s.authorized_debrid_check('dl'): self.add({'mode': 'navigator.debridlink'}, premium_menu_label('dl', 'Debrid-Link'), 'debridlink')
 		self.end_directory()
 
 	def easynews(self):
@@ -127,6 +128,11 @@ class Navigator:
 		self.add({'mode': 'torbox.tb_history'}, 'History', 'torbox')
 		self.add({'mode': 'torbox.send_webdl', 'isFolder': 'false'}, 'Send URL to WebDL', 'torbox')
 		self.add({'mode': 'torbox.tb_account_info', 'isFolder': 'false'}, 'Account Info', 'torbox')
+		self.end_directory()
+
+	def debridlink(self):
+		self.add({'mode': 'debridlink.dl_cloud'}, 'Cloud Storage', 'debridlink')
+		self.add({'mode': 'debridlink.dl_account_info', 'isFolder': 'false'}, 'Account Info', 'debridlink')
 		self.end_directory()
 
 	def favorites(self):
@@ -417,6 +423,7 @@ class Navigator:
 		self.add({'mode': 'clear_cache', 'cache': 'pm_cloud', 'isFolder': 'false'}, 'Clear Premiumize Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'rd_cloud', 'isFolder': 'false'}, 'Clear Real Debrid Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'tb_cloud', 'isFolder': 'false'}, 'Clear TorBox Cache', 'settings')
+		self.add({'mode': 'clear_cache', 'cache': 'dl_cloud', 'isFolder': 'false'}, 'Clear Debrid-Link Cache', 'settings')
 		self.end_directory()
 
 	def set_view_modes(self):

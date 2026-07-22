@@ -6,6 +6,7 @@ from apis.premiumize_api import PremiumizeAPI
 from apis.alldebrid_api import AllDebridAPI
 from apis.torbox_api import TorBoxAPI
 from apis.offcloud_api import OffcloudAPI
+from apis.debridlink_api import DebridLinkAPI
 from modules.source_utils import get_external_cache_status
 from modules.utils import chunks
 from modules.kodi_utils import show_busy_dialog, hide_busy_dialog, notification
@@ -14,7 +15,7 @@ from modules.settings import enabled_debrids_check
 
 def debrid_enabled():
 	return [
-	i[0] for i in [('Real-Debrid', 'rd'), ('Premiumize.me', 'pm'), ('AllDebrid', 'ad'), ('Offcloud', 'oc'), ('TorBox', 'tb')] if enabled_debrids_check(i[1])]
+	i[0] for i in [('Real-Debrid', 'rd'), ('Premiumize.me', 'pm'), ('AllDebrid', 'ad'), ('Offcloud', 'oc'), ('TorBox', 'tb'), ('DebridLink', 'dl')] if enabled_debrids_check(i[1])]
 
 def debrid_cache_check_available(enabled_debrid=None):
 	if not enabled_debrid: enabled_debrid = debrid_enabled()
@@ -45,6 +46,9 @@ def normalize_debrid_provider(provider):
 		'pm_cloud': 'Premiumize.me',
 		'alldebrid': 'AllDebrid',
 		'ad_cloud': 'AllDebrid',
+		'debridlink': 'DebridLink',
+		'debrid-link': 'DebridLink',
+		'dl_cloud': 'DebridLink',
 	}
 	return aliases.get(str(provider).lower(), provider)
 
@@ -56,6 +60,7 @@ def downloader_provider_slug(provider):
 		'AllDebrid': 'alldebrid',
 		'TorBox': 'torbox',
 		'Offcloud': 'offcloud',
+		'DebridLink': 'debrid-link',
 	}.get(provider, (provider or '').lower())
 
 def import_pack_api(provider):
@@ -66,6 +71,7 @@ def import_pack_api(provider):
 		'AllDebrid': AllDebridAPI,
 		'TorBox': TorBoxAPI,
 		'Offcloud': OffcloudAPI,
+		'DebridLink': DebridLinkAPI,
 	}
 	return api_map.get(provider)()
 
@@ -103,7 +109,7 @@ class ExternalPackSource:
 def manual_add_magnet_to_cloud(params):
 	show_busy_dialog()
 	provider = normalize_debrid_provider(params.get('provider') or params.get('debrid', ''))
-	debrid_list_modules = [('Real-Debrid', RealDebridAPI), ('Premiumize.me', PremiumizeAPI), ('AllDebrid', AllDebridAPI), ('Offcloud', OffcloudAPI), ('TorBox', TorBoxAPI)]
+	debrid_list_modules = [('Real-Debrid', RealDebridAPI), ('Premiumize.me', PremiumizeAPI), ('AllDebrid', AllDebridAPI), ('Offcloud', OffcloudAPI), ('TorBox', TorBoxAPI), ('DebridLink', DebridLinkAPI)]
 	try:
 		function = [i[1] for i in debrid_list_modules if i[0] == provider][0]
 	except IndexError:
