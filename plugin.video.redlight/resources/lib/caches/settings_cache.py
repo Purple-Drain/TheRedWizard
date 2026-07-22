@@ -75,8 +75,18 @@ def _new_settings_affect_widgets(insert_list):
 		return True
 	return False
 
-def _new_setting_value(setting_id, setting_default, currentsettings, had_existing_settings):
+def _new_setting_value(setting_id, setting_default, currentsettings, had_existing_settings, fresh_install=False) -> str:
 	if not had_existing_settings:
+		# A genuine fresh install has nothing to migrate, but migrate_legacy_sort_settings() reads each
+		# absent legacy id as its own old getter fallback, so it would write six override rows for a user
+		# who has never touched a sort setting - breaking list_sort_cache's "a row means the user
+		# overrode this list" invariant. Seed the sentinel as already done so it never runs here.
+		#
+		# fresh_install, not had_existing_settings: the caller's dict comes from get_all(), which
+		# answers {} for a locked or corrupt database too. Seeding 'true' on that mistake would skip the
+		# migration forever - the next healthy sync reads the sentinel, never runs it, and the obsolete
+		# purge then deletes the five legacy ids and with them the only copy of the user's orderings.
+		if setting_id == 'migration.unified_list_sort': return 'true' if fresh_install else setting_default
 		return setting_default
 	old_setting_id = _NEW_SETTING_VALUE_MIGRATIONS.get(setting_id)
 	if not old_setting_id:
@@ -237,6 +247,23 @@ class SettingsCache:
 		try: all_settings = dict(dbcon.execute('SELECT setting_id, setting_value FROM settings').fetchall())
 		except: all_settings = {}
 		return all_settings
+
+	def is_empty_strict(self):
+		"""True only when this profile genuinely holds no settings. Raises rather than guessing.
+
+		get_all() swallows every sqlite error and answers {}, so its empty dict cannot tell a fresh
+		install from a database that is locked, corrupt or unreadable. Anything deciding "this profile
+		has never been written to" has to ask a question that is allowed to fail. An absent file and an
+		absent table are both genuinely empty - the service creates them on first run.
+		"""
+		from caches.base_cache import database_locations
+		if not kodi_utils.path_exists(database_locations('settings_db')): return True
+		dbcon = connect_database('settings_db')
+		try: row = dbcon.execute('SELECT setting_id FROM settings LIMIT 1').fetchone()
+		except Exception as error:
+			if 'no such table' in str(error).lower(): return True
+			raise
+		return row is None
 
 	def set(self, setting_id, setting_value=None):
 		setting_id = setting_id.replace('redlight.', '')
@@ -507,6 +534,13 @@ _DIRECTORY_LISTING_MODES = frozenset((
 	'build_in_progress_episode', 'build_recently_watched_episode', 'build_next_episode',
 	'build_my_calendar', 'build_next_episode_manager'))
 
+# The five settings the unified-list-sort migration reads. They are no longer in default_settings(),
+# so the obsolete-id purge in sync_settings() would delete them on the same pass that migrates them -
+# leaving nothing to retry from if the migration fails. The purge is deferred until the sentinel says
+# the migration succeeded, which happens in the same run, so they are removed on the following sync.
+_LEGACY_SORT_SETTING_IDS = frozenset((
+	'sort.watchlist', 'sort.collection', 'sort.simkl', 'tmdbsort.watchlist', 'tmdbsort.favorites'))
+
 def is_directory_listing_mode(mode):
 	if not mode: return False
 	if mode.startswith('navigator.'): return True
@@ -571,13 +605,29 @@ def sync_settings(params={}):
 	insert_list = []
 	insert_list_append = insert_list.append
 	currentsettings = settings_cache.get_all()
+	# Redundant by design: the obsolete purge below defers the legacy sort ids until the migration has
+	# recorded success, so currentsettings still holds them when the migration runs. This pre-purge
+	# snapshot is the second line of defence if that deferral is ever removed - keep both.
+	legacy_sort_settings = {k: v for k, v in currentsettings.items() if k.startswith('sort.') or k.startswith('tmdbsort.')}
 	had_existing_settings = bool(currentsettings)
+	# Only a database that answers "no rows" without erroring is a fresh install. A failure here is
+	# treated as "not fresh", which defers the sort migration to the next sync instead of cancelling
+	# it: the sentinel stays 'false' and the obsolete purge keeps holding the legacy ids back.
+	fresh_install = False
+	if not had_existing_settings:
+		try: fresh_install = settings_cache.is_empty_strict()
+		except Exception as error:
+			kodi_utils.logger('sync_settings', 'settings db not readable, deferring sort migration: %s' % error)
 	d_settings = default_settings()
 	defaultsettings_ids = _defaultsettings_ids(d_settings)
 	defaults_map = {i['setting_id']: i for i in d_settings}
 	try:
 		c_settings = currentsettings.items()
-		obsoletesettings_ids = [k for k, v in c_settings if not k in defaultsettings_ids]
+		# Keep the legacy sort ids alive until the migration below has actually recorded success,
+		# otherwise a failed run purges the only copy of the user's per-list orderings.
+		defer_legacy_sort = currentsettings.get('migration.unified_list_sort') != 'true'
+		obsoletesettings_ids = [k for k, v in c_settings
+			if not k in defaultsettings_ids and not (defer_legacy_sort and k in _LEGACY_SORT_SETTING_IDS)]
 		if obsoletesettings_ids:
 			for item in obsoletesettings_ids: settings_cache.remove_setting(item)
 			migrated = True
@@ -645,6 +695,51 @@ def sync_settings(params={}):
 			settings_cache.write_db('migration.my_content_nav_mode_v136', 'true', defaults_map.get('migration.my_content_nav_mode_v136'))
 			currentsettings['migration.my_content_nav_mode_v136'] = 'true'
 			if load_properties: settings_cache.set_memory_cache('migration.my_content_nav_mode_v136', 'true')
+		if currentsettings.get('migration.unified_list_sort') != 'true':
+			# Only record the migration as done when it did not raise. The obsolete purge above
+			# holds back the five legacy sort ids while this sentinel is unset, so a failed run
+			# leaves both the sentinel and the source values in place and the next sync retries
+			# for real. They are purged on that following sync, once the sentinel is 'true'.
+			sort_migration_ok = True
+			try:
+				from modules.list_sort import run_sort_migration
+				def _write_sort_setting(setting_id, value):
+					settings_cache.write_db(setting_id, value, defaults_map.get(setting_id))
+					currentsettings[setting_id] = value
+					if load_properties: settings_cache.set_memory_cache(setting_id, value)
+				if run_sort_migration(legacy_sort_settings, _write_sort_setting): migrated = True
+				try:
+					# The _strict getters raise instead of returning {} on a locked database or a corrupt
+					# row. Their swallowing siblings, which the UI uses, would report "nothing stored"
+					# and let the sentinel be written over preferences that were never read.
+					from caches.trakt_cache import get_all_lists_custom_sort_strict
+					from caches.tmdb_lists import tmdb_lists_cache
+					from caches.list_sort_cache import set_override
+					from modules.list_sort import migrate_legacy_stores
+					from caches.personal_lists_cache import personal_lists_cache
+					personal_rows = personal_lists_cache.get_all_sort_orders()
+					store_overrides = migrate_legacy_stores(get_all_lists_custom_sort_strict(), personal_rows, tmdb_lists_cache.get_sort_orders_strict())
+					failed = [scope for scope, spec_string in store_overrides.items() if not set_override(scope, spec_string)]
+					if store_overrides: migrated = True
+					if failed:
+						sort_migration_ok = False
+						kodi_utils.logger('sync_settings', 'legacy sort store migration: could not persist %s' % ', '.join(sorted(failed)))
+				except Exception as e:
+					# Swallowing this would write the sentinel on a run that saved nothing, and the per-list
+					# Trakt, personal and TMDb preferences are deleted with the legacy ids on the next sync.
+					# Fold it into the outer flag instead so the sentinel stays unset and the next sync retries.
+					sort_migration_ok = False
+					kodi_utils.logger('sync_settings', 'legacy sort store migration: %s' % e)
+			except Exception as e:
+				# Deliberately catches an ImportError on modules.list_sort too: the sentinel stays false, so a
+				# genuinely broken install retries and logs on every sync rather than once. Do not narrow this.
+				sort_migration_ok = False
+				migrated = True # a partial run may already have written the mediatype defaults
+				kodi_utils.logger('sync_settings', 'unified list sort migration: %s' % e)
+			if sort_migration_ok:
+				settings_cache.write_db('migration.unified_list_sort', 'true', defaults_map.get('migration.unified_list_sort'))
+				currentsettings['migration.unified_list_sort'] = 'true'
+				if load_properties: settings_cache.set_memory_cache('migration.unified_list_sort', 'true')
 		for setting_id, value in list(currentsettings.items()):
 			if setting_id not in defaults_map: continue
 			sanitized = sanitize_setting_value(setting_id, value, defaults_map[setting_id], validate_paths=False)
@@ -661,7 +756,7 @@ def sync_settings(params={}):
 			continue
 		setting_type = item['setting_type']
 		setting_default = item['setting_default']
-		setting_value = _new_setting_value(setting_id, setting_default, currentsettings, had_existing_settings)
+		setting_value = _new_setting_value(setting_id, setting_default, currentsettings, had_existing_settings, fresh_install)
 		if setting_type == 'action' and 'settings_options' in item:
 			if setting_id == 'aiostreams.instance':
 				try:
@@ -1002,16 +1097,11 @@ def default_settings():
 #==================== Contents Sort Order For Watched Progress
 {'setting_id': 'sort.progress', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Title', '1': 'Recently Watched'}},
 {'setting_id': 'sort.watched', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Title', '1': 'Recently Watched'}},
-#==================== Contents Sort Order For Simkl Lists
-{'setting_id': 'sort.simkl', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Title', '1': 'Date Added (desc)', '2': 'Release Date (desc)', '3': 'Date Added (asc)', '4': 'Release Date (asc)'}},
-#==================== Contents Sort Order For Trakt Lists
-{'setting_id': 'sort.collection', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Title', '1': 'Date Added (desc)', '2': 'Release Date (desc)', '3': 'Date Added (asc)', '4': 'Release Date (asc)'}},
-{'setting_id': 'sort.watchlist', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Title', '1': 'Date Added (desc)', '2': 'Release Date (desc)', '3': 'Date Added (asc)', '4': 'Release Date (asc)'}},
-#==================== Contents Sort Order For TMDb Lists
-{'setting_id': 'tmdbsort.watchlist', 'setting_type': 'action', 'setting_default': '4', 'settings_options': {'0': 'Title', '1': 'Release Date (asc)', '2': 'Release Date (desc)',
-'3': 'Shuffle', '4': 'Default from TMDb (None)'}},
-{'setting_id': 'tmdbsort.favorites', 'setting_type': 'action', 'setting_default': '4', 'settings_options': {'0': 'Title', '1': 'Release Date (asc)', '2': 'Release Date (desc)',
-'3': 'Shuffle', '4': 'Default from TMDb (None)'}},
+#==================== Contents Sort Order Defaults (per media type, all lists)
+{'setting_id': 'sort.default.movies', 'setting_type': 'string', 'setting_default': 'title:asc'},
+{'setting_id': 'sort.default.movies_name', 'setting_type': 'name', 'setting_default': 'Title (ascending)'},
+{'setting_id': 'sort.default.shows', 'setting_type': 'string', 'setting_default': 'title:asc'},
+{'setting_id': 'sort.default.shows_name', 'setting_type': 'name', 'setting_default': 'Title (ascending)'},
 #==================== Personal Lists
 {'setting_id': 'personal_list.sort_unseen_to_top', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'personal_list.highlight_unseen', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -1108,6 +1198,7 @@ def default_settings():
 {'setting_id': 'migration.cache_check_pm_oc_tb_v129e', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.ad_cache_check_removed_v173', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.my_content_nav_mode_v136', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'migration.unified_list_sort', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== Real Debrid
 {'setting_id': 'rd.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'rd.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},

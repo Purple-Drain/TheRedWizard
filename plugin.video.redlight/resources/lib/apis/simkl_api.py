@@ -8,7 +8,7 @@ from threading import Lock
 from urllib.parse import urljoin
 from caches import simkl_cache
 from caches.settings_cache import get_setting, set_setting
-from modules import kodi_utils, settings
+from modules import kodi_utils, settings, list_sort
 from modules.utils import copy2clip, make_qrcode
 
 BASE_URL = 'https://api.simkl.com'
@@ -266,7 +266,12 @@ def _simkl_fetch_status_live(media_kind, status):
 			'released': _simkl_release_key(item, media_kind)})
 	if skipped and not result:
 		kodi_utils.logger('Simkl', 'list %s/%s: %s items had no tmdb/imdb/tvdb ids' % (media_kind, status, skipped))
-	try: return settings.sort_simkl_personal_list(result)
+	# 'anime' is only ever fetched by _simkl_fetch_tv_status, which merges it with the shows list and
+	# sorts the merged result under an explicit 'shows'. Sorting here too would resolve to
+	# DEFAULT_SPEC ('anime' does not normalize to a mediatype, so there is no scope suffix and no
+	# override) and break the final sort's ties alphabetically instead of preserving Simkl's order.
+	if media_kind == 'anime': return result
+	try: return list_sort.sort_source(result, 'simkl', media_kind, 'simkl')
 	except Exception as e:
 		kodi_utils.logger('Simkl', 'sort %s/%s failed: %s' % (media_kind, status, e))
 		return result
@@ -280,9 +285,8 @@ def _simkl_fetch_tv_status(status):
 	shows = _simkl_fetch_status('shows', status)
 	anime = _simkl_fetch_status('anime', status)
 	if not shows and not anime: return []
-	combined = shows + anime
-	try: return settings.sort_simkl_personal_list(combined)
-	except: return combined
+	# sort_source never raises, so no guard here: a bare except would only swallow KeyboardInterrupt.
+	return list_sort.sort_source(shows + anime, 'simkl', 'shows', 'simkl')
 
 def simkl_plantowatch(media_kind, page_no=None):
 	if media_kind == 'shows': return _simkl_fetch_tv_status('plantowatch')

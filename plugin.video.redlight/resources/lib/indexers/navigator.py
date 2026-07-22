@@ -222,6 +222,15 @@ class Navigator:
 	def _simkl_list_link(self, list_mode, action, category_name):
 		return {'mode': list_mode, 'action': action, 'category_name': category_name}
 
+	def _simkl_sort_cm(self, media_type):
+		"""Simkl's every status list shares one scope per media type (apis/simkl_api.py sorts them all
+		under the 'simkl' list key), so this entry sets the order for all Simkl movie or TV lists.
+
+		The label says so. Plain 'Set Custom Sort' here would read as list-specific and silently
+		reorder the other four statuses."""
+		kind = 'Movie' if media_type == 'movies' else 'TV'
+		return self._sort_cm('simkl', media_type, 'simkl', label='Set Custom Sort (All Simkl %s Lists)' % kind)
+
 	def simkl_lists(self):
 		"""Flat status lists (v1.3.4 layout) — direct links to each Movies/TV list."""
 		self.category_name = 'Simkl Lists'
@@ -237,46 +246,51 @@ class Navigator:
 			(self._simkl_list_link('build_movie_list', 'simkl_dropped', 'Movies Dropped'), 'Movies Dropped'),
 			(self._simkl_list_link('build_tvshow_list', 'simkl_dropped', 'TV Shows Dropped'), 'TV Shows Dropped'),
 		):
-			self._safe_add(url_params, label, 'simkl')
+			media_type = 'movies' if url_params['mode'] == 'build_movie_list' else 'shows'
+			self._safe_add(url_params, label, 'simkl', cm_items=self._simkl_sort_cm(media_type))
 		self._safe_add({'mode': 'navigator.search_history', 'action': 'simkl_lists'}, 'Search My Simkl Lists', 'search')
 		self.end_directory()
 
 	def simkl_watchlists(self):
 		self.category_name = 'Plan to Watch'
-		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_plantowatch', 'Movies Plan to Watch'), 'Movies', 'simkl')
-		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_plantowatch', 'TV Shows Plan to Watch'), 'TV Shows', 'simkl')
+		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_plantowatch', 'Movies Plan to Watch'), 'Movies', 'simkl', cm_items=self._simkl_sort_cm('movies'))
+		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_plantowatch', 'TV Shows Plan to Watch'), 'TV Shows', 'simkl', cm_items=self._simkl_sort_cm('shows'))
 		self.end_directory()
 
 	def simkl_completed(self):
 		self.category_name = 'Completed'
-		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_completed', 'Movies Completed'), 'Movies', 'simkl')
-		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_completed', 'TV Shows Completed'), 'TV Shows', 'simkl')
+		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_completed', 'Movies Completed'), 'Movies', 'simkl', cm_items=self._simkl_sort_cm('movies'))
+		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_completed', 'TV Shows Completed'), 'TV Shows', 'simkl', cm_items=self._simkl_sort_cm('shows'))
 		self.end_directory()
 
 	def simkl_watching(self):
 		self.category_name = 'Watching'
-		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_watching', 'Movies Watching'), 'Movies', 'simkl')
-		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_watching', 'TV Shows Watching'), 'TV Shows', 'simkl')
+		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_watching', 'Movies Watching'), 'Movies', 'simkl', cm_items=self._simkl_sort_cm('movies'))
+		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_watching', 'TV Shows Watching'), 'TV Shows', 'simkl', cm_items=self._simkl_sort_cm('shows'))
 		self.end_directory()
 
 	def simkl_hold(self):
 		self.category_name = 'On Hold'
-		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_hold', 'Movies On Hold'), 'Movies', 'simkl')
-		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_hold', 'TV Shows On Hold'), 'TV Shows', 'simkl')
+		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_hold', 'Movies On Hold'), 'Movies', 'simkl', cm_items=self._simkl_sort_cm('movies'))
+		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_hold', 'TV Shows On Hold'), 'TV Shows', 'simkl', cm_items=self._simkl_sort_cm('shows'))
 		self.end_directory()
 
 	def simkl_dropped(self):
 		self.category_name = 'Dropped'
-		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_dropped', 'Movies Dropped'), 'Movies', 'simkl')
-		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_dropped', 'TV Shows Dropped'), 'TV Shows', 'simkl')
+		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_dropped', 'Movies Dropped'), 'Movies', 'simkl', cm_items=self._simkl_sort_cm('movies'))
+		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_dropped', 'TV Shows Dropped'), 'TV Shows', 'simkl', cm_items=self._simkl_sort_cm('shows'))
 		self.end_directory()
 
 	def mdblist_lists(self):
 		self.category_name = 'MDBList Lists'
-		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'mdblist')
-		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_watchlist', 'category_name': 'TV Shows Watchlist'}, 'TV Shows Watchlist', 'mdblist')
-		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_collection', 'category_name': 'Movies Library'}, 'Movies Library', 'mdblist')
-		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_collection', 'category_name': 'TV Shows Library'}, 'TV Shows Library', 'mdblist')
+		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'mdblist',
+					cm_items=self._sort_cm('mdblist.watchlist', 'movies', 'mdblist_watchlist'))
+		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_watchlist', 'category_name': 'TV Shows Watchlist'}, 'TV Shows Watchlist', 'mdblist',
+					cm_items=self._sort_cm('mdblist.watchlist', 'shows', 'mdblist_watchlist'))
+		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_collection', 'category_name': 'Movies Library'}, 'Movies Library', 'mdblist',
+					cm_items=self._sort_cm('mdblist.collection', 'movies', 'mdblist_collection'))
+		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_collection', 'category_name': 'TV Shows Library'}, 'TV Shows Library', 'mdblist',
+					cm_items=self._sort_cm('mdblist.collection', 'shows', 'mdblist_collection'))
 		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_droplist', 'category_name': 'Dropped TV Shows'}, 'Dropped TV Shows', 'mdblist')
 		self._safe_add({'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists'}, 'My Lists', 'mdblist')
 		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Movies Liked Lists', 'media_type': 'movie'}, 'Movies Liked Lists', 'mdblist')
@@ -287,8 +301,10 @@ class Navigator:
 
 	def trakt_collections(self):
 		self.category_name = 'Collection'
-		self.add({'mode': 'build_movie_list', 'action': 'trakt_collection', 'category_name': 'Movies Collection'}, 'Movies Collection', 'trakt')
-		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_collection', 'category_name': 'TV Shows Collection'}, 'TV Shows Collection', 'trakt')
+		self.add({'mode': 'build_movie_list', 'action': 'trakt_collection', 'category_name': 'Movies Collection'}, 'Movies Collection', 'trakt',
+					cm_items=self._sort_cm('trakt.collection', 'movies', 'trakt_sync'))
+		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_collection', 'category_name': 'TV Shows Collection'}, 'TV Shows Collection', 'trakt',
+					cm_items=self._sort_cm('trakt.collection', 'shows', 'trakt_sync'))
 		self.add({'mode': 'build_movie_list', 'action': 'trakt_collection_lists', 'new_page': 'recent', 'category_name': 'Recently Added Movies'}, 'Recently Added Movies', 'trakt')
 		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_collection_lists', 'new_page': 'recent', 'category_name': 'Recently Added TV Shows'},
 					'Recently Added TV Shows', 'trakt')
@@ -298,8 +314,10 @@ class Navigator:
 
 	def trakt_watchlists(self):
 		self.category_name = 'Watchlist'
-		self.add({'mode': 'build_movie_list', 'action': 'trakt_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'trakt')
-		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_watchlist', 'category_name': 'TV Shows Watchlist'}, 'TV Shows Watchlist', 'trakt')
+		self.add({'mode': 'build_movie_list', 'action': 'trakt_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'trakt',
+					cm_items=self._sort_cm('trakt.watchlist', 'movies', 'trakt_sync'))
+		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_watchlist', 'category_name': 'TV Shows Watchlist'}, 'TV Shows Watchlist', 'trakt',
+					cm_items=self._sort_cm('trakt.watchlist', 'shows', 'trakt_sync'))
 		self.add({'mode': 'build_movie_list', 'action': 'trakt_watchlist_lists', 'new_page': 'recent', 'category_name': 'Recently Added Movies'}, 'Recently Added Movies', 'trakt')
 		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_watchlist_lists', 'new_page': 'recent', 'category_name': 'Recently Added TV Shows'},
 					'Recently Added TV Shows', 'trakt')
@@ -749,6 +767,18 @@ class Navigator:
 		func = function()
 		for item in func: self.add(item, item['name'], item['iconImage'])
 		self.end_directory()
+
+	def _sort_cm(self, list_key, media_type, adapter, label='Set Custom Sort'):
+		"""Context menu entry that overrides the sort order of one mediatype split list.
+
+		list_key/adapter must match the list_sort.sort_source() call that builds the list, and a new
+		list is returned on every call because add() appends to whatever it is given.
+
+		Pass label where one scope backs several visible lists, so the entry does not imply it only
+		affects the list it was opened from - see _simkl_sort_cm.
+		"""
+		return [('[B]%s[/B]' % label, self.run_plugin % self.build_url(
+			{'mode': 'list_sort_override_choice', 'list_key': list_key, 'media_type': media_type, 'adapter': adapter}))]
 
 	def _safe_add(self, url_params, list_name, iconImage='folder', original_image=False, cm_items=[]):
 		try: self.add(url_params, list_name, iconImage, original_image, cm_items)

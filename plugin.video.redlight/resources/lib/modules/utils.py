@@ -280,44 +280,16 @@ def sec2time(sec, n_msec=3):
 	if d == 0: return pattern % (h, m, s)
 	return ('%d days, ' + pattern) % (d, h, m, s)
 
-def released_key(item):
-	if 'released' in item: return item['released'] or '2050-01-01'
-	if 'first_aired' in item: return item['first_aired'] or '2050-01-01'
-	return '2050-01-01'
-
 def title_key(title, ignore_articles):
-	if not ignore_articles: return title
-	try:
-		if title is None: title = ''
-		articles = ['the', 'a', 'an']
-		match = re.match(r'^((\w+)\s+)', title.lower())
-		if match and match.group(2) in articles: offset = len(match.group(1))
-		else: offset = 0
-		return title[offset:]
-	except: return title
+	from modules.list_sort import strip_articles
+	return strip_articles(title, ignore_articles)
 
 def sort_for_article(_list, _key, ignore_articles):
-	try:
-		if not ignore_articles: _list.sort(key=lambda k: k.get(_key))
-		else: _list.sort(key=lambda k: re.sub(r'(^the |^a |^an )', '', k.get(_key).lower()))
+	from modules.list_sort import strip_articles
+	try: _list.sort(key=lambda k: strip_articles(k.get(_key), ignore_articles))
 	except: pass
 	return _list
 	
-def sort_list(sort_key, sort_direction, list_data, ignore_articles):
-	try:
-		reverse = sort_direction != 'asc'
-		if sort_key == 'rank': return sorted(list_data, key=lambda x: x['rank'], reverse=reverse)
-		if sort_key == 'added': return sorted(list_data, key=lambda x: x['listed_at'], reverse=reverse)
-		if sort_key == 'title': return sorted(list_data, key=lambda x: title_key(x[x['type']].get('title'), ignore_articles), reverse=reverse)
-		if sort_key == 'released': return sorted(list_data, key=lambda x: released_key(x[x['type']]), reverse=reverse)
-		if sort_key == 'runtime': return sorted(list_data, key=lambda x: x[x['type']].get('runtime', 0), reverse=reverse)
-		if sort_key == 'popularity': return sorted(list_data, key=lambda x: x[x['type']].get('votes', 0), reverse=reverse)
-		if sort_key == 'percentage': return sorted(list_data, key=lambda x: x[x['type']].get('rating', 0), reverse=reverse)
-		if sort_key == 'votes': return sorted(list_data, key=lambda x: x[x['type']].get('votes', 0), reverse=reverse)
-		if sort_key == 'random': return sorted(list_data, key=lambda k: random.random())
-		return list_data
-	except: return list_data
-
 def paginate_list(item_list, page, limit=20, paginate_start=0):
 	if paginate_start:
 		item_list = item_list[paginate_start:]

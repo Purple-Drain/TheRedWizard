@@ -2,11 +2,10 @@
 import json
 import time
 import requests
-from operator import itemgetter
 from caches import mdblist_cache
 from caches.settings_cache import get_setting, set_setting
-from modules import kodi_utils, settings
-from modules.utils import sort_for_article, paginate_list, get_datetime, TaskPool, make_thread_list, copy2clip, make_qrcode, make_tinyurl
+from modules import kodi_utils, settings, list_sort
+from modules.utils import paginate_list, get_datetime, TaskPool, make_thread_list, copy2clip, make_qrcode, make_tinyurl
 
 BASE_URL = 'https://api.mdblist.com/%s'
 _OAUTH_DEVICE_URL = 'https://api.mdblist.com/oauth/device-authorization/'
@@ -571,10 +570,7 @@ def mdblist_watchlist(media_kind, page_no):
 	if original_list and not normalized:
 		kodi_utils.logger('MDBList Watchlist', 'Could not resolve TMDb ids from %s raw items' % len(original_list))
 	original_list = normalized
-	sort_key = settings.lists_sort_order('watchlist')
-	if sort_key == 2: original_list.sort(key=itemgetter('release_date'), reverse=True)
-	elif sort_key == 1: original_list.sort(key=itemgetter('watchlist_at'), reverse=True)
-	else: original_list = sort_for_article(original_list, 'title', settings.ignore_articles())
+	original_list = list_sort.sort_source(original_list, 'mdblist.watchlist', media_kind, 'mdblist_watchlist')
 	is_home = kodi_utils.external()
 	if settings.paginate(is_home): return paginate_list(original_list, page_no, settings.page_limit(is_home))
 	return original_list, 1
@@ -582,10 +578,7 @@ def mdblist_watchlist(media_kind, page_no):
 def mdblist_collection(media_kind, page_no):
 	string, url = 'mdblist_collection', 'sync/collection'
 	original_list = _mdbl_personal_list(_mdbl_collection_watchlist_items(string, url), media_kind)
-	sort_key = settings.lists_sort_order('collection')
-	if sort_key == 2: original_list.sort(key=itemgetter('year'), reverse=True)
-	elif sort_key == 1: original_list.sort(key=itemgetter('collected_at'), reverse=True)
-	else: original_list = sort_for_article(original_list, 'title', settings.ignore_articles())
+	original_list = list_sort.sort_source(original_list, 'mdblist.collection', media_kind, 'mdblist_collection')
 	is_home = kodi_utils.external()
 	if settings.paginate(is_home): return paginate_list(original_list, page_no, settings.page_limit(is_home))
 	return original_list, 1

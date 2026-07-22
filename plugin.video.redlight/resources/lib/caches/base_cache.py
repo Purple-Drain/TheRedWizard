@@ -67,7 +67,9 @@ expires integer, unique (provider, db_type, tmdb_id, title, year, season, episod
 'tmdb_lists_db': (
 'CREATE TABLE IF NOT EXISTS tmdb_lists (id text unique, data text, expires integer)',),
 'random_widgets_db': (
-'CREATE TABLE IF NOT EXISTS random_widgets (id text unique, data text, expires integer)',)
+'CREATE TABLE IF NOT EXISTS random_widgets (id text unique, data text, expires integer)',),
+'list_sort_db': (
+'CREATE TABLE IF NOT EXISTS list_sort (scope text unique, spec text)',)
 		}
 
 def locations():
@@ -75,7 +77,7 @@ def locations():
 'navigator_db': 'navigator.db', 'watched_db': 'watched.db', 'favorites_db': 'favourites.db', 'settings_db': 'settings.db', 'trakt_db': 'traktcache.db', 'simkl_db': 'simklcache.db', 'mdblist_db': 'mdblistcache.db',
 'maincache_db': 'maincache.db', 'metacache_db': 'metacache.db', 'debridcache_db': 'debridcache.db', 'lists_db': 'lists.db', 'tmdb_lists_db': 'tmdb_lists.db',
 'discover_db': 'discover.db', 'external_db': 'external.db', 'episode_groups_db': 'episode_groups.db', 'personal_lists_db': 'personal_lists.db',
-'random_widgets_db': 'random_widgets.db'
+'random_widgets_db': 'random_widgets.db', 'list_sort_db': 'list_sort.db'
 			}
 
 def database_locations(database_name):
@@ -128,8 +130,10 @@ def get_timestamp(offset=0):
 
 def remove_old_databases():
 	databases_path = path.join(kodi_utils.addon_profile(), 'databases/')
-	current_dbs = ('navigator.db', 'watched.db', 'favourites.db', 'traktcache.db', 'simklcache.db', 'mdblistcache.db', 'maincache.db', 'lists.db', 'tmdb_lists.db', 'discover.db',
-	'metacache.db', 'debridcache.db', 'external.db', 'settings.db', 'episode_groups.db', 'personal_lists_db', 'episode_groups_db', 'personal_lists_db', 'random_widgets_db')
+	# Derived from locations() rather than hand-maintained: the hand-written list had drifted and
+	# carried four database *keys* where filenames belong, which put personal_lists.db and
+	# random_widgets.db outside the allowlist and marked both live files as stale.
+	current_dbs = tuple(locations().values())
 	try:
 		files = kodi_utils.list_dirs(databases_path)[1]
 		for item in files:
@@ -142,7 +146,8 @@ def check_databases_integrity(silent=False):
 	integrity_check = {
 	'settings_db': 1,              'navigator_db': 1,              'watched_db': 3,              'favorites_db': 1,              'trakt_db': 4,              'simkl_db': 4,              'mdblist_db': 4,
 	'maincache_db': 1,             'metacache_db': 3,              'lists_db': 1,                'tmdb_lists_db': 1,             'discover_db': 1,
-	'debridcache_db': 1,           'external_db': 1,               'episode_groups_db': 1,       'personal_lists_db': 1,         'random_widgets_db': 1
+	'debridcache_db': 1,           'external_db': 1,               'episode_groups_db': 1,       'personal_lists_db': 1,         'random_widgets_db': 1,
+	'list_sort_db': 1
 			}
 	def _process(database_name, tables):
 		cursor, error = None, False

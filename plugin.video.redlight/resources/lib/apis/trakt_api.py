@@ -12,9 +12,9 @@ def _trakt_setting(setting_id, fallback=''):
 	return val
 from caches.main_cache import cache_object
 from caches.lists_cache import lists_cache_object
-from modules import kodi_utils, settings
+from modules import kodi_utils, settings, list_sort
 from modules.metadata import movie_meta_external_id, tvshow_meta_external_id
-from modules.utils import sort_list, sort_for_article, get_datetime, timedelta, replace_html_codes, copy2clip, make_qrcode, make_tinyurl, \
+from modules.utils import get_datetime, timedelta, replace_html_codes, copy2clip, make_qrcode, make_tinyurl, \
 							TaskPool, jsondate_to_datetime as js2date
 # logger = kodi_utils.logger
 
@@ -460,7 +460,7 @@ def trakt_watchlist_lists(media_type, list_type=None):
 
 def trakt_collection(media_type, dummy_arg):
 	data = trakt_fetch_collection_watchlist('collection', media_type)
-	return settings.sort_trakt_sync_list(data, 'collection')
+	return list_sort.sort_source(data, 'trakt.collection', media_type, 'trakt_sync')
 
 def trakt_watchlist(media_type, dummy_arg):
 	data = trakt_fetch_collection_watchlist('watchlist', media_type)
@@ -468,8 +468,7 @@ def trakt_watchlist(media_type, dummy_arg):
 		current_date = get_datetime()
 		str_format = '%Y-%m-%d' if media_type in ('movie', 'movies') else '%Y-%m-%dT%H:%M:%S.%fZ'
 		data = [i for i in data if i.get('released', None) and js2date(i.get('released'), str_format, remove_time=True) <= current_date]
-	data = settings.sort_trakt_sync_list(data, 'watchlist')
-	return data
+	return list_sort.sort_source(data, 'trakt.watchlist', media_type, 'trakt_sync')
 
 def trakt_fetch_collection_watchlist(list_type, media_type):
 	def _process(params):
@@ -695,12 +694,15 @@ def trakt_lists_with_media(media_type, imdb_id):
 	params = {'path': '%s/%s/lists/personal', 'path_insert': (media_type, imdb_id), 'params': {'limit': 100}, 'pagination': False}
 	return cache_object(_process, string, 'foo', False, 168)
 
-def get_trakt_list_contents(list_type, user, slug, with_auth, list_id=None, sort_by='default', sort_how='default'):
-	if sort_by == 'skip': skip_sort, custom_sort, method = True, False, None
-	else:
-		skip_sort = False
-		custom_sort = sort_by != 'default'
-		method = None if custom_sort else 'sort_by_headers'
+def get_trakt_list_contents(list_type, user, slug, with_auth, list_id=None, skip_sort=False):
+	# skip_sort is the random builders' flag: they reshuffle the payload themselves, so resolving
+	# and applying a sort first is wasted work. Everything else takes the list's own ordering.
+	# There is deliberately no caller-supplied sort: the ordering comes from the payload headers
+	# below and from the stored override, never from an argument. A parameter that could select a
+	# different `method` is what let two callers write two shapes into one cache key.
+	# Always ask for the sort headers. The disk cache key below does not encode `method`, so a row
+	# written by one caller is read back by all of them.
+	method = 'sort_by_headers'
 	if list_type == 'my_lists':
 		string = 'trakt_list_contents_%s_%s_%s' % (list_type, user, slug)
 		params = {'path': 'users/%s/lists/%s/items', 'path_insert': (user, slug), 'params': {'extended': 'full'}, 'method': method, 'with_auth': with_auth, 'fetch_all': True}
@@ -712,17 +714,30 @@ def get_trakt_list_contents(list_type, user, slug, with_auth, list_id=None, sort
 		if user == 'Trakt Official': params = {'path': 'lists/%s/items', 'path_insert': slug, 'params': {'extended': 'full'}, 'method': method, 'fetch_all': True}
 		else: params = {'path': 'users/%s/lists/%s/items', 'path_insert': (user, slug), 'params': {'extended': 'full'}, 'method': method, 'with_auth': with_auth, 'fetch_all': True}
 	data = trakt_cache.cache_trakt_object(get_trakt, string, params) or []
+	# The list's declared order, as recorded in the cached row. 'default' is the standing-in value
+	# for a legacy bare-list row that carries no headers at all.
+	sort_by, sort_how = 'default', 'default'
+	# Unwrapped unconditionally, including when skip_sort is set: a cache row left behind by an
+	# older build, or by any caller at all, must never reach the enumerate() below as a dict.
+	if isinstance(data, dict):
+		sort_by, sort_how = data.get('sort_by', sort_by), data.get('sort_how', sort_how)
+		data = data.get('data') or []
+	elif not isinstance(data, list): data = []
 	if not skip_sort:
-		if not custom_sort:
-			if isinstance(data, dict) and 'data' in data:
-				sort_by, sort_how = data['sort_by'], data['sort_how']
-				data = data['data'] or []
-			elif not isinstance(data, list): data = []
+		# Guarded per item, like the extraction loop below: a season or episode row that is missing
+		# 'show' is one bad row, and it must cost that row its retitling, not the whole list render.
 		for i in data:
-			if i['type'] == 'season': i['season']['title'] = '%s - %s' % (i['show']['title'], i['season']['title'])
-			elif i['type'] == 'episode': i['episode']['title'] = '%s - %s' % (i['show']['title'], i['episode']['title'])
-			else: pass
-		data = sort_list(sort_by, sort_how, data, settings.ignore_articles())
+			try:
+				if i['type'] == 'season': i['season']['title'] = '%s - %s' % (i['show']['title'], i['season']['title'])
+				elif i['type'] == 'episode': i['episode']['title'] = '%s - %s' % (i['show']['title'], i['episode']['title'])
+				else: pass
+			except: pass
+		# The payload sort is the ordering this list already had, so it is what a list with no stored
+		# override must keep - resolving to DEFAULT_SPEC here would retitle-sort every user list
+		# belonging to anyone who never opened "Set Custom Sort", with no row left to migrate.
+		payload_spec = list_sort.trakt_list_fallback(sort_by, sort_how)
+		data = list_sort.sort_source(data, 'trakt.list:%s' % list_id, None, 'trakt_list', fallback=payload_spec) if list_id is not None \
+			else list_sort.apply(data, list_sort.parse_spec(payload_spec), list_sort.TRAKT_LIST, settings.ignore_articles())
 	results = []
 	results_append = results.append
 	for c, i in enumerate(data):

@@ -99,12 +99,21 @@ def get_list_custom_sort(list_id):
 		return eval(cache_data[0])
 	except: return {}
 
+def get_all_lists_custom_sort_strict():
+	"""Every stored per-list custom sort. Raises on a locked database or a corrupt row.
+
+	The one-time sort migration reads the store through this, not through the swallowing
+	get_all_lists_custom_sort() below: an empty dict means "nothing stored" and lets the
+	migration record itself as done, so a read failure that returned {} would look exactly
+	like a clean success and delete every stored preference on the following sync.
+	"""
+	dbcon = connect_database('trakt_db')
+	all_cache_data = dbcon.execute('SELECT data FROM trakt_data WHERE id LIKE %s' % "'trakt_list_custom_sort_%'").fetchall()
+	all_cache_data = (eval(i[0]) for i in all_cache_data)
+	return dict([(i['list_id'], {'sort_by': i['sort_by'], 'sort_how': i['sort_how']}) for i in all_cache_data])
+
 def get_all_lists_custom_sort():
-	try:
-		dbcon = connect_database('trakt_db')
-		all_cache_data = dbcon.execute('SELECT data FROM trakt_data WHERE id LIKE %s' % "'trakt_list_custom_sort_%'").fetchall()
-		all_cache_data = (eval(i[0]) for i in all_cache_data)
-		return dict([(i['list_id'], {'sort_by': i['sort_by'], 'sort_how': i['sort_how']}) for i in all_cache_data])
+	try: return get_all_lists_custom_sort_strict()
 	except: return {}
 
 def valid_trakt_activities(data):

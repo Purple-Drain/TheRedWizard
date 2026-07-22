@@ -430,35 +430,6 @@ def trakt_sync_interval():
 def lists_sort_order(setting):
 	return int(get_setting('redlight.sort.%s' % setting, '0'))
 
-def sort_trakt_sync_list(data, setting_key):
-	"""Sort Trakt collection/watchlist rows. 0=title, 1/3=date added desc/asc, 2/4=release desc/asc."""
-	sort_order = lists_sort_order(setting_key)
-	if sort_order == 0:
-		from modules.utils import sort_for_article
-		return sort_for_article(data, 'title', ignore_articles())
-	if sort_order in (1, 3):
-		data.sort(key=lambda k: k.get('collected_at') or '', reverse=(sort_order == 1))
-	elif sort_order in (2, 4):
-		data.sort(key=lambda k: k.get('released') or '', reverse=(sort_order == 2))
-	return data
-
-def sort_simkl_personal_list(data):
-	"""Sort Simkl Plan to Watch / Watching / etc. Same order codes as sort_trakt_sync_list."""
-	try: sort_order = lists_sort_order('simkl')
-	except: sort_order = 0
-	if sort_order == 0:
-		from modules.utils import sort_for_article
-		return sort_for_article(data, 'title', ignore_articles())
-	if sort_order in (1, 3):
-		data.sort(key=lambda k: k.get('collected_at') or '', reverse=(sort_order == 1))
-	elif sort_order in (2, 4):
-		data.sort(key=lambda k: k.get('released') or '', reverse=(sort_order == 2))
-	return data
-
-def tmdblists_sort_order(setting):
-	if setting == 'recommendations': return None
-	return str(get_setting('redlight.tmdbsort.%s' % setting, '4'))
-
 def personal_lists_sort_unseen_to_top():
 	return get_setting('redlight.personal_list.sort_unseen_to_top') == 'true'
 

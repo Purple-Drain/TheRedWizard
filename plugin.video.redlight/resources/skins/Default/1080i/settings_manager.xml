@@ -1207,69 +1207,28 @@
                           <property name="setting_description">Choose the sort order for your Watched media</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=sort.watched)</onclick>
                       </item>
-        <!-- Contents Sort Order For Simkl Lists -->
+        <!-- List Sort Order -->
                       <item>
                           <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">Contents Sort Order For Simkl Lists</property>
+                          <property name="setting_label">List Sort Order</property>
                           <property name="setting_type">separator</property>
                           <onclick>noop</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(30)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">Simkl Lists</property>
+                          <property name="setting_label">Movies</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.simkl_name)]</property>
-                          <property name="setting_description">Sort order for Simkl Plan to Watch, Watching, Completed, On Hold, and Dropped. Release Date uses Simkl year or release metadata (TV uses premiere year when full air date is unavailable).</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=sort.simkl)</onclick>
-                      </item>
-        <!-- Contents Sort Order For Trakt Lists -->
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">Contents Sort Order For Trakt Lists</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.movies_name)]</property>
+                          <property name="setting_description">Default sort order for movie lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their context menu.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=movies)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(30)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
-                          <property name="setting_label">Trakt Collection</property>
+                          <property name="setting_label">TV Shows</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.collection_name)]</property>
-                          <property name="setting_description">Choose the sort order for your Trakt Collection media. Release Date uses movie release / TV first-air date.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=sort.collection)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
-                          <property name="setting_label">Trakt Watchlist</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.watchlist_name)]</property>
-                          <property name="setting_description">Choose the sort order for your Trakt Watchlist media. Release Date uses movie release / TV first-air date.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=sort.watchlist)</onclick>
-                      </item>
-        <!-- Contents Sort Order For TMDb Lists -->
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">Contents Sort Order For TMDb Lists</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">TMDb Watchlist</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.tmdbsort.watchlist_name)]</property>
-                          <property name="setting_description">Choose the sort order for your TMDb Watchlist media</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=tmdbsort.watchlist)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">TMDb Favorites</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.tmdbsort.favorites_name)]</property>
-                          <property name="setting_description">Choose the sort order for your TMDb Favorites media</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=tmdbsort.favorites)</onclick>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.shows_name)]</property>
+                          <property name="setting_description">Default sort order for TV show lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their context menu.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=shows)</onclick>
                       </item>
         <!-- TMDb Lists -->
                       <item>

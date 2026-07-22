@@ -1427,3 +1427,62 @@ def media_extra_info_choice(params):
 def discover_choice(params):
 	from windows.base_window import open_window
 	open_window(('windows.discover', 'Discover'), 'discover.xml', media_type=params['media_type'])
+
+def sort_default_choice(params):
+	from modules import list_sort
+	media_type = params['media_type']
+	setting_id = 'sort.default.%s' % media_type
+	current = list_sort.parse_spec(get_setting('redlight.%s' % setting_id, ''))
+	heading = 'Default Sort For %s' % ('Movies' if media_type == 'movies' else 'TV Shows')
+	# Not any single adapter's field list: this setting is read by every mediatype-split list at once,
+	# and a field one of those adapters cannot extract would leave that list in raw cache order.
+	spec = _pick_sort_spec(heading, None, current=current, fields=list_sort.default_field_choices())
+	if spec == None: return
+	set_setting(setting_id, list_sort.format_spec(spec))
+	set_setting('%s_name' % setting_id, list_sort.spec_label(spec))
+	kodi_utils.kodi_refresh()
+
+def list_sort_override_choice(params):
+	from modules import list_sort
+	from caches.list_sort_cache import scope_key, set_override, delete_override
+	list_key, media_type, adapter_name = params['list_key'], params.get('media_type'), params['adapter']
+	scope = scope_key(list_key, media_type)
+	# The fallback is the ordering the list has when nothing is stored for it - a Trakt user list's
+	# own declared sort, say - so without it the "current" marker would point at title:asc for every
+	# list the user has never overridden, which is not the order on screen.
+	current = list_sort.resolve(list_key, media_type, params.get('fallback'))
+	spec = _pick_sort_spec('Custom Sort', adapter_name, allow_default=True, current=current)
+	if spec == None: return
+	if spec == 'use_default': success = delete_override(scope)
+	else: success = set_override(scope, list_sort.format_spec(spec))
+	if success: kodi_utils.kodi_refresh()
+	else: kodi_utils.ok_dialog('Custom Sort', 'An Error Occurred')
+
+def _pick_sort_spec(heading, adapter_name, allow_default=False, current=None, fields=None):
+	"""Two stage picker: field, then direction. Returns a spec dict, 'use_default', or None.
+
+	'current' is the spec the list is sorted by right now; the matching entries are marked.
+	'fields' overrides the adapter's own capabilities, for a setting read by several adapters at once.
+	"""
+	from modules import list_sort
+	current = current or {}
+	if fields is None: fields = list_sort.field_choices(adapter_name)
+	choices = []
+	if allow_default: choices.append(('use_default', 'Use Default'))
+	choices.extend([(i, list_sort.FIELD_LABELS.get(i, i)) for i in fields])
+	if not choices: return None
+	field = _sort_select_dialog(choices, '%s: Field' % heading, current.get('field'))
+	if field == None: return None
+	if field == 'use_default': return 'use_default'
+	if field in list_sort.DIRECTIONLESS_FIELDS: return {'field': field, 'direction': 'asc'}
+	direction_choices = [('asc', 'Ascending'), ('desc', 'Descending')]
+	current_direction = current.get('direction') if current.get('field') == field else None
+	direction = _sort_select_dialog(direction_choices, '%s: Direction' % heading, current_direction)
+	if direction == None: return None
+	return {'field': field, 'direction': direction}
+
+def _sort_select_dialog(choices, heading, current_value):
+	current_mark = '   [B][COLOR green][CURRENT][/COLOR][/B]'
+	list_items = [{'line1': '%s%s' % (i[1], current_mark if i[0] == current_value else ''), 'line2': ''} for i in choices]
+	kwargs = {'items': json.dumps(list_items), 'heading': heading, 'narrow_window': 'true'}
+	return kodi_utils.select_dialog([i[0] for i in choices], **kwargs)
