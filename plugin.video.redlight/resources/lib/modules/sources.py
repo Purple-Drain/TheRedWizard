@@ -3,7 +3,7 @@ import json
 import os
 import pickle
 import time
-from threading import Thread, current_thread
+from threading import Thread, current_thread, Lock
 from windows.base_window import open_window, create_window
 from caches.episode_groups_cache import episode_groups_cache
 from caches.settings_cache import get_setting
@@ -37,6 +37,9 @@ _NEXTEP_NATURAL_END_SEC = 15
 _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
 _NEXTEP_STASH_PLAY_IN_FLIGHT = False
+# Guards check-then-claim on the sources/resolve busy properties — two threads in the same
+# reused invoker can otherwise both see "free" and both start a scrape/resolve.
+_BUSY_CLAIM_LOCK = Lock()
 
 def _nextep_stash_play_in_flight():
 	return _NEXTEP_STASH_PLAY_IN_FLIGHT
@@ -455,19 +458,20 @@ class Sources():
 			self._clear_stale_sources_busy()
 			# Stale cancel from a prior resolve/nextep must not poison Download File / a new scrape.
 			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
-			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
-				if not self.background:
-					kodi_utils.notification('Resolve or playback in progress.', 2500)
-				return
-			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not allow_concurrent:
-				if not self.background:
-					kodi_utils.notification('Source search already running.', 2500)
-				return
-			self._scrape_user_cancelled = False
-			self._sources_busy_owner = str(id(self))
-			kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
-			kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
-			self._touch_sources_busy()
+			with _BUSY_CLAIM_LOCK:
+				if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
+					if not self.background:
+						kodi_utils.notification('Resolve or playback in progress.', 2500)
+					return
+				if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not allow_concurrent:
+					if not self.background:
+						kodi_utils.notification('Source search already running.', 2500)
+					return
+				self._scrape_user_cancelled = False
+				self._sources_busy_owner = str(id(self))
+				kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
+				kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
+				self._touch_sources_busy()
 		self._get_sources_depth = depth + 1
 		try:
 			if depth == 0:
@@ -1164,13 +1168,14 @@ class Sources():
 
 	def _reclaim_sources_busy(self):
 		'''Re-take scrape lock after releasing it during browse playback wait.'''
-		if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true':
-			return False
-		self._sources_busy_owner = str(id(self))
-		kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
-		kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
-		self._touch_sources_busy()
-		return True
+		with _BUSY_CLAIM_LOCK:
+			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true':
+				return False
+			self._sources_busy_owner = str(id(self))
+			kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
+			kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
+			self._touch_sources_busy()
+			return True
 
 	def display_results(self, results):
 		while True:
@@ -1748,9 +1753,15 @@ class Sources():
 		return False
 
 	def _claim_resolve_busy(self):
-		self._resolve_busy_owner = str(id(self))
-		kodi_utils.set_property(PROP_RESOLVE_BUSY, 'true')
-		kodi_utils.set_property(PROP_RESOLVE_OWNER, self._resolve_busy_owner)
+		'''Atomic check-and-claim: two concurrent play_file() calls (e.g. a stale nextep
+		autoplay landing alongside a manual Play) must not both win the resolve slot.'''
+		with _BUSY_CLAIM_LOCK:
+			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true':
+				return False
+			self._resolve_busy_owner = str(id(self))
+			kodi_utils.set_property(PROP_RESOLVE_BUSY, 'true')
+			kodi_utils.set_property(PROP_RESOLVE_OWNER, self._resolve_busy_owner)
+			return True
 
 	def _on_scrape_dialog_cancel(self):
 		# Keep sources_busy until get_sources finishes cancel cleanup — releasing early
