@@ -171,6 +171,8 @@ def _export_favorites():
 		rows = dbcon.execute('SELECT db_type, tmdb_id, title FROM favourites ORDER BY db_type, title').fetchall()
 	except:
 		rows = []
+	finally:
+		dbcon.close()
 	return [{'db_type': str(i[0]), 'tmdb_id': str(i[1]), 'title': str(i[2])} for i in rows]
 
 
@@ -184,6 +186,8 @@ def _export_progress():
 		).fetchall()
 	except:
 		rows = []
+	finally:
+		dbcon.close()
 	result = []
 	for row in rows:
 		if float(row[4] or 0) <= PROGRESS_MIN_PERCENT:
@@ -202,6 +206,8 @@ def _export_watched():
 		).fetchall()
 	except:
 		rows = []
+	finally:
+		dbcon.close()
 	return [_watched_row_to_dict(row) for row in rows]
 
 
@@ -357,19 +363,22 @@ def _apply_import(payload, mode, file_stats):
 
 def _import_favorites(items, mode):
 	dbcon = connect_database('favorites_db')
-	if mode == 'replace':
-		dbcon.execute('DELETE FROM favourites')
-	added, updated = 0, 0
-	for item in items:
-		key = _favorite_key(item)
-		if not key:
-			continue
-		exists = dbcon.execute('SELECT 1 FROM favourites WHERE db_type=? AND tmdb_id=?', key).fetchone()
-		dbcon.execute('INSERT OR REPLACE INTO favourites VALUES (?, ?, ?)', (key[0], key[1], str(item.get('title') or '')))
-		if exists:
-			updated += 1
-		else:
-			added += 1
+	try:
+		if mode == 'replace':
+			dbcon.execute('DELETE FROM favourites')
+		added, updated = 0, 0
+		for item in items:
+			key = _favorite_key(item)
+			if not key:
+				continue
+			exists = dbcon.execute('SELECT 1 FROM favourites WHERE db_type=? AND tmdb_id=?', key).fetchone()
+			dbcon.execute('INSERT OR REPLACE INTO favourites VALUES (?, ?, ?)', (key[0], key[1], str(item.get('title') or '')))
+			if exists:
+				updated += 1
+			else:
+				added += 1
+	finally:
+		dbcon.close()
 	return 'favorites: %s added, %s updated' % (added, updated)
 
 
@@ -377,36 +386,39 @@ def _import_progress(items, mode):
 	dbcon = get_database(0)
 	local = {}
 	try:
-		for row in dbcon.execute('SELECT db_type, media_id, season, episode, resume_point, curr_time, last_played, resume_id, title FROM progress').fetchall():
-			key = _history_item_key(_progress_row_to_dict(row))
-			if key:
-				local[key] = _progress_row_to_dict(row)
-	except:
-		pass
-	if mode == 'replace':
-		dbcon.execute('DELETE FROM progress')
-		local = {}
-	added, updated, kept = 0, 0, 0
-	for item in items:
-		key = _history_item_key(item)
-		if not key:
-			continue
-		winner = _merge_progress_row(local.get(key), item) if mode == 'merge' and key in local else item
-		if key in local and mode == 'merge':
-			if winner is local.get(key):
-				kept += 1
+		try:
+			for row in dbcon.execute('SELECT db_type, media_id, season, episode, resume_point, curr_time, last_played, resume_id, title FROM progress').fetchall():
+				key = _history_item_key(_progress_row_to_dict(row))
+				if key:
+					local[key] = _progress_row_to_dict(row)
+		except:
+			pass
+		if mode == 'replace':
+			dbcon.execute('DELETE FROM progress')
+			local = {}
+		added, updated, kept = 0, 0, 0
+		for item in items:
+			key = _history_item_key(item)
+			if not key:
 				continue
-			updated += 1
-		else:
-			added += 1
-		dbcon.execute(
-			'INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-			(
-				winner['db_type'], winner['media_id'], winner.get('season'), winner.get('episode'),
-				str(winner.get('resume_point', '0')), str(winner.get('curr_time', '0')),
-				str(winner.get('last_played') or ''), int(winner.get('resume_id') or 0), str(winner.get('title') or ''),
+			winner = _merge_progress_row(local.get(key), item) if mode == 'merge' and key in local else item
+			if key in local and mode == 'merge':
+				if winner is local.get(key):
+					kept += 1
+					continue
+				updated += 1
+			else:
+				added += 1
+			dbcon.execute(
+				'INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				(
+					winner['db_type'], winner['media_id'], winner.get('season'), winner.get('episode'),
+					str(winner.get('resume_point', '0')), str(winner.get('curr_time', '0')),
+					str(winner.get('last_played') or ''), int(winner.get('resume_id') or 0), str(winner.get('title') or ''),
+				)
 			)
-		)
+	finally:
+		dbcon.close()
 	return 'in progress: %s added, %s updated, %s unchanged' % (added, updated, kept)
 
 
@@ -414,35 +426,38 @@ def _import_watched(items, mode):
 	dbcon = get_database(0)
 	local = {}
 	try:
-		for row in dbcon.execute('SELECT db_type, media_id, season, episode, last_played, title FROM watched').fetchall():
-			key = _history_item_key(_watched_row_to_dict(row))
-			if key:
-				local[key] = _watched_row_to_dict(row)
-	except:
-		pass
-	if mode == 'replace':
-		dbcon.execute('DELETE FROM watched')
-		local = {}
-	added, updated, kept = 0, 0, 0
-	for item in items:
-		key = _history_item_key(item)
-		if not key:
-			continue
-		winner = _merge_watched_row(local.get(key), item) if mode == 'merge' and key in local else item
-		if key in local and mode == 'merge':
-			if winner is local.get(key):
-				kept += 1
+		try:
+			for row in dbcon.execute('SELECT db_type, media_id, season, episode, last_played, title FROM watched').fetchall():
+				key = _history_item_key(_watched_row_to_dict(row))
+				if key:
+					local[key] = _watched_row_to_dict(row)
+		except:
+			pass
+		if mode == 'replace':
+			dbcon.execute('DELETE FROM watched')
+			local = {}
+		added, updated, kept = 0, 0, 0
+		for item in items:
+			key = _history_item_key(item)
+			if not key:
 				continue
-			updated += 1
-		else:
-			added += 1
-		dbcon.execute(
-			'INSERT OR REPLACE INTO watched VALUES (?, ?, ?, ?, ?, ?)',
-			(
-				winner['db_type'], winner['media_id'], winner.get('season'), winner.get('episode'),
-				str(winner.get('last_played') or ''), str(winner.get('title') or ''),
+			winner = _merge_watched_row(local.get(key), item) if mode == 'merge' and key in local else item
+			if key in local and mode == 'merge':
+				if winner is local.get(key):
+					kept += 1
+					continue
+				updated += 1
+			else:
+				added += 1
+			dbcon.execute(
+				'INSERT OR REPLACE INTO watched VALUES (?, ?, ?, ?, ?, ?)',
+				(
+					winner['db_type'], winner['media_id'], winner.get('season'), winner.get('episode'),
+					str(winner.get('last_played') or ''), str(winner.get('title') or ''),
+				)
 			)
-		)
+	finally:
+		dbcon.close()
 	return 'watched: %s added, %s updated, %s unchanged' % (added, updated, kept)
 
 
