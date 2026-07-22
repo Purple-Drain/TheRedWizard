@@ -68,7 +68,7 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 		try:
 			genres = data_get('genres')
 			genre = [i['name'] for i in genres]
-		except: genre == []
+		except: genre = []
 		rootname = '%s (%s)' % (title, year)
 		companies = data_get('production_companies')
 		if companies:
@@ -116,7 +116,7 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 					next((youtube_url % i['key'] for i in all_trailers if i['type'] == 'Trailer'), None) or \
 					next((youtube_url % i['key'] for i in all_trailers if 'trailer' in i['name'].lower()), None) or \
 					next((youtube_url % i['key'] for i in all_trailers), None) or ''
-				else: trailler = ''
+				else: trailer = ''
 			except: pass
 		keywords = data_get('keywords', None)
 		if keywords: stinger_keys = [i['name'] for i in keywords['keywords'] if i['name'] in ('duringcreditsstinger', 'aftercreditsstinger')]
@@ -209,7 +209,7 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 		if networks:
 			if len(networks) == 1: studio = ([i['name'] for i in networks][0],)
 			else:
-				try: studio = (next(i['name'] for i in networks if i['logo_path'] not in ('', 'None', None)) or next(i['name'] for i in network),)
+				try: studio = (next(i['name'] for i in networks if i['logo_path'] not in ('', 'None', None)) or next(i['name'] for i in networks),)
 				except: pass
 		production_countries = data_get('production_countries', None)
 		if production_countries:
@@ -249,7 +249,7 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 					next((youtube_url % i['key'] for i in all_trailers if i['type'] == 'Trailer'), None) or \
 					next((youtube_url % i['key'] for i in all_trailers if 'trailer' in i['name'].lower()), None) or \
 					next((youtube_url % i['key'] for i in all_trailers), None) or ''
-				else: trailler = ''
+				else: trailer = ''
 			except: pass
 		keywords = data_get('keywords', None)
 		status, _type, homepage = data_get('status', 'N/A'), data_get('type', 'N/A'), data_get('homepage', 'N/A')
