@@ -501,12 +501,12 @@ def authTrakt(reopen_settings=False):
         control.setSetting('trakt.refresh', refresh)
         _set_trakt_expires(token_result.get('expires_in', 7200))
         if control.yesnoDialog('Set Trakt as your Watched Indicators provider?', heading='Watched Status Provider'):
-            control.setSetting('indicators.alt', '1')
             try:
                 from resources.lib.modules import simkl
-                simkl.sync_indicators_label()
+                simkl.set_watched_provider('1', notify=True)
             except Exception:
-                pass
+                control.setSetting('indicators.alt', '1')
+                control.setSetting('bookmarks.source', '1')
         control.infoDialog('Trakt Account Authorised.', sound=True)
         control.finish_auth_ui(reopen_settings=reopen_settings)
     except Exception:

@@ -93,11 +93,56 @@ def indicators_display_name(value=None):
     return _INDICATOR_LABELS.get(str(value), 'Local')
 
 
-def sync_indicators_label():
+def sync_indicators_label(value=None):
     try:
-        control.setSetting('indicators.alt.name', indicators_display_name())
+        control.setSetting('indicators.alt.name', indicators_display_name(value))
     except Exception:
         pass
+
+
+def sync_bookmarks_label(value=None):
+    try:
+        if value is None:
+            value = control.setting('bookmarks.source') or '0'
+        control.setSetting('bookmarks.source.name', _INDICATOR_LABELS.get(str(value), 'Local'))
+    except Exception:
+        pass
+
+
+def set_bookmarks_source(value, notify=False):
+    """Set Resume Point Source only (0 Local, 1 Trakt, 2 Simkl)."""
+    value = str(value)
+    if value not in _INDICATOR_LABELS:
+        value = '0'
+    control.setSetting('bookmarks.source', value)
+    sync_bookmarks_label(value)
+    if notify:
+        control.infoDialog('Resume Point Source: %s' % _INDICATOR_LABELS.get(value, 'Local'), sound=True)
+
+
+def set_watched_provider(value, notify=False):
+    """Set Indicators + matching Resume Point Source (0 Local, 1 Trakt, 2 Simkl)."""
+    value = str(value)
+    if value not in _INDICATOR_LABELS:
+        value = '0'
+    control.setSetting('indicators.alt', value)
+    set_bookmarks_source(value, notify=False)
+    sync_indicators_label(value)
+    if notify:
+        name = _INDICATOR_LABELS.get(value, 'Local')
+        control.infoDialog('Watched Indicators & Resume: %s' % name, sound=True)
+
+
+def ensure_bookmarks_valid():
+    """If Resume Point Source points at an unauthorised service, fall back."""
+    from resources.lib.modules import trakt
+    val = control.setting('bookmarks.source') or '0'
+    if val == '1' and not trakt.getTraktCredentialsInfo():
+        set_bookmarks_source('2' if getSimklCredentialsInfo() else '0')
+    elif val == '2' and not getSimklCredentialsInfo():
+        set_bookmarks_source('1' if trakt.getTraktCredentialsInfo() else '0')
+    else:
+        sync_bookmarks_label(val)
 
 
 def ensure_indicators_valid():
@@ -105,10 +150,12 @@ def ensure_indicators_valid():
     from resources.lib.modules import trakt
     val = control.setting('indicators.alt') or '0'
     if val == '1' and not trakt.getTraktCredentialsInfo():
-        control.setSetting('indicators.alt', '2' if getSimklCredentialsInfo() else '0')
+        set_watched_provider('2' if getSimklCredentialsInfo() else '0')
     elif val == '2' and not getSimklCredentialsInfo():
-        control.setSetting('indicators.alt', '1' if trakt.getTraktCredentialsInfo() else '0')
-    sync_indicators_label()
+        set_watched_provider('1' if trakt.getTraktCredentialsInfo() else '0')
+    else:
+        sync_indicators_label(val)
+    ensure_bookmarks_valid()
 
 
 def fallback_indicators_on_revoke(revoked):
@@ -116,36 +163,55 @@ def fallback_indicators_on_revoke(revoked):
     from resources.lib.modules import trakt
     val = control.setting('indicators.alt') or '0'
     if revoked == 'trakt' and val == '1':
-        control.setSetting('indicators.alt', '2' if getSimklCredentialsInfo() else '0')
+        set_watched_provider('2' if getSimklCredentialsInfo() else '0')
     elif revoked == 'simkl' and val == '2':
-        control.setSetting('indicators.alt', '1' if trakt.getTraktCredentialsInfo() else '0')
-    sync_indicators_label()
+        set_watched_provider('1' if trakt.getTraktCredentialsInfo() else '0')
+    else:
+        sync_indicators_label()
+        ensure_bookmarks_valid()
 
 
-def choose_indicators(reopen_settings=False):
-    ensure_indicators_valid()
+def _provider_select(heading, current):
     opts = indicators_options()
     labels = [o[0] for o in opts]
-    current = control.setting('indicators.alt') or '0'
     preselect = -1
     for i, (_label, value) in enumerate(opts):
         if value == current:
             preselect = i
             break
     try:
-        select = control.dialog.select('Indicators', labels, preselect=preselect)
+        select = control.dialog.select(heading, labels, preselect=preselect)
     except TypeError:
-        select = control.selectDialog(labels, 'Indicators')
+        select = control.selectDialog(labels, heading)
     if select < 0:
+        return None
+    return opts[select][1]
+
+
+def choose_indicators(reopen_settings=False):
+    ensure_indicators_valid()
+    value = _provider_select('Watched Indicators', control.setting('indicators.alt') or '0')
+    if value is None:
         if reopen_settings:
-            control.finish_auth_ui(reopen_settings=True)
+            control.reopen_settings_category(0, 0)
         return
-    value = opts[select][1]
-    control.setSetting('indicators.alt', value)
-    sync_indicators_label()
-    control.infoDialog('Indicators: %s' % _INDICATOR_LABELS.get(value, 'Local'), sound=False)
+    set_watched_provider(value, notify=True)
+    control.sleep(350)
     if reopen_settings:
-        control.finish_auth_ui(reopen_settings=True)
+        control.reopen_settings_category(0, 0)
+
+
+def choose_bookmarks_source(reopen_settings=False):
+    ensure_bookmarks_valid()
+    value = _provider_select('Resume Point Source', control.setting('bookmarks.source') or '0')
+    if value is None:
+        if reopen_settings:
+            control.reopen_settings_category(1, 0)
+        return
+    set_bookmarks_source(value, notify=True)
+    control.sleep(350)
+    if reopen_settings:
+        control.reopen_settings_category(1, 0)
 
 
 def _headers():
@@ -249,8 +315,7 @@ def authSimkl(reopen_settings=False):
         control.setSetting('simkl.user', user)
         control.setSetting('simkl.authed', 'yes')
         if control.yesnoDialog('Set Simkl as your Watched Indicators provider?', heading='Watched Status Provider'):
-            control.setSetting('indicators.alt', '2')
-            sync_indicators_label()
+            set_watched_provider('2', notify=True)
         from resources.lib.modules import trakt
         if trakt.getTraktCredentialsInfo() and control.yesnoDialog(
                 'Open Simkl\'s official Trakt import page? (import completes in a browser)',

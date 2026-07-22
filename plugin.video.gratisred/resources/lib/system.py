@@ -109,6 +109,12 @@ def router(_argv):
         simkl.choose_indicators(reopen_settings=reopen)
 
 
+    elif action == 'choose_bookmarks_source':
+        from resources.lib.modules import simkl
+        reopen = (params.get('source') or '').lower() == 'settings'
+        simkl.choose_bookmarks_source(reopen_settings=reopen)
+
+
     elif action == 'my_simkl_menu':
         from resources.lib.indexers import navigator
         navigator.navigator().mysimkl()

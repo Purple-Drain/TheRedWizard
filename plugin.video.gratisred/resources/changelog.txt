@@ -1,6 +1,11 @@
 
+[B]- 1.1.4 (2026-07-22)[/B] Watched Indicators UX:
+ * [B]Change Watched Indicators...[/B] in General Settings (clearer action); reopens General Settings so [I]Using[/I] updates immediately.
+ * Changing Watched Indicators also sets [B]Resume Point Source[/B] to match.
+ * [B]Change Resume Point Source...[/B] in Playback Settings uses the same authorised-only picker (Local / Simkl / Trakt when signed in).
+
 [B]- 1.1.3 (2026-07-22)[/B] Indicators settings + sync defaults:
- * [B]Indicators[/B]: clickable settings row opens the provider picker (was a greyed-out label); [I]Current[/I] shows the active provider underneath.
+ * [B]Indicators[/B]: clickable settings row opens the provider picker (was a greyed-out label); [I]Current[/I] / [I]Using[/I] shows the active provider.
  * [B]Simkl Watched Sync on Kodi Startup[/B] defaults to off (same as Trakt Library Sync).
 
 [B]- 1.1.2 (2026-07-22)[/B] Simkl integration + personal progress:
