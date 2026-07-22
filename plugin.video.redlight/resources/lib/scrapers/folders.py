@@ -14,7 +14,7 @@ class source:
 		self.scraper_name = scraper_name
 		self.folder_path = folder_path
 		self.sources, self.scrape_results = [], []
-		self.extensions = source_utils.supported_video_extensions()
+		self.extensions = source_utils.supported_video_extensions() + ['.strm']
 
 	def results(self, info):
 		try:
@@ -38,7 +38,9 @@ class source:
 						try: size = item[2]
 						except: size = self._get_size(file_dl)
 						video_quality, details = source_utils.get_file_info(name_info=source_utils.release_info_format(file_name))
-						source_item = {'name': file_name, 'display_name': display_name, 'quality': video_quality, 'size': size, 'size_label': '%.2f GB' % size, 'debrid': 'folders',
+						source_item = {'name': file_name, 'display_name': display_name, 'quality': video_quality,
+									'size': size if isinstance(size, (int, float)) else 0,
+									'size_label': ('%.2f GB' % size) if isinstance(size, (int, float)) else 'STRM', 'debrid': 'folders',
 									'extraInfo': details, 'url_dl': file_dl, 'id': file_dl, self.scrape_provider : True, 'direct': True, 'source': self.scraper_name,
 									'scrape_provider': 'folders'}
 						yield source_item

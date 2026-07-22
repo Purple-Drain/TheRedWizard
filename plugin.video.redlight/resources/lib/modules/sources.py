@@ -2733,7 +2733,17 @@ class Sources():
 	def resolve_internal(self, scrape_provider, item_id, url_dl, direct_debrid_link=False, cloud_media_type=None):
 		url = None
 		try:
-			if direct_debrid_link or scrape_provider == 'folders': url = url_dl
+			if direct_debrid_link or scrape_provider == 'folders':
+				url = url_dl
+				if scrape_provider == 'folders' and isinstance(url, str) and url.lower().endswith('.strm'):
+					import xbmcvfs
+					try:
+						with xbmcvfs.File(url) as _f: _data = _f.read()
+						for _ln in _data.splitlines():
+							_ln = _ln.strip()
+							if _ln and not _ln.startswith('#'):
+								url = _ln; break
+					except Exception: pass
 			elif scrape_provider == 'easynews':
 				from indexers.easynews import resolve_easynews
 				url = resolve_easynews({'url_dl': url_dl, 'play': 'false'})
