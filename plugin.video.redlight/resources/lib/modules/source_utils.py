@@ -4,6 +4,7 @@ import json
 import base64
 import time
 import requests
+from functools import lru_cache
 from threading import Thread
 from urllib.parse import unquote, unquote_plus
 from caches.settings_cache import get_setting
@@ -128,11 +129,11 @@ def supported_video_extensions():
 	supported_video_extensions = supported_media().split('|')
 	return [i for i in supported_video_extensions if not i in ('','.zip','.rar','.iso')]
 
-def seas_ep_filter(season, episode, release_title, split=False, return_match=False):
+@lru_cache(maxsize=256)
+def _seas_ep_filter_pattern(season, episode):
 	str_season, str_episode = str(season), str(episode)
 	season_fill, episode_fill = str_season.zfill(2), str_episode.zfill(2)
 	str_ep_plus_1, str_ep_minus_1 = str(episode+1), str(episode-1)
-	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
 	string1 = r'(s<<S>>[.-]?e[p]?[.-]?<<E>>[.-])'
 	string2 = r'(season[.-]?<<S>>[.-]?episode[.-]?<<E>>[.-])'#|([s]?<<S>>[x.]<<E>>[.-])'
 	string3 = r'(s<<S>>e<<E1>>[.-]?e?<<E2>>[.-])'
@@ -163,17 +164,20 @@ def seas_ep_filter(season, episode, release_title, split=False, return_match=Fal
 	string_list_append(string8.replace('<<S>>', str_season).replace('<<E>>', episode_fill))
 	string_list_append(string8.replace('<<S>>', season_fill).replace('<<E>>', str_episode))
 	string_list_append(string8.replace('<<S>>', str_season).replace('<<E>>', str_episode))
-	final_string = '|'.join(string_list)
-	reg_pattern = re.compile(final_string)
+	return re.compile('|'.join(string_list))
+
+def seas_ep_filter(season, episode, release_title, split=False, return_match=False):
+	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
+	reg_pattern = _seas_ep_filter_pattern(season, episode)
 	if split: return release_title.split(re.search(reg_pattern, release_title).group(), 1)[1]
 	if return_match: return re.search(reg_pattern, release_title).group()
 	return bool(re.search(reg_pattern, release_title))
 
-def seas_ep_filter_exact(season, episode, release_title):
+@lru_cache(maxsize=256)
+def _seas_ep_filter_exact_pattern(season, episode):
 	"""Exact S/E only — for debrid cloud files (no multi-episode pack ranges)."""
 	str_season, str_episode = str(season), str(episode)
 	season_fill, episode_fill = str_season.zfill(2), str_episode.zfill(2)
-	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
 	patterns = (
 		r'(s<<S>>[.-]?e[p]?[.-]?<<E>>[.-])',
 		r'(season[.-]?<<S>>[.-]?episode[.-]?<<E>>[.-])',
@@ -186,7 +190,11 @@ def seas_ep_filter_exact(season, episode, release_title):
 	for pattern in patterns:
 		for s, e in ((season_fill, episode_fill), (str_season, episode_fill), (season_fill, str_episode), (str_season, str_episode)):
 			string_list.append(pattern.replace('<<S>>', s).replace('<<E>>', e))
-	return bool(re.search('|'.join(string_list), release_title))
+	return re.compile('|'.join(string_list))
+
+def seas_ep_filter_exact(season, episode, release_title):
+	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
+	return bool(re.search(_seas_ep_filter_exact_pattern(season, episode), release_title))
 
 def parse_episode_from_filename(release_title, season=None):
 	"""Parse SxxExx / 1x## from a filename; ignore season/episode folder path words."""
@@ -209,13 +217,10 @@ def parse_episode_from_filename(release_title, season=None):
 			return e_num
 	return None
 
-def cloud_episode_matches(season, episode, filename):
-	"""Match requested episode using the file name only — not parent folder names like Episode 1/."""
+@lru_cache(maxsize=256)
+def _cloud_episode_matches_pattern(season, episode):
 	str_season, str_episode = str(season), str(episode)
 	season_fill, episode_fill = str_season.zfill(2), str_episode.zfill(2)
-	filename = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(filename).replace('\'', '')).lower()
-	if not filename:
-		return False
 	sxxexx_patterns = (
 		r'(s<<S>>[.-]?e[p]?[.-]?<<E>>[.-])',
 		r'([s]?<<S>>x<<E>>[.-])',
@@ -225,7 +230,14 @@ def cloud_episode_matches(season, episode, filename):
 	for pattern in sxxexx_patterns:
 		for s, e in ((season_fill, episode_fill), (str_season, episode_fill), (season_fill, str_episode), (str_season, str_episode)):
 			string_list.append(pattern.replace('<<S>>', s).replace('<<E>>', e))
-	if not re.search('|'.join(string_list), filename):
+	return re.compile('|'.join(string_list))
+
+def cloud_episode_matches(season, episode, filename):
+	"""Match requested episode using the file name only — not parent folder names like Episode 1/."""
+	filename = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(filename).replace('\'', '')).lower()
+	if not filename:
+		return False
+	if not re.search(_cloud_episode_matches_pattern(season, episode), filename):
 		return False
 	parsed_ep = parse_episode_from_filename(filename, season)
 	if parsed_ep is not None:
