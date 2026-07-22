@@ -171,9 +171,9 @@ def _normalize_hash_list(hash_list):
 
 def cached_check(hash_list, cached_hashes, debrid):
 	hash_list = _normalize_hash_list(hash_list)
-	cached_list = [i[0].lower() for i in cached_hashes if i[1] == debrid and i[2] == 'True']
-	unchecked_list = [i for i in hash_list if not any(h[0].lower() == i and h[1] == debrid and h[2] == 'True' for h in cached_hashes)]
-	return cached_list, unchecked_list
+	cached_set = {i[0].lower() for i in cached_hashes if i[1] == debrid and i[2] == 'True'}
+	unchecked_list = [i for i in hash_list if i not in cached_set]
+	return list(cached_set), unchecked_list
 
 def RD_check(hash_list, cached_hashes, data, active_debrid):
 	expires = 24
