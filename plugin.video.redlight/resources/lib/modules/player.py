@@ -19,6 +19,8 @@ PROP_NEXTEP_AUTOPLAY_CANCELLED = 'redlight.nextep_autoplay_cancelled'
 PROP_NEXTEP_NATURAL_END = 'redlight.nextep_natural_end'
 PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS = 'redlight.random_continual_skip_attempts'
 PROP_ACTIVE_PLAYBACK_KEY = 'redlight.active_playback_key'
+PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
+PROP_SOURCES_BUSY = 'redlight.sources_busy'
 _NEXTEP_NATURAL_END_SEC = 15
 # Movies-only: fire stingers alert ~3 min before other alert sources would (typical 90% vs 95% gap on ~1 hr).
 _STINGER_EARLY_OFFSET_SEC = 180
@@ -337,7 +339,14 @@ class RedLightPlayer(xbmc.Player):
 						clear_nextep_autoplay_stash()
 				except: pass
 			autoscrape_handoff_pending = self.media_type == 'episode' and self.autoscrape_nextep and ku.get_property(PROP_NEXTEP_PENDING) == 'true'
-			if not autoplay_stash_scheduled and not autoscrape_handoff_pending and not playback_superseded and self.media_type == 'episode' and self.tmdb_id:
+			nextep_resolve_in_flight = False
+			if not playback_superseded and self.media_type == 'episode' and self.autoplay_nextep:
+				try:
+					from modules.sources import nextep_autoplay_cancelled
+					if not nextep_autoplay_cancelled() and (ku.get_property(PROP_RESOLVE_BUSY) == 'true' or ku.get_property(PROP_SOURCES_BUSY) == 'true'):
+						nextep_resolve_in_flight = True
+				except: pass
+			if not autoplay_stash_scheduled and not autoscrape_handoff_pending and not nextep_resolve_in_flight and not playback_superseded and self.media_type == 'episode' and self.tmdb_id:
 				try:
 					ku.end_display_lock(str(self.tmdb_id), getattr(self, 'display_lock_generation', None))
 				except: pass
