@@ -659,11 +659,11 @@ class Sources():
 				results = self._merge_aiostreams_at_provider_rank(non_aio, aio_block)
 		if self.prescrape:
 			self.all_scrapers = self.active_internal_scrapers
-			if self.autoplay:
-				autoplay_results = self._prescrape_autoplay_candidates(results)
-				if autoplay_results:
-					self.cloud_prescrape_autoplay = True
-					results = autoplay_results
+			autoplay_results = self._prescrape_autoplay_candidates(results)
+			if autoplay_results:
+				self.autoplay = True
+				self.cloud_prescrape_autoplay = True
+				results = autoplay_results
 		else:
 			self.all_scrapers = list(set(self.active_internal_scrapers + self.remove_scrapers))
 			kodi_utils.clear_property('fs_filterless_search')
@@ -1088,7 +1088,7 @@ class Sources():
 			if self.autoplay_nextep and not self.autoscrape_nextep:
 				return self._stash_nextep_autoplay_play(autoplay_queue)
 			return self.play_file(autoplay_queue)
-		prescrape_autoplay = self._prescrape_autoplay_candidates(results) if self.autoplay else []
+		prescrape_autoplay = self._prescrape_autoplay_candidates(results)
 		if prescrape_autoplay:
 			self.cloud_prescrape_autoplay = True
 			self._last_cloud_autoplay_results = list(prescrape_autoplay)
