@@ -1,0 +1,7 @@
+# Build output from tools/build-repo.sh -- release zips + repo index, never committed.
+dist/
+
+# Python bytecode. Kodi generates these on-device; they should never be in the repo.
+__pycache__/
+*.pyc
+*.pyo
