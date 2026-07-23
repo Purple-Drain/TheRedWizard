@@ -336,6 +336,11 @@ class RedLightPlayer(xbmc.Player):
 					else:
 						clear_nextep_autoplay_stash()
 				except: pass
+			autoscrape_handoff_pending = self.media_type == 'episode' and self.autoscrape_nextep and ku.get_property(PROP_NEXTEP_PENDING) == 'true'
+			if not autoplay_stash_scheduled and not autoscrape_handoff_pending and not playback_superseded and self.media_type == 'episode' and self.tmdb_id:
+				try:
+					ku.end_display_lock(str(self.tmdb_id), getattr(self, 'display_lock_generation', None))
+				except: pass
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
