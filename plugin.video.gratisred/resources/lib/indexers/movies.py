@@ -1166,6 +1166,23 @@ class movies:
 
     def get(self, url, idx=True, create_directory=True):
         try:
+            if url and str(url).startswith('simkl_'):
+                from resources.lib.modules import simkl as simkl_mod
+                key = str(url)
+                if key == 'simkl_ondeck':
+                    self.list = simkl_mod.directory_playback_movies()
+                    self.list = sorted(self.list, key=lambda k: int(k.get('paused_at') or 0), reverse=True)
+                elif key.startswith('simkl_trending_'):
+                    period = key.replace('simkl_trending_', '') or 'today'
+                    self.list = simkl_mod.directory_trending('movies', period)
+                else:
+                    status = key[6:]
+                    self.list = simkl_mod.directory_movies(status)
+                if idx == True:
+                    self.worker()
+                if idx == True and create_directory == True:
+                    self.movieDirectory(self.list)
+                return self.list
             try:
                 url = getattr(self, url + '_link')
             except:
@@ -1251,13 +1268,20 @@ class movies:
             return
         addonPoster, addonBanner = control.addonPoster(), control.addonBanner()
         addonFanart = control.addonFanart()
+        from resources.lib.modules import simkl as simkl_mod
         traktCredentials = trakt.getTraktCredentialsInfo()
+        simklCredentials = simkl_mod.getSimklCredentialsInfo()
         tmdbCredentials = tmdb_utils.getTMDbCredentialsInfo()
         isPlayable = True if not 'plugin' in control.infoLabel('Container.PluginName') else False
         indicators = playcount.getMovieIndicators()#refresh=True) if action == 'movies' else playcount.getMovieIndicators()
         playbackMenu = 'Select Source' if control.setting('hosts.mode') == '2' else 'Auto Play'
-        watchedMenu = 'Watched in Trakt' if trakt.getTraktIndicatorsInfo() == True else 'Watched in Gratis Red'
-        unwatchedMenu = 'Unwatched in Trakt' if trakt.getTraktIndicatorsInfo() == True else 'Unwatched in Gratis Red'
+        _ind = simkl_mod.getIndicatorsProvider()
+        if _ind == 'trakt':
+            watchedMenu, unwatchedMenu = 'Watched in Trakt', 'Unwatched in Trakt'
+        elif _ind == 'simkl':
+            watchedMenu, unwatchedMenu = 'Watched in Simkl', 'Unwatched in Simkl'
+        else:
+            watchedMenu, unwatchedMenu = 'Watched in Gratis Red', 'Unwatched in Gratis Red'
         nextMenu = '[I]Next Page[/I]'
         try:
             favitems = favorites.getFavorites('movie')
@@ -1305,6 +1329,8 @@ class movies:
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
                 if traktCredentials == True:
                     cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&content=movie)' % (sysaddon, sysname, imdb)))
+                if simklCredentials == True:
+                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
                     cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, tmdb)))
                 libtools.append_movie_library_cm(cm, sysaddon, movie_library, sysname, title, year, imdb, tmdb)
