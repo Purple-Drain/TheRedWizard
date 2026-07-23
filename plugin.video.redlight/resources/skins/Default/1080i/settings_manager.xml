@@ -3334,6 +3334,14 @@
                           <property name="setting_description">Configure automatic retries when a source search returns no playable results. Each action can be Off, Auto, or Prompt, with order from Highest to Lowest. Rescrape With No Cache Check disables per-provider external cache checks (Real Debrid, All Debrid, TorBox, Premiumize, Offcloud). Rescrape With Disabled External Providers includes disabled external torrent providers (not internal scrapers such as EasyNews or debrid cloud). Offer Full Search After Early Results applies to the empty-search retry path only; Check Before Full Search and Run External Scraper Search during prescrape are separate.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=rescrape_actions_choice)</onclick>
                       </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(70)</visible>
+                          <property name="setting_label">Sequential Prescrape (Waterfall)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.prescrape.sequential)]</property>
+                          <property name="setting_description">When enabled, prescrape sources run one priority tier at a time instead of all in parallel: Media Folders first, then debrid clouds, then everything else, stopping as soon as a tier returns a result. When disabled (default), all Check Before Full Search sources race in parallel as before.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=prescrape.sequential)</onclick>
+                      </item>
         <!-- Sorting and Filtering -->
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
