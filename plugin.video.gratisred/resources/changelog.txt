@@ -1,4 +1,27 @@
 
+[B]- 1.1.4 (2026-07-22)[/B] Watched Indicators UX:
+ * [B]Change Watched Indicators...[/B] in General Settings (clearer action); reopens General Settings so [I]Using[/I] updates immediately.
+ * Changing Watched Indicators also sets [B]Resume Point Source[/B] to match.
+ * [B]Change Resume Point Source...[/B] in Playback Settings uses the same authorised-only picker (Local / Simkl / Trakt when signed in).
+
+[B]- 1.1.3 (2026-07-22)[/B] Indicators settings + sync defaults:
+ * [B]Indicators[/B]: clickable settings row opens the provider picker (was a greyed-out label); [I]Current[/I] / [I]Using[/I] shows the active provider.
+ * [B]Simkl Watched Sync on Kodi Startup[/B] defaults to off (same as Trakt Library Sync).
+
+[B]- 1.1.2 (2026-07-22)[/B] Simkl integration + personal progress:
+ * [B]Simkl[/B]: authorise with QR / PIN (same dialog style as Trakt/TMDb); revoke from Account Settings; optional [I]script.simkl[/I] coexistence when marking watched / scrobbling.
+ * Gratis Red–specific Simkl client ID (not shared with Red Light).
+ * [B]Indicators[/B]: picker only lists authorised providers (Local always; Simkl / Trakt when signed in). After Simkl or Trakt auth, optional prompt to set that service as Indicators.
+ * [B]My Stuff > My Simkl[/B]: Movies — Plan to Watch / Completed / Dropped / In Progress; TV — Plan to Watch / Watching / Completed / On Hold / Dropped / Continue Watching / In Progress Episodes / Upcoming Episodes; Refresh Simkl Cache.
+ * [B]Explore Simkl[/B] (Movies / TV): [B]Simkl Trending Today / This Week / This Month[/B] from Simkl Most Watched CDN lists (TV merges anime).
+ * [B]Simkl Manager[/B] on movie/show/episode context menus (add/remove status shelves).
+ * [B]Native Simkl scrobble[/B] (start / pause / stop) when Indicators = Simkl; [B]Resume Point Source[/B] adds [I]Simkl[/I].
+ * Optional [B]Simkl Watched Sync on Kodi Startup[/B]; Progress item limit / sort labels are provider-neutral.
+ * [B]Optional Installs[/B]: [I]script.simkl[/I] listed before [I]script.trakt[/I]; Tools auth entries ordered Simkl then Trakt; auth/revoke refreshes the open menu.
+ * Trakt Explore catalogs, Calendar / Continue Watching, UserLists, Collection / Favorites, and scrape helpers remain Trakt-backed.
+ * After Simkl auth, optional prompt to open Simkl's official Trakt import page.
+ * Requires [B]script.gratisred.artwork[/B] 1.0.3+ (Simkl menu icons; transparent theme uses the official mark).
+
 [B]- 1.1.1 (2026-07-11)[/B] Trakt/TMDb fixes, QR auth, scraper fixes, OpenSubtitles.com:
  * [B]hdhub_stremio[/B]: new provider using the HdHub Stremio JSON API (IMDb movie + TV episode streams; direct CDN / PixelDrain links, torrents skipped).
  * [B]fmovie_core_sites[/B]: new movies-only provider for [I]moviesfree.cv[/I] and [I]ghostplayer.store[/I] (fmovie-core [I]Servers[/I] block; file-host chains via ResolveURL; cloud mirror keys skipped).
