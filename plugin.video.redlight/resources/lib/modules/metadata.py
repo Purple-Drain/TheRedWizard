@@ -262,6 +262,15 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 		if ei_last_ep and not status in ('Ended', 'Canceled'):
 			total_aired_eps = sum([i['episode_count'] for i in season_data if i['season_number'] < ei_last_ep['season_number'] \
 																		and i['season_number'] != 0]) + ei_last_ep['episode_number']
+		elif ei_last_ep and status in ('Ended', 'Canceled'):
+			# Count through last aired only — TMDb number_of_episodes can include unaired placeholder
+			# seasons (e.g. S2E1 with no air_date after an Ended S1 finale).
+			last_s, last_e = ei_last_ep['season_number'], ei_last_ep['episode_number']
+			prior = sum(i['episode_count'] for i in season_data if 0 < i['season_number'] < last_s)
+			cur = next((i for i in season_data if i['season_number'] == last_s), None)
+			cur_count = (cur or {}).get('episode_count') or 0
+			if last_e <= cur_count: total_aired_eps = prior + last_e
+			else: total_aired_eps = prior + cur_count if (prior + cur_count) else data_get('number_of_episodes')
 		else: total_aired_eps = data_get('number_of_episodes')
 		extra_info = {'status': status, 'type': _type, 'homepage': homepage, 'created_by': ei_created_by, 'next_episode_to_air': ei_next_ep, 'last_episode_to_air': ei_last_ep}
 		meta = {'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'imdb_id': imdb_id, 'rating': rating, 'plot': plot, 'tagline': tagline, 'votes': votes, 'premiered': premiered, 'year': year,

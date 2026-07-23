@@ -769,8 +769,8 @@ def trakt_get_lists(list_type, page_no='1'):
 def get_trakt_list_selection(included_lists):
 	def default_lists():
 		return [
-		{'name': 'Movies Collection', 'display': '[B][I]MOVIES COLLECTION [/I][/B]', 'user': 'Collection', 'slug': 'Collection', 'list_type': 'collection', 'media_type': 'movie'},
-		{'name': 'TV Show Collection', 'display': '[B][I]TV SHOW COLLECTION [/I][/B]', 'user': 'Collection', 'slug': 'Collection', 'list_type': 'collection', 'media_type': 'show'},
+		{'name': 'Movies Library', 'display': '[B][I]MOVIES LIBRARY [/I][/B]', 'user': 'Collection', 'slug': 'Collection', 'list_type': 'collection', 'media_type': 'movie'},
+		{'name': 'TV Show Library', 'display': '[B][I]TV SHOW LIBRARY [/I][/B]', 'user': 'Collection', 'slug': 'Collection', 'list_type': 'collection', 'media_type': 'show'},
 		{'name': 'Movies Watchlist', 'display': '[B][I]MOVIES WATCHLIST [/I][/B]',  'user': 'Watchlist', 'slug': 'Watchlist', 'list_type': 'watchlist', 'media_type': 'movie'},
 		{'name': 'TV Show Watchlist', 'display': '[B][I]TV SHOW WATCHLIST [/I][/B]',  'user': 'Watchlist', 'slug': 'Watchlist', 'list_type': 'watchlist', 'media_type': 'show'}
 		]

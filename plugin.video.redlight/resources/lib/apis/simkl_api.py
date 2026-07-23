@@ -124,10 +124,9 @@ def simkl_authenticate(dummy=''):
 	if info and info.get('user'):
 		set_setting('simkl.user', str(info['user'].get('name') or info['user'].get('login') or 'Simkl User'))
 	else: set_setting('simkl.user', 'Simkl User')
-	switched = settings.offer_watched_provider(2, 'Simkl')
+	settings.offer_watched_provider(2, 'Simkl')
 	kodi_utils.notification('Simkl Account Authorised', 3000)
-	import_ran = switched and settings.trakt_user_active() and settings.offer_trakt_import_to_simkl()
-	if not import_ran: simkl_sync_activities(force_update=True)
+	simkl_sync_activities(force_update=True)
 	try: kodi_utils.container_refresh()
 	except: pass
 	return True
@@ -152,7 +151,7 @@ def simkl_import_trakt(params=None):
 		progress.close()
 	except:
 		kodi_utils.ok_dialog(heading='Import Trakt to Simkl',
-			text='Open this official Simkl page in a browser:[CR][CR][B]%s[/B][CR][CR]The link has been copied where supported.[CR][CR]When finished, use Force Simkl Sync under My Data.' % url)
+			text='Open this official Simkl page in a browser:[CR][CR][B]%s[/B][CR][CR]The link has been copied where supported.[CR][CR]When finished, use Force Sync under Meta Accounts > Simkl.' % url)
 	Thread(target=simkl_sync_activities, kwargs={'force_update': True}, daemon=True).start()
 	return True
 
@@ -188,7 +187,9 @@ def _simkl_media_ids(item, media_kind):
 	except: return {}
 
 def _simkl_all_items(media_kind, status):
-	path = '/sync/all-items/%s/%s?extended=ids_only' % (media_kind, status)
+	# Default sync payload includes title/year (needed for list_sort). ids_only strips titles and
+	# makes Title A–Z a no-op.
+	path = '/sync/all-items/%s/%s' % (media_kind, status)
 	response = call_simkl(path, method='get')
 	if response is None:
 		kodi_utils.logger('Simkl', 'list fetch failed: %s' % path)
@@ -267,11 +268,11 @@ def _simkl_fetch_status_live(media_kind, status):
 	if skipped and not result:
 		kodi_utils.logger('Simkl', 'list %s/%s: %s items had no tmdb/imdb/tvdb ids' % (media_kind, status, skipped))
 	# 'anime' is only ever fetched by _simkl_fetch_tv_status, which merges it with the shows list and
-	# sorts the merged result under an explicit 'shows'. Sorting here too would resolve to
-	# DEFAULT_SPEC ('anime' does not normalize to a mediatype, so there is no scope suffix and no
-	# override) and break the final sort's ties alphabetically instead of preserving Simkl's order.
-	if media_kind == 'anime': return result
-	try: return list_sort.sort_source(result, 'simkl', media_kind, 'simkl')
+	# sorts the merged result under an explicit 'shows'. Sorting anime here would resolve to
+	# DEFAULT_SPEC ('anime' does not normalize to a mediatype) and break the final sort's ties.
+	# Shows are left unsorted here so the merge below is the single TV sort pass.
+	if media_kind != 'movies': return result
+	try: return list_sort.sort_source(result, 'simkl.%s' % status, 'movies', 'simkl')
 	except Exception as e:
 		kodi_utils.logger('Simkl', 'sort %s/%s failed: %s' % (media_kind, status, e))
 		return result
@@ -286,7 +287,7 @@ def _simkl_fetch_tv_status(status):
 	anime = _simkl_fetch_status('anime', status)
 	if not shows and not anime: return []
 	# sort_source never raises, so no guard here: a bare except would only swallow KeyboardInterrupt.
-	return list_sort.sort_source(shows + anime, 'simkl', 'shows', 'simkl')
+	return list_sort.sort_source(shows + anime, 'simkl.%s' % status, 'shows', 'simkl')
 
 def simkl_plantowatch(media_kind, page_no=None):
 	if media_kind == 'shows': return _simkl_fetch_tv_status('plantowatch')

@@ -222,8 +222,8 @@ class NavigatorCache:
 
 	def random_trakt_lists_personal(self):
 		return [
-			{'mode': 'random.build_movie_list', 'action': 'trakt_collection_lists', 'name': 'Random Trakt Movie Collection', 'iconImage': 'movies', 'random': 'true'},
-			{'mode': 'random.build_tvshow_list', 'action': 'trakt_collection_lists', 'name': 'Random Trakt TV Show Collection', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'trakt_collection_lists', 'name': 'Random Trakt Movie Library', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'trakt_collection_lists', 'name': 'Random Trakt TV Show Library', 'iconImage': 'tv', 'random': 'true'},
 			{'mode': 'random.build_movie_list', 'action': 'trakt_watchlist_lists', 'name': 'Random Trakt Movie Watchlist', 'iconImage': 'movies', 'random': 'true'},
 			{'mode': 'random.build_tvshow_list', 'action': 'trakt_watchlist_lists', 'name': 'Random Trakt TV Show Watchlist', 'iconImage': 'tv', 'random': 'true'},
 			{'mode': 'random.build_movie_list', 'action': 'trakt_recommendations', 'new_page': 'movies', 'name': 'Random Trakt Recommended Movies',

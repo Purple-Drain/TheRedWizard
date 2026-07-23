@@ -5,6 +5,24 @@ from modules.metadata import tvshow_meta, episodes_meta, all_episodes_meta
 from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool
 # logger = kodi_utils.logger
 
+def _nextep_indicator_watchlist():
+	"""Never-started shows from the active Watched Indicators service watchlist (empty for Red Light)."""
+	indicators = settings.watched_indicators()
+	try:
+		if indicators == 1:
+			from apis.trakt_api import trakt_watchlist
+			data = trakt_watchlist('tvshow', '') or []
+			return [{'media_ids': i['media_ids'], 'title': i.get('title', '')} for i in data if i.get('media_ids')]
+		if indicators == 2:
+			from apis.simkl_api import simkl_plantowatch
+			data = simkl_plantowatch('shows') or []
+			return [{'media_ids': i['media_ids'], 'title': i.get('title', '')} for i in data if i.get('media_ids')]
+		if indicators == 3:
+			from apis.mdblist_api import mdblist_watchlist_media_ids
+			return mdblist_watchlist_media_ids('shows')
+	except: pass
+	return []
+
 def build_episode_list(params):
 	def _process():
 		for item in episodes_data:
@@ -75,7 +93,11 @@ def build_episode_list(params):
 				full_cast = cast + item_get('guest_stars', [])
 				info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
 				if progress and not unaired:
-					info_tag.setResumePoint(ws.get_resume_seconds(progress, duration))
+					resume_secs = ws.get_resume_seconds(progress, duration)
+					try: total_secs = float(duration)
+					except Exception: total_secs = 0
+					if total_secs > 0: info_tag.setResumePoint(resume_secs, total_secs)
+					else: info_tag.setResumePoint(resume_secs)
 					set_properties({'WatchedProgress': progress})
 				listitem.setLabel(display)
 				listitem.addContextMenuItems(cm)
@@ -167,7 +189,7 @@ def build_single_episode(list_type, params={}):
 			season_data = meta_get('season_data')
 			watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
 			if list_type_starts_with('next'):
-				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content)
+				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta)
 				if not orig_season or not orig_episode: return
 				if ws.get_watched_status_episode(watched_info, (orig_season, orig_episode)): return
 			episodes_data = episodes_meta(orig_season, meta)
@@ -286,7 +308,11 @@ def build_single_episode(list_type, params={}):
 			full_cast = cast + item_get('guest_stars', [])
 			info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
 			if progress and not unaired:
-				info_tag.setResumePoint(ws.get_resume_seconds(progress, duration))
+				resume_secs = ws.get_resume_seconds(progress, duration)
+				try: total_secs = float(duration)
+				except Exception: total_secs = 0
+				if total_secs > 0: info_tag.setResumePoint(resume_secs, total_secs)
+				else: info_tag.setResumePoint(resume_secs)
 				set_properties({'WatchedProgress': progress})
 			listitem.setLabel(display)
 			listitem.addContextMenuItems(cm)
@@ -343,9 +369,8 @@ def build_single_episode(list_type, params={}):
 		else: resformat, resinsert, list_type = '%Y-%m-%d %H:%M:%S', '2000-01-01 00:00:00', 'episode.next_redlight'
 		if include_unwatched != 0:
 			if include_unwatched in (1, 3):
-				from apis.trakt_api import trakt_watchlist
 				try:
-					watchlist = trakt_watchlist('tvshow', '')
+					watchlist = _nextep_indicator_watchlist()
 					unwatched.extend([{'media_ids': i['media_ids'], 'season': 1, 'episode': 0, 'unwatched': True, 'title': i['title']} for i in watchlist])
 				except: pass
 			if include_unwatched in (2, 3):

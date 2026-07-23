@@ -65,6 +65,18 @@ def menu_suffix(days):
 	return ' · %d days' % days
 
 
+def service_alert_enabled(service_id):
+	return get_setting('redlight.services.expiry_alert.%s' % service_id, 'true') == 'true'
+
+
+def publish_settings_expiry_properties():
+	"""Home props for Settings > General > My Services authorised toggle visibility."""
+	set_property = kodi_utils.set_property
+	for service_id, _display_name, _icon_name in SERVICE_META:
+		authorised = _service_authorized(service_id)
+		set_property('redlight.services.authorised.%s' % service_id, 'true' if authorised else 'false')
+
+
 def summary_from_expiry(expires_dt):
 	if not expires_dt: return None
 	days = (expires_dt - datetime.today()).days
@@ -200,6 +212,7 @@ def run_expiry_alerts():
 	if threshold <= 0: return
 	for service_id, display_name, icon_name in SERVICE_META:
 		if not _service_authorized(service_id): continue
+		if not service_alert_enabled(service_id): continue
 		summary = get_cached_expiry_summary(service_id, refresh=True)
 		if not summary: continue
 		days = summary.get('days')

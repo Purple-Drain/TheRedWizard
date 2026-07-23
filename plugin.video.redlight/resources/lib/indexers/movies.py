@@ -300,7 +300,11 @@ class Movies:
 			cast = meta_get('short_cast', []) or meta_get('cast', []) or []
 			info_tag.setCast([self.kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
 			if progress:
-				info_tag.setResumePoint(watched_status.get_resume_seconds(progress, duration))
+				resume_secs = watched_status.get_resume_seconds(progress, duration)
+				try: total_secs = float(duration)
+				except Exception: total_secs = 0
+				if total_secs > 0: info_tag.setResumePoint(resume_secs, total_secs)
+				else: info_tag.setResumePoint(resume_secs)
 				set_properties({'WatchedProgress': progress})
 			listitem.setLabel(title)
 			listitem.addContextMenuItems(cm)
