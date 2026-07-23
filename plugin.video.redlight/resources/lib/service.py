@@ -238,6 +238,34 @@ class MdblistMonitor:
 		except: pass
 		return kodi_utils.logger('Red Light', 'MDBListMonitor Service Finished')
 
+class LibrarySyncMonitor:
+	'''Native port of kodi-strm-pipeline's service.library.sync: WebDAV walk of
+	TorBox/Debrid-Link/Real-Debrid into a .strm TV/movie tree, on an interval,
+	off by default (redlight.library_sync.enabled). Same shape as
+	TraktMonitor/SimklMonitor above -- playback guard, waitForAbort loop.'''
+	def run(self, monitor):
+		kodi_utils.logger('Red Light', 'LibrarySyncMonitor Service Starting')
+		from modules import strm_library
+		player = kodi_utils.kodi_player()
+		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
+		wait_for_abort(60)
+		while not monitor.abortRequested():
+			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			wait_time = 3600
+			try:
+				if strm_library.enabled() and strm_library.webdav_providers():
+					_minutes, wait_time = strm_library.sync_interval()
+					summary = strm_library.run_sync(notify_start=False)
+					kodi_utils.logger('Red Light', 'LibrarySyncMonitor Service - %s' % summary)
+				else:
+					wait_time = 900  # re-check every 15 min in case it gets enabled/configured
+			except Exception as e:
+				kodi_utils.logger('Red Light', 'LibrarySyncMonitor Service Failed: %s' % str(e))
+			wait_for_abort(wait_time)
+		try: del player
+		except: pass
+		return kodi_utils.logger('Red Light', 'LibrarySyncMonitor Service Finished')
+
 class WidgetRefresher:
 	def run(self, monitor):
 		kodi_utils.logger('Red Light', 'WidgetRefresher Service Starting')
@@ -336,6 +364,7 @@ class RedLightMonitor(Monitor):
 		_start_daemon(lambda: TraktMonitor().run(self))
 		_start_daemon(lambda: SimklMonitor().run(self))
 		_start_daemon(lambda: MdblistMonitor().run(self))
+		_start_daemon(lambda: LibrarySyncMonitor().run(self))
 		_start_daemon(lambda: WidgetRefresher().run(self))
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))
