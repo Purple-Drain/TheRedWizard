@@ -713,22 +713,12 @@ def write_library(root, tv, movies, browse=None, versions=None,
 		base = "%s (%d)" % (title.title(), year)
 		movie_want[_strm_path(os.path.join(movie_root, sanitise(base)), _flagged(base, stem))] = (url, ts)
 
-	by_provider = os.path.join(browse_root, "By Provider")
-	for provider, items in (browse or {}).items():
-		directory = os.path.join(by_provider, sanitise(provider))
-		for stem, (url, ts) in items.items():
-			browse_want[_strm_path(directory, stem)] = (url, ts)
-
-	by_title = os.path.join(browse_root, "By Title")
-	for label, copies in (versions or {}).items():
-		distinct = {}
-		for qkey, _provider, stem, url, ts in sorted(copies, key=lambda c: c[0], reverse=True):
-			distinct.setdefault(stem, (url, ts))
-		directory = os.path.join(by_title, sanitise(label))
-		for stem, (url, ts) in distinct.items():
-			flags = _quality_label(stem)
-			name = "[%s] %s" % (flags, stem) if flags else stem
-			browse_want[_strm_path(directory, name)] = (url, ts)
+	# Browse/ is deliberately no longer written: every file it held is either
+	# already in TV Shows/ or Movies/, or was filtered out on purpose (football,
+	# junk, unparseable releases). browse_want stays empty and browse_root stays
+	# in the reconcile loop below so an existing Browse tree is pruned away
+	# instead of orphaned on disk. The `browse` argument is still collected --
+	# run_sync counts it for the shrink guard -- it is just not written out.
 
 	prev_pending = prev_pending or frozenset()
 	written = deleted = 0
