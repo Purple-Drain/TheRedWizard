@@ -1530,18 +1530,5 @@ def default_settings():
 {'setting_id': 'extras.movie.button15', 'setting_type': 'string', 'setting_default': 'show_genres'},
 {'setting_id': 'extras.movie.button16', 'setting_type': 'string', 'setting_default': 'show_director'},
 {'setting_id': 'extras.movie.button17', 'setting_type': 'string', 'setting_default': 'show_options'},
-#==================== Library Sync (.strm)
-{'setting_id': 'library_sync.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'library_sync.interval_minutes', 'setting_type': 'string', 'setting_default': '60'},
-{'setting_id': 'library_sync.root', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.rd.host', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.rd.user', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.rd.pass', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.tb.host', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.tb.user', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.tb.pass', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.dl.host', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.dl.user', 'setting_type': 'string', 'setting_default': ''},
-{'setting_id': 'library_sync.webdav.dl.pass', 'setting_type': 'string', 'setting_default': ''},
 	]
 	return _DEFAULTS_LIST
