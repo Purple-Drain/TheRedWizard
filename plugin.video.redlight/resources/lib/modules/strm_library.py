@@ -531,6 +531,51 @@ TV_SUBDIR = "TV Shows"
 MOVIE_SUBDIR = "Movies"
 BROWSE_SUBDIR = "Browse"
 
+# Curated allowlists, ported from kodi-strm-pipeline's update_library.py. An
+# EMPTY list means "allow everything" -- so SHOWS stays empty and TV is filed
+# automatically, while movies are opt-in.
+#
+# Movies are opt-in because auto-detection produced too many false matches
+# against the live accounts: anything shaped "<name> (<year>) <quality tag>"
+# parses as a film, which turned a Coachella set into a "movie". Match is on the
+# normalised title, so year and release tags don't matter -- prune/extend freely.
+SHOWS = []
+MOVIES = [
+	"Birdman",
+	"Blade Runner Black Out",
+	"Bugonia",
+	"Clear History",
+	"Clerks",
+	"Encino Man",
+	"Finding Nemo",
+	"Four Lions",
+	"Hot Rod",
+	"Mars Attacks",
+	"My Fair Lady",
+	"National Lampoon's Christmas Vacation",
+	"The Birdcage",
+	"The Godfather",
+	"The Lobster",
+	"The Producers",
+	"The Sweetest Thing",
+]
+
+
+def _allowlist_keys(names, strip_year=True):
+	"""Key an allowlist the SAME way parse_episode/parse_movie key their titles
+	-- via _clean_title(norm(...)), not bare norm(). The two differ on
+	punctuation: norm keeps an apostrophe, _clean_title drops it, so
+	"National Lampoon's Christmas Vacation" would otherwise never match the
+	stored title "national lampoon s christmas vacation"."""
+	return {_clean_title(norm(n), strip_year=strip_year) for n in names}
+
+
+def _allowed(title, keys):
+	"""Word-boundary containment, so a junk-prefixed release
+	("superseed byethost7 com encino man") still matches "encino man".
+	An empty key set means no allowlist -- the caller lets everything through."""
+	return any(re.search(r"\b" + re.escape(k) + r"\b", title) for k in keys)
+
 
 # ---------------------------------------------------------------------------
 # Change-detection gate + persisted cross-run state
@@ -648,6 +693,8 @@ def _build_url(provider, path):
 def collect(providers, errors):
 	versions = {}
 	tv, movies, browse = {}, {}, {}
+	shows_norm = _allowlist_keys(SHOWS)
+	movies_norm = _allowlist_keys(MOVIES, strip_year=False)
 	for p in providers:
 		try:
 			for path, lastmod in walk_parallel(_auth_header(p), p["host"], "/"):
@@ -666,6 +713,8 @@ def collect(providers, errors):
 				episode = parse_episode(stem, folder)
 				if episode:
 					show, season, ep_no = episode
+					if shows_norm and not _allowed(show, shows_norm):
+						continue
 					key = (show, season, ep_no)
 					cur = tv.get(key)
 					if cur is None or qkey > cur[0]:
@@ -680,6 +729,8 @@ def collect(providers, errors):
 				if not film:
 					continue
 				title, year = film
+				if movies_norm and not _allowed(title, movies_norm):
+					continue
 				key = (title, year)
 				cur = movies.get(key)
 				if cur is None or qkey > cur[0]:
