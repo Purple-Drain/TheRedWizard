@@ -2291,6 +2291,11 @@ class Sources():
 								self._stop_active_playback()
 							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
+							try:
+								show_key = str(self.tmdb_id) if self.media_type == 'episode' and self.tmdb_id else None
+								player.display_lock_generation = kodi_utils.begin_display_lock(show_key)
+							except Exception:
+								pass
 							player.run(url, self)
 						else: continue
 						if self.cancel_all_playback or self._resolve_user_cancelled:

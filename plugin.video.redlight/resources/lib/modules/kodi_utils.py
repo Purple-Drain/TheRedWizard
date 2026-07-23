@@ -1218,3 +1218,92 @@ def fetch_kodi_imagecache(image):
 	finally:
 		if dbcon is not None: dbcon.close()
 	return result
+
+# Session-locked "Adjust display refresh rate" for TV show binges. Kodi's own
+# per-file refresh-rate matching (videoplayer.adjustrefreshrate) fires on every
+# single episode transition, which is the actual source of repeated blanking/
+# HDMI handshake risk during a binge. Rather than computing/forcing a specific
+# display mode ourselves (no JSON-RPC lever exists for that — confirmed live:
+# videoscreen.resolution only controls GUI rendering res, not refresh rate),
+# we instead disable adjustrefreshrate entirely for the duration of a binge
+# (after episode 1's own natural start-triggered match) and restore the
+# original value once the binge genuinely ends.
+ADJUSTREFRESHRATE_SETTING = 'videoplayer.adjustrefreshrate'
+ADJUSTREFRESHRATE_OFF = 0
+PROP_DISPLAYLOCK_SHOW_KEY = 'RL.DisplayLock.ShowKey'
+PROP_DISPLAYLOCK_ORIG_ARR = 'RL.DisplayLock.OrigAdjustRefreshRate'
+# Autoscrape's next-episode handoff runs on its own background thread, which can
+# finish (starting episode 2, bumping the generation below) before episode 1's
+# OWN monitor() tail gets around to its end-of-play check. Without a generation
+# token, that stale check would win the race and undo the lock episode 2 just
+# set up. Each begin_display_lock() call for an episode play bumps this; a
+# player only stops the lock for the generation it was actually started with.
+PROP_DISPLAYLOCK_GENERATION = 'RL.DisplayLock.Generation'
+
+def get_display_lock_generation():
+	try:
+		return int(get_property(PROP_DISPLAYLOCK_GENERATION) or 0)
+	except Exception:
+		return 0
+
+def _bump_display_lock_generation():
+	gen = get_display_lock_generation() + 1
+	set_property(PROP_DISPLAYLOCK_GENERATION, str(gen))
+	return gen
+
+def _display_lock_restore(heading):
+	orig = get_property(PROP_DISPLAYLOCK_ORIG_ARR)
+	clear_property(PROP_DISPLAYLOCK_SHOW_KEY)
+	clear_property(PROP_DISPLAYLOCK_ORIG_ARR)
+	clear_property(PROP_DISPLAYLOCK_GENERATION)
+	if orig == '': return
+	jsonrpc_set_system_setting(ADJUSTREFRESHRATE_SETTING, int(orig))
+	logger(heading, 'adjustrefreshrate restored to %s' % orig)
+
+def begin_display_lock(show_key):
+	heading = 'RL.DisplayLock'
+	try:
+		stored_key = get_property(PROP_DISPLAYLOCK_SHOW_KEY) or None
+		if show_key and show_key == stored_key:
+			# Second-or-later episode of this show's binge: this is the ONE place
+			# adjustrefreshrate gets turned off, so episode 1 keeps its own natural
+			# start-triggered match and every later episode just inherits it.
+			gen = _bump_display_lock_generation()
+			current = jsonrpc_get_system_setting(ADJUSTREFRESHRATE_SETTING)
+			if str(current) != str(ADJUSTREFRESHRATE_OFF):
+				jsonrpc_set_system_setting(ADJUSTREFRESHRATE_SETTING, ADJUSTREFRESHRATE_OFF)
+				logger(heading, 'show %s binge continuing (gen %s); adjustrefreshrate %s -> %s (off)' % (show_key, gen, current, ADJUSTREFRESHRATE_OFF))
+			else:
+				logger(heading, 'continuing show %s binge (gen %s); adjustrefreshrate already off' % (show_key, gen))
+			return gen
+		if stored_key:
+			logger(heading, 'session boundary (was show %s); restoring adjustrefreshrate before continuing' % stored_key)
+			_display_lock_restore(heading)
+		if not show_key:
+			return None
+		# Episode 1 of a new binge: capture the real setting and leave it untouched
+		# so Kodi's own native match runs for this first play.
+		gen = _bump_display_lock_generation()
+		current = jsonrpc_get_system_setting(ADJUSTREFRESHRATE_SETTING)
+		set_property(PROP_DISPLAYLOCK_ORIG_ARR, str(current))
+		set_property(PROP_DISPLAYLOCK_SHOW_KEY, show_key)
+		logger(heading, 'starting show %s binge (gen %s); captured adjustrefreshrate=%s (left as-is for episode 1)' % (show_key, gen, current))
+		return gen
+	except Exception as e:
+		logger(heading, 'begin_display_lock error: %s' % str(e))
+		return None
+
+def end_display_lock(show_key, generation):
+	heading = 'RL.DisplayLock'
+	try:
+		stored_key = get_property(PROP_DISPLAYLOCK_SHOW_KEY) or None
+		if not stored_key or stored_key != show_key:
+			return
+		current_gen = get_display_lock_generation()
+		if generation is None or current_gen != generation:
+			logger(heading, 'stale end-of-play check for show %s (gen %s, current gen %s); ignoring' % (show_key, generation, current_gen))
+			return
+		logger(heading, 'binge for show %s ended (gen %s)' % (show_key, generation))
+		_display_lock_restore(heading)
+	except Exception as e:
+		logger(heading, 'end_display_lock error: %s' % str(e))
