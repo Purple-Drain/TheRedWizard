@@ -3,6 +3,7 @@ import os
 import xbmc
 import json
 import time
+import traceback
 from threading import Thread
 from apis.trakt_api import make_trakt_slug
 from caches.settings_cache import get_setting
@@ -33,9 +34,6 @@ _INTRO_SKIP_EARLY_START_SEC = 120
 _INTRO_SKIP_SETTLE_SEC = 4
 _INTRO_SKIP_SETTLE_MAX_WAIT_SEC = 12
 _INTRO_SKIP_SETTLE_JUMP_SEC = 20
-_INTRO_CHAPTER_MIN_START_SEC = 5
-_INTRO_CHAPTER_MIN_SEGMENT_SEC = 10
-_INTRO_CHAPTER_MIN_END_SEC = 15
 _INTRO_SKIP_POST_END_GRACE_SEC = 20
 
 class RedLightPlayer(xbmc.Player):
@@ -294,10 +292,11 @@ class RedLightPlayer(xbmc.Player):
 							self._try_autoplay_early_stash_play()
 							self._try_autoscrape_nextep_ready_notify()
 							self._maybe_log_nextep_alert_pending()
-					elif show_stinger and not self.movie_stingers_run: 
+					elif show_stinger and not self.movie_stingers_run:
 						final_chapter = self._stinger_trigger_point(stinger_alert_timing, stingers_percentage_fallback)
 						if self.current_point >= final_chapter: self.run_movie_stingers()
-				except: pass
+				except Exception:
+					ku.logger('Red Light', 'monitor() tick failed: %s' % traceback.format_exc())
 				if not self.subs_searched: self.run_subtitles()
 			try:
 				_remaining = None
@@ -1217,33 +1216,6 @@ class RedLightPlayer(xbmc.Player):
 				self._intro_skip_fetch_done = True
 		Thread(target=_work, daemon=True).start()
 
-	def _try_intro_skip_chapters(self):
-		if getattr(self, '_intro_skip_segment', None):
-			return
-		if not getattr(self, '_intro_skip_fetch_done', False):
-			return
-		try:
-			total = float(self.total_time)
-			if total < 60:
-				return
-			raw = ku.get_infolabel('Player.Chapters')
-			if not raw:
-				return
-			marks = [float(x) for x in raw.split(',') if x.strip()]
-			if len(marks) < 2:
-				return
-			start_pct, end_pct = marks[0], marks[1]
-			if start_pct > 5 or end_pct > 30 or end_pct <= start_pct:
-				return
-			start_sec = total * start_pct / 100.0
-			end_sec = total * end_pct / 100.0
-			if start_sec < _INTRO_CHAPTER_MIN_START_SEC:
-				return
-			if end_sec - start_sec < _INTRO_CHAPTER_MIN_SEGMENT_SEC or end_sec < _INTRO_CHAPTER_MIN_END_SEC:
-				return
-			self._intro_skip_segment = {'start_sec': start_sec, 'end_sec': end_sec, 'source': 'chapters'}
-		except: pass
-
 	def _maybe_log_intro_skip_no_timing(self):
 		if getattr(self, '_intro_skip_no_timing_logged', False):
 			return
@@ -1251,12 +1223,9 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if getattr(self, '_intro_skip_segment', None):
 			return
-		self._try_intro_skip_chapters()
-		if getattr(self, '_intro_skip_segment', None):
-			return
 		self._intro_skip_no_timing_logged = True
 		self._intro_skip_done = True
-		self._log_intro_skip('Intro skip: no timing (api miss, chapters rejected)')
+		self._log_intro_skip('Intro skip: no timing (api miss)')
 
 	def _intro_resume_sec(self):
 		if self.playback_percent and float(self.playback_percent) > 0:
@@ -1349,7 +1318,6 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if not self._player_is_active():
 			return
-		self._try_intro_skip_chapters()
 		segment = getattr(self, '_intro_skip_segment', None)
 		if not segment:
 			self._maybe_log_intro_skip_no_timing()
