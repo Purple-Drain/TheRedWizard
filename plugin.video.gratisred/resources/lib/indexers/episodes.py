@@ -353,8 +353,15 @@ class seasons:
             indicators = playcount.getSeasonIndicators(items[0]['imdb'])
         except:
             pass
-        watchedMenu = 'Watched in Trakt' if trakt.getTraktIndicatorsInfo() == True else 'Watched in Gratis Red'
-        unwatchedMenu = 'Unwatched in Trakt' if trakt.getTraktIndicatorsInfo() == True else 'Unwatched in Gratis Red'
+        from resources.lib.modules import simkl as simkl_mod
+        simklCredentials = simkl_mod.getSimklCredentialsInfo()
+        _ind = simkl_mod.getIndicatorsProvider()
+        if _ind == 'trakt':
+            watchedMenu, unwatchedMenu = 'Watched in Trakt', 'Unwatched in Trakt'
+        elif _ind == 'simkl':
+            watchedMenu, unwatchedMenu = 'Watched in Simkl', 'Unwatched in Simkl'
+        else:
+            watchedMenu, unwatchedMenu = 'Watched in Gratis Red', 'Unwatched in Gratis Red'
         tv_library = libtools.libtvshows()
         for i in items:
             try:
@@ -406,6 +413,8 @@ class seasons:
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
                 if traktCredentials == True:
                     cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
+                if simklCredentials == True:
+                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
                     cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
                 libtools.append_tvshow_library_cm(cm, sysaddon, tv_library, i['tvshowtitle'], year, imdb, tmdb)
@@ -574,6 +583,19 @@ class episodes:
 
     def calendar(self, url):
         try:
+            if url and str(url).startswith('simkl_'):
+                if str(url) == 'simkl_progress':
+                    self.list = self.simkl_progress_list()
+                elif str(url) == 'simkl_ondeck':
+                    self.list = self.simkl_ondeck_list()
+                elif str(url) == 'simkl_mycalendar':
+                    self.list = self.simkl_calendar_list()
+                else:
+                    self.list = []
+                if not isinstance(self.list, list):
+                    self.list = []
+                self.episodeDirectory(self.list)
+                return self.list
             try:
                 url = getattr(self, url + '_link')
             except:
@@ -1139,6 +1161,286 @@ class episodes:
                 self.list = sorted(self.list, key=lambda k: k['_sort_key'], reverse=True)
         except:
             #log_utils.log('trakt_progress_list', 1)
+            pass
+        return self.list
+
+
+    def simkl_calendar_list(self):
+        """Upcoming episodes for the user's Simkl shelves (CDN calendar filtered)."""
+        from resources.lib.modules import simkl as simkl_mod
+        try:
+            items = simkl_mod.calendar_episode_items(mine_only=True)
+        except Exception:
+            return []
+        self.list = []
+
+        def items_list(i):
+            tmdb, imdb, tvdb = i.get('tmdb', '0'), i.get('imdb', '0'), i.get('tvdb', '0')
+            if (not tmdb or tmdb == '0') and imdb and imdb != '0':
+                try:
+                    url = self.tmdb_by_query_imdb_link % imdb
+                    result = client.scrapePage(url, timeout='30').json()
+                    id = result.get('tv_results', [])[0]
+                    tmdb = str(id.get('id') or '0')
+                except Exception:
+                    pass
+            try:
+                if tmdb == '0':
+                    raise Exception()
+                url = self.tmdb_episode_link % (tmdb, i['season'], i['episode'])
+                item = client.scrapePage(url, timeout='30').json()
+                if item.get('status_code') == 34:
+                    # Fall back to calendar tip without full TMDb meta.
+                    self.list.append(dict(i, tmdb=tmdb))
+                    return
+                title = client_utils.replaceHTMLCodes(item.get('name') or i.get('title') or '0')
+                season = '%01d' % int(item.get('season_number', i['season']))
+                episode = '%01d' % int(item.get('episode_number', i['episode']))
+                premiered = item.get('air_date') or i.get('premiered') or '0'
+                try:
+                    thumb = item.get('still_path') or ''
+                except Exception:
+                    thumb = ''
+                if thumb:
+                    if self.original_artwork == 'true':
+                        thumb = self.tmdb_image_link + thumb
+                    else:
+                        thumb = self.tmdb_image_link % ('300', thumb)
+                else:
+                    thumb = '0'
+                try:
+                    plot = client_utils.replaceHTMLCodes(item.get('overview') or '0')
+                except Exception:
+                    plot = '0'
+                try:
+                    rating = str(item.get('vote_average') or '0')
+                except Exception:
+                    rating = '0'
+                poster = fanart = banner = landscape = clearlogo = clearart = '0'
+                if tvdb and tvdb != '0':
+                    poster, fanart, banner, clearlogo, clearart, landscape = self.get_fanart_tv_artwork(tvdb)
+                unaired = ''
+                try:
+                    if premiered and premiered != '0':
+                        if int(re.sub(r'[^0-9]', '', str(premiered))) > int(re.sub(r'[^0-9]', '', str(self.today_date))):
+                            unaired = 'true'
+                except Exception:
+                    pass
+                self.list.append({
+                    'title': title, 'season': season, 'episode': episode,
+                    'tvshowtitle': i.get('tvshowtitle'), 'year': i.get('year', '0'),
+                    'premiered': premiered, 'studio': i.get('studio') or [], 'genre': i.get('genre') or [],
+                    'status': i.get('status') or '0', 'duration': i.get('duration') or '0',
+                    'rating': rating, 'votes': '0', 'mpaa': i.get('mpaa') or '0',
+                    'director': [], 'writer': [], 'castwiththumb': '0', 'plot': plot,
+                    'poster': poster, 'banner': banner, 'fanart': fanart, 'thumb': thumb,
+                    'clearlogo': clearlogo, 'clearart': clearart, 'landscape': landscape,
+                    'imdb': imdb, 'tvdb': tvdb, 'tmdb': tmdb, 'unaired': unaired,
+                    'paused_at': '0', 'watched_at': '0',
+                })
+            except Exception:
+                pass
+
+        try:
+            threads = []
+            for i in items:
+                threads.append(workers.Thread(items_list, i))
+            [i.start() for i in threads]
+            [i.join() for i in threads]
+            self.list = sorted(self.list, key=lambda k: k.get('premiered') or '', reverse=True)
+        except Exception:
+            pass
+        return self.list
+
+
+    def simkl_progress_list(self):
+        """Continue Watching for Simkl — next episode after last watched tip."""
+        from resources.lib.modules import simkl as simkl_mod
+        try:
+            items = simkl_mod.progress_seeds()
+        except Exception:
+            return []
+        self.list = []
+        sortorder = control.setting('prgr.sortorder')
+
+        def items_list(i):
+            tmdb, imdb, tvdb = i['tmdb'], i['imdb'], i['tvdb']
+            if (not tmdb or tmdb == '0') and not imdb == '0':
+                try:
+                    url = self.tmdb_by_query_imdb_link % imdb
+                    result = client.scrapePage(url, timeout='30').json()
+                    id = result.get('tv_results', [])[0]
+                    tmdb = id.get('id')
+                    if not tmdb:
+                        tmdb = '0'
+                    else:
+                        tmdb = str(tmdb)
+                except Exception:
+                    pass
+            try:
+                if tmdb == '0':
+                    raise Exception()
+                _episode = str(int(i['enum']) + 1)
+                _season = str(int(i['snum']) + 1)
+                url = self.tmdb_episode_link % (tmdb, i['snum'], _episode)
+                item = client.scrapePage(url, timeout='30').json()
+                if item.get('status_code') == 34:
+                    url2 = self.tmdb_episode_link % (tmdb, _season, '1')
+                    item = client.scrapePage(url2, timeout='30').json()
+                    if item.get('status_code') == 34:
+                        raise Exception()
+                try:
+                    premiered = item.get('air_date') or '0'
+                except Exception:
+                    premiered = '0'
+                if not premiered:
+                    premiered = '0'
+                unaired = ''
+                if i.get('status') == 'Ended':
+                    pass
+                elif premiered == '0':
+                    if self.shownoyear != 'true':
+                        raise Exception()
+                elif int(re.sub(r'[^0-9]', '', str(premiered))) > int(re.sub(r'[^0-9]', '', str(self.today_date))):
+                    unaired = 'true'
+                    if self.showunaired != 'true':
+                        raise Exception()
+                title = item.get('name') or '0'
+                title = client_utils.replaceHTMLCodes(title)
+                season = '%01d' % int(item.get('season_number', i['snum']))
+                episode = '%01d' % int(item.get('episode_number', i['enum']))
+                try:
+                    thumb = item.get('still_path') or ''
+                except Exception:
+                    thumb = ''
+                if thumb:
+                    if self.original_artwork == 'true':
+                        thumb = self.tmdb_image_link + thumb
+                    else:
+                        thumb = self.tmdb_image_link % ('300', thumb)
+                else:
+                    thumb = '0'
+                try:
+                    rating = str(item.get('vote_average') or '0')
+                except Exception:
+                    rating = '0'
+                try:
+                    votes = str(item.get('vote_count') or '0')
+                except Exception:
+                    votes = '0'
+                try:
+                    plot = client_utils.replaceHTMLCodes(item.get('overview') or '0')
+                except Exception:
+                    plot = '0'
+                poster = fanart = banner = landscape = clearlogo = clearart = '0'
+                if not tvdb == '0':
+                    poster, fanart, banner, clearlogo, clearart, landscape = self.get_fanart_tv_artwork(tvdb)
+                last_watched = i.get('_last_watched', '0') or '0'
+                self.list.append({
+                    'title': title, 'season': season, 'episode': episode,
+                    'tvshowtitle': i['tvshowtitle'], 'year': i.get('year', '0'),
+                    'premiered': premiered, 'studio': i.get('studio'), 'genre': i.get('genre'),
+                    'status': i.get('status'), 'duration': i.get('duration'), 'rating': rating,
+                    'votes': votes, 'mpaa': i.get('mpaa'), 'director': [], 'writer': [],
+                    'castwiththumb': '0', 'plot': plot, 'poster': poster, 'banner': banner,
+                    'fanart': fanart, 'thumb': thumb, 'clearlogo': clearlogo, 'clearart': clearart,
+                    'landscape': landscape, 'snum': i['snum'], 'enum': i['enum'], 'action': 'episodes',
+                    'unaired': unaired, '_last_watched': last_watched, 'imdb': imdb, 'tvdb': tvdb,
+                    'tmdb': tmdb, '_sort_key': max(last_watched, premiered),
+                })
+            except Exception:
+                pass
+
+        try:
+            threads = []
+            for i in items:
+                threads.append(workers.Thread(items_list, i))
+            [i.start() for i in threads]
+            [i.join() for i in threads]
+            if sortorder == '0':
+                self.list = sorted(self.list, key=lambda k: k.get('premiered') or '', reverse=True)
+            else:
+                self.list = sorted(self.list, key=lambda k: k.get('_sort_key') or '', reverse=True)
+        except Exception:
+            pass
+        return self.list
+
+
+    def simkl_ondeck_list(self):
+        """In Progress Episodes from Simkl /sync/playback."""
+        from resources.lib.modules import simkl as simkl_mod
+        try:
+            items = simkl_mod.playback_episode_items()
+        except Exception:
+            return []
+        self.list = []
+
+        def items_list(i):
+            tmdb, imdb, tvdb = i.get('tmdb', '0'), i.get('imdb', '0'), i.get('tvdb', '0')
+            if (not tmdb or tmdb == '0') and imdb and imdb != '0':
+                try:
+                    url = self.tmdb_by_query_imdb_link % imdb
+                    result = client.scrapePage(url, timeout='30').json()
+                    id = result.get('tv_results', [])[0]
+                    tmdb = str(id.get('id') or '0')
+                except Exception:
+                    pass
+            try:
+                if tmdb == '0' or i.get('season') == '0':
+                    raise Exception()
+                url = self.tmdb_episode_link % (tmdb, i['season'], i['episode'])
+                item = client.scrapePage(url, timeout='30').json()
+                if item.get('status_code') == 34:
+                    raise Exception()
+                title = client_utils.replaceHTMLCodes(item.get('name') or i.get('title') or '0')
+                season = '%01d' % int(item.get('season_number', i['season']))
+                episode = '%01d' % int(item.get('episode_number', i['episode']))
+                premiered = item.get('air_date') or '0'
+                try:
+                    thumb = item.get('still_path') or ''
+                except Exception:
+                    thumb = ''
+                if thumb:
+                    if self.original_artwork == 'true':
+                        thumb = self.tmdb_image_link + thumb
+                    else:
+                        thumb = self.tmdb_image_link % ('300', thumb)
+                else:
+                    thumb = '0'
+                try:
+                    plot = client_utils.replaceHTMLCodes(item.get('overview') or '0')
+                except Exception:
+                    plot = '0'
+                try:
+                    rating = str(item.get('vote_average') or '0')
+                except Exception:
+                    rating = '0'
+                poster = fanart = banner = landscape = clearlogo = clearart = '0'
+                if tvdb and tvdb != '0':
+                    poster, fanart, banner, clearlogo, clearart, landscape = self.get_fanart_tv_artwork(tvdb)
+                self.list.append({
+                    'title': title, 'season': season, 'episode': episode,
+                    'tvshowtitle': i.get('tvshowtitle'), 'year': i.get('year', '0'),
+                    'premiered': premiered, 'studio': i.get('studio') or [], 'genre': i.get('genre') or [],
+                    'status': i.get('status') or '0', 'duration': i.get('duration') or '0',
+                    'rating': rating, 'votes': '0', 'mpaa': i.get('mpaa') or '0',
+                    'director': [], 'writer': [], 'castwiththumb': '0', 'plot': plot,
+                    'poster': poster, 'banner': banner, 'fanart': fanart, 'thumb': thumb,
+                    'clearlogo': clearlogo, 'clearart': clearart, 'landscape': landscape,
+                    'imdb': imdb, 'tvdb': tvdb, 'tmdb': tmdb,
+                    'paused_at': i.get('paused_at') or '0', 'watched_at': '0',
+                })
+            except Exception:
+                pass
+
+        try:
+            threads = []
+            for i in items:
+                threads.append(workers.Thread(items_list, i))
+            [i.start() for i in threads]
+            [i.join() for i in threads]
+            self.list = sorted(self.list, key=lambda k: int(k.get('paused_at') or 0), reverse=True)
+        except Exception:
             pass
         return self.list
 
@@ -1888,8 +2190,15 @@ class episodes:
             sysaction = ''
         isFolder = False if not sysaction == 'episodes' else True
         playbackMenu = 'Select Source' if control.setting('hosts.mode') == '2' else 'Auto Play'
-        watchedMenu = 'Watched in Trakt' if trakt.getTraktIndicatorsInfo() == True else 'Watched in Gratis Red'
-        unwatchedMenu = 'Unwatched in Trakt' if trakt.getTraktIndicatorsInfo() == True else 'Unwatched in Gratis Red'
+        from resources.lib.modules import simkl as simkl_mod
+        simklCredentials = simkl_mod.getSimklCredentialsInfo()
+        _ind = simkl_mod.getIndicatorsProvider()
+        if _ind == 'trakt':
+            watchedMenu, unwatchedMenu = 'Watched in Trakt', 'Unwatched in Trakt'
+        elif _ind == 'simkl':
+            watchedMenu, unwatchedMenu = 'Watched in Simkl', 'Unwatched in Simkl'
+        else:
+            watchedMenu, unwatchedMenu = 'Watched in Gratis Red', 'Unwatched in Gratis Red'
         tv_library = libtools.libtvshows()
         for i in items:
             try:
@@ -1959,6 +2268,8 @@ class episodes:
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
                 if traktCredentials == True:
                     cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, tmdb)))
+                if simklCredentials == True:
+                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, imdb, tmdb)))
                 if tmdbCredentials == True:
                     cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, tmdb)))
                 libtools.append_tvshow_library_cm(cm, sysaddon, tv_library, i['tvshowtitle'], year, imdb, tmdb)

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import threading
 
 from kodi_six import xbmc
 import simplejson as json
@@ -18,6 +19,7 @@ from resources.lib.modules import control
 from resources.lib.modules import cleantitle
 from resources.lib.modules import playcount
 from resources.lib.modules import subtitles as subtitle_service
+from resources.lib.modules import simkl
 from resources.lib.modules import trakt
 
 try:
@@ -73,7 +75,8 @@ class player(xbmc.Player):
             self.tvdb = tvdb if not tvdb == None else '0'
             self.ids = {'imdb': self.imdb, 'tmdb': self.tmdb, 'tvdb': self.tvdb}
             self.ids = dict((k,v) for k, v in six.iteritems(self.ids) if not v == '0')
-            self.offset = bookmarks.get(self.content, imdb, season, episode)
+            self.offset, self.resume_percent = bookmarks.get_resume(self.content, imdb, season, episode, tmdb=self.tmdb)
+            self._simkl_scrobble_started = False
             poster, thumb, fanart, clearlogo, clearart, discart, meta = self.getMeta(meta)
             item = control.item(path=url)
             if self.content == 'movie':
@@ -194,10 +197,10 @@ class player(xbmc.Player):
                     property = control.window.getProperty(pname)
                     if watcher == True and not property == '7':
                         control.window.setProperty(pname, '7')
-                        playcount.markMovieDuringPlayback(self.imdb, '7')
+                        playcount.markMovieDuringPlayback(self.imdb, '7', self.tmdb)
                     elif watcher == False and not property == '6':
                         control.window.setProperty(pname, '6')
-                        playcount.markMovieDuringPlayback(self.imdb, '6')
+                        playcount.markMovieDuringPlayback(self.imdb, '6', self.tmdb)
                 except:
                     pass
                 xbmc.sleep(2000)
@@ -244,24 +247,89 @@ class player(xbmc.Player):
             control.sleep(100)
 
 
+    def _resume_offset(self):
+        offset = float(getattr(self, 'offset', 0) or 0)
+        if offset > 120:
+            return offset
+        percent = float(getattr(self, 'resume_percent', 0) or 0)
+        if not (1 < percent < 92):
+            return 0
+        try:
+            total = float(self.getTotalTime() or self.totalTime or 0)
+        except Exception:
+            total = float(getattr(self, 'totalTime', 0) or 0)
+        if total <= 120:
+            return 0
+        return (percent / 100.0) * total
+
+
+    def _resume_source_label(self):
+        source = control.setting('bookmarks.source')
+        if source == '1' and trakt.getTraktCredentialsInfo() == True:
+            return '[CR]  (Trakt)'
+        if source == '2' and simkl.getSimklCredentialsInfo():
+            return '[CR]  (Simkl)'
+        return ''
+
+
+    def _playback_percent(self):
+        try:
+            total = float(self.totalTime or self.getTotalTime() or 0)
+            current = float(self.currentTime or self.getTime() or 0)
+            if total <= 0:
+                return 0
+            return max(0, min(100, (current / total) * 100.0))
+        except Exception:
+            return 0
+
+
+    def _simkl_scrobble(self, action, percent=None):
+        if simkl.getIndicatorsProvider() != 'simkl':
+            return
+        if percent is None:
+            percent = self._playback_percent()
+        media_type = 'movie' if self.content == 'movie' else 'episode'
+        args = (action, media_type, percent)
+        kwargs = {
+            'tmdb': self.tmdb if self.tmdb not in (None, '0') else None,
+            'imdb': self.imdb if self.imdb not in (None, '0') else None,
+            'season': self.season,
+            'episode': self.episode,
+        }
+        try:
+            threading.Thread(target=simkl.simkl_scrobble, args=args, kwargs=kwargs).start()
+        except Exception:
+            pass
+
+
+    def _offer_resume(self, offset):
+        if control.setting('bookmarks') != 'true' or offset <= 120 or not self.isPlayingVideo():
+            return
+        if control.setting('bookmarks.auto') == 'true':
+            self.seekTime(float(offset))
+            return
+        self.pause()
+        minutes, seconds = divmod(float(offset), 60)
+        hours, minutes = divmod(minutes, 60)
+        label = '%02d:%02d:%02d' % (hours, minutes, seconds)
+        label = control.lang2(12022).format(label)
+        label += self._resume_source_label()
+        if kodi_version < 18:
+            label = six.ensure_str(label)
+        yes = control.yesnoDialog(label, heading=control.lang2(13404))
+        if yes:
+            self.seekTime(float(offset))
+        control.sleep(1000)
+        self.pause()
+
+
     def onAVStarted(self):
         control.execute('Dialog.Close(all,true)')
-        if control.setting('bookmarks') == 'true' and int(self.offset) > 120 and self.isPlayingVideo():
-            if control.setting('bookmarks.auto') == 'true':
-                self.seekTime(float(self.offset))
-            else:
-                self.pause()
-                minutes, seconds = divmod(float(self.offset), 60)
-                hours, minutes = divmod(minutes, 60)
-                label = '%02d:%02d:%02d' % (hours, minutes, seconds)
-                label = control.lang2(12022).format(label)
-                if control.setting('bookmarks.source') == '1' and trakt.getTraktCredentialsInfo() == True:
-                    label += '[CR]  (Trakt)'
-                yes = control.yesnoDialog(label, heading=control.lang2(13404))
-                if yes:
-                    self.seekTime(float(self.offset))
-                control.sleep(1000)
-                self.pause()
+        offset = self._resume_offset()
+        self._offer_resume(offset)
+        if not getattr(self, '_simkl_scrobble_started', False):
+            self._simkl_scrobble_started = True
+            self._simkl_scrobble('start', percent=float(getattr(self, 'resume_percent', 0) or 0) or self._playback_percent())
         subtitle_service.subtitles().get(self.imdb, self.season, self.episode, year=self.year, title=self.title)
         self.idleForPlayback()
 
@@ -269,22 +337,11 @@ class player(xbmc.Player):
     def onPlayBackStarted(self):
         if kodi_version < 18:
             control.execute('Dialog.Close(all,true)')
-            if control.setting('bookmarks') == 'true' and int(self.offset) > 120 and self.isPlayingVideo():
-                if control.setting('bookmarks.auto') == 'true':
-                    self.seekTime(float(self.offset))
-                else:
-                    self.pause()
-                    minutes, seconds = divmod(float(self.offset), 60)
-                    hours, minutes = divmod(minutes, 60)
-                    label = '%02d:%02d:%02d' % (hours, minutes, seconds)
-                    label = six.ensure_str(control.lang2(12022).format(label))
-                    if control.setting('bookmarks.source') == '1' and trakt.getTraktCredentialsInfo() == True:
-                        label += '[CR]  (Trakt)'
-                    yes = control.yesnoDialog(label, heading=control.lang2(13404))
-                    if yes:
-                        self.seekTime(float(self.offset))
-                    control.sleep(1000)
-                    self.pause()
+            offset = self._resume_offset()
+            self._offer_resume(offset)
+            if not getattr(self, '_simkl_scrobble_started', False):
+                self._simkl_scrobble_started = True
+                self._simkl_scrobble('start', percent=float(getattr(self, 'resume_percent', 0) or 0) or self._playback_percent())
             subtitle_service.subtitles().get(self.imdb, self.season, self.episode, year=self.year, title=self.title)
             self.idleForPlayback()
         else:
@@ -292,16 +349,38 @@ class player(xbmc.Player):
             #self.onAVStarted()
 
 
+    def onPlayBackPaused(self):
+        try:
+            self.totalTime = self.getTotalTime()
+            self.currentTime = self.getTime()
+        except Exception:
+            pass
+        percent = self._playback_percent()
+        if 1 <= percent < 92:
+            self._simkl_scrobble('pause', percent=percent)
+
+
     def onPlayBackStopped(self):
         if self.totalTime == 0 or self.currentTime == 0:
             control.sleep(2000)
             return
+        percent = self._playback_percent()
+        if percent >= 92:
+            self._simkl_scrobble('stop', percent=100)
+        elif percent >= 1:
+            self._simkl_scrobble('pause', percent=percent)
         bookmarks.reset(self.currentTime, self.totalTime, self.content, self.imdb, self.season, self.episode)
         if float(self.currentTime / self.totalTime) >= 0.92:
             self.libForPlayback()
 
 
     def onPlayBackEnded(self):
+        try:
+            if not self.totalTime:
+                self.totalTime = self.getTotalTime()
+            self.currentTime = self.totalTime
+        except Exception:
+            pass
         self.libForPlayback()
         self.onPlayBackStopped()
         if control.setting('crefresh') == 'true':

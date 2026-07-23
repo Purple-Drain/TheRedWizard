@@ -1219,7 +1219,7 @@
                           <property name="setting_label">Movies</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.movies_name)]</property>
-                          <property name="setting_description">Default sort order for movie lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their context menu.</property>
+                          <property name="setting_description">Default sort order for movie lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their Context Menu.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=movies)</onclick>
                       </item>
                       <item>
@@ -1227,7 +1227,7 @@
                           <property name="setting_label">TV Shows</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.shows_name)]</property>
-                          <property name="setting_description">Default sort order for TV show lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their context menu.</property>
+                          <property name="setting_description">Default sort order for TV show lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their Context Menu.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=shows)</onclick>
                       </item>
         <!-- TMDb Lists -->
@@ -1242,7 +1242,7 @@
                           <property name="setting_label">TMDb My Lists Display Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.tmdblist.list_sort_name)]</property>
-                          <property name="setting_description">Choose the order in which your TMDb lists are presented. This is not for the contents of the lists, but rather the lists themselves</property>
+                          <property name="setting_description">Choose the order in which your TMDb lists are presented. This is not for the contents of the lists, but rather the lists themselves.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=list_display_order_choice&amp;list_type=tmdb)</onclick>
                       </item>
         <!-- Personal Lists -->
@@ -1257,7 +1257,7 @@
                           <property name="setting_label">Display Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.personal_list.list_sort_name)]</property>
-                          <property name="setting_description">Choose the order in which your TMDb lists are presented. This is not for the contents of the lists, but rather the lists themselves</property>
+                          <property name="setting_description">Choose the order in which your Personal lists are presented. This is not for the contents of the lists, but rather the lists themselves.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=list_display_order_choice&amp;list_type=personal)</onclick>
                       </item>
                       <item>

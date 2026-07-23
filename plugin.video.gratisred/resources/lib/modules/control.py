@@ -633,13 +633,12 @@ def reopen_settings_category(category, setting=0):
 
 def finish_auth_ui(reopen_settings=False):
     """Refresh addon menus after auth changes; optionally return to Account Settings."""
+    refresh_addon_container()
     if reopen_settings:
         try:
             reopen_account_settings()
         except Exception:
             pass
-    else:
-        refresh_addon_container()
 
 
 def installAddon(id, refresh_menu=False):
