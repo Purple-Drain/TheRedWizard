@@ -384,7 +384,6 @@ class Navigator:
 		self.add({'mode': 'build_next_episode_manager'}, 'TV Shows Progress Manager', 'settings2')
 		self.add({'mode': 'navigator.shortcut_folders'}, 'Shortcut Folders Manager', 'settings2')
 		self.add({'mode': 'navigator.import_export'}, 'Import & Export', 'settings2')
-		self.add({'mode': 'navigator.library_sync_menu'}, 'Library Sync (.strm)', 'settings2')
 		self.add({'mode': 'navigator.maintenance'}, 'Database & Cache Maintenance', 'settings2')
 		self.add({'mode': 'language_invoker_choice', 'isFolder': 'false'}, 'Toggle Language Invoker (ADVANCED!!)', 'settings2')
 		self.end_directory()
@@ -396,26 +395,6 @@ class Navigator:
 		self.add({'mode': 'local_backup.export_data', 'isFolder': 'false'}, 'Export Red Light Favorites & History', 'folder')
 		self.add({'mode': 'kodi_favorites.import_favorites', 'isFolder': 'false'}, 'Import Kodi Favorites', 'favorites')
 		self.add({'mode': 'kodi_favorites.export_favorites', 'isFolder': 'false'}, 'Export Kodi Favorites', 'favorites')
-		self.end_directory()
-
-	def library_sync_menu(self):
-		from modules import strm_library
-		state = 'ON' if strm_library.enabled() else 'OFF'
-		minutes = strm_library.sync_interval()[0]
-		provider_count = len(strm_library.webdav_providers())
-		self.add({'mode': 'strm_library.toggle_enabled', 'isFolder': 'false'},
-			'Library Sync: %s (select to toggle)' % state, 'settings')
-		self.add({'mode': 'strm_library.configure_webdav', 'isFolder': 'false'},
-			'Configure WebDAV Credentials (%d/3 providers set)' % provider_count, 'settings')
-		self.add({'mode': 'strm_library.set_interval', 'isFolder': 'false'},
-			'Set Sync Interval (currently %d min)' % minutes, 'settings')
-		self.add({'mode': 'strm_library.set_root', 'isFolder': 'false'},
-			'Set Library Root Path (currently %s)' % strm_library.library_root(), 'settings')
-		self.add({'mode': 'strm_library.sync_now', 'isFolder': 'false'}, 'Sync Now', 'refresh')
-		self.add({'mode': 'hash_export.export_show', 'isFolder': 'false'}, 'Export Hash List: TV Show...', 'favorites')
-		self.add({'mode': 'hash_export.export_movie', 'isFolder': 'false'}, 'Export Hash List: Movie...', 'favorites')
-		self.add({'mode': 'hash_export.export_football', 'isFolder': 'false'}, 'Export Hash List: Football', 'favorites')
-		self.add({'mode': 'hash_export.export_all', 'isFolder': 'false'}, 'Export Hash List: Everything', 'favorites')
 		self.end_directory()
 
 	def maintenance(self):

@@ -344,12 +344,6 @@ def routing(sys):
 	elif 'kodi_favorites.' in mode:
 		from modules import kodi_favorites_backup
 		return getattr(kodi_favorites_backup, mode.split('.', 1)[1])(params)
-	elif 'strm_library.' in mode:
-		from modules import strm_library
-		return getattr(strm_library, mode.split('.', 1)[1])(params)
-	elif 'hash_export.' in mode:
-		from modules import hash_export
-		return getattr(hash_export, mode.split('.', 1)[1])(params)
 	elif mode == 'set_view':
 		from indexers.navigator import Navigator
 		return Navigator(params).set_view()
