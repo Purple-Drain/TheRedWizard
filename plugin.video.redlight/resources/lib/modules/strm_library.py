@@ -11,21 +11,24 @@
 # .strm meant to be replayed for weeks would go stale. A WebDAV PROPFIND
 # returns a stable, long-lived davs:// URL with credentials embedded, for
 # every file in the tree, in one walk. Full account walk is what this
-# needs (thousands of files, hourly), so WebDAV is strictly the right tool
+# needs (thousands of files), so WebDAV is strictly the right tool
 # here even though the native APIs are better suited to on-demand resolve
 # (which is exactly what the rest of Red Light already uses them for).
 # Hash-list export (see export_hashlist) is the inverse case -- it wants a
 # hash, not a playable link -- so it goes through the native mylist APIs
 # instead, which hand back a hash for free with no unrestrict call at all.
 import base64
+import hashlib
+import http.client
 import json
 import os
 import re
+import threading
+import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse, quote, unquote
-from urllib.request import Request, urlopen
 
 import xbmcgui
 from caches.settings_cache import get_setting, set_setting
@@ -98,19 +101,90 @@ def webdav_providers():
 MAX_DEPTH = 4
 VIDEO_EXT = tuple(e.lower() for e in supported_video_extensions())
 MAX_WORKERS = 8
+TIMEOUT = 15
 
 
 def norm(text):
 	return re.sub(r"[._\-\s]+", " ", unquote(text)).lower()
 
 
+# One kept-alive connection per (thread, host). urllib's urlopen builds a fresh
+# TCP+TLS connection for every call and a full walk is ~270 calls, so setup cost
+# dominates: measured on the Shield, reusing one connection took Real-Debrid
+# from 918ms to 294ms per request and Debrid-Link from 979ms to 324ms. (TorBox
+# was unmoved at ~850ms, so its latency is server-side, not setup.) Connections
+# are registered globally as well as thread-locally because walk_parallel's
+# worker threads are gone by the time we want to close them, which puts their
+# thread-locals out of reach.
+_conn_local = threading.local()
+_all_conns = []
+_all_conns_lock = threading.Lock()
+
+
+def _get_conn(host):
+	conns = getattr(_conn_local, "conns", None)
+	if conns is None:
+		conns = _conn_local.conns = {}
+	conn = conns.get(host)
+	if conn is None:
+		conn = http.client.HTTPSConnection(host, 443, timeout=TIMEOUT)
+		conns[host] = conn
+		with _all_conns_lock:
+			_all_conns.append(conn)
+	return conn
+
+
+def _drop_conn(host):
+	conns = getattr(_conn_local, "conns", None) or {}
+	conn = conns.pop(host, None)
+	if conn is None:
+		return
+	with _all_conns_lock:
+		try: _all_conns.remove(conn)
+		except ValueError: pass
+	try: conn.close()
+	except Exception: pass
+
+
+def close_connections():
+	"""Close every kept-alive connection, from any thread. Called when a walk or
+	a gate check finishes -- holding sockets open across a whole sync interval
+	would just leave the provider to drop them anyway."""
+	with _all_conns_lock:
+		conns = list(_all_conns)
+		del _all_conns[:]
+	for conn in conns:
+		try: conn.close()
+		except Exception: pass
+	_conn_local.conns = {}
+
+
+def _propfind_body(auth_header, host, path):
+	"""A keep-alive connection can be closed by the server between calls, which
+	only surfaces as an exception on the next request -- so one retry on a fresh
+	connection is expected here, not exceptional. An HTTP error status is NOT
+	retried: the connection is alive and the answer will be the same."""
+	headers = {"Depth": "1", "Authorization": auth_header,
+	           "User-Agent": "RedLight-LibrarySync/1.0"}
+	last_exc = None
+	for _attempt in (0, 1):
+		conn = _get_conn(host)
+		try:
+			conn.request("PROPFIND", quote(path), headers=headers)
+			resp = conn.getresponse()
+			body = resp.read()
+		except Exception as exc:
+			last_exc = exc
+			_drop_conn(host)
+			continue
+		if resp.status >= 400:
+			raise IOError("HTTP %s %s" % (resp.status, resp.reason))
+		return body
+	raise last_exc
+
+
 def _propfind(auth_header, host, path):
-	url = "https://%s%s" % (host, quote(path))
-	req = Request(url, method="PROPFIND",
-	              headers={"Depth": "1", "Authorization": auth_header,
-	                       "User-Agent": "RedLight-LibrarySync/1.0"})
-	with urlopen(req, timeout=15) as resp:
-		body = resp.read()
+	body = _propfind_body(auth_header, host, path)
 	dirs, files = [], []
 	root = ET.fromstring(body)
 	for r in root.findall(".//{DAV:}response"):
@@ -150,14 +224,20 @@ def walk_parallel(auth_header, host, root="/"):
 	dirs, files = _propfind(auth_header, host, root)
 	out = list(files)
 	frontier, depth = dirs, 1
-	while frontier and depth <= MAX_DEPTH:
+	# One pool for the whole walk, not one per depth level: a fresh pool means
+	# fresh threads, and the kept-alive connections are thread-local, so a pool
+	# per level would throw away every connection at every level.
+	try:
 		with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-			results = list(pool.map(lambda d: _propfind_safe(auth_header, host, d), frontier))
-		next_frontier = []
-		for sub_dirs, sub_files in results:
-			out.extend(sub_files)
-			next_frontier.extend(sub_dirs)
-		frontier, depth = next_frontier, depth + 1
+			while frontier and depth <= MAX_DEPTH:
+				results = list(pool.map(lambda d: _propfind_safe(auth_header, host, d), frontier))
+				next_frontier = []
+				for sub_dirs, sub_files in results:
+					out.extend(sub_files)
+					next_frontier.extend(sub_dirs)
+				frontier, depth = next_frontier, depth + 1
+	finally:
+		close_connections()
 	return [(f, lm) for f, lm in out if f.lower().endswith(VIDEO_EXT)]
 
 
@@ -170,11 +250,29 @@ def _strm_path(directory, name):
 	return os.path.normpath(os.path.join(directory, sanitise(name) + ".strm"))
 
 
-def _reconcile(root, desired):
+def _reconcile(root, desired, prev_pending, allow_prune):
 	"""Delta-reconcile the .strm tree under root to match desired
 	{path: (url, ts)}. See update_library.py's _reconcile docstring for the
-	full rationale (mtime stability, foreign plugin:// strm survival)."""
+	full rationale (mtime stability, foreign plugin:// strm survival).
+
+	Orphans are NOT deleted on first sight. Measured on the Shield, four
+	consecutive walks of an unchanged Real-Debrid account -- identical gate
+	fingerprint, identical request count of 175 every time -- returned 3480,
+	3951, 3866 and 4151 files. It oscillates rather than climbs, so this is not
+	torrents completing between runs: the walk simply loses up to ~16% of the
+	tree, with no error raised. A file missing from `desired` is therefore at
+	least as likely to be a lost PROPFIND as a real deletion, and deleting on a
+	single observation silently drops hundreds of library entries that the next
+	run puts straight back.
+
+	So: prune only what was ALSO missing last run. `prev_pending` is that set;
+	the new one is returned. Deliberately robust to both failure modes -- it
+	does not depend on detecting the failure, only on two walks agreeing, which
+	matters because a truncated-but-HTTP-200 listing is undetectable from here.
+	Cost is that a genuine deletion takes one extra tick to disappear.
+	"""
 	written = deleted = 0
+	new_pending = set()
 	for path, (url, ts) in desired.items():
 		body = url
 		try:
@@ -194,18 +292,22 @@ def _reconcile(root, desired):
 			for f in filenames:
 				if f.endswith(".strm"):
 					fp = os.path.normpath(os.path.join(dirpath, f))
-					if fp not in desired:
-						try:
-							with open(fp, encoding="utf-8") as fh:
-								if fh.read(16).startswith("plugin://"):
-									continue
-						except OSError:
-							pass
-						os.remove(fp)
-						deleted += 1
+					if fp in desired:
+						continue
+					try:
+						with open(fp, encoding="utf-8") as fh:
+							if fh.read(16).startswith("plugin://"):
+								continue
+					except OSError:
+						pass
+					if not (allow_prune and fp in prev_pending):
+						new_pending.add(fp)
+						continue
+					os.remove(fp)
+					deleted += 1
 			if dirpath != root and not os.listdir(dirpath):
 				os.rmdir(dirpath)
-	return written, deleted
+	return written, deleted, new_pending
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +532,113 @@ MOVIE_SUBDIR = "Movies"
 BROWSE_SUBDIR = "Browse"
 
 
+# ---------------------------------------------------------------------------
+# Change-detection gate + persisted cross-run state
+#
+# Measured on the Shield: a full three-provider walk is 272 PROPFINDs / ~35s,
+# and re-reading the ~7800 existing .strm to reconcile is another ~33s -- paid
+# every tick, and on a curated account nearly every tick finds nothing changed.
+# One Depth-1 PROPFIND per provider enumerates every torrent, so the MEMBERSHIP
+# of that listing moves whenever anything is added or removed: ~3.6s to answer
+# the same question. Verified in both directions -- adding one item moved the
+# fingerprint for the two providers touched, and the untouched provider stayed
+# byte-identical across five runs.
+#
+# Two things this must not do, both learned from those measurements:
+#   * do not use a directory's getlastmodified. Real-Debrid reports it as the
+#     current wall-clock time on every request, so it always looks changed.
+#     Only the child-name set is trustworthy across providers.
+#   * do not gate on /links -- the unrestricted-download list, which churns on
+#     its own as links are minted and expire, and would always report changed.
+#
+# Layout differs per provider and cannot be guessed from the name: Real-Debrid
+# nests torrents under /torrents, while TorBox puts them at the root and its
+# /torrents is a one-entry stub. So the root listing is always part of the
+# fingerprint and /torrents is folded in when it exists -- which also covers the
+# case of an account whose /torrents is momentarily empty.
+# ---------------------------------------------------------------------------
+
+_GATE_SUBDIRS = ("torrents",)
+_FULL_WALK_MAX_AGE = 24 * 60 * 60
+_SHRINK_GUARD = 0.9
+_STATE_VERSION = 1
+
+
+def _auth_header(provider):
+	token = base64.b64encode(("%s:%s" % (provider["user"], provider["pass"])).encode()).decode()
+	return "Basic %s" % token
+
+
+def _basename(href_path):
+	return href_path.rstrip("/").rpartition("/")[2]
+
+
+def _gate_fingerprint(auth_header, host):
+	"""sha1 over the child-name sets of the gate paths, or None if the provider
+	could not be reached. None means "assume changed" -- never "assume same"."""
+	try:
+		dirs, files = _propfind(auth_header, host, "/")
+		parts = [["/", sorted(_basename(d) for d in dirs),
+		          sorted(_basename(f) for f, _lm in files)]]
+		for d in dirs:
+			if _basename(d).lower() in _GATE_SUBDIRS:
+				sub_dirs, sub_files = _propfind(auth_header, host, d)
+				parts.append([d, sorted(_basename(x) for x in sub_dirs),
+				              sorted(_basename(f) for f, _lm in sub_files)])
+		return hashlib.sha1(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()
+	except Exception as exc:
+		logger("Library Sync", "gate %s: %s" % (host, exc))
+		return None
+	finally:
+		close_connections()
+
+
+def _gate_unchanged(providers, state):
+	"""(unchanged, {provider_name: fingerprint}). Unchanged only if EVERY
+	provider answered and matched, and a full walk has run recently enough --
+	the 24h backstop is what stops an undetectable drift from becoming
+	permanent. Every provider is probed even once one has changed, because the
+	fingerprints are wanted for persistence either way."""
+	gates = state.get("gates") or {}
+	fingerprints = {}
+	unchanged = (time.time() - (state.get("last_full_walk") or 0)) < _FULL_WALK_MAX_AGE
+	for p in providers:
+		fingerprint = _gate_fingerprint(_auth_header(p), p["host"])
+		fingerprints[p["name"]] = fingerprint
+		if fingerprint is None or gates.get(p["name"]) != fingerprint:
+			unchanged = False
+	return unchanged, fingerprints
+
+
+def _state_path():
+	return os.path.join(addon_profile(), "library_sync_state.json")
+
+
+def _load_state():
+	"""Missing, unreadable or stale-versioned state means FORCE A FULL WALK, and
+	never "nothing changed". The profile dir is wiped by a reinstall, so every
+	deploy starts with no baseline -- getting this default the wrong way round
+	would silently stop the library ever populating again."""
+	try:
+		with open(_state_path(), encoding="utf-8") as fh:
+			state = json.load(fh)
+		if not isinstance(state, dict) or state.get("version") != _STATE_VERSION:
+			return {}
+		return state
+	except (OSError, ValueError):
+		return {}
+
+
+def _save_state(state):
+	state["version"] = _STATE_VERSION
+	try:
+		os.makedirs(os.path.dirname(_state_path()), exist_ok=True)
+		with open(_state_path(), "w", encoding="utf-8") as fh:
+			json.dump(state, fh)
+	except (OSError, TypeError, ValueError) as exc:
+		logger("Library Sync", "could not persist state: %s" % exc)
+
+
 def _build_url(provider, path):
 	user_q = quote(provider["user"], safe="")
 	pass_q = quote(provider["pass"], safe="")
@@ -440,10 +649,8 @@ def collect(providers, errors):
 	versions = {}
 	tv, movies, browse = {}, {}, {}
 	for p in providers:
-		token = base64.b64encode(("%s:%s" % (p["user"], p["pass"])).encode()).decode()
-		auth_header = "Basic %s" % token
 		try:
-			for path, lastmod in walk_parallel(auth_header, p["host"], "/"):
+			for path, lastmod in walk_parallel(_auth_header(p), p["host"], "/"):
 				parts = [seg for seg in path.split("/") if seg]
 				filename = parts[-1] if parts else path
 				stem = filename.rpartition(".")[0] or filename
@@ -484,7 +691,8 @@ def collect(providers, errors):
 	return tv, movies, browse, versions
 
 
-def write_library(root, tv, movies, browse=None, versions=None):
+def write_library(root, tv, movies, browse=None, versions=None,
+                  prev_pending=None, allow_prune=True):
 	tv_root = os.path.join(root, TV_SUBDIR)
 	movie_root = os.path.join(root, MOVIE_SUBDIR)
 	browse_root = os.path.join(root, BROWSE_SUBDIR)
@@ -522,17 +730,21 @@ def write_library(root, tv, movies, browse=None, versions=None):
 			name = "[%s] %s" % (flags, stem) if flags else stem
 			browse_want[_strm_path(directory, name)] = (url, ts)
 
+	prev_pending = prev_pending or frozenset()
 	written = deleted = 0
+	pending = set()
 	for tree_root, want in ((tv_root, tv_want), (movie_root, movie_want), (browse_root, browse_want)):
-		w, d = _reconcile(tree_root, want)
+		w, d, p = _reconcile(tree_root, want, prev_pending, allow_prune)
 		written += w
 		deleted += d
-	return written, deleted
+		pending |= p
+	return written, deleted, pending
 
 
-def run_sync(notify_start=False):
+def run_sync(notify_start=False, force=False):
 	"""The actual sync -- called by sync_now (context menu) and
-	LibrarySyncMonitor (service.py). Returns a one-line summary string."""
+	LibrarySyncMonitor (service.py). Returns a one-line summary string.
+	force skips the change-detection gate but still refreshes it."""
 	providers = webdav_providers()
 	if not providers:
 		return "no WebDAV providers configured"
@@ -542,6 +754,16 @@ def run_sync(notify_start=False):
 	except OSError as exc:
 		notification("Library Sync: can't write %s (%s)" % (root, exc), 8000)
 		return "write error: %s" % exc
+
+	state = _load_state()
+	# The gate has to short-circuit HERE, not just in front of the walk: of the
+	# ~68s a tick costs, ~35s is walking and ~33s is re-reading every existing
+	# .strm to reconcile, so gating only the walk still pays half of it.
+	unchanged, fingerprints = _gate_unchanged(providers, state)
+	if unchanged and not force:
+		logger("Library Sync", "no provider changes; skipped full walk")
+		return "no changes"
+
 	if notify_start:
 		notification("Library Sync: starting...", 2500)
 	errors = []
@@ -549,9 +771,42 @@ def run_sync(notify_start=False):
 	if errors and len(errors) == len(providers):
 		notification("Library Sync: all providers failed, kept existing library", 5000)
 		return "all providers failed"
-	written, deleted = write_library(root, tv, movies, browse, versions)
+
+	# Second line of defence behind the two-strike prune, aimed squarely at the
+	# measured failure: a walk that silently comes back short. A big drop is
+	# only ever deferred, not ignored -- the baseline moves to the new count
+	# either way, so a genuine mass deletion prunes on the following run.
+	walked = sum(len(items) for items in browse.values())
+	previously_walked = state.get("last_walk_files") or 0
+	allow_prune = not errors
+	if allow_prune and previously_walked and walked < previously_walked * _SHRINK_GUARD:
+		logger("Library Sync", "walk returned %d files against %d last run -- deferring prune"
+		       % (walked, previously_walked))
+		allow_prune = False
+
+	written, deleted, pending = write_library(
+		root, tv, movies, browse, versions,
+		set(state.get("pending_prune") or ()), allow_prune)
+
 	if written or deleted:
 		_refresh_kodi_library(clean=not errors)
+	elif not errors:
+		# Nothing to write, but a partial earlier cycle can leave ghost entries
+		# in the video DB pointing at .strm files that no longer exist, and only
+		# Clean removes those. kodi-strm-pipeline's update_library.py does this;
+		# the first native port dropped the branch, and a ghost was seen live.
+		_refresh_kodi_library(clean=True, scan=False)
+
+	state["last_walk_files"] = walked
+	state["pending_prune"] = sorted(pending)
+	if not errors:
+		# The fingerprints stored are the ones taken BEFORE the walk, on
+		# purpose: anything that lands while the walk is running is then still
+		# "changed" on the next tick instead of being missed entirely.
+		state["gates"] = dict((k, v) for k, v in fingerprints.items() if v)
+		state["last_full_walk"] = time.time()
+	_save_state(state)
+
 	summary = "%d episodes, %d movies; %d written / %d pruned" % (len(tv), len(movies), written, deleted)
 	if errors:
 		notification("Library Sync: %s. Failed: %s" % (summary, ", ".join(errors)), 5000)
@@ -560,11 +815,12 @@ def run_sync(notify_start=False):
 	return summary
 
 
-def _refresh_kodi_library(clean):
+def _refresh_kodi_library(clean, scan=True):
 	import xbmc
 	if clean:
 		xbmc.executeJSONRPC('{"jsonrpc":"2.0","id":1,"method":"VideoLibrary.Clean","params":{"showdialogs":false}}')
-	xbmc.executeJSONRPC('{"jsonrpc":"2.0","id":1,"method":"VideoLibrary.Scan","params":{"showdialogs":false}}')
+	if scan:
+		xbmc.executeJSONRPC('{"jsonrpc":"2.0","id":1,"method":"VideoLibrary.Scan","params":{"showdialogs":false}}')
 
 
 # ---------------------------------------------------------------------------
@@ -606,7 +862,9 @@ def sync_now(params=None):
 	if not webdav_providers():
 		return ok_dialog(heading="Library Sync",
 		                  text="No WebDAV providers configured. Run \"Configure WebDAV Credentials\" first.")
-	run_sync(notify_start=True)
+	# Forced: someone pressing "Sync Now" is usually trying to fix something,
+	# and "no changes" would be a useless answer to that.
+	run_sync(notify_start=True, force=True)
 
 
 def set_interval(params=None):
