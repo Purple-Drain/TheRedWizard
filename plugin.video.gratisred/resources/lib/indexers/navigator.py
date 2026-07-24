@@ -455,8 +455,9 @@ class navigator:
         if not _tmdb_credentials():
             self.addDirectoryItem('Authorize TMDb (QR Code)', 'auth_tmdb', 'tmdb.png', 'DefaultAddonProgram.png', isFolder=False)
         else:
-            self.addDirectoryItem('Favorites', 'movies&url=tmdb_favorites', 'tmdb.png', 'DefaultMovies.png', queue=True)
-            self.addDirectoryItem('Watchlist', 'movies&url=tmdb_watchlist', 'tmdb.png', 'DefaultMovies.png', queue=True)
+            sort = lambda shelf: ('Set Sort Order', 'tmdb_list_sort&media=movies&status=%s' % shelf)
+            self.addDirectoryItem('Favorites', 'movies&url=tmdb_favorites', 'tmdb.png', 'DefaultMovies.png', queue=True, context=sort('favorites'))
+            self.addDirectoryItem('Watchlist', 'movies&url=tmdb_watchlist', 'tmdb.png', 'DefaultMovies.png', queue=True, context=sort('watchlist'))
         self.endDirectory()
 
 
@@ -464,8 +465,9 @@ class navigator:
         if not _tmdb_credentials():
             self.addDirectoryItem('Authorize TMDb (QR Code)', 'auth_tmdb', 'tmdb.png', 'DefaultAddonProgram.png', isFolder=False)
         else:
-            self.addDirectoryItem('Favorites', 'tvshows&url=tmdb_favorites', 'tmdb.png', 'DefaultTVShows.png')
-            self.addDirectoryItem('Watchlist', 'tvshows&url=tmdb_watchlist', 'tmdb.png', 'DefaultTVShows.png')
+            sort = lambda shelf: ('Set Sort Order', 'tmdb_list_sort&media=tvshows&status=%s' % shelf)
+            self.addDirectoryItem('Favorites', 'tvshows&url=tmdb_favorites', 'tmdb.png', 'DefaultTVShows.png', context=sort('favorites'))
+            self.addDirectoryItem('Watchlist', 'tvshows&url=tmdb_watchlist', 'tmdb.png', 'DefaultTVShows.png', context=sort('watchlist'))
         self.endDirectory()
 
 
@@ -804,7 +806,6 @@ class navigator:
         fanart = control.addonFanart()
         thumb_img = control.menu_image(thumb, icon)
         cm = []
-        cm.append(('[B]View Changelog[/B]', 'RunPlugin(%s?action=view_changelog)' % sysaddon))
         cm.append(('[B]Clean Tools Widget[/B]', 'RunPlugin(%s?action=cleantools_widget)' % sysaddon))
         if queue == True:
             cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))

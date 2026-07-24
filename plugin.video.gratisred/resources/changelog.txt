@@ -1,17 +1,18 @@
 
-[B]- 1.1.5 (2026-07-24)[/B] Trakt Manager collection fix + auth gating + Simkl and Trakt list sort:
- * [B]Trakt / Simkl Manager[/B]: toasts now say Added to / Removed from the chosen shelf (or a clear failure); Simkl cache refresh after manager actions is silent (manual Refresh Simkl Cache still notifies); Trakt Manager clears its short-TTL cache after a successful change.
- * [B]My Library[/B]: Import Simkl shelves (movies: Plan to Watch / In Progress / Completed / Dropped; TV: Plan to Watch / Watching / Completed / On Hold / Dropped); Simkl entries listed before Trakt; [I]Add to Library[/I] also on matching My Simkl folder context menus.
+[B]- 1.1.5 (2026-07-24)[/B] Managers, list sort, auth gating, library imports:
  * [B]Playback[/B]: Resume Point Source follows Watched Indicators (no separate Change picker); [I]Using[/I] remains as read-only info under Resume Playback.
- * [B]Simkl Manager[/B]: only shows Remove for statuses the item is already on; re-checks membership before history remove (avoids accidental wipe when picking Remove on the wrong shelf).
- * [B]Trakt Manager[/B]: membership-aware Add/Remove for Collection, Watchlist, and each personal list (re-checks before remove); send both IMDb + TMDb IDs when available (movies previously sent IMDb only; empty/placeholder IDs were posted as success).
- * [B]My Simkl[/B]: status lists default to Title A–Z when no sort is set; list fetch no longer uses [I]ids_only[/I] (titles were missing so title sort did nothing).
- * Sync responses are checked for [I]added[/I] / [I]existing[/I] / [I]not_found[/I] — Collection / Watchlist / list updates no longer toast success when Trakt rejected the item.
- * [B]My Stuff[/B]: My Trakt / My Simkl / My TMDb / My UserLists only appear when that account is authorised (Authorize CTAs remain under Tools).
- * [B]Tools[/B]: Authorize TMDb when not signed in (alongside Simkl / Trakt).
+ * [B]My Stuff[/B]: My Simkl / My Trakt / My TMDb / My UserLists only appear when that account is authorised (Authorize CTAs remain under Tools); service menus ordered Simkl → Trakt → TMDb (My Stuff and Movies Explore); [I]My UserLists[/I] capitalisation standardised.
+ * Removed broken [I]View Changelog[/I] from navigator folder context menus (Changelog remains under Tools).
  * Account Settings: Trakt Library Sync and Simkl Watched Sync rows only when authorised; TMDb Manager guards unauthorised calls.
- * [B]My Simkl[/B]: per-status [I]Set Sort Order[/I] (title / date added / year / random / provider default) on Plan to Watch, Watching, Completed, On Hold, Dropped — not the full Red Light sort stack.
- * [B]My Trakt[/B]: same per-shelf [I]Set Sort Order[/I] on Library / Watchlist / Favorites (movies + TV); Library still defaults to Title A–Z when unset.
+ * [B]Tools[/B]: Authorize TMDb when not signed in (alongside Simkl / Trakt).
+ * [B]Simkl Manager[/B]: only shows Remove for statuses the item is already on; re-checks membership before history remove; toasts say Added to / Removed from the chosen shelf (or a clear failure); cache refresh after manager actions is silent (manual Refresh Simkl Cache still notifies).
+ * [B]My Simkl[/B]: per-status [I]Set Sort Order[/I] (title / date added / year / random / provider default) on Plan to Watch, Watching, Completed, On Hold, Dropped; defaults to Title A–Z when unset; list fetch no longer uses [I]ids_only[/I] (titles were missing so title sort did nothing).
+ * [B]My Library[/B]: Import Simkl shelves (movies: Plan to Watch / In Progress / Completed / Dropped; TV: Plan to Watch / Watching / Completed / On Hold / Dropped); [I]Add to Library[/I] also on matching My Simkl folder context menus; Simkl import entries listed before Trakt.
+ * [B]Trakt Manager[/B]: membership-aware Add/Remove for Collection, Watchlist, and each personal list (re-checks before remove); send both IMDb + TMDb IDs when available; sync responses checked for [I]added[/I] / [I]existing[/I] / [I]not_found[/I] (no success toast when Trakt rejected the item); toasts say Added to / Removed from the chosen shelf; clears short-TTL Trakt cache after a successful change.
+ * [B]My Trakt[/B]: per-shelf [I]Set Sort Order[/I] on Library / Watchlist / Favorites (movies + TV); Library still defaults to Title A–Z when unset.
+ * [B]Trakt UserLists[/B]: per-list [I]Set Sort Order[/I] on personal and liked lists (context menu on each list).
+ * [B]My TMDb[/B]: per-shelf [I]Set Sort Order[/I] on Favorites / Watchlist (movies + TV); defaults to Title A–Z; Date Added omitted (TMDb does not provide add timestamps).
+ * [B]TMDb UserLists[/B]: per-list [I]Set Sort Order[/I] (context menu on each list).
 
 [B]- 1.1.4 (2026-07-22)[/B] Watched Indicators UX:
  * [B]Change Watched Indicators...[/B] in General Settings (clearer action); reopens General Settings so [I]Using[/I] updates immediately.

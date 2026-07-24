@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Lightweight per-shelf list sort for My Simkl / My Trakt (Gratis Red).
+"""Lightweight per-shelf list sort for My Simkl / My Trakt / My TMDb (Gratis Red).
 
 Not Red Light's list_sort_cache stack — settings-backed specs and a simple picker.
 """
@@ -20,7 +20,6 @@ SORT_CHOICES = (
     ('year:asc', 'Year (oldest)'),
     ('random', 'Random'),
 )
-_VALID = frozenset(code for code, _ in SORT_CHOICES)
 
 SHELF_LABELS = {
     'plantowatch': 'Plan to Watch',
@@ -35,10 +34,45 @@ SHELF_LABELS = {
 
 SIMKL_SORTABLE = frozenset(('plantowatch', 'watching', 'completed', 'hold', 'dropped'))
 TRAKT_SORTABLE = frozenset(('collection', 'watchlist', 'favorites'))
+TMDB_SORTABLE = frozenset(('favorites', 'watchlist'))
+
+_PROVIDER_BRAND = {
+    'simkl': 'Simkl',
+    'trakt': 'Trakt',
+    'tmdb': 'TMDb',
+}
+
+_PERSONAL_PREFIX = 'ulist_'
+
+
+def sort_choices_for(provider):
+    """TMDb account/list payloads have no add timestamps — omit Date Added."""
+    if provider == 'tmdb':
+        return tuple(c for c in SORT_CHOICES if not str(c[0]).startswith('date_added'))
+    return SORT_CHOICES
+
+
+def is_personal_shelf(shelf):
+    try:
+        return str(shelf or '').startswith(_PERSONAL_PREFIX)
+    except Exception:
+        return False
+
+
+def personal_shelf_key(*parts):
+    cleaned = []
+    for part in parts:
+        try:
+            text = re.sub(r'[^0-9A-Za-z_.-]+', '_', str(part or '').strip())
+        except Exception:
+            text = ''
+        text = text.strip('._-') or 'x'
+        cleaned.append(text)
+    return _PERSONAL_PREFIX + '_'.join(cleaned)
 
 
 def trakt_shelf_from_url(url):
-    """Map a My Trakt sync URL to a shelf key, or None if not sortable."""
+    """Map a My Trakt sync URL or personal list URL to a shelf key."""
     try:
         url = str(url or '')
     except Exception:
@@ -49,6 +83,25 @@ def trakt_shelf_from_url(url):
         return 'watchlist'
     if '/favorites/' in url:
         return 'favorites'
+    match = re.search(r'/users/([^/]+)/lists/([^/]+)/items', url)
+    if match:
+        return personal_shelf_key(match.group(1), match.group(2))
+    return None
+
+
+def tmdb_shelf_from_url(url):
+    """Map a My TMDb account URL or personal list URL to a shelf key."""
+    try:
+        url = str(url or '')
+    except Exception:
+        return None
+    if '/favorite/' in url or '/favourite/' in url:
+        return 'favorites'
+    if '/watchlist/' in url:
+        return 'watchlist'
+    match = re.search(r'/list/(\d+)', url)
+    if match:
+        return personal_shelf_key(match.group(1))
     return None
 
 
@@ -57,15 +110,20 @@ def setting_id(provider, media, shelf):
 
 
 def get_list_sort(provider, media, shelf):
+    choices = sort_choices_for(provider)
+    valid = frozenset(code for code, _ in choices)
     raw = control.setting(setting_id(provider, media, shelf)) or ''
-    if raw in _VALID:
+    if raw in valid:
         return raw
     # Legacy Gratis Red hard-sorted Trakt Library by title when no preference exists.
     if provider == 'trakt' and shelf == 'collection':
         return 'title:asc'
-    # Simkl status shelves: Title A–Z when unset (same expectation as Content defaults elsewhere).
+    # Simkl / TMDb fixed account shelves: Title A–Z when unset.
     if provider == 'simkl' and shelf in SIMKL_SORTABLE:
         return 'title:asc'
+    if provider == 'tmdb' and shelf in TMDB_SORTABLE:
+        return 'title:asc'
+    # Personal lists: keep provider order until the user picks a sort.
     return SORT_DEFAULT
 
 
@@ -87,11 +145,19 @@ def _year_key(year):
         return 0
 
 
+def _shelf_allowed(shelf, sortable=None):
+    if is_personal_shelf(shelf):
+        return True
+    if sortable is not None:
+        return shelf in sortable
+    return True
+
+
 def sort_items(items, provider, media, shelf, sortable=None):
     """Return a new list sorted by the user's per-shelf preference. Never raises."""
     if not items:
         return []
-    if sortable is not None and shelf not in sortable:
+    if not _shelf_allowed(shelf, sortable):
         return list(items)
     try:
         spec = get_list_sort(provider, media, shelf)
@@ -113,27 +179,29 @@ def sort_items(items, provider, media, shelf, sortable=None):
         return list(items)
 
 
-def choose_list_sort(provider, media, shelf, sortable=None):
+def choose_list_sort(provider, media, shelf, sortable=None, heading_label=None):
     """Context-menu picker; refreshes the container on change."""
     try:
         media = 'movies' if media == 'movies' else 'tvshows'
         shelf = str(shelf or '')
-        if sortable is not None and shelf not in sortable:
+        if not _shelf_allowed(shelf, sortable):
             return
+        choices = sort_choices_for(provider)
         current = get_list_sort(provider, media, shelf)
         labels = []
-        for code, label in SORT_CHOICES:
+        for code, label in choices:
             labels.append('[B]%s[/B]' % label if code == current else label)
-        brand = 'Simkl' if provider == 'simkl' else 'Trakt'
-        heading = '%s Sort — %s' % (brand, SHELF_LABELS.get(shelf, shelf))
+        brand = _PROVIDER_BRAND.get(provider, str(provider or '').title() or 'List')
+        label = heading_label or SHELF_LABELS.get(shelf, 'List')
+        heading = '%s Sort — %s' % (brand, label)
         choice = control.selectDialog(labels, heading)
         if choice is None or choice < 0:
             return
-        chosen = SORT_CHOICES[choice][0]
+        chosen = choices[choice][0]
         if chosen == current:
             return
         set_list_sort(provider, media, shelf, chosen)
-        control.infoDialog('Sort: %s' % SORT_CHOICES[choice][1], sound=False)
+        control.infoDialog('Sort: %s' % choices[choice][1], sound=False)
         control.refresh()
     except Exception:
         pass

@@ -1404,7 +1404,10 @@ class tvshows:
                     self.list = cache.get(self.tmdb_list, self.addon_caching_timeout, url)
                 else:
                     self.list = self.tmdb_list(url)
-                self.list = sorted(self.list, key=lambda k: k['year'])
+                if '/list/' in url:
+                    self.list = tmdb_utils.apply_my_shelf_sort(self.list, url, 'tvshows')
+                else:
+                    self.list = sorted(self.list, key=lambda k: k['year'])
                 if idx == True:
                     self.worker()
             elif u in self.tmdb_link and self.tmdb_search_link in url:
@@ -1419,6 +1422,7 @@ class tvshows:
                     self.list = cache.get(self.tmdb_list, self.addon_caching_timeout, url)
                 else:
                     self.list = self.tmdb_list(url)
+                self.list = tmdb_utils.apply_my_shelf_sort(self.list, url, 'tvshows')
                 if idx == True:
                     self.worker()
             elif u in self.trakt_link and '/users/' in url:
@@ -1434,8 +1438,7 @@ class tvshows:
                     self.list = cache.get(self.trakt_list, self.addon_caching_timeout, url, self.trakt_user)
                 except:
                     self.list = self.trakt_list(url, self.trakt_user)
-                if '/users/me/' in url:
-                    self.list = trakt.apply_my_shelf_sort(self.list, url, 'tvshows')
+                self.list = trakt.apply_my_shelf_sort(self.list, url, 'tvshows')
                 if idx == True:
                     self.worker()
             #elif u in self.trakt_link and self.trakt_search_link in url:
@@ -1647,6 +1650,16 @@ class tvshows:
                 cm.append(('Clean Tools Widget', 'RunPlugin(%s?action=cleantools_widget)' % sysaddon))
                 if queue == True:
                     cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
+                try:
+                    sort_provider = i.get('sort_provider')
+                    sort_key = i.get('sort_key')
+                    if sort_provider and sort_key:
+                        media = 'movies' if i.get('action') == 'movies' else 'tvshows'
+                        action = '%s_list_sort&media=%s&status=%s&label=%s' % (
+                            sort_provider, media, sort_key, urllib_parse.quote_plus(name))
+                        cm.append(('Set Sort Order', 'RunPlugin(%s?action=%s)' % (sysaddon, action)))
+                except Exception:
+                    pass
                 try:
                     cm.append(('Add to Library', 'RunPlugin(%s?action=tvshows_to_library&url=%s)' % (sysaddon, urllib_parse.quote_plus(i['context']))))
                 except:

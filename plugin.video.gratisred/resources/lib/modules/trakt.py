@@ -282,14 +282,15 @@ def sort_list(sort_key, sort_direction, list_data):
         return list_data
 
 
-def choose_list_sort(media, shelf):
-    """Context-menu picker for My Trakt Library / Watchlist / Favorites."""
+def choose_list_sort(media, shelf, label=None):
+    """Context-menu picker for My Trakt shelves and personal lists."""
     from resources.lib.modules import shelf_sort
-    shelf_sort.choose_list_sort('trakt', media, shelf, sortable=shelf_sort.TRAKT_SORTABLE)
+    shelf_sort.choose_list_sort(
+        'trakt', media, shelf, sortable=shelf_sort.TRAKT_SORTABLE, heading_label=label)
 
 
 def apply_my_shelf_sort(items, url, media):
-    """Apply user shelf sort to a My Trakt collection/watchlist/favorites page."""
+    """Apply user sort to My Trakt sync shelves or personal / liked lists."""
     from resources.lib.modules import shelf_sort
     shelf = shelf_sort.trakt_shelf_from_url(url)
     if not shelf:
@@ -651,7 +652,16 @@ def build_user_list_directory(url, trakt_list_link, menu_type=None, image='trakt
             action = _trakt_userlist_action(menu_type, item_types, item_count)
             if menu_type and action is None:
                 continue
-            entries.append({'name': name, 'url': list_url, 'context': list_url, 'image': image, 'action': action or 'movies'})
+            from resources.lib.modules import shelf_sort
+            entries.append({
+                'name': name,
+                'url': list_url,
+                'context': list_url,
+                'image': image,
+                'action': action or 'movies',
+                'sort_provider': 'trakt',
+                'sort_key': shelf_sort.personal_shelf_key(username, list_slug),
+            })
         except:
             pass
     return entries

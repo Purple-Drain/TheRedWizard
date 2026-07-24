@@ -110,7 +110,12 @@ def router(_argv):
 
     elif action == 'trakt_list_sort':
         from resources.lib.modules import trakt
-        trakt.choose_list_sort(params.get('media'), params.get('status'))
+        trakt.choose_list_sort(params.get('media'), params.get('status'), label=params.get('label'))
+
+
+    elif action == 'tmdb_list_sort':
+        from resources.lib.modules import tmdb_utils
+        tmdb_utils.choose_list_sort(params.get('media'), params.get('status'), label=params.get('label'))
 
 
     elif action == 'choose_indicators':

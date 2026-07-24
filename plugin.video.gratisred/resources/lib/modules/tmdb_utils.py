@@ -283,7 +283,17 @@ def get_created_lists(url=None, list_type=None):
                     continue
                 list_url = url % list_id
                 action = 'movies' if resolved == 'movie' else 'tvshows'
-                items.append({'name': list_name, 'url': list_url, 'context': list_url, 'list_id': list_id, 'image': 'tmdb.png', 'action': action})
+                from resources.lib.modules import shelf_sort
+                items.append({
+                    'name': list_name,
+                    'url': list_url,
+                    'context': list_url,
+                    'list_id': list_id,
+                    'image': 'tmdb.png',
+                    'action': action,
+                    'sort_provider': 'tmdb',
+                    'sort_key': shelf_sort.personal_shelf_key(list_id),
+                })
             page += 1
         return items
     except:
@@ -417,6 +427,20 @@ def remove_from_watchlist(tmdb, media_type):
     except:
         #log_utils.log('remove_from_watchlist', 1)
         return False
+
+
+def choose_list_sort(media, shelf, label=None):
+    from resources.lib.modules import shelf_sort
+    shelf_sort.choose_list_sort(
+        'tmdb', media, shelf, sortable=shelf_sort.TMDB_SORTABLE, heading_label=label)
+
+
+def apply_my_shelf_sort(items, url, media):
+    from resources.lib.modules import shelf_sort
+    shelf = shelf_sort.tmdb_shelf_from_url(url)
+    if not shelf:
+        return items
+    return shelf_sort.sort_items(items, 'tmdb', media, shelf, sortable=shelf_sort.TMDB_SORTABLE)
 
 
 def manager(name, imdb, tmdb, content):
