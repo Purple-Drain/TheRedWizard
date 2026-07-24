@@ -3895,7 +3895,7 @@
                           <property name="setting_label">Skip Intro</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_skip_intro_name)]</property>
-                          <property name="setting_description">Skip TV intros via TheIntroDB then IntroDB, with embedded chapters as fallback. Prompt asks first. Plays you start yourself (single plays, etc) still prompt when Auto is selected.</property>
+                          <property name="setting_description">Skip TV intros via TheIntroDB then IntroDB, with embedded chapters as fallback. Off = off. Auto = skip without asking. Prompt = ask first (Yes skips; No or ignore/timeout does not).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoplay_skip_intro)</onclick>
                       </item>
                       <item>
@@ -3904,7 +3904,7 @@
                           <property name="setting_label">    - Also On Plays You Start Yourself</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.skip_intro_all_episodes)]</property>
-                          <property name="setting_description">Apply Skip Intro to library and source-list plays (single plays, etc). Auto still prompts before skipping on those plays.</property>
+                          <property name="setting_description">On: use the Skip Intro mode above for episodes you pick yourself (library, source list, first episode of a binge). Off: Skip Intro only for Autoplay / Autoscrape / Random Continual next-episode plays.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=skip_intro_all_episodes)</onclick>
                       </item>
                       <item>

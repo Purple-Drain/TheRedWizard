@@ -1,3 +1,6 @@
+[COLOR red][B]Version 2.0.3[/B][/COLOR]
+- [B]Skip Intro[/B]: [B]Off[/B] = off; [B]Auto[/B] = skip without asking whenever Skip Intro applies (autoplay, source select, first or later episode; self-started plays when that option is on); [B]Prompt[/B] = ask first (Yes skips; No or ignore/timeout does not). Clearer description for [B]Also On Plays You Start Yourself[/B].
+
 [COLOR red][B]Version 2.0.2[/B][/COLOR]
 - [B]Performance[/B]: movie and TV show lists reuse one metacache SQLite connection per worker thread when building listitems (fewer open/close cycles; thank you Tikipeter).
 

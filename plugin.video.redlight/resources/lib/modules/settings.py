@@ -340,15 +340,10 @@ def skip_intro_enabled(play_type):
 	return skip_intro_all_episodes()
 
 def skip_intro_auto_approved(play_type):
-	return skip_intro_mode() == 2 and _skip_intro_chain_play_type(play_type)
+	return skip_intro_mode() == 2 and skip_intro_enabled(play_type)
 
 def skip_intro_needs_prompt(play_type):
-	mode = skip_intro_mode()
-	if mode == 1:
-		return True
-	if mode == 2 and not _skip_intro_chain_play_type(play_type):
-		return True
-	return False
+	return skip_intro_mode() == 1 and skip_intro_enabled(play_type)
 
 def autoplay_skip_intro_mode():
 	return skip_intro_mode()
