@@ -3,13 +3,16 @@ import re
 import sys
 import time
 import random
+import inspect
 import _strptime
 import unicodedata
 from html import unescape
 from queue import SimpleQueue
+from contextlib import nullcontext
 from threading import Thread, activeCount
 from importlib import import_module
 from datetime import datetime, timedelta, date
+from caches.base_cache import open_db
 from modules.settings import max_threads
 from modules.kodi_utils import sleep, logger
 
@@ -17,22 +20,29 @@ class TaskPool:
 	def __init__(self):
 		self._queue = SimpleQueue()
 
-	def _thread_target(self, queue, target):
-		while not queue.empty():
-			try: target(*queue.get())
-			except Exception as e: logger('thread queue error', str(e))
+	def _thread_target(self, queue, target, db_name):
+		sig = inspect.signature(target)
+		uses_db = 'dbcon' in sig.parameters
+		context = open_db(db_name) if (uses_db and db_name) else nullcontext(None)
+		with context as dbcon:
+			while not queue.empty():
+				try:
+					args = queue.get()
+					if uses_db: target(*args, dbcon=dbcon)
+					else: target(*args)
+				except Exception as e: logger('thread queue error', str(e))
 
-	def tasks(self, _target, _list, _max_size=60):
+	def tasks(self, _target, _list, _max_size=60, db_name=None):
 		if not _list: return []
 		if not isinstance(_list[0], tuple): _list = [(i,) for i in _list]
 		[self._queue.put(tag) for tag in _list]
-		threads = [Thread(target=self._thread_target, args=(self._queue, _target)) for i in range(_max_size)]
+		threads = [Thread(target=self._thread_target, args=(self._queue, _target, db_name)) for i in range(_max_size)]
 		[i.start() for i in threads]
 		return threads
 
-	def tasks_enumerate(self, _target, _list, _max_size=60):
+	def tasks_enumerate(self, _target, _list, _max_size=60, db_name=None):
 		[self._queue.put((p, tag)) for p, tag in enumerate(_list, 1)]
-		threads = [Thread(target=self._thread_target, args=(self._queue, _target)) for i in range(_max_size)]
+		threads = [Thread(target=self._thread_target, args=(self._queue, _target, db_name)) for i in range(_max_size)]
 		[i.start() for i in threads]
 		return threads
 

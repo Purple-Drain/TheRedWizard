@@ -6,13 +6,13 @@ from apis.tmdb_api import movie_details, tvshow_details, season_episodes_details
 from modules.utils import jsondate_to_datetime, subtract_dates
 # from modules.kodi_utils import logger
 
-def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None):
+def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, dbcon=None):
 	if id_type == 'trakt_dict':
 		if media_id.get('tmdb', None): id_type, media_id = 'tmdb_id', media_id['tmdb']
 		elif media_id.get('imdb', None): id_type, media_id = 'imdb_id', media_id['imdb']
 		else: id_type, media_id = None, None
 	if media_id == None: return None
-	meta = meta_cache.get('movie', id_type, media_id, current_time)
+	meta = meta_cache.get('movie', id_type, media_id, current_time, dbcon=dbcon)
 	if meta: return meta
 	try:
 		if id_type in ('tmdb_id', 'imdb_id'): data = movie_details(media_id, api_key)
@@ -24,7 +24,7 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 		elif data.get('status_code') in (6, 34, 37):
 			if id_type == 'tmdb_id': meta = {'tmdb_id': media_id, 'imdb_id': 'tt0000000', 'tvdb_id': '0000000', 'blank_entry': True}
 			else: meta = {'tmdb_id': '0000000', 'imdb_id': media_id, 'tvdb_id': '0000000', 'blank_entry': True}
-			meta_cache.set('movie', id_type, meta, 24, current_time)
+			meta_cache.set('movie', id_type, meta, 24, current_time, dbcon=dbcon)
 			return meta
 		tmdb_image_url, youtube_url = 'https://image.tmdb.org/t/p/%s%s', 'plugin://plugin.video.youtube/play/?video_id=%s'
 		data_get = data.get
@@ -134,18 +134,18 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 				'duration': duration, 'rootname': rootname, 'country': country, 'country_codes': country_codes, 'mpaa': mpaa,'writer': writer, 'all_trailers': all_trailers,
 				'director': director, 'alternative_titles': alternative_titles, 'plot': plot, 'studio': studio, 'extra_info': extra_info, 'mediatype': 'movie', 'tvdb_id': 'None',
 				'clearlogo': clearlogo, 'landscape': landscape, 'keywords': keywords, 'rpdb_poster': rpdb_poster, 'short_cast': short_cast, 'stinger_keys': stinger_keys}
-		meta_cache.set('movie', id_type, meta, movie_expiry(current_date, meta), current_time)
+		meta_cache.set('movie', id_type, meta, movie_expiry(current_date, meta), current_time, dbcon=dbcon)
 	except: pass
 	return meta
 
-def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, is_anime_list=None):
+def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, is_anime_list=None, dbcon=None):
 	if id_type == 'trakt_dict':
 		if media_id.get('tmdb', None): id_type, media_id = 'tmdb_id', media_id['tmdb']
 		elif media_id.get('imdb', None): id_type, media_id = 'imdb_id', media_id['imdb']
 		elif media_id.get('tvdb', None): id_type, media_id = 'tvdb_id', media_id['tvdb']
 		else: id_type, media_id = None, None
 	if media_id == None: return None
-	meta = meta_cache.get('tvshow', id_type, media_id, current_time)
+	meta = meta_cache.get('tvshow', id_type, media_id, current_time, dbcon=dbcon)
 	if meta: return meta_valid_check(meta, is_anime_list)
 	try:
 		if id_type == 'tmdb_id': data = tvshow_details(media_id, api_key)
@@ -157,7 +157,7 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 			if id_type == 'tmdb_id': meta = {'tmdb_id': media_id, 'imdb_id': 'tt0000000', 'tvdb_id': '0000000', 'blank_entry': True}
 			elif id_type == 'imdb_id': meta = {'tmdb_id': '0000000', 'imdb_id': media_id, 'tvdb_id': '0000000', 'blank_entry': True}
 			else: meta = {'tmdb_id': '0000000', 'imdb_id': 'tt0000000', 'tvdb_id': media_id, 'blank_entry': True}
-			meta_cache.set('tvshow', id_type, meta, 24, current_time)
+			meta_cache.set('tvshow', id_type, meta, 24, current_time, dbcon=dbcon)
 			return meta
 		tmdb_image_url, youtube_url = 'https://image.tmdb.org/t/p/%s%s', 'plugin://plugin.video.youtube/play/?video_id=%s'
 		data_get = data.get
@@ -279,7 +279,7 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 				'country_codes': country_codes, 'writer': writer, 'director': director, 'all_trailers': all_trailers, 'cast': cast, 'studio': studio, 'extra_info': extra_info,
 				'total_aired_eps': total_aired_eps, 'mediatype': 'tvshow', 'total_seasons': total_seasons, 'tvshowtitle': title, 'status': status, 'clearlogo': clearlogo,
 				'landscape': landscape, 'keywords': keywords, 'rpdb_poster': rpdb_poster, 'short_cast': short_cast}
-		meta_cache.set('tvshow', id_type, meta, tvshow_expiry(current_date, meta), current_time)
+		meta_cache.set('tvshow', id_type, meta, tvshow_expiry(current_date, meta), current_time, dbcon=dbcon)
 	except: pass
 	return meta_valid_check(meta, is_anime_list)
 

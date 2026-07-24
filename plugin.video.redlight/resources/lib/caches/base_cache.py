@@ -2,6 +2,7 @@
 import time
 from os import path
 import sqlite3 as database
+from contextlib import contextmanager
 from modules import kodi_utils
 logger = kodi_utils.logger
 
@@ -100,6 +101,14 @@ def connect_database(database_name):
 	dbcon.execute('PRAGMA synchronous = OFF')
 	dbcon.execute('PRAGMA journal_mode = OFF')
 	return dbcon
+
+@contextmanager
+def open_db(database_name):
+	dbcon = connect_database(database_name)
+	try: yield dbcon
+	finally:
+		try: dbcon.close()
+		except: pass
 
 def ensure_database_tables(database_name):
 	"""Create missing tables without deleting existing data (safe before service has run)."""

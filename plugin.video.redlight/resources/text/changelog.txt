@@ -1,3 +1,6 @@
+[COLOR red][B]Version 2.0.2[/B][/COLOR]
+- [B]Performance[/B]: movie and TV show lists reuse one metacache SQLite connection per worker thread when building listitems (fewer open/close cycles; thank you Tikipeter).
+
 [COLOR red][B]Version 2.0.1[/B][/COLOR]
 - [B]Settings[/B]: [B]Watched Status Provider[/B] and Trakt/Simkl/MDBList sync tools (interval, refresh widgets, force sync, clear cache) move from General to [B]Meta Accounts[/B] — provider at the top; sync/cache under each service when authorised.
 - [B]Simkl[/B]: status lists (Plan to Watch / Watching / etc.) sort by title again when Title is the active sort — list fetch no longer uses [I]ids_only[/I], which omitted titles and left lists in API order.
