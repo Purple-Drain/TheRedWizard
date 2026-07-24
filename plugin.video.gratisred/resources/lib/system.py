@@ -103,16 +103,20 @@ def router(_argv):
         simkl.refreshSimklCache()
 
 
+    elif action == 'simkl_list_sort':
+        from resources.lib.modules import simkl
+        simkl.choose_list_sort(params.get('media'), params.get('status'))
+
+
+    elif action == 'trakt_list_sort':
+        from resources.lib.modules import trakt
+        trakt.choose_list_sort(params.get('media'), params.get('status'))
+
+
     elif action == 'choose_indicators':
         from resources.lib.modules import simkl
         reopen = (params.get('source') or '').lower() == 'settings'
         simkl.choose_indicators(reopen_settings=reopen)
-
-
-    elif action == 'choose_bookmarks_source':
-        from resources.lib.modules import simkl
-        reopen = (params.get('source') or '').lower() == 'settings'
-        simkl.choose_bookmarks_source(reopen_settings=reopen)
 
 
     elif action == 'my_simkl_menu':

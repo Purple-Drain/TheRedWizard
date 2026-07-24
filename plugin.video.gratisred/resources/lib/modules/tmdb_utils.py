@@ -421,6 +421,8 @@ def remove_from_watchlist(tmdb, media_type):
 
 def manager(name, imdb, tmdb, content):
     try:
+        if not getTMDbCredentialsInfo():
+            return control.infoDialog('Authorise TMDb first.', sound=True, icon='ERROR')
         media_type = "movie" if content == "movie" else "tv"
         items = [('Add to [B]Favorites[/B]', 'add_to_favorites')]
         items += [('Remove from [B]Favorites[/B]', 'remove_from_favorites')]

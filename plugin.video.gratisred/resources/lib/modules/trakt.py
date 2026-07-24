@@ -282,6 +282,21 @@ def sort_list(sort_key, sort_direction, list_data):
         return list_data
 
 
+def choose_list_sort(media, shelf):
+    """Context-menu picker for My Trakt Library / Watchlist / Favorites."""
+    from resources.lib.modules import shelf_sort
+    shelf_sort.choose_list_sort('trakt', media, shelf, sortable=shelf_sort.TRAKT_SORTABLE)
+
+
+def apply_my_shelf_sort(items, url, media):
+    """Apply user shelf sort to a My Trakt collection/watchlist/favorites page."""
+    from resources.lib.modules import shelf_sort
+    shelf = shelf_sort.trakt_shelf_from_url(url)
+    if not shelf:
+        return items
+    return shelf_sort.sort_items(items, 'trakt', media, shelf, sortable=shelf_sort.TRAKT_SORTABLE)
+
+
 def getTraktAsJson(url, post=None):
     try:
         r, res_headers = __getTrakt(url, post)
@@ -654,28 +669,188 @@ def user_list_directory_episode(url, trakt_list_link, user=None):
     return build_user_list_directory(url, trakt_list_link, menu_type='episode')
 
 
+def _manager_ids(imdb=None, tmdb=None):
+    """Build a Trakt ids object; omit empty / placeholder values."""
+    ids = {}
+    if tmdb and str(tmdb) not in ('0', '', 'None'):
+        try:
+            ids['tmdb'] = int(tmdb)
+        except Exception:
+            pass
+    if imdb and str(imdb) not in ('0', '', 'None'):
+        imdb = str(imdb)
+        if not imdb.startswith('tt'):
+            imdb = 'tt' + re.sub(r'[^0-9]', '', imdb)
+        if imdb not in ('tt', 'tt0'):
+            ids['imdb'] = imdb
+    return ids
+
+
+def _manager_post(content, imdb=None, tmdb=None):
+    ids = _manager_ids(imdb=imdb, tmdb=tmdb)
+    if not ids:
+        return None
+    if content == 'movie':
+        return {'movies': [{'ids': ids}]}
+    return {'shows': [{'ids': ids}]}
+
+
+def _ids_match(item_ids, wanted):
+    if not isinstance(item_ids, dict) or not isinstance(wanted, dict):
+        return False
+    for key in ('tmdb', 'imdb'):
+        item_value = item_ids.get(key)
+        wanted_value = wanted.get(key)
+        if item_value in (None, '', 'None', 0, '0') or wanted_value in (None, '', 'None', 0, '0'):
+            continue
+        if str(item_value) == str(wanted_value):
+            return True
+    return False
+
+
+def _entry_media_ids(item, content):
+    if not isinstance(item, dict):
+        return None
+    media_key = 'movie' if content == 'movie' else 'show'
+    block = item.get(media_key)
+    if isinstance(block, dict) and block.get('ids'):
+        return block.get('ids')
+    if content != 'movie':
+        show = item.get('show')
+        if isinstance(show, dict) and show.get('ids'):
+            return show.get('ids')
+    return None
+
+
+def _item_in_sync(kind, content, ids):
+    try:
+        media = 'movies' if content == 'movie' else 'shows'
+        items = getTraktAsJsonPaged('/users/me/%s/%s' % (kind, media)) or []
+        for item in items:
+            if _ids_match(_entry_media_ids(item, content), ids):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _item_in_personal_list(slug, content, ids):
+    try:
+        items = getTraktAsJsonPaged('/users/me/lists/%s/items' % slug) or []
+        for item in items:
+            if _ids_match(_entry_media_ids(item, content), ids):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _manager_still_member(path, content, ids):
+    path = path or ''
+    if path == '/sync/collection/remove':
+        return _item_in_sync('collection', content, ids)
+    if path == '/sync/watchlist/remove':
+        return _item_in_sync('watchlist', content, ids)
+    if path.startswith('/users/me/lists/') and path.endswith('/items/remove'):
+        # /users/me/lists/{slug}/items/remove
+        parts = path.split('/')
+        if len(parts) >= 6:
+            return _item_in_personal_list(parts[4], content, ids)
+    return True
+
+
+def _manager_remove_label(path):
+    path = path or ''
+    if path == '/sync/collection/remove':
+        return 'Collection'
+    if path == '/sync/watchlist/remove':
+        return 'Watchlist'
+    if path.startswith('/users/me/lists/') and path.endswith('/items/remove'):
+        return 'list'
+    return 'list'
+
+
+def _sync_counts(bucket, keys):
+    bucket = bucket or {}
+    total = 0
+    for key in keys:
+        try:
+            total += int(bucket.get(key, 0) or 0)
+        except Exception:
+            pass
+    return total
+
+
+def _manager_sync_outcome(path, data):
+    """Interpret Trakt sync JSON; never treat not_found / zero-adds as success."""
+    if not isinstance(data, dict):
+        return 'error'
+    path = path or ''
+    is_remove = path.endswith('/remove') or '/remove' in path
+    if '/sync/collection' in path:
+        keys = ('movies', 'episodes')
+        if is_remove:
+            return 'deleted' if _sync_counts(data.get('deleted'), keys) else 'error'
+        if _sync_counts(data.get('added'), keys):
+            return 'added'
+        if _sync_counts(data.get('existing'), keys):
+            return 'existing'
+        return 'error'
+    if '/sync/watchlist' in path or '/users/me/lists/' in path:
+        keys = ('movies', 'shows', 'seasons', 'episodes', 'people')
+        if is_remove:
+            return 'deleted' if _sync_counts(data.get('deleted'), keys) else 'error'
+        if _sync_counts(data.get('added'), keys):
+            return 'added'
+        if _sync_counts(data.get('existing'), keys):
+            return 'existing'
+        return 'error'
+    return 'ok' if data else 'error'
+
+
 def manager(name, imdb, tmdb, content):
     try:
-        post = {"movies": [{"ids": {"imdb": imdb}}]} if content == 'movie' else {"shows": [{"ids": {"tmdb": tmdb}}]}
-        items = [('Add to [B]Collection[/B]', '/sync/collection')]
-        items += [('Remove from [B]Collection[/B]', '/sync/collection/remove')]
-        items += [('Add to [B]Watchlist[/B]', '/sync/watchlist')]
-        items += [('Remove from [B]Watchlist[/B]', '/sync/watchlist/remove')]
-        items += [('Add to [B]new List[/B]', '/users/me/lists/%s/items')]
+        if not getTraktCredentialsInfo():
+            return control.infoDialog('Authorise Trakt first.', sound=True, icon='ERROR')
+        ids = _manager_ids(imdb=imdb, tmdb=tmdb)
+        post = _manager_post(content, imdb=imdb, tmdb=tmdb)
+        if not post:
+            return control.infoDialog('Missing IDs for Trakt Manager.', heading=str(name), sound=True, icon='ERROR')
+        items = []
+        if _item_in_sync('collection', content, ids):
+            items.append(('Remove from [B]Collection[/B]', '/sync/collection/remove'))
+        else:
+            items.append(('Add to [B]Collection[/B]', '/sync/collection'))
+        if _item_in_sync('watchlist', content, ids):
+            items.append(('Remove from [B]Watchlist[/B]', '/sync/watchlist/remove'))
+        else:
+            items.append(('Add to [B]Watchlist[/B]', '/sync/watchlist'))
+        items.append(('Add to [B]new List[/B]', '/users/me/lists/%s/items'))
         result = getTraktAsJsonPaged('/users/me/lists') or []
-        lists = [(i['name'], i['ids']['slug']) for i in result]
-        lists = [lists[i//2] for i in range(len(lists)*2)]
-        for i in range(0, len(lists), 2):
-            lists[i] = ((ensure_str('Add to [B]%s[/B]' % lists[i][0])), '/users/me/lists/%s/items' % lists[i][1])
-        for i in range(1, len(lists), 2):
-            lists[i] = ((ensure_str('Remove from [B]%s[/B]' % lists[i][0])), '/users/me/lists/%s/items/remove' % lists[i][1])
-        items += lists
+        for entry in result:
+            try:
+                list_name = entry['name']
+                slug = entry['ids']['slug']
+            except Exception:
+                continue
+            if _item_in_personal_list(slug, content, ids):
+                items.append((
+                    ensure_str('Remove from [B]%s[/B]' % list_name),
+                    '/users/me/lists/%s/items/remove' % slug
+                ))
+            else:
+                items.append((
+                    ensure_str('Add to [B]%s[/B]' % list_name),
+                    '/users/me/lists/%s/items' % slug
+                ))
         select = control.selectDialog([i[0] for i in items], 'Trakt Manager')
         if select == -1:
             return
-        elif select == 4:
+        path = items[select][1]
+        if '%s' in path:
             t = 'Add to [B]new List[/B]'
-            k = control.keyboard('', t) ; k.doModal()
+            k = control.keyboard('', t)
+            k.doModal()
             new = k.getText() if k.isConfirmed() else None
             if (new == None or new == ''):
                 return
@@ -683,14 +858,61 @@ def manager(name, imdb, tmdb, content):
             try:
                 slug = client_utils.json_loads_as_str(result)['ids']['slug']
             except:
-                return control.infoDialog('Trakt Manager', heading=str(name), sound=True, icon='ERROR')
-            result = __getTrakt(items[select][1] % slug, post=post)[0]
+                return control.infoDialog('Could not create list.', heading=str(name), sound=True, icon='ERROR')
+            path = path % slug
+        elif path.endswith('/remove'):
+            if not _manager_still_member(path, content, ids):
+                label = _manager_remove_label(path)
+                try:
+                    chosen = items[select][0]
+                    if '[B]' in chosen and '[/B]' in chosen:
+                        label = chosen.split('[B]', 1)[1].split('[/B]', 1)[0]
+                except Exception:
+                    pass
+                return control.infoDialog('Item is not in %s.' % label, heading=str(name), sound=True, icon='ERROR')
+        result = __getTrakt(path, post=post)[0]
+        if result is None:
+            return control.infoDialog('Trakt request failed.', heading=str(name), sound=True, icon='ERROR')
+        try:
+            data = client_utils.json_loads_as_str(result)
+        except Exception:
+            data = None
+        outcome = _manager_sync_outcome(path, data)
+        label = _manager_remove_label(path)
+        try:
+            chosen = items[select][0]
+            if '[B]' in chosen and '[/B]' in chosen:
+                label = chosen.split('[B]', 1)[1].split('[/B]', 1)[0]
+        except Exception:
+            pass
+        if outcome == 'error':
+            try:
+                log_utils.log('Trakt Manager sync failed path=%s post=%s response=%s' % (path, post, data))
+            except Exception:
+                pass
+            return control.infoDialog('Trakt did not update this item.', heading=str(name), sound=True, icon='ERROR')
+        if outcome == 'existing':
+            return control.infoDialog('Already on %s.' % label, heading=str(name), sound=True)
+        if outcome == 'deleted' or path.endswith('/remove') or '/remove' in path:
+            message = 'Removed from %s.' % label
         else:
-            result = __getTrakt(items[select][1], post=post)[0]
-        icon = control.infoLabel('ListItem.Icon') if not result == None else 'ERROR'
-        control.infoDialog('Trakt Manager', heading=str(name), sound=True, icon=icon)
-    except:
-        return
+            message = 'Added to %s.' % label
+        control.infoDialog(message, heading=str(name), sound=True, icon=control.infoLabel('ListItem.Icon'))
+        try:
+            from resources.lib.modules import trakt_cache
+            trakt_cache.clear()
+        except Exception:
+            pass
+        try:
+            control.refresh()
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            log_utils.log('Trakt Manager failed: %s' % e)
+        except Exception:
+            pass
+        control.infoDialog('Trakt Manager failed.', heading=str(name), sound=True, icon='ERROR')
 
 
 def getPlaybackEpisodes():

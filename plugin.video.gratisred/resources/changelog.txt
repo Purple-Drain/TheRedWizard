@@ -1,4 +1,18 @@
 
+[B]- 1.1.5 (2026-07-24)[/B] Trakt Manager collection fix + auth gating + Simkl and Trakt list sort:
+ * [B]Trakt / Simkl Manager[/B]: toasts now say Added to / Removed from the chosen shelf (or a clear failure); Simkl cache refresh after manager actions is silent (manual Refresh Simkl Cache still notifies); Trakt Manager clears its short-TTL cache after a successful change.
+ * [B]My Library[/B]: Import Simkl shelves (movies: Plan to Watch / In Progress / Completed / Dropped; TV: Plan to Watch / Watching / Completed / On Hold / Dropped); Simkl entries listed before Trakt; [I]Add to Library[/I] also on matching My Simkl folder context menus.
+ * [B]Playback[/B]: Resume Point Source follows Watched Indicators (no separate Change picker); [I]Using[/I] remains as read-only info under Resume Playback.
+ * [B]Simkl Manager[/B]: only shows Remove for statuses the item is already on; re-checks membership before history remove (avoids accidental wipe when picking Remove on the wrong shelf).
+ * [B]Trakt Manager[/B]: membership-aware Add/Remove for Collection, Watchlist, and each personal list (re-checks before remove); send both IMDb + TMDb IDs when available (movies previously sent IMDb only; empty/placeholder IDs were posted as success).
+ * [B]My Simkl[/B]: status lists default to Title A–Z when no sort is set; list fetch no longer uses [I]ids_only[/I] (titles were missing so title sort did nothing).
+ * Sync responses are checked for [I]added[/I] / [I]existing[/I] / [I]not_found[/I] — Collection / Watchlist / list updates no longer toast success when Trakt rejected the item.
+ * [B]My Stuff[/B]: My Trakt / My Simkl / My TMDb / My UserLists only appear when that account is authorised (Authorize CTAs remain under Tools).
+ * [B]Tools[/B]: Authorize TMDb when not signed in (alongside Simkl / Trakt).
+ * Account Settings: Trakt Library Sync and Simkl Watched Sync rows only when authorised; TMDb Manager guards unauthorised calls.
+ * [B]My Simkl[/B]: per-status [I]Set Sort Order[/I] (title / date added / year / random / provider default) on Plan to Watch, Watching, Completed, On Hold, Dropped — not the full Red Light sort stack.
+ * [B]My Trakt[/B]: same per-shelf [I]Set Sort Order[/I] on Library / Watchlist / Favorites (movies + TV); Library still defaults to Title A–Z when unset.
+
 [B]- 1.1.4 (2026-07-22)[/B] Watched Indicators UX:
  * [B]Change Watched Indicators...[/B] in General Settings (clearer action); reopens General Settings so [I]Using[/I] updates immediately.
  * Changing Watched Indicators also sets [B]Resume Point Source[/B] to match.
@@ -41,7 +55,7 @@
  * OAuth token expiry ([I]trakt.expires[/I]) stored on authorise/refresh with proactive refresh before requests; concurrent refresh guarded to avoid token storms.
  * Resume lookups cache Trakt playback progress briefly (2 min) instead of re-fetching the full list on every play.
  * Activity timestamps validated before use so bad/HTML responses do not corrupt list cache invalidation.
- * [B]TMDb UserLists[/B] ([I]My Userlists > TMDb UserLists[/I]): account session/id are read at request time (not cached at Kodi startup), so authorising in settings works without restarting; all account list pages are fetched; movie and TV menus filter by TMDb [I]list_type[/I]; list contents accept nested [I]movie[/I]/[I]show[/I] payloads.
+ * [B]TMDb UserLists[/B] ([I]My UserLists > TMDb UserLists[/I]): account session/id are read at request time (not cached at Kodi startup), so authorising in settings works without restarting; all account list pages are fetched; movie and TV menus filter by TMDb [I]list_type[/I]; list contents accept nested [I]movie[/I]/[I]show[/I] payloads.
  * [B]Set Views[/B] (FIX): [I]getCurrentViewId()[/I] in [I]control.py[/I] falls back to the focused skin control ID when [I]Container.Viewmode.id[/I] is blank (common on some Kodi 21 builds). [I]views.addView()[/I] validates the ID before saving; Estuary content defaults apply for menus, movies, TV shows, seasons, and episodes.
  * [B]Settings shortcuts[/B]: [I]Developer Tools > Provider Settings[/I] and [I]Library Settings[/I] land on the correct category on any skin (runtime category-list detection, not Estuary-only control ids).
  * [B]Optional Installs[/B]: list refreshes after an install completes so [I]Open Settings[/I] appears without leaving the menu.
