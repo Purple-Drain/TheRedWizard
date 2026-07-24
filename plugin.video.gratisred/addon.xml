@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<addon id="plugin.video.gratisred" version="1.1.5" name="[COLOR red]Gratis Red[/COLOR]" provider-name="[COLOR red]The Red Wizard[/COLOR]">
+<addon id="plugin.video.gratisred" version="1.1.6" name="[COLOR red]Gratis Red[/COLOR]" provider-name="[COLOR red]The Red Wizard[/COLOR]">
     <requires>
         <import addon="script.gratisred.artwork" version="1.0.3"/>
         <import addon="script.module.kodi-six"/>
@@ -27,10 +27,9 @@
 		<email>info@redwizard.xyz</email>
 		<source>https://github.com/The-Red-Wizard</source>
         <news>[COLOR red]2026-07-24
-- Summary of v1.1.5 (see Tools > Changelog for the detail):
- * Trakt Manager collection fix (IMDb + TMDb IDs)
- * My Stuff / sync settings gated on auth
- * My Simkl / My Trakt Set Sort Order[/COLOR]</news>
+- Summary of v1.1.6 (see Tools > Changelog for the detail):
+ * TV Shows Explore ordered Simkl → Trakt → TMDb
+ * Stop forced view-mode jump when browsing menus[/COLOR]</news>
         <assets>
             <icon>resources/images/icon.png</icon>
             <fanart>resources/images/fanart.jpg</fanart>

@@ -1,7 +1,11 @@
 
+[B]- 1.1.6 (2026-07-24)[/B] TV Explore menu order + menu view flash:
+ * [B]TV Shows[/B]: Explore menus ordered Simkl > Trakt > TMDb (then TVmaze), matching Movies Explore / My Stuff.
+ * [B]Menus[/B]: no longer force Estuary WideList/Poster after every folder open (that caused a brief jump through another view); views apply only if saved under Tools > Setup ViewTypes.
+
 [B]- 1.1.5 (2026-07-24)[/B] Managers, list sort, auth gating, library imports:
  * [B]Playback[/B]: Resume Point Source follows Watched Indicators (no separate Change picker); [I]Using[/I] remains as read-only info under Resume Playback.
- * [B]My Stuff[/B]: My Simkl / My Trakt / My TMDb / My UserLists only appear when that account is authorised (Authorize CTAs remain under Tools); service menus ordered Simkl → Trakt → TMDb (My Stuff and Movies Explore); [I]My UserLists[/I] capitalisation standardised.
+ * [B]My Stuff[/B]: My Simkl / My Trakt / My TMDb / My UserLists only appear when that account is authorised (Authorize CTAs remain under Tools); service menus ordered Simkl > Trakt > TMDb (My Stuff and Movies Explore); [I]My UserLists[/I] capitalisation standardised.
  * Removed broken [I]View Changelog[/I] from navigator folder context menus (Changelog remains under Tools).
  * Account Settings: Trakt Library Sync and Simkl Watched Sync rows only when authorised; TMDb Manager guards unauthorised calls.
  * [B]Tools[/B]: Authorize TMDb when not signed in (alongside Simkl / Trakt).
