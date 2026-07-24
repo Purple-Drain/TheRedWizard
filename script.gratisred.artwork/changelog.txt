@@ -1,3 +1,6 @@
+v1.0.4 (2026-07-24)
+- Added mdblist.png for all themes (transparent uses official MDBList mark; other themes use Trakt-styled placeholder until themed icons ship).
+
 v1.0.3 (2026-07-22)
 - Added simkl.png for all themes (transparent uses official Simkl mark; other themes use Trakt-styled placeholder until themed icons ship).
 
