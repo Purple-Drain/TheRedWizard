@@ -5,3 +5,6 @@ dist/
 __pycache__/
 *.pyc
 *.pyo
+
+# Claude Code local session/tooling state -- never meant to be committed or pushed.
+.claude/
