@@ -2196,6 +2196,10 @@ class Sources():
 						resolve_item = dict(item)
 						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
 						processed_items_append(resolve_item)
+				elif item['scrape_provider'] == 'folders':
+					resolve_item = dict(item)
+					resolve_item['resolve_display'] = '%02d. [B]%s (RETRY)[/B][CR]%s[CR]%s' % (count, provider_text, extra_info, display_name)
+					processed_items_append(resolve_item)
 			items = list(processed_items)
 			if not self.continue_resolve_check():
 				self._kill_progress_dialog()
