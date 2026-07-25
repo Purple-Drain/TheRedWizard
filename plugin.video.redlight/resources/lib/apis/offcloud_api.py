@@ -306,13 +306,10 @@ class OffcloudAPI:
 					return None
 				extras_filter = extras()
 				torrent_files = [i for i in torrent_files if not any(x in i['filename'] for x in extras_filter)]
-			file_url = self.requote_uri(torrent_files[0]['url'])
-			if file_url and not store_to_cloud and torrent_id:
-				try: self.delete_torrent(torrent_id)
-				except Exception: pass
-				try: self.clear_cache(clear_hashes=False)
-				except Exception: pass
-			return file_url
+			# Download URLs include this requestId — deleting here invalidates the link
+			# before Kodi opens it. Caller removes the request after playback when
+			# Store Resolved to Cloud is off (see Sources._cleanup_offcloud_resolved_url).
+			return self.requote_uri(torrent_files[0]['url'])
 		except Exception:
 			if torrent_id: self.delete_torrent(torrent_id)
 			return None
@@ -349,6 +346,30 @@ class OffcloudAPI:
 	def build_url(self, server, request_id, file_name):
 		return 'https://%s.offcloud.com/cloud/download/%s/%s' % (server, request_id, file_name)
 
+	@staticmethod
+	def request_id_from_download_url(url):
+		'''Extract cloud requestId from an Offcloud /cloud/download/{id}/... play URL.'''
+		if not url:
+			return None
+		try:
+			marker = '/cloud/download/'
+			text = str(url)
+			if marker not in text:
+				return None
+			request_id = text.split(marker, 1)[1].split('/', 1)[0].strip()
+			return request_id or None
+		except Exception:
+			return None
+
+	def cleanup_resolved_request(self, request_id):
+		'''Remove a temporary cloud request created for resolve (Store to Cloud = None).'''
+		if not request_id:
+			return
+		try: self.delete_torrent(request_id)
+		except Exception: pass
+		try: self.clear_cache(clear_hashes=False)
+		except Exception: pass
+
 	def _m2ts_check(self, folder_items):
 		for item in folder_items:
 			if item['filename'].endswith('.m2ts'): return True
@@ -357,6 +378,10 @@ class OffcloudAPI:
 	def clear_played_torrent(self, played_item):
 		played_url = played_item.get('url')
 		if not played_url: return
+		request_id = self.request_id_from_download_url(played_url)
+		if request_id:
+			self.cleanup_resolved_request(request_id)
+			return
 		user_cloud = self.user_cloud_check()
 		if not user_cloud: return
 		correct_torrent = next((i for i in user_cloud if i.get('originalLink') == played_url), None)

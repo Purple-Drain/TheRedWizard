@@ -4,12 +4,21 @@ from contextlib import nullcontext
 from caches.base_cache import open_db, get_timestamp
 # from modules.kodi_utils import logger
 
+def _normalize_meta(meta):
+	"""Legacy repr rows kept studio as a 1-tuple; InfoTagVideo.setStudios needs a list."""
+	if isinstance(meta, dict):
+		studio = meta.get('studio')
+		if isinstance(studio, tuple):
+			meta['studio'] = list(studio)
+	return meta
+
 def _loads_meta(raw):
 	"""Prefer JSON (current); fall back to legacy repr/eval rows."""
 	try:
-		return json.loads(raw)
+		meta = json.loads(raw)
 	except Exception:
-		return eval(raw)
+		meta = eval(raw)
+	return _normalize_meta(meta)
 
 class MetaCache:
 	def get(self, media_type, id_type, media_id, current_time=None, dbcon=None):

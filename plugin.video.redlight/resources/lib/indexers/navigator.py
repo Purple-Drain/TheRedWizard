@@ -287,7 +287,7 @@ class Navigator:
 		self.end_directory()
 
 	def mdblist_lists(self):
-		# Shared meta-list order: Watchlist → Library → Dropped → My Lists → Liked → Popular → Calendar.
+		# Shared meta-list order: Watchlist → Library → Dropped → My Lists → Liked → Popular → Next Up → Calendar.
 		self.category_name = 'MDBList Lists'
 		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'mdblist',
 					cm_items=self._sort_cm('mdblist.watchlist', 'movies', 'mdblist_watchlist'))
@@ -302,6 +302,7 @@ class Navigator:
 		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Movies Liked Lists', 'media_type': 'movie'}, 'Movies Liked Lists', 'mdblist')
 		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'TV Shows Liked Lists', 'media_type': 'tvshow'}, 'TV Shows Liked Lists', 'mdblist')
 		self._safe_add({'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Popular MDBLists'}, 'Popular MDBLists', 'mdblist')
+		self._safe_add({'mode': 'build_mdbl_next_up'}, 'Next Up', 'mdblist')
 		self._safe_add({'mode': 'build_mdbl_calendar'}, 'Calendar', 'mdblist')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()

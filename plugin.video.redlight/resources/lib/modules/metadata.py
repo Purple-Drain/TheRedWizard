@@ -68,13 +68,13 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 		try:
 			genres = data_get('genres')
 			genre = [i['name'] for i in genres]
-		except: genre == []
+		except: genre = []
 		rootname = '%s (%s)' % (title, year)
 		companies = data_get('production_companies')
 		if companies:
-			if len(companies) == 1: studio = ([i['name'] for i in companies][0],)
+			if len(companies) == 1: studio = [companies[0]['name']]
 			else:
-				try: studio = (next(i['name'] for i in companies if i['logo_path'] not in ('', 'None', None)) or next(i['name'] for i in companies),)
+				try: studio = [next(i['name'] for i in companies if i['logo_path'] not in ('', 'None', None)) or next(i['name'] for i in companies)]
 				except: pass
 		production_countries = data_get('production_countries', None)
 		if production_countries:
@@ -207,9 +207,9 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 		rootname = '%s (%s)' % (title, year)
 		networks = data_get('networks', None)
 		if networks:
-			if len(networks) == 1: studio = ([i['name'] for i in networks][0],)
+			if len(networks) == 1: studio = [networks[0]['name']]
 			else:
-				try: studio = (next(i['name'] for i in networks if i['logo_path'] not in ('', 'None', None)) or next(i['name'] for i in network),)
+				try: studio = [next(i['name'] for i in networks if i['logo_path'] not in ('', 'None', None)) or next(i['name'] for i in networks)]
 				except: pass
 		production_countries = data_get('production_countries', None)
 		if production_countries:

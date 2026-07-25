@@ -2023,6 +2023,32 @@ class Sources():
 		api = self.debrid_importer(debrid_provider)()
 		Thread(target=api.delete_torrent, args=(transfer_id,), daemon=True).start()
 
+	def _cleanup_offcloud_resolved_url(self, item, url):
+		'''After Offcloud magnet resolve: remove the request once playback is done/failed.
+
+		Must not run during resolve — Offcloud play URLs are request-scoped (#160).
+		'''
+		if not url or not item:
+			return
+		try:
+			raw = item.get('cache_provider') or item.get('debrid') or ''
+			provider = debrid.normalize_debrid_provider(raw)
+		except Exception:
+			provider = ''
+		if provider != 'Offcloud':
+			return
+		if settings.store_resolved_to_cloud('Offcloud', 'package' in item):
+			return
+		try:
+			from apis.offcloud_api import OffcloudAPI
+			request_id = OffcloudAPI.request_id_from_download_url(url)
+			if not request_id:
+				return
+			api = OffcloudAPI()
+			Thread(target=api.cleanup_resolved_request, args=(request_id,), daemon=True).start()
+		except Exception:
+			pass
+
 	def _resolve_browse_pick_link(self, debrid_info, debrid_provider, chosen_result):
 		file_link = (chosen_result.get('link') or '').strip()
 		if not file_link:
@@ -2260,6 +2286,9 @@ class Sources():
 							try: kodi_utils.close_dialog('okdialog')
 							except: pass
 					except: pass
+					finally:
+						# Offcloud: delete temp cloud request after play/fail (URL is request-scoped).
+						self._cleanup_offcloud_resolved_url(item, url)
 				except: pass
 		except:
 			self._kill_progress_dialog()

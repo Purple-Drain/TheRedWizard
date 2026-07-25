@@ -795,11 +795,19 @@ def mdblist_get_my_calendar(dummy=None):
 	def _process(_url):
 		result = call_mdblist(_url)
 		if not result: return []
-		events = result.get('events') if isinstance(result, dict) else result
+		# call_mdblist wraps bare JSON arrays as {'items': [...]}. Calendar may also
+		# return {'events': [...]} — accept either (MDBList has flipped shapes before).
+		if isinstance(result, dict):
+			events = result.get('events')
+			if not isinstance(events, list):
+				events = result.get('items')
+		else:
+			events = result
 		if not isinstance(events, list): return []
 		data = []
 		for item in events:
 			try:
+				if not isinstance(item, dict): continue
 				# Episodes only — skip movie premieres. Do not filter release_type=watched:
 				# MDBList tags upcoming airings of in-progress shows that way too.
 				item_type = item.get('type')
@@ -823,16 +831,33 @@ def mdblist_get_my_calendar(dummy=None):
 		data = [i for n, i in enumerate(data) if i not in data[n + 1:]]
 		return data
 	# v3: keep release_type=watched episode airings (see _process).
-	data = mdblist_cache.cache_mdblist_object(_process, 'mdblist_calendar_airings_v3', 'calendar/events') or []
-	return _filter_mdblist_calendar_day_window(data)
+	# Empty list is not a valid cache hit — refetch (failed API used to poison the cache).
+	cached = mdblist_cache.mdblist_cache.get('mdblist_calendar_airings_v3')
+	if cached:
+		data = cached
+	else:
+		data = _process('calendar/events') or []
+		if data: mdblist_cache.mdblist_cache.set('mdblist_calendar_airings_v3', data)
+		elif cached is not None:
+			mdblist_cache.mdblist_cache.delete('mdblist_calendar_airings_v3')
+	filtered = _filter_mdblist_calendar_day_window(data)
+	try:
+		start_date, end_date = settings.calendar_day_window()
+		kodi_utils.logger('Red Light', 'MDBList calendar: %s cached/fetched, %s in day window (%s → %s)' % (
+			len(data), len(filtered), start_date, end_date))
+	except Exception:
+		pass
+	return filtered
 
 def _filter_mdblist_calendar_day_window(data):
-	from datetime import datetime
+	# Prefer fromisoformat — datetime.strptime is unsafe in Kodi script threads
+	# unless _strptime was imported first (silent parse failures → empty calendar).
+	from datetime import date
 	start_date, end_date = settings.calendar_day_window()
 	filtered = []
 	for item in data:
 		try:
-			aired = datetime.strptime(str(item.get('first_aired', ''))[:10], '%Y-%m-%d').date()
+			aired = date.fromisoformat(str(item.get('first_aired', ''))[:10])
 		except Exception:
 			continue
 		if start_date <= aired <= end_date:

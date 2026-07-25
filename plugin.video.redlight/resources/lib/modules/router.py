@@ -107,6 +107,9 @@ def routing(sys):
 		elif mode == 'build_mdbl_calendar':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist', params)
+		elif mode == 'build_mdbl_next_up':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.mdblist_next', params)
 		elif mode == 'build_next_episode_manager':
 			from modules.episode_tools import build_next_episode_manager
 			return build_next_episode_manager()
