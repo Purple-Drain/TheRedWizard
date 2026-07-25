@@ -921,8 +921,8 @@ def default_all_episodes():
 	return int(get_setting('redlight.default_all_episodes', '0'))
 
 def max_threads():
-	if not get_setting('redlight.limit_concurrent_threads', 'false') == 'true': return 60
-	return int(get_setting('redlight.max_threads', '60'))
+	if not get_setting('redlight.limit_concurrent_threads', 'false') == 'true': return 20
+	return int(get_setting('redlight.max_threads', '20'))
 
 def get_meta_filter():
 	return get_setting('redlight.meta_filter', 'true')
@@ -938,6 +938,19 @@ def widget_hide_watched():
 
 def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
+
+def calendar_day_window():
+	'''Inclusive start/end dates for Trakt and MDBList calendars (Show Previous/Future Days).'''
+	from datetime import timedelta
+	from modules.utils import get_datetime
+	try: previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '7'))
+	except (TypeError, ValueError): previous_days = 7
+	try: future_days = int(get_setting('redlight.trakt.calendar_future_days', '7'))
+	except (TypeError, ValueError): future_days = 7
+	previous_days = max(0, min(14, previous_days))
+	future_days = max(0, min(14, future_days))
+	current = get_datetime()
+	return current - timedelta(days=previous_days), current + timedelta(days=future_days)
 
 def calendar_date_label_options():
 	# (strftime format, use_words, include_date). Hyphen formats match picker labels.
@@ -964,8 +977,14 @@ def ignore_articles():
 def jump_to_enabled():
 	return get_setting('redlight.paginate.jump_to', 'true') == 'true'
 
+def datetime_utc_offset():
+	'''User UTC (+/-) setting only — no TMDb air-date fudge.'''
+	try: return int(get_setting('redlight.datetime.offset', '0'))
+	except (TypeError, ValueError): return 0
+
 def date_offset():
-	return int(get_setting('redlight.datetime.offset', '0')) + 5
+	# +5 matches Fen-style TMDb premiered handling (assume ~20:00 air + region fudge).
+	return datetime_utc_offset() + 5
 
 def media_open_action(media_type):
 	return int(get_setting('redlight.media_open_action_%s' % media_type, '0'))

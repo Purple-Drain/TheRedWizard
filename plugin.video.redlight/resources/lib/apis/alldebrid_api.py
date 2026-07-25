@@ -236,10 +236,16 @@ class AllDebridAPI:
 											for x in _extras)][0]
 						except: media_id = None
 				else: media_id = max(valid_results, key=lambda x: x.get('s')).get('l', None)
-			if not store_to_cloud: Thread(target=self.delete_transfer, args=(transfer_id,)).start()
 			if media_id:
 				file_url = self.unrestrict_link(media_id)
-				if not any(file_url.lower().endswith(x) for x in extensions): file_url = None
+				if file_url and not any(file_url.lower().endswith(x) for x in extensions): file_url = None
+			# Delete after unlock so the magnet link is still valid for unrestrict.
+			# Recent unlock history has no per-item delete API (only full purge) — magnet cloud is cleared here.
+			if not store_to_cloud and transfer_id:
+				try: self.delete_transfer(transfer_id)
+				except: pass
+				try: self.clear_cache(clear_hashes=False)
+				except: pass
 			return file_url
 		except:
 			if transfer_id:

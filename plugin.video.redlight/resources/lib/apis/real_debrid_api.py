@@ -2,7 +2,7 @@
 import re
 import time
 import requests
-from threading import Thread, Semaphore
+from threading import Semaphore
 from caches.main_cache import cache_object
 from caches.settings_cache import get_setting, set_setting
 from modules.utils import copy2clip, make_tinyurl, make_qrcode
@@ -165,11 +165,30 @@ class RealDebridAPI:
 		return self._get(url)
 
 	def unrestrict_link(self, link):
-		url = 'unrestrict/link'
-		post_data = {'link': link}
-		response = self._post(url, post_data)
-		try: return response['download']
-		except: return None
+		download_url, _download_id = self._unrestrict_link_details(link)
+		return download_url
+
+	def _unrestrict_link_details(self, link):
+		response = self._post('unrestrict/link', {'link': link})
+		if not isinstance(response, dict): return None, None
+		return response.get('download'), response.get('id')
+
+	def _cleanup_resolved_transfer(self, torrent_id, download_id=None, file_url=None):
+		'''Remove temporary torrent + Downloads history when Store Resolved to Cloud is off.'''
+		try:
+			if torrent_id: self.delete_torrent(torrent_id)
+		except: pass
+		try:
+			if download_id:
+				self.delete_download(download_id)
+			elif file_url:
+				for item in self.downloads(fresh=True) or []:
+					if item.get('download') == file_url and item.get('id'):
+						self.delete_download(item['id'])
+						break
+		except: pass
+		try: self.clear_cache(clear_hashes=False)
+		except: pass
 
 	def rd_free_active_slot(self):
 		if get_setting('redlight.rd.free_active_slot', 'false') != 'true':
@@ -294,10 +313,11 @@ class RealDebridAPI:
 					match, index = True, value[0]; break
 			if match:
 				rd_link = torrent_info['links'][index]
-				file_url = self.unrestrict_link(rd_link)
-				if file_url.endswith('rar'): file_url = None
-				if not any(file_url.lower().endswith(x) for x in extensions): file_url = None
-				if not store_to_cloud: Thread(target=self.delete_torrent, args=(torrent_id,)).start()
+				file_url, download_id = self._unrestrict_link_details(rd_link)
+				if file_url and file_url.endswith('rar'): file_url = None
+				if file_url and not any(file_url.lower().endswith(x) for x in extensions): file_url = None
+				if not store_to_cloud:
+					self._cleanup_resolved_transfer(torrent_id, download_id, file_url)
 				return file_url
 			else: self.delete_torrent(torrent_id)
 		except:

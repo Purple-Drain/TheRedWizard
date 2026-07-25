@@ -754,7 +754,10 @@ class TorBoxAPI:
 			return None
 		finally:
 			if cleanup_usenet and usenet_id:
-				Thread(target=self.delete_usenet, args=(usenet_id,), daemon=True).start()
+				try: self.delete_usenet(usenet_id)
+				except Exception: pass
+				try: self.clear_cache(clear_hashes=False)
+				except Exception: pass
 
 	# ----------- CACHED CHECK -----------
 	def check_cache_single(self, _hash):
@@ -831,7 +834,11 @@ class TorBoxAPI:
 			return None
 		finally:
 			if cleanup_torrent and torrent_id:
-				Thread(target=self.delete_torrent, args=(torrent_id,), daemon=True).start()
+				# Sync delete so Android/Python invoker exit cannot drop the cleanup thread.
+				try: self.delete_torrent(torrent_id)
+				except Exception: pass
+				try: self.clear_cache(clear_hashes=False)
+				except Exception: pass
 
 	def _wait_for_torrent_files(self, torrent_id, max_attempts=45):
 		for attempt in range(max_attempts):

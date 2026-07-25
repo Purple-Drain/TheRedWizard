@@ -281,11 +281,11 @@ class OffcloudAPI:
 			if self._hash_is_cached(info_hash):
 				url = self._resolve_cached_download(magnet_url, season, episode)
 				if url: return url
-			return self._resolve_via_cloud(magnet_url, season, episode)
+			return self._resolve_via_cloud(magnet_url, season, episode, store_to_cloud)
 		except Exception:
 			return None
 
-	def _resolve_via_cloud(self, magnet_url, season, episode):
+	def _resolve_via_cloud(self, magnet_url, season, episode, store_to_cloud=True):
 		torrent_id = None
 		try:
 			extensions = supported_video_extensions()
@@ -306,7 +306,13 @@ class OffcloudAPI:
 					return None
 				extras_filter = extras()
 				torrent_files = [i for i in torrent_files if not any(x in i['filename'] for x in extras_filter)]
-			return self.requote_uri(torrent_files[0]['url'])
+			file_url = self.requote_uri(torrent_files[0]['url'])
+			if file_url and not store_to_cloud and torrent_id:
+				try: self.delete_torrent(torrent_id)
+				except Exception: pass
+				try: self.clear_cache(clear_hashes=False)
+				except Exception: pass
+			return file_url
 		except Exception:
 			if torrent_id: self.delete_torrent(torrent_id)
 			return None

@@ -98,8 +98,8 @@ def make_databases():
 
 def connect_database(database_name):
 	dbcon = database.connect(database_locations(database_name), timeout=20, isolation_level=None, check_same_thread=False)
-	dbcon.execute('PRAGMA synchronous = OFF')
-	dbcon.execute('PRAGMA journal_mode = OFF')
+	dbcon.execute('PRAGMA synchronous = NORMAL')
+	dbcon.execute('PRAGMA journal_mode = WAL')
 	return dbcon
 
 @contextmanager

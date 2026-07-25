@@ -141,13 +141,14 @@ class Navigator:
 		return self.my_lists()
 
 	def my_lists(self):
+		# Authorised services A–Z, then public/local discovery.
 		if s.mdblist_user_active():
 			self._safe_add({'mode': 'navigator.mdblist_lists'}, 'MDBList Lists', 'mdblist')
 		if s.simkl_user_active():
 			self._safe_add(self._simkl_lists_menu(), 'Simkl Lists', 'simkl')
+		if s.tmdblist_user_active(): self._safe_add({'mode': 'navigator.tmdb_lists_personal'}, 'TMDb Lists', 'tmdb')
 		if s.trakt_user_active(): self._safe_add({'mode': 'navigator.trakt_lists_personal'}, 'Trakt Lists', 'trakt')
 		self._safe_add({'mode': 'navigator.trakt_lists_public'}, 'Trakt Public Lists', 'trakt')
-		if s.tmdblist_user_active(): self._safe_add({'mode': 'navigator.tmdb_lists_personal'}, 'TMDb Lists', 'tmdb')
 		self._safe_add({'mode': 'personal_lists.get_personal_lists'}, 'Personal Lists', 'lists')
 		self._safe_add({'mode': 'navigator.discover_contents', 'media_type': 'movie', 'show_new': 'false'}, 'Discover Lists (Movies)', 'movies')
 		self._safe_add({'mode': 'navigator.discover_contents', 'media_type': 'tvshow', 'show_new': 'false'}, 'Discover Lists (TV Shows)', 'tv')
@@ -155,10 +156,11 @@ class Navigator:
 		self.end_directory()
 
 	def tmdb_lists_personal(self):
+		# Shared meta-list order: Watchlist → Favorites → My Lists → Recommended.
 		self.add({'mode': 'navigator.tmdb_watchlists'}, 'Watchlist', 'tmdb')
 		self.add({'mode': 'navigator.tmdb_favorites'}, 'Favorites', 'tmdb')
-		self.add({'mode': 'navigator.tmdb_recommendations'}, 'Recommendations', 'tmdb')
 		self.add({'mode': 'tmdblist.get_tmdb_lists'}, 'My Lists', 'tmdb')
+		self.add({'mode': 'navigator.tmdb_recommendations'}, 'Recommended', 'tmdb')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
 
@@ -190,11 +192,12 @@ class Navigator:
 		self.end_directory()
 
 	def trakt_lists_personal(self):
-		self.add({'mode': 'navigator.trakt_collections'}, 'Library', 'trakt')
+		# Shared meta-list order: Watchlist → Library → Favorites → My Lists → Liked → Recommended → Calendar → Search.
 		self.add({'mode': 'navigator.trakt_watchlists'}, 'Watchlist', 'trakt')
+		self.add({'mode': 'navigator.trakt_collections'}, 'Library', 'trakt')
+		self.add({'mode': 'navigator.trakt_favorites', 'category_name': 'Favorites'}, 'Favorites', 'trakt')
 		self.add({'mode': 'trakt.list.get_trakt_lists', 'list_type': 'my_lists', 'category_name': 'My Lists'}, 'My Lists', 'trakt')
 		self.add({'mode': 'trakt.list.get_trakt_lists', 'list_type': 'liked_lists', 'category_name': 'Liked Lists'}, 'Liked Lists', 'trakt')
-		self.add({'mode': 'navigator.trakt_favorites', 'category_name': 'Favorites'}, 'Favorites', 'trakt')
 		self.add({'mode': 'navigator.trakt_recommendations', 'category_name': 'Recommended'}, 'Recommended', 'trakt')
 		self.add({'mode': 'build_my_calendar'}, 'Calendar', 'trakt')
 		if s.trakt_user_active(): self.add({'mode': 'navigator.search_history', 'action': 'trakt_my_lists'}, 'Search My Trakt Lists', 'search')
@@ -233,17 +236,17 @@ class Navigator:
 		return self._sort_cm('simkl.%s' % status, media_type, 'simkl')
 
 	def simkl_lists(self):
-		"""Flat status lists (v1.3.4 layout) — direct links to each Movies/TV list."""
+		"""Flat status lists — Plan to Watch (≈ Watchlist), then active → paused → finished → dropped."""
 		self.category_name = 'Simkl Lists'
 		for url_params, label in (
 			(self._simkl_list_link('build_movie_list', 'simkl_plantowatch', 'Movies Plan to Watch'), 'Movies Plan to Watch'),
 			(self._simkl_list_link('build_tvshow_list', 'simkl_plantowatch', 'TV Shows Plan to Watch'), 'TV Shows Plan to Watch'),
 			(self._simkl_list_link('build_movie_list', 'simkl_watching', 'Movies Watching'), 'Movies Watching'),
 			(self._simkl_list_link('build_tvshow_list', 'simkl_watching', 'TV Shows Watching'), 'TV Shows Watching'),
-			(self._simkl_list_link('build_movie_list', 'simkl_completed', 'Movies Completed'), 'Movies Completed'),
-			(self._simkl_list_link('build_tvshow_list', 'simkl_completed', 'TV Shows Completed'), 'TV Shows Completed'),
 			(self._simkl_list_link('build_movie_list', 'simkl_hold', 'Movies On Hold'), 'Movies On Hold'),
 			(self._simkl_list_link('build_tvshow_list', 'simkl_hold', 'TV Shows On Hold'), 'TV Shows On Hold'),
+			(self._simkl_list_link('build_movie_list', 'simkl_completed', 'Movies Completed'), 'Movies Completed'),
+			(self._simkl_list_link('build_tvshow_list', 'simkl_completed', 'TV Shows Completed'), 'TV Shows Completed'),
 			(self._simkl_list_link('build_movie_list', 'simkl_dropped', 'Movies Dropped'), 'Movies Dropped'),
 			(self._simkl_list_link('build_tvshow_list', 'simkl_dropped', 'TV Shows Dropped'), 'TV Shows Dropped'),
 		):
@@ -284,6 +287,7 @@ class Navigator:
 		self.end_directory()
 
 	def mdblist_lists(self):
+		# Shared meta-list order: Watchlist → Library → Dropped → My Lists → Liked → Popular → Calendar.
 		self.category_name = 'MDBList Lists'
 		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'mdblist',
 					cm_items=self._sort_cm('mdblist.watchlist', 'movies', 'mdblist_watchlist'))
@@ -298,6 +302,7 @@ class Navigator:
 		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Movies Liked Lists', 'media_type': 'movie'}, 'Movies Liked Lists', 'mdblist')
 		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'TV Shows Liked Lists', 'media_type': 'tvshow'}, 'TV Shows Liked Lists', 'mdblist')
 		self._safe_add({'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Popular MDBLists'}, 'Popular MDBLists', 'mdblist')
+		self._safe_add({'mode': 'build_mdbl_calendar'}, 'Calendar', 'mdblist')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
 

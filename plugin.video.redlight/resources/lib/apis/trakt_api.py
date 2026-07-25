@@ -1016,7 +1016,7 @@ def trakt_get_my_calendar(recently_aired, current_date):
 def trakt_calendar_days(recently_aired, current_date):
 	if recently_aired: start, finish = (current_date - timedelta(days=14)).strftime('%Y-%m-%d'), '14'
 	else:
-		previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '0'))
+		previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '7'))
 		future_days = int(get_setting('redlight.trakt.calendar_future_days', '7'))
 		start = (current_date - timedelta(days=previous_days)).strftime('%Y-%m-%d')
 		finish = str(previous_days + future_days)
