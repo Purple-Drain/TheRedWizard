@@ -20,6 +20,10 @@ PROP_SOURCES_BUSY_AT = 'redlight.sources_busy_at'
 # Live scrapes refresh the heartbeat every loop pass; anything older than this with no
 # playback means the owning scrape died (e.g. Browse flow killed mid-wait) — clear it.
 SOURCES_BUSY_STALE_SECONDS = 120
+# How long the scraper progress dialog keeps waiting on live threads before it gives up. In
+# waterfall (sequential) prescrape this is the budget for the whole run, shared across every
+# priority tier — not a fresh allowance each tier.
+SCRAPER_DIALOG_BUDGET_SECONDS = 25
 PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
 PROP_RESOLVE_OWNER = 'redlight.resolve_busy_owner'
 PROP_RESOLVE_CANCEL = 'redlight.resolve_cancelled'
@@ -588,7 +592,7 @@ class Sources():
 	def _prescrape_priority_key(self, scraper_tuple):
 		module_type, scraper_name = scraper_tuple[0], scraper_tuple[2]
 		provider_key = 'folders' if module_type == 'folders' else scraper_name
-		return settings.provider_sort_ranks().get(provider_key, 99)
+		return self.provider_sort_ranks.get(provider_key, 99)
 
 	def _collect_prescrape_results_sequential(self, folder_prescrape):
 		"""Waterfall prescrape: run providers in priority tiers (lowest number first, per
@@ -597,7 +601,15 @@ class Sources():
 		for i in self.prescrape_scrapers:
 			tiers.setdefault(self._prescrape_priority_key(i), []).append(i)
 		ran_scrapers = []
+		waterfall_start = time.time()
 		for priority in sorted(tiers):
+			# One budget for the whole waterfall, shared by every tier. scrapers_dialog() used to
+			# re-arm a fresh SCRAPER_DIALOG_BUDGET_SECONDS on each call, so a hung provider cost
+			# that much again per tier. Never START a tier the budget can no longer cover: an
+			# unstarted scraper stays out of remove_scrapers and so still runs in the full scrape,
+			# whereas starting it and timing out burns the grace period and then drops it silently.
+			if ran_scrapers and (time.time() - waterfall_start) >= SCRAPER_DIALOG_BUDGET_SECONDS:
+				break
 			tier = tiers[priority]
 			tier_threads = [Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]) for i in tier]
 			[t.start() for t in tier_threads]
@@ -605,7 +617,7 @@ class Sources():
 				[t.join() for t in tier_threads]
 			else:
 				self.prescrape_threads = tier_threads
-				self.scrapers_dialog()
+				self.scrapers_dialog(shared_start=waterfall_start)
 			ran_scrapers.extend(tier)
 			if self._user_cancelled_scrape() or self.prescrape_sources:
 				break
@@ -1117,10 +1129,10 @@ class Sources():
 	def _get_active_scraper_names(self, scraper_list):
 		return [i[2] for i in scraper_list]
 
-	def scrapers_dialog(self):
+	def scrapers_dialog(self, shared_start=None):
 		def _scraperDialog():
 			monitor = kodi_utils.kodi_monitor()
-			start_time = time.time()
+			start_time = time.time() if shared_start is None else shared_start
 			while not self.progress_dialog.iscanceled() and not monitor.abortRequested():
 				try:
 					self._touch_sources_busy()
@@ -1128,7 +1140,7 @@ class Sources():
 					self._process_internal_results()
 					current_progress = max((time.time() - start_time), 0)
 					line1 = ', '.join(remaining_providers).upper()
-					percent = int((current_progress/float(25))*100)
+					percent = int((current_progress/float(SCRAPER_DIALOG_BUDGET_SECONDS))*100)
 					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
 					kodi_utils.sleep(self.sleep_time)
 					if len(remaining_providers) == 0: break
