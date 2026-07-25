@@ -1,4 +1,8 @@
 
+[B]- 1.1.7 (2026-07-25)[/B] Trakt watched checkmarks (#157):
+ * [B]Trakt[/B]: watched TV sync uses [I]/sync/watched/shows?extended=progress[/I] (paginated) so show/season/episode overlays get the season–episode breakdown again after Trakt's API change; local cache key bumped so the old [I]extended=full[/I] payload is not reused.
+ * [B]Trakt[/B]: mark watched / unwatched for movies, shows, and episodes prefers TMDb, then TVDb, then IMDb (same idea as Red Light); movie Mark Watched context menu now passes TMDb when available.
+
 [B]- 1.1.6 (2026-07-24)[/B] TV Explore menu order + menu view flash:
  * [B]TV Shows[/B]: Explore menus ordered Simkl > Trakt > TMDb (then TVmaze), matching Movies Explore / My Stuff.
  * [B]Menus[/B]: no longer force Estuary WideList/Poster after every folder open (that caused a brief jump through another view); views apply only if saved under Tools > Setup ViewTypes.

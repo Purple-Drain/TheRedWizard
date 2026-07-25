@@ -1357,10 +1357,10 @@ class movies:
                 try:
                     overlay = int(playcount.getMovieOverlay(indicators, imdb))
                     if overlay == 7:
-                        cm.append((unwatchedMenu, 'RunPlugin(%s?action=movies_playcount&imdb=%s&query=6)' % (sysaddon, imdb)))
+                        cm.append((unwatchedMenu, 'RunPlugin(%s?action=movies_playcount&imdb=%s&tmdb=%s&query=6)' % (sysaddon, imdb, tmdb)))
                         meta.update({'playcount': 1, 'overlay': 7})
                     else:
-                        cm.append((watchedMenu, 'RunPlugin(%s?action=movies_playcount&imdb=%s&query=7)' % (sysaddon, imdb)))
+                        cm.append((watchedMenu, 'RunPlugin(%s?action=movies_playcount&imdb=%s&tmdb=%s&query=7)' % (sysaddon, imdb, tmdb)))
                         meta.update({'playcount': 0, 'overlay': 6})
                 except:
                     pass

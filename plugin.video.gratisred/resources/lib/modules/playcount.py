@@ -134,12 +134,12 @@ def markMovieDuringPlayback(imdb, watched, tmdb=None):
     try:
         if provider == 'trakt':
             if int(watched) == 7:
-                trakt.markMovieAsWatched(imdb)
+                trakt.markMovieAsWatched(imdb, tmdb=tmdb)
             else:
-                trakt.markMovieAsNotWatched(imdb)
+                trakt.markMovieAsNotWatched(imdb, tmdb=tmdb)
             trakt.cachesyncMovies()
             if trakt.getTraktAddonMovieInfo() == True:
-                trakt.markMovieAsNotWatched(imdb)
+                trakt.markMovieAsNotWatched(imdb, tmdb=tmdb)
         elif provider == 'simkl':
             if int(watched) == 7:
                 simkl.markMovieAsWatched(imdb, tmdb=tmdb)
@@ -162,12 +162,12 @@ def markEpisodeDuringPlayback(imdb, tmdb, season, episode, watched):
     try:
         if provider == 'trakt':
             if int(watched) == 7:
-                trakt.markEpisodeAsWatched(imdb, season, episode)
+                trakt.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb)
             else:
-                trakt.markEpisodeAsNotWatched(imdb, season, episode)
+                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
             trakt.cachesyncTVShows()
             if trakt.getTraktAddonEpisodeInfo() == True:
-                trakt.markEpisodeAsNotWatched(imdb, season, episode)
+                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
         elif provider == 'simkl':
             if int(watched) == 7:
                 simkl.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb)
@@ -191,9 +191,9 @@ def movies(imdb, watched, tmdb=None):
     try:
         if provider == 'trakt':
             if int(watched) == 7:
-                trakt.markMovieAsWatched(imdb)
+                trakt.markMovieAsWatched(imdb, tmdb=tmdb)
             else:
-                trakt.markMovieAsNotWatched(imdb)
+                trakt.markMovieAsNotWatched(imdb, tmdb=tmdb)
             trakt.cachesyncMovies()
             control.refresh()
             control.idle()
@@ -227,9 +227,9 @@ def episodes(imdb, tmdb, season, episode, watched):
     try:
         if provider == 'trakt':
             if int(watched) == 7:
-                trakt.markEpisodeAsWatched(imdb, season, episode)
+                trakt.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb)
             else:
-                trakt.markEpisodeAsNotWatched(imdb, season, episode)
+                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
             trakt.cachesyncTVShows()
             control.refresh()
             control.idle()
@@ -317,14 +317,14 @@ def tvshows(tvshowtitle, imdb, tmdb, season, watched):
                 items = [i[1] for i in items if int('%01d' % int(season)) == int('%01d' % i[0])]
                 for i in items:
                     if int(watched) == 7:
-                        trakt.markEpisodeAsWatched(imdb, season, i)
+                        trakt.markEpisodeAsWatched(imdb, season, i, tmdb=tmdb)
                     else:
-                        trakt.markEpisodeAsNotWatched(imdb, season, i)
+                        trakt.markEpisodeAsNotWatched(imdb, season, i, tmdb=tmdb)
             else:
                 if int(watched) == 7:
-                    trakt.markTVShowAsWatched(imdb)
+                    trakt.markTVShowAsWatched(imdb, tmdb=tmdb)
                 else:
-                    trakt.markTVShowAsNotWatched(imdb)
+                    trakt.markTVShowAsNotWatched(imdb, tmdb=tmdb)
             trakt.cachesyncTVShows()
         elif provider == 'simkl':
             if season:

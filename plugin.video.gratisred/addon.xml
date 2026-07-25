@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<addon id="plugin.video.gratisred" version="1.1.6" name="[COLOR red]Gratis Red[/COLOR]" provider-name="[COLOR red]The Red Wizard[/COLOR]">
+<addon id="plugin.video.gratisred" version="1.1.7" name="[COLOR red]Gratis Red[/COLOR]" provider-name="[COLOR red]The Red Wizard[/COLOR]">
     <requires>
-        <import addon="script.gratisred.artwork" version="1.0.3"/>
+        <import addon="script.gratisred.artwork" version="1.0.4"/>
         <import addon="script.module.kodi-six"/>
         <import addon="script.module.requests"/>
         <import addon="script.module.resolveurl"/>
@@ -26,10 +26,10 @@
 		<website>https://redwizard.xyz/</website> 
 		<email>info@redwizard.xyz</email>
 		<source>https://github.com/The-Red-Wizard</source>
-        <news>[COLOR red]2026-07-24
-- Summary of v1.1.6 (see Tools > Changelog for the detail):
- * TV Shows Explore ordered Simkl → Trakt → TMDb
- * Stop forced view-mode jump when browsing menus[/COLOR]</news>
+        <news>[COLOR red]2026-07-25
+- Summary of v1.1.7 (see Tools > Changelog for the detail):
+ * Trakt watched sync uses extended=progress (show/episode checkmarks)
+ * Mark watched prefers TMDb IDs with TVDb/IMDb fallback[/COLOR]</news>
         <assets>
             <icon>resources/images/icon.png</icon>
             <fanart>resources/images/fanart.jpg</fanart>
