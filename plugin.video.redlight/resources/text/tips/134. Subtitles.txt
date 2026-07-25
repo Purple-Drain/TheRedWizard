@@ -1,7 +1,7 @@
 
 Red Light can turn subtitles on for you during playback, and can also use subtitle timing to decide when to show Next Episode and Credit Stinger alerts. These are two separate jobs that share the same settings.
 
-All subtitle settings are found in Playback->Subtitles.
+All subtitle settings are found in Playback > Subtitles.
 
 The master switch is "Auto Enable Subtitles". When this is off, Red Light does not fetch or enable subtitles for you, but Kodi's own subtitle controls still work as normal.
 
@@ -29,4 +29,4 @@ Red Light has no in-addon subtitle browser. For manual choice, use Kodi's own pl
 
 MAINTENANCE
 
-Tools->Clear Subtitles Cache removes Red Light's temporary downloaded subtitle files. This also runs as part of a broader cache clear.
+Tools > Clear Subtitles Cache removes Red Light's temporary downloaded subtitle files. This also runs as part of a broader cache clear.

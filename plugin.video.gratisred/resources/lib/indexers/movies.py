@@ -553,15 +553,22 @@ class movies:
             q.update({'extended': 'full'})
             q = (urllib_parse.urlencode(q)).replace('%2C', ',')
             u = url.replace('?' + urllib_parse.urlparse(url).query, '') + '?' + q
-            result = trakt.getTraktAsJson(u)
+            result = trakt.getTraktAsJson(u) or []
             items = []
             for i in result:
                 try:
-                    items.append(i['movie'])
+                    if not isinstance(i, dict):
+                        continue
+                    if 'movie' in i and isinstance(i.get('movie'), dict):
+                        row = dict(i['movie'])
+                        row['collected_at'] = i.get('listed_at') or i.get('collected_at') or i.get('last_collected_at') or ''
+                        if i.get('paused_at'):
+                            row['paused_at'] = i.get('paused_at')
+                        items.append(row)
+                    else:
+                        items.append(i)
                 except:
                     pass
-            if len(items) == 0:
-                items = result
             # FIX (Trakt history only shows old stuff):
             # Trakt's ``/users/me/history/movies`` returns every single
             # watch as its own row - so a user who rewatched an old
@@ -621,7 +628,8 @@ class movies:
                         paused_at = '0'
                     else:
                         paused_at = re.sub(r'[^0-9]+', '', str(paused_at))
-                    self.list.append({'title': title, 'originaltitle': title, 'year': year, 'imdb': imdb, 'tmdb': tmdb, 'tvdb': '0', 'next': next, 'paused_at': paused_at})
+                    collected_at = item.get('collected_at') or ''
+                    self.list.append({'title': title, 'originaltitle': title, 'year': year, 'imdb': imdb, 'tmdb': tmdb, 'tvdb': '0', 'next': next, 'paused_at': paused_at, 'collected_at': collected_at})
                 except:
                     #log_utils.log('trakt_list', 1)
                     pass
@@ -1196,7 +1204,10 @@ class movies:
                     self.list = cache.get(self.tmdb_list, self.addon_caching_timeout, url)
                 else:
                     self.list = self.tmdb_list(url)
-                self.list = sorted(self.list, key=lambda k: k['year'])
+                if '/list/' in url:
+                    self.list = tmdb_utils.apply_my_shelf_sort(self.list, url, 'movies')
+                else:
+                    self.list = sorted(self.list, key=lambda k: k['year'])
                 if idx == True:
                     self.worker()
             elif u in self.tmdb_link and self.tmdb_search_link in url:
@@ -1211,6 +1222,7 @@ class movies:
                     self.list = cache.get(self.tmdb_list, self.addon_caching_timeout, url)
                 else:
                     self.list = self.tmdb_list(url)
+                self.list = tmdb_utils.apply_my_shelf_sort(self.list, url, 'movies')
                 if idx == True:
                     self.worker()
             elif u in self.trakt_link and '/users/' in url:
@@ -1224,8 +1236,7 @@ class movies:
                     self.list = cache.get(self.trakt_list, self.addon_caching_timeout, url, self.trakt_user)
                 except:
                     self.list = self.trakt_list(url, self.trakt_user)
-                if '/users/me/' in url and '/collection/' in url:
-                    self.list = sorted(self.list, key=lambda k: k['title'])
+                self.list = trakt.apply_my_shelf_sort(self.list, url, 'movies')
                 if idx == True:
                     self.worker()
             elif u in self.trakt_link and '/sync/playback/' in url:
@@ -1328,7 +1339,7 @@ class movies:
                 cm.append(('Find Similar', 'Container.Update(%s?action=movies&url=%s)' % (sysaddon, self.trakt_related_link % imdb)))
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
                 if traktCredentials == True:
-                    cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&content=movie)' % (sysaddon, sysname, imdb)))
+                    cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
                 if simklCredentials == True:
                     cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
@@ -1453,6 +1464,16 @@ class movies:
                 cm.append(('Clean Tools Widget', 'RunPlugin(%s?action=cleantools_widget)' % sysaddon))
                 if queue == True:
                     cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
+                try:
+                    sort_provider = i.get('sort_provider')
+                    sort_key = i.get('sort_key')
+                    if sort_provider and sort_key:
+                        media = 'movies' if i.get('action') == 'movies' else 'tvshows'
+                        action = '%s_list_sort&media=%s&status=%s&label=%s' % (
+                            sort_provider, media, sort_key, urllib_parse.quote_plus(name))
+                        cm.append(('Set Sort Order', 'RunPlugin(%s?action=%s)' % (sysaddon, action)))
+                except Exception:
+                    pass
                 try:
                     cm.append(('Add to Library', 'RunPlugin(%s?action=movies_to_library&url=%s)' % (sysaddon, urllib_parse.quote_plus(i['context']))))
                 except:
