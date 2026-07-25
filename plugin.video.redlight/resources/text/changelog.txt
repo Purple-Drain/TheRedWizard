@@ -1,3 +1,6 @@
+[COLOR red][B]Version 2.0.7[/B][/COLOR]
+- [B]Real-Debrid[/B]: with [B]Add Resolved Debrid Cache to Cloud = None[/B], do not delete Downloads history before Kodi opens the play URL (that could invalidate the unrestricted CDN link — same class of failure as Offcloud #160). Temp torrent is still removed at resolve; Downloads history is cleared after playback finishes or fails so Check Before Full Search leftovers stay fixed.
+
 [COLOR red][B]Version 2.0.6[/B][/COLOR]
 - [B]Because You Watched (AI)[/B]: stop retrying the same Gemini/Groq model forever after a failed response (soft-fail rows were cleared immediately because [B]timeout_ends=0[/B] counted as expired). Do not cache failed/empty AI results as a blank list. Update default Google models to current IDs ([B]gemini-3.1-flash-lite[/B], [B]gemma-4-31b-it[/B]) — retired [B]gemini-2.5-flash-lite[/B] / [B]gemma-3[/B] IDs were returning HTTP 404.
 - [B]Settings[/B]: Calendars > Show Previous Days info notes that the MDBList Calendar API does not expose past airings. AI Similar info text lists Extras > Similar, Browse Similar, and Because You Watched (Content > General > Service used for Because You Watched). That Because You Watched service picker only lists Similar (AI) / Related (Trakt) when those services are authorised.
