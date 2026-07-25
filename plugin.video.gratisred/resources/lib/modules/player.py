@@ -213,14 +213,24 @@ class player(xbmc.Player):
                     property = control.window.getProperty(pname)
                     if watcher == True and not property == '7':
                         control.window.setProperty(pname, '7')
-                        playcount.markEpisodeDuringPlayback(self.imdb, self.tmdb, self.season, self.episode, '7')
+                        playcount.markEpisodeDuringPlayback(self.imdb, self.tmdb, self.season, self.episode, '7', self.tvdb)
                     elif watcher == False and not property == '6':
                         control.window.setProperty(pname, '6')
-                        playcount.markEpisodeDuringPlayback(self.imdb, self.tmdb, self.season, self.episode, '6')
+                        playcount.markEpisodeDuringPlayback(self.imdb, self.tmdb, self.season, self.episode, '6', self.tvdb)
                 except:
                     pass
                 xbmc.sleep(2000)
         control.window.clearProperty(pname)
+
+    def _refresh_after_playback_mark(self):
+        """Refresh the underlying list after auto-mark (same as manual Watched). All platforms."""
+        try:
+            if control.window.getProperty(playcount.PLAYBACK_MARKED_PROPERTY) != 'true':
+                return
+            control.window.clearProperty(playcount.PLAYBACK_MARKED_PROPERTY)
+            control.refresh()
+        except Exception:
+            pass
 
 
     def libForPlayback(self):
@@ -361,17 +371,21 @@ class player(xbmc.Player):
 
 
     def onPlayBackStopped(self):
-        if self.totalTime == 0 or self.currentTime == 0:
-            control.sleep(2000)
-            return
-        percent = self._playback_percent()
-        if percent >= 92:
-            self._simkl_scrobble('stop', percent=100)
-        elif percent >= 1:
-            self._simkl_scrobble('pause', percent=percent)
-        bookmarks.reset(self.currentTime, self.totalTime, self.content, self.imdb, self.season, self.episode)
-        if float(self.currentTime / self.totalTime) >= 0.92:
-            self.libForPlayback()
+        try:
+            if self.totalTime == 0 or self.currentTime == 0:
+                control.sleep(2000)
+                return
+            percent = self._playback_percent()
+            if percent >= 92:
+                self._simkl_scrobble('stop', percent=100)
+            elif percent >= 1:
+                self._simkl_scrobble('pause', percent=percent)
+            bookmarks.reset(self.currentTime, self.totalTime, self.content, self.imdb, self.season, self.episode)
+            if float(self.currentTime / self.totalTime) >= 0.92:
+                self.libForPlayback()
+        finally:
+            # Same Container.Refresh as manual Watched — after playback, all platforms (#157).
+            self._refresh_after_playback_mark()
 
 
     def onPlayBackEnded(self):

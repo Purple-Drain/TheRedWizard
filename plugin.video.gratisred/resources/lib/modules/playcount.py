@@ -129,6 +129,17 @@ def getEpisodeOverlay(indicators_, imdb, tmdb, season, episode):
         return '6'
 
 
+PLAYBACK_MARKED_PROPERTY = 'gratisred.playback_marked_watched'
+
+
+def _flag_playback_marked():
+    """Remember that watched state changed during this play so UI can refresh after stop."""
+    try:
+        control.window.setProperty(PLAYBACK_MARKED_PROPERTY, 'true')
+    except Exception:
+        pass
+
+
 def markMovieDuringPlayback(imdb, watched, tmdb=None):
     provider = _provider()
     try:
@@ -138,6 +149,7 @@ def markMovieDuringPlayback(imdb, watched, tmdb=None):
             else:
                 trakt.markMovieAsNotWatched(imdb, tmdb=tmdb)
             trakt.cachesyncMovies()
+            _flag_playback_marked()
             if trakt.getTraktAddonMovieInfo() == True:
                 trakt.markMovieAsNotWatched(imdb, tmdb=tmdb)
         elif provider == 'simkl':
@@ -146,6 +158,7 @@ def markMovieDuringPlayback(imdb, watched, tmdb=None):
             else:
                 simkl.markMovieAsNotWatched(imdb, tmdb=tmdb)
             simkl.cachesyncMovies(timeout=0)
+            _flag_playback_marked()
             if simkl.getSimklAddonMovieInfo() == True:
                 simkl.markMovieAsNotWatched(imdb, tmdb=tmdb)
     except:
@@ -157,23 +170,25 @@ def markMovieDuringPlayback(imdb, watched, tmdb=None):
         pass
 
 
-def markEpisodeDuringPlayback(imdb, tmdb, season, episode, watched):
+def markEpisodeDuringPlayback(imdb, tmdb, season, episode, watched, tvdb=None):
     provider = _provider()
     try:
         if provider == 'trakt':
             if int(watched) == 7:
-                trakt.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb)
+                trakt.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb, tvdb=tvdb)
             else:
-                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
+                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb, tvdb=tvdb)
             trakt.cachesyncTVShows()
+            _flag_playback_marked()
             if trakt.getTraktAddonEpisodeInfo() == True:
-                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
+                trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb, tvdb=tvdb)
         elif provider == 'simkl':
             if int(watched) == 7:
                 simkl.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb)
             else:
                 simkl.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
             simkl.cachesyncTVShows(timeout=0)
+            _flag_playback_marked()
             if simkl.getSimklAddonEpisodeInfo() == True:
                 simkl.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
     except:
@@ -311,15 +326,10 @@ def tvshows(tvshowtitle, imdb, tmdb, season, watched):
     try:
         if provider == 'trakt':
             if season:
-                from resources.lib.indexers import episodes
-                items = episodes.episodes().get(tvshowtitle, '0', imdb, tmdb, meta=None, season=season, idx=False)
-                items = [(int(i['season']), int(i['episode'])) for i in items]
-                items = [i[1] for i in items if int('%01d' % int(season)) == int('%01d' % i[0])]
-                for i in items:
-                    if int(watched) == 7:
-                        trakt.markEpisodeAsWatched(imdb, season, i, tmdb=tmdb)
-                    else:
-                        trakt.markEpisodeAsNotWatched(imdb, season, i, tmdb=tmdb)
+                if int(watched) == 7:
+                    trakt.markSeasonAsWatched(imdb, season, tmdb=tmdb)
+                else:
+                    trakt.markSeasonAsNotWatched(imdb, season, tmdb=tmdb)
             else:
                 if int(watched) == 7:
                     trakt.markTVShowAsWatched(imdb, tmdb=tmdb)

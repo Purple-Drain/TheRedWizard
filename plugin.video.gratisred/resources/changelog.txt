@@ -1,4 +1,9 @@
 
+[B]- 1.1.8 (2026-07-25)[/B] Trakt watched follow-up (#157):
+ * [B]Trakt[/B]: after auto-mark during playback, refresh the underlying list once playback stops/ends (same [I]Container.Refresh[/I] as manual Watched) so checkmarks appear without leaving and re-entering — all platforms, no device-specific branching.
+ * [B]Trakt[/B]: episode auto-mark now passes TVDb as well as TMDb/IMDb into the history ID fallback.
+ * [B]Trakt[/B]: marking a season watched/unwatched uses one season-level [I]/sync/history[/I] call instead of posting every episode.
+
 [B]- 1.1.7 (2026-07-25)[/B] Trakt watched checkmarks (#157):
  * [B]Trakt[/B]: watched TV sync uses [I]/sync/watched/shows?extended=progress[/I] (paginated) so show/season/episode overlays get the season–episode breakdown again after Trakt's API change; local cache key bumped so the old [I]extended=full[/I] payload is not reused.
  * [B]Trakt[/B]: mark watched / unwatched for movies, shows, and episodes prefers TMDb, then TVDb, then IMDb (same idea as Red Light); movie Mark Watched context menu now passes TMDb when available.

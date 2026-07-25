@@ -1139,6 +1139,14 @@ def markTVShowAsNotWatched(imdb, tmdb=None, tvdb=None):
     return _history_mark('/sync/history/remove', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb)
 
 
+def markSeasonAsWatched(imdb, season, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season)
+
+
+def markSeasonAsNotWatched(imdb, season, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history/remove', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season)
+
+
 def markEpisodeAsWatched(imdb, season, episode, tmdb=None, tvdb=None):
     return _history_mark('/sync/history', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season, episode=episode)
 
