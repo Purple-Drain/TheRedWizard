@@ -115,8 +115,31 @@ def ai_model_active():
 	if get_setting('redlight.groq_api', 'empty_setting') not in (None, 'None', '', 'empty_setting'): return True
 	return False
 
+_AI_MODEL_ID_MIGRATIONS = {
+	'gemini-2.5-flash-lite': 'gemini-3.1-flash-lite',
+	'gemini-2.5-flash': 'gemini-3.5-flash',
+	'gemma-3-27b-it': 'gemma-4-31b-it',
+	'gemma-3-12b-it': 'gemma-4-26b-a4b-it',
+	'gemma-3-4b-it': 'gemma-4-26b-a4b-it',
+	'gemma-3-1b-it': 'gemma-4-26b-a4b-it',
+}
+
 def ai_model_order():
-	return get_setting('redlight.ai_model.order', 'gemini-2.5-flash-lite,llama-3.3-70b-versatile,gemma-3-27b-it,llama-3.1-8b-instant').split(',')
+	default = 'gemini-3.1-flash-lite,llama-3.3-70b-versatile,gemma-4-31b-it,llama-3.1-8b-instant'
+	raw = get_setting('redlight.ai_model.order', default) or default
+	order = [i.strip() for i in raw.split(',') if i.strip()]
+	migrated = [_AI_MODEL_ID_MIGRATIONS.get(i, i) for i in order]
+	# Drop unknown Google leftovers; keep Groq ids even if key missing (skipped at call time).
+	try:
+		from apis import google_api, groq_api
+		known = set(google_api.models()) | set(groq_api.models())
+		migrated = [i for i in migrated if i in known] or default.split(',')
+	except Exception:
+		migrated = default.split(',')
+	if migrated != order:
+		try: set_setting('ai_model.order', ','.join(migrated))
+		except Exception: pass
+	return migrated
 
 def ai_model_limit():
 	return max(1, int(get_setting('redlight.ai_model.limit', '10')))
@@ -537,8 +560,19 @@ def extras_order():
 	split_setting = setting.split(',')
 	return [int(i) for i in split_setting if i.strip()]
 
+def recommend_service_options():
+	"""Because You Watched services — hide options that need missing auth/keys."""
+	options = {'0': 'Recommended (TMDb)', '1': 'More Like This (IMDb)'}
+	if ai_model_active(): options['2'] = 'Similar (AI)'
+	if trakt_user_active(): options['3'] = 'Related (Trakt)'
+	return options
+
 def recommend_service():
-	return int(get_setting('redlight.recommend_service', '0'))
+	try: ind = int(get_setting('redlight.recommend_service', '0'))
+	except (TypeError, ValueError): ind = 0
+	opts = recommend_service_options()
+	if str(ind) in opts: return ind
+	return 0
 
 def recommend_seed():
 	return int(get_setting('redlight.recommend_seed', '5'))

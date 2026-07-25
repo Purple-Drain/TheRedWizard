@@ -165,6 +165,12 @@ def sanitize_setting_value(setting_id, value, setting_info=None, validate_paths=
 			from modules.settings import mdblist_user_active
 			if mdblist_user_active(): return value
 		return '0'
+	if setting_id == 'recommend_service':
+		from modules.settings import recommend_service_options
+		value = str(value)
+		opts = recommend_service_options()
+		if value in opts: return value
+		return '0'
 	if setting_id == 'playback.subs_source':
 		from modules.settings import subtitles_source_options
 		value = str(value)
@@ -315,11 +321,36 @@ class SettingsCache:
 					label = opts.get(current) or opts.get('0', 'Red Light')
 					self.set_memory_cache('watched_indicators_name', label)
 				except: pass
+				try:
+					from modules.settings import recommend_service_options
+					opts = recommend_service_options()
+					current = str(self.read_db_value('recommend_service') or '0')
+					if current not in opts:
+						current = '0'
+						self.write_db('recommend_service', current)
+						self.set_memory_cache('recommend_service', current)
+					self.set_memory_cache('recommend_service_name', opts.get(current, opts['0']))
+				except: pass
+			if setting_id in ('google_api', 'groq_api'):
+				try:
+					from modules.settings import recommend_service_options
+					opts = recommend_service_options()
+					current = str(self.read_db_value('recommend_service') or '0')
+					if current not in opts:
+						current = '0'
+						self.write_db('recommend_service', current)
+						self.set_memory_cache('recommend_service', current)
+					self.set_memory_cache('recommend_service_name', opts.get(current, opts['0']))
+				except: pass
 		if setting_type == 'action' and 'settings_options' in setting_info:
 			name_setting_id = '%s_name' % setting_id
 			if setting_id == 'watched_indicators':
 				from modules.settings import watched_provider_options
 				opts = watched_provider_options()
+				name_setting_value = opts.get(str(setting_value)) or setting_info['settings_options'].get(str(setting_value), opts['0'])
+			elif setting_id == 'recommend_service':
+				from modules.settings import recommend_service_options
+				opts = recommend_service_options()
 				name_setting_value = opts.get(str(setting_value)) or setting_info['settings_options'].get(str(setting_value), opts['0'])
 			elif setting_id == 'playback.subs_source':
 				from modules.settings import subtitles_source_options
@@ -414,6 +445,14 @@ def _apply_settings_properties_from_db():
 				info = defaults_map.get(setting_id) or {}
 				static_opts = info.get('settings_options', {})
 				settings_cache.set_memory_cache('watched_indicators_name', opts.get(sanitized) or static_opts.get(sanitized, opts['0']))
+			except: pass
+		if setting_id == 'recommend_service':
+			try:
+				from modules.settings import recommend_service_options
+				opts = recommend_service_options()
+				info = defaults_map.get(setting_id) or {}
+				static_opts = info.get('settings_options', {})
+				settings_cache.set_memory_cache('recommend_service_name', opts.get(sanitized) or static_opts.get(sanitized, opts['0']))
 			except: pass
 		if setting_id == 'playback.subs_source':
 			try:
@@ -916,6 +955,11 @@ def set_from_list(params):
 		settings_options = watched_provider_options().items()
 		settings_list = [(v, k) for k, v in settings_options]
 		settings_list.sort(key=lambda item: item[0].lower())
+	elif setting_id == 'recommend_service':
+		from modules.settings import recommend_service_options
+		settings_options = recommend_service_options().items()
+		settings_list = [(v, k) for k, v in settings_options]
+		settings_list.sort(key=lambda item: item[0].lower())
 	elif setting_id == 'playback.subs_source':
 		from modules.settings import subtitles_source_options
 		settings_options = subtitles_source_options().items()
@@ -1080,7 +1124,7 @@ def default_settings():
 {'setting_id': 'media_open_action_skip_inprogress_movie', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'media_open_action_skip_inprogress_tvshow', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== AI Generated Similar Titles
-{'setting_id': 'ai_model.order', 'setting_type': 'string', 'setting_default': 'gemini-2.5-flash-lite,llama-3.3-70b-versatile,gemma-3-27b-it,llama-3.1-8b-instant'},
+{'setting_id': 'ai_model.order', 'setting_type': 'string', 'setting_default': 'gemini-3.1-flash-lite,llama-3.3-70b-versatile,gemma-4-31b-it,llama-3.1-8b-instant'},
 {'setting_id': 'ai_model.limit', 'setting_type': 'action', 'setting_default': '15', 'min_value': '1', 'max_value': '25'},
 
 
