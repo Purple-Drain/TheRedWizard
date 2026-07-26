@@ -25,11 +25,22 @@ Original 4-step plan (from the other session that owned this work):
   Regenerated 2026-07-26 for the current `2.0.3+pd.1` build
   (md5 `a26fb2b8882545d4fb115e25e37deec6`).
 
+## Done (2026-07-26, worktree `hosted-repo-pages`)
+
+- **Step 2 — hosting workflow added.** `.github/workflows/publish-repo.yml`
+  runs `tools/build-repo.sh` on every push to `main` that touches the addon
+  or the build script (plus manual `workflow_dispatch`), and publishes
+  `dist/` to an orphan `gh-pages` branch via `peaceiris/actions-gh-pages`.
+  **Not yet pushed to `origin`, and GitHub Pages is not yet enabled in repo
+  settings** — both are visible/external actions that need an explicit go
+  before this becomes a live public URL.
+
 ## Not done
 
-- **No actual hosting.** No `gh-pages` branch, no GitHub Actions workflow, no
-  public URL serving `dist/`. `repository.purpledrain` as an installable addon
-  doesn't exist yet — `dist/` is a local build artifact only.
+- **Hosting not live.** The workflow exists but hasn't run yet — no
+  `gh-pages` branch on the remote, GitHub Pages isn't turned on in repo
+  settings, so there's no public URL serving `dist/`.
+  `repository.purpledrain` as an installable addon doesn't exist yet.
 - **Step 3 — Shield not pointed at anything hosted.** It still gets Redlight
   via `adb push` with `general.addonupdates = 2` (Never), confirmed live
   2026-07-26. This is intentional/safe for now — nothing to point it at.
