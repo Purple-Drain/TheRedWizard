@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="repository.purpledrain" name="Purple Drain Fork Repo" version="1.0.0" provider-name="Purple-Drain">
+    <extension point="xbmc.addon.repository" name="Purple Drain Fork Repo">
+        <dir>
+            <info compressed="false">https://purple-drain.github.io/TheRedWizard/addons.xml</info>
+            <checksum>https://purple-drain.github.io/TheRedWizard/addons.xml.md5</checksum>
+            <datadir zip="true">https://purple-drain.github.io/TheRedWizard/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en">Purple-Drain fork add-ons for Redlight</summary>
+        <description lang="en">Serves plugin.video.redlight from the Purple-Drain fork (github.com/Purple-Drain/TheRedWizard), so updates come from the fork instead of upstream's repository.redwizard.</description>
+        <platform>all</platform>
+    </extension>
+</addon>
