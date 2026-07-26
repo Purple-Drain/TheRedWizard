@@ -42,22 +42,46 @@ Original 4-step plan (from the other session that owned this work):
 
 ## Not done
 
-- **`repository.purpledrain` addon doesn't exist yet** — nothing installed
-  on the Shield points at the hosted URL above; it's live but unconsumed.
-- **Step 3 — Shield not pointed at anything hosted.** It still gets Redlight
-  via `adb push` with `general.addonupdates = 2` (Never), confirmed live
-  2026-07-26. This is intentional/safe for now — nothing to point it at.
+## Done (2026-07-26, `repository.purpledrain` test)
+
+- **`repository.purpledrain` addon created** (`repository.purpledrain/addon.xml`,
+  merged to `main`) — points Kodi at the gh-pages `addons.xml`/zips above.
+- **Version tie-break empirically confirmed** — installed on the **kodi22 test
+  instance only** (`net.kodinerds.maven.kodi22`, a clone of production on the
+  same Shield; production `org.xbmc.kodi` was never touched and wasn't even
+  running at the time, so nothing was interrupted). After Kodi booted and
+  refreshed repos, `Addons33.db` shows `plugin.video.redlight`'s `origin`
+  auto-flipped from unset to `repository.purpledrain`, over `repository.redwizard`
+  (both present). Confirms `2.0.3+pd.1` sorts above upstream's `2.0.3` in
+  Kodi's version comparison — the exact thing the deploy-constraints memory
+  flagged as untested.
+- **Known minor issue**: kodi22's log shows a 404 fetching
+  `.../plugin.video.redlight/resources/media/addon_icons/icon.png` — a path
+  convention mismatch (our `dist/` puts the icon at
+  `plugin.video.redlight/icon.png`, not nested under `resources/media/addon_icons/`).
+  Cosmetic only (doesn't block the repo resolving or the addon installing);
+  not yet fixed.
+
+## Not done
+
+- **Production Shield (`org.xbmc.kodi`) untouched.** Still gets Redlight via
+  `adb push` with `general.addonupdates = 2` (Never) — this was a deliberate
+  test-only exercise on kodi22, not yet rolled to production. Awaiting a
+  decision on rollout.
 - **Step 4 — `service.redlightpatch` still deployed and doing two jobs**:
   (a) re-healing `folders.py`/`sources.py` .strm patches if Kodi ever
   auto-updates from upstream, and (b) repairing `settings.xml` DebridLibrary
   paths on boot. Job (b) is unrelated to which repo wins and needs a new home
-  before (a) can be retired.
+  before (a) can be retired. Not safe to retire (a) until production is
+  actually switched over, not just tested.
 
 ## Next steps (tracked as tasks)
 
 1. ~~Decide hosting mechanism and wire up serving `dist/` at a stable URL.~~ Done — https://purple-drain.github.io/TheRedWizard/
-2. Install `repository.purpledrain` on the Shield, verify Kodi resolves
-   `plugin.video.redlight` from it (not `repository.redwizard`) at the
-   version tie-break, then switch the update source.
+2. ~~Verify the version tie-break resolves in the fork's favor.~~ Done, on kodi22 (test only).
+   **Remaining:** install `repository.purpledrain` on production
+   (`org.xbmc.kodi`) and decide whether/when to flip `general.addonupdates`
+   off `Never`.
 3. Relocate the `settings.xml` DebridLibrary-path repair out of
-   `service.redlightpatch`, then retire the service.
+   `service.redlightpatch`, then retire the service — only after production
+   is confirmed on the hosted repo.
