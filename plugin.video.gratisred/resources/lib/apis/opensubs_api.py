@@ -9,7 +9,10 @@ from resources.lib.modules import control
 
 BASE_URL = 'https://api.opensubtitles.com/api/v1'
 TIMEOUT = 20.0
-_DEFAULT_API_KEY = 'GpubxF50wjXZXtRlq83Heh9serfjCFyI'
+# Dedicated Gratis Red consumer (1.2.0+). Former shared Red Wizard key kept for migrate-only.
+_DEFAULT_API_KEY = 'irBMFkGPwDdOkhEL1IeHe8EM1sjOk9Oc'
+_LEGACY_SHARED_API_KEY = 'GpubxF50wjXZXtRlq83Heh9serfjCFyI'
+_api_key_migrated = False
 
 
 def _setting(key, default=''):
@@ -19,8 +22,28 @@ def _setting(key, default=''):
     return str(value).strip()
 
 
+def ensure_api_key_migrated():
+    """Move installs off the shared Red Wizard key; clear JWT so login uses the new consumer."""
+    global _api_key_migrated
+    if _api_key_migrated:
+        return
+    _api_key_migrated = True
+    try:
+        stored = _setting('opensubs.api_key')
+        if stored == _LEGACY_SHARED_API_KEY or not stored:
+            # Empty setting still used the old shared default in code before 1.2.0.
+            if _setting('opensubs.token'):
+                control.setSetting('opensubs.token', '')
+            control.setSetting('opensubs.api_key', _DEFAULT_API_KEY)
+    except Exception:
+        pass
+
+
 def effective_api_key():
+    ensure_api_key_migrated()
     key = _setting('opensubs.api_key')
+    if key == _LEGACY_SHARED_API_KEY:
+        return _DEFAULT_API_KEY
     return key or _DEFAULT_API_KEY
 
 

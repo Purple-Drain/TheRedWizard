@@ -36,6 +36,13 @@ except Exception:
 
 
 try:
+    from resources.lib.apis import opensubs_api
+    opensubs_api.ensure_api_key_migrated()
+except Exception:
+    pass
+
+
+try:
     control.execute('RunPlugin(plugin://%s)' % 'plugin.video.gratisred/?action=service')
     log_utils.log('Service Process Successful.')
 except Exception:

@@ -1,4 +1,7 @@
 
+[B]- 1.2.0 (2026-07-26)[/B] OpenSubtitles dedicated API key:
+ * [B]OpenSubtitles.com[/B]: ships a Gratis Red–only API consumer (separate from Red Light). Existing installs on the old shared key are migrated automatically; the stored login JWT is cleared once so the next check re-authorises with username/password — no manual re-entry.
+
 [B]- 1.1.9 (2026-07-26)[/B] Playback unwatch safety (#157 / #163):
  * [B]Playback[/B]: stop sending automatic Trakt/Simkl "not watched" updates while progress is below the 92% watched threshold (and on rewind). Auto-mark at >=92% and manual Unwatched are unchanged - avoids wiping remote watched history when indicators are stale.
 
