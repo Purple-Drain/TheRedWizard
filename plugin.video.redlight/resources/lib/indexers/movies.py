@@ -178,9 +178,9 @@ class Movies:
 			if self.params_get('refreshed') == 'true': kodi_utils.sleep(1000)
 			kodi_utils.set_view_mode('view.movies', 'movies', self.is_external)
 		
-	def build_movie_content(self, _position, _id):
+	def build_movie_content(self, _position, _id, dbcon=None):
 		try:
-			meta = movie_meta(self.id_type, _id, self.tmdb_api_key, self.mpaa_region, self.current_date, self.current_time)
+			meta = movie_meta(self.id_type, _id, self.tmdb_api_key, self.mpaa_region, self.current_date, self.current_time, dbcon=dbcon)
 			if not meta or 'blank_entry' in meta: return
 			listitem = self.make_listitem()
 			cm = []
@@ -300,7 +300,11 @@ class Movies:
 			cast = meta_get('short_cast', []) or meta_get('cast', []) or []
 			info_tag.setCast([self.kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
 			if progress:
-				info_tag.setResumePoint(watched_status.get_resume_seconds(progress, duration))
+				resume_secs = watched_status.get_resume_seconds(progress, duration)
+				try: total_secs = float(duration)
+				except Exception: total_secs = 0
+				if total_secs > 0: info_tag.setResumePoint(resume_secs, total_secs)
+				else: info_tag.setResumePoint(resume_secs)
 				set_properties({'WatchedProgress': progress})
 			listitem.setLabel(title)
 			listitem.addContextMenuItems(cm)
@@ -344,10 +348,10 @@ class Movies:
 		self.open_extras = open_action in (1, 3)
 		self.skip_inprogress = settings.media_open_action_skip_inprogress_movie()
 		if self.custom_order:
-			threads = TaskPool().tasks(self.build_movie_content, self.list, min(len(self.list), settings.max_threads()))
+			threads = TaskPool().tasks(self.build_movie_content, self.list, min(len(self.list), settings.max_threads()), 'metacache_db')
 			[i.join() for i in threads]
 		else:
-			threads = TaskPool().tasks_enumerate(self.build_movie_content, self.list, min(len(self.list), settings.max_threads()))
+			threads = TaskPool().tasks_enumerate(self.build_movie_content, self.list, min(len(self.list), settings.max_threads()), 'metacache_db')
 			[i.join() for i in threads]
 			self.items.sort(key=lambda k: k[1])
 			self.items = [i[0] for i in self.items]

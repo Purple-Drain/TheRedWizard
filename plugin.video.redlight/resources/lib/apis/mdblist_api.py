@@ -548,7 +548,7 @@ def _mdbl_watchlist_raw():
 	string, url = 'mdblist_watchlist_live', 'watchlist/items'
 	return mdblist_cache.cache_mdblist_object(_get_mdbl_paginated_list, string, url) or {'movies': [], 'shows': [], 'items': []}
 
-def mdblist_watchlist(media_kind, page_no):
+def _mdblist_watchlist_normalized(media_kind):
 	# Umbrella/POV: plain GET watchlist/items → flat movies[]/shows[] (id = TMDb, imdb_id on item).
 	raw = _mdbl_watchlist_raw()
 	key = 'movies' if media_kind in ('movie', 'movies') else 'shows'
@@ -569,11 +569,23 @@ def mdblist_watchlist(media_kind, page_no):
 		if entry: normalized.append(entry)
 	if original_list and not normalized:
 		kodi_utils.logger('MDBList Watchlist', 'Could not resolve TMDb ids from %s raw items' % len(original_list))
-	original_list = normalized
-	original_list = list_sort.sort_source(original_list, 'mdblist.watchlist', media_kind, 'mdblist_watchlist')
+	return list_sort.sort_source(normalized, 'mdblist.watchlist', media_kind, 'mdblist_watchlist')
+
+def mdblist_watchlist(media_kind, page_no):
+	original_list = _mdblist_watchlist_normalized(media_kind)
 	is_home = kodi_utils.external()
 	if settings.paginate(is_home): return paginate_list(original_list, page_no, settings.page_limit(is_home))
 	return original_list, 1
+
+def mdblist_watchlist_media_ids(media_kind):
+	"""Full watchlist as media_ids dicts (no pagination) for Next Episodes include-unwatched."""
+	result = []
+	for entry in _mdblist_watchlist_normalized(media_kind):
+		try: tmdb_id = int(entry['id'])
+		except: continue
+		result.append({'media_ids': {'tmdb': tmdb_id, 'imdb': entry.get('imdb_id') or '', 'tvdb': entry.get('tvdb_id') or ''},
+			'title': entry.get('title', '')})
+	return result
 
 def mdblist_collection(media_kind, page_no):
 	string, url = 'mdblist_collection', 'sync/collection'

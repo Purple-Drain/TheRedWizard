@@ -22,7 +22,6 @@ OAUTH_PIN_URL = 'https://api.simkl.com/oauth/pin'
 SIMKL_APP_NAME = 'plugin.video.gratisred'
 # Gratis Red Simkl app (unique client ID — not shared with Red Light).
 SIMKL_CLIENT_ID = '7508fd47a5237d06eb9b27863e744763c278bc8b35c6c24c336ebbb5d66318bd'
-SIMKL_TRAKT_IMPORT_URL = 'https://simkl.com/apps/import/trakt/'
 
 _STATUSES = ('plantowatch', 'watching', 'completed', 'hold', 'dropped')
 _STATUS_LABELS = {
@@ -134,13 +133,10 @@ def set_watched_provider(value, notify=False):
 
 
 def ensure_bookmarks_valid():
-    """If Resume Point Source points at an unauthorised service, fall back."""
-    from resources.lib.modules import trakt
-    val = control.setting('bookmarks.source') or '0'
-    if val == '1' and not trakt.getTraktCredentialsInfo():
-        set_bookmarks_source('2' if getSimklCredentialsInfo() else '0')
-    elif val == '2' and not getSimklCredentialsInfo():
-        set_bookmarks_source('1' if trakt.getTraktCredentialsInfo() else '0')
+    """Keep Resume Point Source aligned with Watched Indicators (no separate picker)."""
+    val = control.setting('indicators.alt') or '0'
+    if (control.setting('bookmarks.source') or '0') != val:
+        set_bookmarks_source(val)
     else:
         sync_bookmarks_label(val)
 
@@ -155,7 +151,7 @@ def ensure_indicators_valid():
         set_watched_provider('1' if trakt.getTraktCredentialsInfo() else '0')
     else:
         sync_indicators_label(val)
-    ensure_bookmarks_valid()
+        ensure_bookmarks_valid()
 
 
 def fallback_indicators_on_revoke(revoked):
@@ -199,19 +195,6 @@ def choose_indicators(reopen_settings=False):
     control.sleep(350)
     if reopen_settings:
         control.reopen_settings_category(0, 0)
-
-
-def choose_bookmarks_source(reopen_settings=False):
-    ensure_bookmarks_valid()
-    value = _provider_select('Resume Point Source', control.setting('bookmarks.source') or '0')
-    if value is None:
-        if reopen_settings:
-            control.reopen_settings_category(1, 0)
-        return
-    set_bookmarks_source(value, notify=True)
-    control.sleep(350)
-    if reopen_settings:
-        control.reopen_settings_category(1, 0)
 
 
 def _headers():
@@ -316,15 +299,6 @@ def authSimkl(reopen_settings=False):
         control.setSetting('simkl.authed', 'yes')
         if control.yesnoDialog('Set Simkl as your Watched Indicators provider?', heading='Watched Status Provider'):
             set_watched_provider('2', notify=True)
-        from resources.lib.modules import trakt
-        if trakt.getTraktCredentialsInfo() and control.yesnoDialog(
-                'Open Simkl\'s official Trakt import page? (import completes in a browser)',
-                heading='Import Trakt to Simkl'):
-            try:
-                control.openBrowser(SIMKL_TRAKT_IMPORT_URL)
-            except Exception:
-                auth_utils.copy2clip(SIMKL_TRAKT_IMPORT_URL)
-                control.infoDialog('Import link copied to clipboard.', sound=True)
         try:
             cachesyncMovies(timeout=0)
             cachesyncTVShows(timeout=0)
@@ -381,7 +355,8 @@ def _media_ids(item, media_kind):
 
 
 def _all_items(media_kind, status):
-    path = '/sync/all-items/%s/%s?extended=ids_only' % (media_kind, status)
+    # Default sync payload includes title/year (needed for shelf_sort). ids_only strips titles.
+    path = '/sync/all-items/%s/%s' % (media_kind, status)
     response = call_simkl(path, method='get')
     if response is None:
         return None
@@ -416,6 +391,7 @@ def _fetch_status(media_kind, status):
             'ids': ids,
             'title': block.get('title', '') or '',
             'year': block.get('year') or 0,
+            'collected_at': item.get('added_to_watchlist_at') or '',
         })
     return result
 
@@ -445,8 +421,17 @@ def _normalize_imdb(imdb):
     return imdb
 
 
+# Per-shelf sort for My Simkl status lists — see shelf_sort.py.
+
+
+def choose_list_sort(media, status):
+    from resources.lib.modules import shelf_sort
+    shelf_sort.choose_list_sort('simkl', media, status, sortable=shelf_sort.SIMKL_SORTABLE)
+
+
 def directory_movies(status):
     """Build Gratis Red movie list items for a Simkl status shelf."""
+    from resources.lib.modules import shelf_sort
     items = _fetch_status('movies', status)
     out = []
     for item in items:
@@ -462,12 +447,14 @@ def directory_movies(status):
         out.append({
             'title': title, 'originaltitle': title, 'year': year,
             'imdb': imdb, 'tmdb': tmdb, 'tvdb': '0', 'next': '', 'paused_at': '0',
+            'collected_at': item.get('collected_at') or '',
         })
-    return out
+    return shelf_sort.sort_items(out, 'simkl', 'movies', status, sortable=shelf_sort.SIMKL_SORTABLE)
 
 
 def directory_tvshows(status):
     """Build Gratis Red TV show list items for a Simkl status shelf."""
+    from resources.lib.modules import shelf_sort
     items = _fetch_tv_status(status)
     out = []
     for item in items:
@@ -484,8 +471,9 @@ def directory_tvshows(status):
         out.append({
             'title': title, 'originaltitle': title, 'year': year,
             'imdb': imdb, 'tmdb': tmdb, 'tvdb': tvdb, 'next': '',
+            'collected_at': item.get('collected_at') or '',
         })
-    return out
+    return shelf_sort.sort_items(out, 'simkl', 'tvshows', status, sortable=shelf_sort.SIMKL_SORTABLE)
 
 
 def _paused_key(paused_at):
@@ -938,6 +926,33 @@ def _list_ids(tmdb=None, imdb=None, tvdb=None):
     return ids
 
 
+def _ids_match(item_ids, ids):
+    if not isinstance(item_ids, dict) or not isinstance(ids, dict):
+        return False
+    for key in ('tmdb', 'imdb', 'tvdb'):
+        item_value = item_ids.get(key)
+        wanted_value = ids.get(key)
+        if item_value in (None, '', 'None', 0, '0') or wanted_value in (None, '', 'None', 0, '0'):
+            continue
+        if str(item_value) == str(wanted_value):
+            return True
+    return False
+
+
+def _item_in_status(media_kind, status, ids):
+    try:
+        if media_kind == 'movies':
+            items = _fetch_status('movies', status)
+        else:
+            items = _fetch_tv_status(status)
+        for item in items:
+            if _ids_match(item.get('ids'), ids):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def markMovieAsWatched(imdb, tmdb=None):
     ids = _list_ids(tmdb=tmdb, imdb=imdb)
     if not ids:
@@ -1069,14 +1084,16 @@ def _bust_sync_cache():
         pass
 
 
-def refreshSimklCache():
+def refreshSimklCache(silent=False):
     _bust_sync_cache()
     try:
         cachesyncMovies(timeout=0)
         cachesyncTVShows(timeout=0)
-        control.infoDialog('Simkl Cache Refreshed.', sound=True)
+        if not silent:
+            control.infoDialog('Simkl Cache Refreshed.', sound=True)
     except Exception:
-        control.infoDialog('Simkl Cache Refresh Failed.', sound=True)
+        if not silent:
+            control.infoDialog('Simkl Cache Refresh Failed.', sound=True)
     try:
         control.refresh()
     except Exception:
@@ -1088,7 +1105,7 @@ def manager(name, imdb, tmdb, content):
         if not getSimklCredentialsInfo():
             return control.infoDialog('Authorise Simkl first.', sound=True)
         is_movie = content == 'movie'
-        media_type = 'movie' if is_movie else 'tvshow'
+        media_kind = 'movies' if is_movie else 'shows'
         ids = _list_ids(tmdb=tmdb, imdb=imdb)
         if not ids:
             return control.infoDialog('Missing IDs for Simkl Manager.', sound=True, icon='ERROR')
@@ -1097,12 +1114,15 @@ def manager(name, imdb, tmdb, content):
             if is_movie and status in ('watching', 'hold'):
                 continue
             label = _STATUS_LABELS[status]
-            choices.append(('Add to [B]%s[/B]' % label, 'add', status))
-            choices.append(('Remove from [B]%s[/B]' % label, 'remove', status))
+            if _item_in_status(media_kind, status, ids):
+                choices.append(('Remove from [B]%s[/B]' % label, 'remove', status))
+            else:
+                choices.append(('Add to [B]%s[/B]' % label, 'add', status))
         select = control.selectDialog([c[0] for c in choices], 'Simkl Manager')
         if select < 0:
             return
         _, action, status = choices[select]
+        label = _STATUS_LABELS.get(status, status)
         if action == 'add':
             if is_movie:
                 post = {'movies': [{'to': status, 'ids': ids}]}
@@ -1110,18 +1130,22 @@ def manager(name, imdb, tmdb, content):
                 post = {'shows': [{'to': status, 'ids': ids}]}
             result = call_simkl('/sync/add-to-list', data=post)
         else:
+            if not _item_in_status(media_kind, status, ids):
+                return control.infoDialog('Item is not in %s.' % label, heading=str(name), sound=True, icon='ERROR')
             if is_movie:
                 post = {'movies': [{'ids': ids}]}
             else:
                 post = {'shows': [{'ids': ids}]}
             result = call_simkl('/sync/history/remove', data=post)
         ok = result not in (None, False)
-        icon = control.infoLabel('ListItem.Icon') if ok else 'ERROR'
-        control.infoDialog('Simkl Manager', heading=str(name), sound=True, icon=icon)
-        if ok:
-            try:
-                refreshSimklCache()
-            except Exception:
-                pass
+        if not ok:
+            verb = 'add to' if action == 'add' else 'remove from'
+            return control.infoDialog('Could not %s %s.' % (verb, label), heading=str(name), sound=True, icon='ERROR')
+        message = ('Added to %s.' if action == 'add' else 'Removed from %s.') % label
+        control.infoDialog(message, heading=str(name), sound=True, icon=control.infoLabel('ListItem.Icon'))
+        try:
+            refreshSimklCache(silent=True)
+        except Exception:
+            pass
     except Exception:
-        control.infoDialog('Simkl Manager', heading=str(name), sound=True, icon='ERROR')
+        control.infoDialog('Simkl Manager failed.', heading=str(name), sound=True, icon='ERROR')

@@ -32,7 +32,7 @@ class EpisodeTools:
 			watch_count = self.meta_get('watch_count')
 			current_season, current_episode = int(self.meta_get('season')), int(self.meta_get('episode'))
 			watched_info = watched_info_episode(self.meta_get('tmdb_id'))
-			season, episode = get_next(current_season, current_episode, watched_info, season_data, 0)
+			season, episode = get_next(current_season, current_episode, watched_info, season_data, 0, self.meta)
 			if season is None or episode is None:
 				_log_nextep_skip(title, current_season, current_episode, 'no next episode')
 				return 'no_next_episode'

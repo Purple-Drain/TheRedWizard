@@ -42,6 +42,8 @@ def get_tmdb_lists(params):
 				url = kodi_utils.build_folder_url(url_params)
 				display = '%s [I](x%02d)[/I]' % (list_name, item_count)
 				cm = [('[B]Make New List[/B]', 'RunPlugin(%s)' % build_url({'mode': 'tmdblist.make_new_tmdb_list'})),
+				('[B]Set Custom Sort[/B]', 'RunPlugin(%s)' % build_url({'mode': 'list_sort_override_choice', 'list_key': 'tmdb:%s' % list_id,
+					'adapter': 'tmdb', 'fallback': 'default:asc'})),
 				('[B]Edit Properties[/B]', 'RunPlugin(%s)' % build_url({'mode': 'tmdblist.adjust_tmdb_list_properties', 'list_id': list_id, 'updated_at': updated_at,
 					'original_list_name': list_name, 'original_sort_order': sort_order, 'custom_poster': custom_poster, 'custom_fanart': custom_fanart})),
 				('[B]Delete List[/B]', 'RunPlugin(%s)' % build_url({'mode': 'tmdblist.delete_tmdb_list', 'list_id': list_id})),
@@ -429,8 +431,12 @@ def get_tmdb_list(params):
 	# No override means the list was never sorted client-side: the old getters fell back to code 4
 	# (original_order) for watchlist/favorites and to the stored 'None' for a user list. DEFAULT_SPEC
 	# would reorder every one of them to title on upgrade, with no legacy row left to migrate.
-	# 'recommendations' is included: it was never client-sorted, and with no override row the
-	# fallback hands the payload straight back, so it needs no early return of its own.
+	# Fixed shelves are media-split (tmdb.watchlist:movies / :shows) with media_type=None so
+	# "Use Default" / no override keeps TMDb provider order via fallback — not Content → Movies/TV.
+	# Custom My Lists stay mixed under tmdb:<id>.
+	if list_id in ('watchlist', 'favorites', 'recommendations'):
+		sort_media = 'movies' if media_type in ('movie', 'movies') else 'shows'
+		return list_sort.sort_source(contents, 'tmdb.%s:%s' % (list_id, sort_media), None, 'tmdb', fallback='default:asc')
 	return list_sort.sort_source(contents, 'tmdb:%s' % list_id, None, 'tmdb', fallback='default:asc')
 
 def cache_delete_all_tmdb(params=None):

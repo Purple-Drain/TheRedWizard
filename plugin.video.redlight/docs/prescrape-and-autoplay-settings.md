@@ -22,6 +22,12 @@ can produce the hit).
 
 Turn this on in the Settings Manager to get the "first bite wins" behavior.
 
+**Timeout behavior:** the whole waterfall shares one ~25s budget — it is not 25s per tier. A
+tier finishes the moment its providers do (a local Folders hit returns in well under a second),
+so in normal use you never see the budget at all; it only matters when a provider hangs. If the
+budget runs out, remaining tiers are simply **not started**, and those providers are picked up by
+the full scrape instead — nothing gets silently skipped. The first tier always runs.
+
 ## Provider priority numbers (lower runs first)
 
 These already exist in the addon and now double as the waterfall tier order:

@@ -1,5 +1,25 @@
+[COLOR red][B]Version 2.0.3[/B][/COLOR]
+- [B]Skip Intro[/B]: [B]Off[/B] = off; [B]Auto[/B] = skip without asking whenever Skip Intro applies (autoplay, source select, first or later episode; self-started plays when that option is on); [B]Prompt[/B] = ask first (Yes skips; No or ignore/timeout does not). Clearer description for [B]Also On Plays You Start Yourself[/B].
+
+[COLOR red][B]Version 2.0.2[/B][/COLOR]
+- [B]Performance[/B]: movie and TV show lists reuse one metacache SQLite connection per worker thread when building listitems (fewer open/close cycles; thank you Tikipeter).
+
+[COLOR red][B]Version 2.0.1[/B][/COLOR]
+- [B]Settings[/B]: [B]Watched Status Provider[/B] and Trakt/Simkl/MDBList sync tools (interval, refresh widgets, force sync, clear cache) move from General to [B]Meta Accounts[/B] — provider at the top; sync/cache under each service when authorised.
+- [B]Simkl[/B]: status lists (Plan to Watch / Watching / etc.) sort by title again when Title is the active sort — list fetch no longer uses [I]ids_only[/I], which omitted titles and left lists in API order.
+- [B]Playback[/B]: [B]Limit Autoplay Size (MB)[/B] under Movies/Episodes when Autoplay is on — caps autoplay file size only (default [B]0[/B] = Off). Select Source is unaffected; cloud and local folders are exempt (#149).
+- [B]My Services[/B]: Settings > General > My Services lists authorised Debrid/EasyNews accounts as per-service expiry alert On/Off toggles (default On) when [B]Alert When Service Expires Within (Days)[/B] is not [B]0[/B]. Alphabetical; unauthorised services stay hidden.
+- [B]Next Episodes[/B] / [B]Next Episode prep[/B]: shows that use absolute episode numbers inside seasons (e.g. One Piece S23E1170) no longer skip the list — next S/E is resolved from TMDb episode lists instead of assuming episodes are 1..season count (#144).
+- [B]Progress[/B]: Ended/Canceled shows no longer count unaired placeholder seasons toward the aired total (e.g. a blank S2E1 after an S1 finale), so titles like I Parry Everything leave In Progress when all aired episodes are watched (#144).
+- [B]Resume[/B]: in-progress movies and episodes now pass total duration to Kodi's resume point so skins and Skin Variables Dynamic Nodes can calculate [B]EndTimeResume[/B] / progress correctly (#116).
+- [B]Next Episodes[/B]: [B]Include Watched Indicator Watchlist/Red Light Favorites[/B] — Watchlist now follows Watched Indicators (Trakt Watchlist, Simkl Plan to Watch, or MDBList Watchlist) instead of always using Trakt. Favorites remain Red Light local. When indicators are Red Light, Watchlist has no source.
+- [B]Trakt[/B]: renamed [B]Collection[/B] to [B]Library[/B] in menus, Trakt Lists Manager, context shortcuts, and list pickers (matches Trakt's site rename). API paths unchanged.
+- [B]List Sort[/B]: [B]Simkl[/B] status shelves (Plan to Watch / Watching / Completed / On Hold / Dropped) each have their own [B]Set Custom Sort[/B] for Movies and TV (no longer one shared order for all Simkl lists). A previous shared Simkl sort is copied onto each shelf on first use, then cleared, so [B]Use Default[/B] on one shelf correctly returns to Content > Movies/TV defaults.
+- [B]List Sort[/B]: [B]TMDb[/B] Watchlist, Favorites, and Recommendations get [B]Set Custom Sort[/B] (Movies/TV separate). Custom My Lists also expose [B]Set Custom Sort[/B] on the context menu (same as Edit Properties > Change Sort Order). [B]TMDb My Lists Display Order[/B] in Settings is unchanged — it only orders the list of lists, not list contents.
+- [B]Tips[/B]: new [B]List Sort Order[/B] tip covering defaults, per-list Set Custom Sort (Simkl / TMDb), and Trakt Library rename.
+
 [COLOR red][B]Version 2.0.0[/B][/COLOR]
-- [B]List Sort Order[/B]: Movies and TV Shows now have independent default sort orders (Settings → Content → List Sort Order). Applies to Watchlist, Collection, Simkl, and MDBList; individual lists can override from the context menu, or Use Default to clear. One shared sort model replaces the previous per-provider mechanisms; existing ordering is preserved on upgrade except title sorting is now case-insensitive (thanks JMAN730 / #40).
+- [B]List Sort Order[/B]: Movies and TV Shows now have independent default sort orders (Settings → Content → List Sort Order). Applies to Watchlist, Library, Simkl, and MDBList; individual lists can override from the context menu, or Use Default to clear. One shared sort model replaces the previous per-provider mechanisms; existing ordering is preserved on upgrade except title sorting is now case-insensitive (thanks JMAN730 / #40).
 - [B]Prescrape[/B]: new opt-in [B]Sequential Prescrape[/B] setting — runs "Check Before Full Search" providers in priority tiers instead of all in parallel; the next tier is skipped entirely once an earlier tier finds a hit (e.g. a fast Folders match can now skip RD Cloud/TorBox instead of waiting for them too). Off by default. See docs/prescrape-and-autoplay-settings.md.
 - Security/stability: closed off unsafe internal route dispatch, DB backup-before-overwrite safety on settings import, several silent metadata/listing bugs (missing genres, wrong studio/network fallback, unaired shows and specials dropping out of listings, discarded random-list pagination), a Trakt rate-limit crash, and various resource leaks and redundant network/regex work.
 

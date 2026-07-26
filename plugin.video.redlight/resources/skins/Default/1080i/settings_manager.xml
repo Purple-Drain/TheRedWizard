@@ -555,153 +555,68 @@
                           <property name="setting_label">Alert When Service Expires Within (Days)</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert_days)]</property>
-                          <property name="setting_description">On Kodi startup, notify when authorised Debrid and EasyNews accounts expire within this many days. Set to 0 to disable. Each service alerts once per remaining-day count.</property>
+                          <property name="setting_description">On Kodi startup, notify when authorised Debrid and EasyNews accounts expire within this many days. Set to 0 to disable (also hides the per-service alert toggles below). Each service alerts once per remaining-day count. When enabled, authorised services appear underneath so you can turn alerts on or off per service (default On).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=services.expiry_alert_days)</onclick>
                       </item>
-        <!-- Watched Indicators -->
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
-                          <property name="setting_label">Watched Indicators</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting) | !String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting) | !String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
-                          <property name="setting_label">Watched Status Provider</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.watched_indicators_name)]</property>
-                          <property name="setting_description">Watched ticks, resume bars, scrobble, Next Episodes, and In Progress lists. MDBList, Red Light (local), Simkl, or Trakt (authorise under Meta Accounts).</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=watched_indicators)</onclick>
-                      </item>
-        <!-- MDBList Cache -->
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <property name="setting_label">MDBList Cache</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
-                          <property name="setting_label">Resync Interval (mins)</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.mdblist.sync_interval)]</property>
-                          <property name="setting_description">Choose how often Red Light polls MDBList for watched status and progress changes</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=mdblist.sync_interval)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
-                          <property name="setting_label">Refresh Widgets After MDBList Sync</property>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.services.expiry_alert_days),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.services.authorised.ad),true)</visible>
+                          <property name="setting_label">    - All Debrid</property>
                           <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.mdblist.refresh_widgets)]</property>
-                          <property name="setting_description">Refresh widgets after an MDBList sync when changes were detected. Only runs when [B]Watched Indicators[/B] is set to [B]MDBList[/B].</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=mdblist.refresh_widgets)</onclick>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert.ad)]</property>
+                          <property name="setting_description">Notify when your All Debrid subscription is within the alert window.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=services.expiry_alert.ad)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
-                          <property name="setting_label">Force MDBList Sync</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Pull watched status and playback progress from MDBList now</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=mdblist.mdblist_force_sync)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
-                          <property name="setting_label">Clear MDBList Cache</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Clear cached MDBList lists and sync data, then resync from MDBList</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=mdblist)</onclick>
-                      </item>
-        <!-- Simkl Cache -->
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <property name="setting_label">Simkl Cache</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">Resync Interval (mins)</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.simkl.sync_interval)]</property>
-                          <property name="setting_description">Choose how often Red Light polls your Simkl service for any changes</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=simkl.sync_interval)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">Refresh Widgets After Simkl Sync</property>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.services.expiry_alert_days),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.services.authorised.easynews),true)</visible>
+                          <property name="setting_label">    - EasyNews</property>
                           <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.simkl.refresh_widgets)]</property>
-                          <property name="setting_description">Refresh widgets after a Simkl sync when changes were detected. Only runs when [B]Watched Indicators[/B] is set to [B]Simkl[/B].</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=simkl.refresh_widgets)</onclick>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert.easynews)]</property>
+                          <property name="setting_description">Notify when your EasyNews subscription is within the alert window.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=services.expiry_alert.easynews)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">Force Simkl Sync</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Pull watched status and playback progress from Simkl now</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=simkl.simkl_force_sync)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">Clear Simkl Cache</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Clear cached Simkl lists and sync data, then resync from Simkl</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=simkl)</onclick>
-                      </item>
-        <!-- Trakt Cache -->
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <property name="setting_label">Trakt Cache</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
-                          <property name="setting_label">Resync Interval (mins)</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.sync_interval)]</property>
-                          <property name="setting_description">Choose how often Red Light polls your Trakt service for any changes</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.sync_interval)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
-                          <property name="setting_label">Refresh Widgets After Trakt Sync</property>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.services.expiry_alert_days),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.services.authorised.oc),true)</visible>
+                          <property name="setting_label">    - Offcloud</property>
                           <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.refresh_widgets)]</property>
-                          <property name="setting_description">Refresh widgets after a Trakt sync when changes were detected. Only runs when [B]Watched Indicators[/B] is set to [B]Trakt[/B].</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=trakt.refresh_widgets)</onclick>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert.oc)]</property>
+                          <property name="setting_description">Notify when your Offcloud subscription is within the alert window.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=services.expiry_alert.oc)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
-                          <property name="setting_label">Force Trakt Sync</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Pull watched status and playback progress from Trakt now</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=trakt.trakt_force_sync)</onclick>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.services.expiry_alert_days),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.services.authorised.pm),true)</visible>
+                          <property name="setting_label">    - Premiumize</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert.pm)]</property>
+                          <property name="setting_description">Notify when your Premiumize subscription is within the alert window.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=services.expiry_alert.pm)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(10)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
-                          <property name="setting_label">Clear Trakt Cache</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Clear cached Trakt lists and sync data, then resync from Trakt</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=trakt)</onclick>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.services.expiry_alert_days),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.services.authorised.rd),true)</visible>
+                          <property name="setting_label">    - Real Debrid</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert.rd)]</property>
+                          <property name="setting_description">Notify when your Real Debrid subscription is within the alert window.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=services.expiry_alert.rd)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(10)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.services.expiry_alert_days),0)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.services.authorised.tb),true)</visible>
+                          <property name="setting_label">    - TorBox</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.services.expiry_alert.tb)]</property>
+                          <property name="setting_description">Notify when your TorBox subscription is within the alert window.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=services.expiry_alert.tb)</onclick>
                       </item>
         <!-- UTC Time Offset -->
                       <item>
@@ -1219,7 +1134,7 @@
                           <property name="setting_label">Movies</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.movies_name)]</property>
-                          <property name="setting_description">Default sort order for movie lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their Context Menu.</property>
+                          <property name="setting_description">Default for Trakt Watchlist/Library, Simkl, and MDBList movie lists. Override any list with Context Menu → Set Custom Sort (Simkl: each status shelf separately). TMDb contents are not covered here — use Set Custom Sort on the TMDb list.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=movies)</onclick>
                       </item>
                       <item>
@@ -1227,7 +1142,7 @@
                           <property name="setting_label">TV Shows</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.shows_name)]</property>
-                          <property name="setting_description">Default sort order for TV show lists - Watchlist, Collection, Simkl and MDBList. Individual lists can override this from their Context Menu.</property>
+                          <property name="setting_description">Default for Trakt Watchlist/Library, Simkl, and MDBList TV lists. Override any list with Context Menu → Set Custom Sort (Simkl: each status shelf separately). TMDb contents are not covered here — use Set Custom Sort on the TMDb list.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=shows)</onclick>
                       </item>
         <!-- TMDb Lists -->
@@ -1242,7 +1157,7 @@
                           <property name="setting_label">TMDb My Lists Display Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.tmdblist.list_sort_name)]</property>
-                          <property name="setting_description">Choose the order in which your TMDb lists are presented. This is not for the contents of the lists, but rather the lists themselves.</property>
+                          <property name="setting_description">Order of your TMDb list names under My Lists only — not the titles inside a list. Sort list contents with Set Custom Sort on the list (context menu), or Edit Properties → Change Sort Order.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=list_display_order_choice&amp;list_type=tmdb)</onclick>
                       </item>
         <!-- Personal Lists -->
@@ -1473,10 +1388,10 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
-                          <property name="setting_label">Include Trakt Watchlist/Red Light Favorites</property>
+                          <property name="setting_label">Include Watched Indicator Watchlist/Red Light Favorites</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.include_unwatched_name)]</property>
-                          <property name="setting_description">Choose which lists are included within Red Lights Next Episodes. You can include your Trakt Watchlist, your Red Light Favorites, or both. They will show with a DARKGOLDENROD highlight</property>
+                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Indicators watchlist (Trakt Watchlist, Simkl Plan to Watch, or MDBList Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Indicators is Red Light, Watchlist has no source and only Favorites apply.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=nextep.include_unwatched)</onclick>
                       </item>
                       <item>
@@ -1567,6 +1482,21 @@
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_future_days)</onclick>
                       </item>
 <!-- META ACCOUNTS 50 -->
+        <!-- Watched Indicators -->
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">Watched Indicators</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">Watched Status Provider</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.watched_indicators_name)]</property>
+                          <property name="setting_description">Watched ticks, resume bars, scrobble, Next Episodes, and In Progress lists. Choose MDBList, Red Light (local), Simkl, or Trakt. Authorise a service below to use it.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=watched_indicators)</onclick>
+                      </item>
         <!-- MDBList -->
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
@@ -1591,6 +1521,42 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.mdblist.user)]</property>
                           <property name="setting_description">Revoke authorisation of your MDBList account</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=mdblist.mdblist_revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
+                          <property name="setting_label">    - Resync Interval (mins)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.mdblist.sync_interval)]</property>
+                          <property name="setting_description">Choose how often Red Light polls MDBList for watched status and progress changes</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=mdblist.sync_interval)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
+                          <property name="setting_label">    - Refresh Widgets After Sync</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.mdblist.refresh_widgets)]</property>
+                          <property name="setting_description">Refresh widgets after an MDBList sync when changes were detected. Only runs when [B]Watched Status Provider[/B] is set to [B]MDBList[/B].</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=mdblist.refresh_widgets)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
+                          <property name="setting_label">    - Force Sync</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Pull watched status and playback progress from MDBList now</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=mdblist.mdblist_force_sync)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
+                          <property name="setting_label">    - Clear Cache</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Clear cached MDBList lists and sync data, then resync from MDBList</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=mdblist)</onclick>
                       </item>
         <!-- Simkl -->
                       <item>
@@ -1620,7 +1586,43 @@
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">Import Trakt to Simkl</property>
+                          <property name="setting_label">    - Resync Interval (mins)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.simkl.sync_interval)]</property>
+                          <property name="setting_description">Choose how often Red Light polls your Simkl service for any changes</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=simkl.sync_interval)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
+                          <property name="setting_label">    - Refresh Widgets After Sync</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.simkl.refresh_widgets)]</property>
+                          <property name="setting_description">Refresh widgets after a Simkl sync when changes were detected. Only runs when [B]Watched Status Provider[/B] is set to [B]Simkl[/B].</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=simkl.refresh_widgets)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
+                          <property name="setting_label">    - Force Sync</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Pull watched status and playback progress from Simkl now</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=simkl.simkl_force_sync)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
+                          <property name="setting_label">    - Clear Cache</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Clear cached Simkl lists and sync data, then resync from Simkl</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=simkl)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
+                          <property name="setting_label">    - Import Trakt to Simkl</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
                           <property name="setting_description">Open Simkl's official Trakt import page (QR code or copied link). Use when moving watch history from Trakt to Simkl.</property>
@@ -1647,10 +1649,45 @@
                           <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Revoke Authorisation</property>
                           <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.user)]</property>
                           <property name="setting_description">Revoke authorisation of your Trakt account</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=trakt.trakt_revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
+                          <property name="setting_label">    - Resync Interval (mins)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.sync_interval)]</property>
+                          <property name="setting_description">Choose how often Red Light polls your Trakt service for any changes</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.sync_interval)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
+                          <property name="setting_label">    - Refresh Widgets After Sync</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.refresh_widgets)]</property>
+                          <property name="setting_description">Refresh widgets after a Trakt sync when changes were detected. Only runs when [B]Watched Status Provider[/B] is set to [B]Trakt[/B].</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=trakt.refresh_widgets)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
+                          <property name="setting_label">    - Force Sync</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Pull watched status and playback progress from Trakt now</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=trakt.trakt_force_sync)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
+                          <property name="setting_label">    - Clear Cache</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Clear cached Trakt lists and sync data, then resync from Trakt</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=trakt)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
@@ -3778,6 +3815,15 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_movie),true)</visible>
+                          <property name="setting_label">Limit Autoplay Size (MB)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.movie_size_max)]</property>
+                          <property name="setting_description">Maximum file size allowed for Movie autoplay. Set to 0 to disable (unlimited). Does not affect Select Source. Cloud and local folder results are exempt.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoplay.movie_size_max)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
                           <property name="setting_label">Automatically Resume Playback</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.auto_resume_movie_name)]</property>
@@ -3845,10 +3891,19 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true)</visible>
+                          <property name="setting_label">Limit Autoplay Size (MB)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay.episode_size_max)]</property>
+                          <property name="setting_description">Maximum file size allowed for Episode autoplay. Set to 0 to disable (unlimited). Does not affect Select Source. Cloud and local folder results are exempt.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoplay.episode_size_max)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
                           <property name="setting_label">Skip Intro</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_skip_intro_name)]</property>
-                          <property name="setting_description">Skip TV intros via TheIntroDB then IntroDB, with embedded chapters as fallback. Prompt asks first. Plays you start yourself (single plays, etc) still prompt when Auto is selected.</property>
+                          <property name="setting_description">Skip TV intros via TheIntroDB then IntroDB, with embedded chapters as fallback. Off = off. Auto = skip without asking. Prompt = ask first (Yes skips; No or ignore/timeout does not).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoplay_skip_intro)</onclick>
                       </item>
                       <item>
@@ -3857,7 +3912,7 @@
                           <property name="setting_label">    - Also On Plays You Start Yourself</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.skip_intro_all_episodes)]</property>
-                          <property name="setting_description">Apply Skip Intro to library and source-list plays (single plays, etc). Auto still prompts before skipping on those plays.</property>
+                          <property name="setting_description">On: use the Skip Intro mode above for episodes you pick yourself (library, source list, first episode of a binge). Off: Skip Intro only for Autoplay / Autoscrape / Random Continual next-episode plays.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=skip_intro_all_episodes)</onclick>
                       </item>
                       <item>

@@ -1,0 +1,30 @@
+name: Publish Kodi repo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugin.video.redlight/**'
+      - 'tools/build-repo.sh'
+      - '.github/workflows/publish-repo.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build repo (dist/)
+        run: bash ./tools/build-repo.sh plugin.video.redlight
+
+      - name: Publish dist/ to gh-pages
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          force_orphan: true

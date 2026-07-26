@@ -243,6 +243,31 @@ def default_field_choices():
 	return tuple(i for i in VALID_FIELDS if i in common)
 
 
+_SIMKL_STATUSES = ('plantowatch', 'watching', 'completed', 'hold', 'dropped')
+
+
+def _expand_legacy_simkl_overrides(media_type):
+	"""Copy pre-2.0.1 shared simkl:movies/shows into each status scope, then drop the shared row.
+
+	2.0.0 stored one override for every Simkl shelf. Soft-falling back to that shared scope forever
+	would make Use Default on one shelf keep applying the old shared sort instead of the Content
+	Movies/TV default. Expanding once preserves the old ordering on every shelf until the user
+	changes an individual list.
+	"""
+	from caches.list_sort_cache import scope_key, normalize_media_type, get_override, set_override, delete_override
+	normalized = normalize_media_type(media_type)
+	if not normalized: return
+	legacy_scope = scope_key('simkl', normalized)
+	raw = get_override(legacy_scope)
+	if not raw: return
+	ok = True
+	for status in _SIMKL_STATUSES:
+		status_scope = scope_key('simkl.%s' % status, normalized)
+		if get_override(status_scope): continue
+		if not set_override(status_scope, raw): ok = False
+	if ok: delete_override(legacy_scope)
+
+
 def resolve(list_key, media_type=None, fallback=None):
 	"""Per-list override, else the mediatype default, else fallback, else DEFAULT_SPEC.
 
@@ -252,8 +277,16 @@ def resolve(list_key, media_type=None, fallback=None):
 	override row, so without it they would land on DEFAULT_SPEC and silently reorder on upgrade.
 	"""
 	from caches.list_sort_cache import scope_key, normalize_media_type, get_override
+	if list_key.startswith('simkl.'):
+		_expand_legacy_simkl_overrides(media_type)
 	scope = scope_key(list_key, media_type)
 	raw = get_override(scope)
+	if not raw and list_key.startswith('tmdb.') and ':' in list_key:
+		# Legacy TMDb watchlist/favorites migration wrote tmdb:watchlist (no media suffix).
+		# Current fixed shelves use tmdb.watchlist:movies / :shows as the full list_key.
+		shelf = list_key.split('.', 1)[1].split(':', 1)[0]
+		if shelf in ('watchlist', 'favorites', 'recommendations'):
+			raw = get_override('tmdb:%s' % shelf)
 	if raw:
 		spec = parse_spec(raw, fallback=None)
 		if format_spec(spec) == raw: return spec
@@ -350,11 +383,15 @@ def migrate_legacy_sort_settings(old_settings):
 		overrides['%s:shows' % list_key] = mdblist_spec
 	simkl_spec = LEGACY_SYNC_CODES.get(_legacy_code(old_settings, 'sort.simkl'))
 	if simkl_spec and simkl_spec != baseline:
-		overrides['simkl:movies'] = simkl_spec
-		overrides['simkl:shows'] = simkl_spec
-	for old_id, scope in (('tmdbsort.watchlist', 'tmdb:watchlist'), ('tmdbsort.favorites', 'tmdb:favorites')):
+		for status in ('plantowatch', 'watching', 'completed', 'hold', 'dropped'):
+			overrides['simkl.%s:movies' % status] = simkl_spec
+			overrides['simkl.%s:shows' % status] = simkl_spec
+	for old_id, list_key in (('tmdbsort.watchlist', 'tmdb.watchlist'), ('tmdbsort.favorites', 'tmdb.favorites')):
 		tmdb_spec = LEGACY_TMDB_CODES.get(_legacy_code(old_settings, old_id))
-		if tmdb_spec: overrides[scope] = tmdb_spec
+		if not tmdb_spec: continue
+		# Full scopes (no further media suffix): tmdb.watchlist:movies / :shows
+		overrides['%s:movies' % list_key] = tmdb_spec
+		overrides['%s:shows' % list_key] = tmdb_spec
 	return {'defaults': defaults, 'overrides': overrides}
 
 

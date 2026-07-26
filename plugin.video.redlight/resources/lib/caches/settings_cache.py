@@ -17,6 +17,15 @@ _SETTINGS_WIDGETS_MIGRATED = 'redlight.settings_widgets_migrated'
 _SETTINGS_DB_SYNCED = 'redlight.settings_db_synced'
 _SETTINGS_SYNC_FINGERPRINT = 'redlight.settings_sync_fingerprint'
 _WIDGET_REFRESH_SCHEDULED = 'redlight.widgets_refresh_scheduled'
+_SERVICE_AUTH_VISIBILITY_SETTINGS = frozenset((
+	'rd.token', 'pm.token', 'ad.token', 'oc.token', 'tb.token',
+	'easynews_user', 'easynews_password',
+))
+# Meta account auth — Home props drive Meta Accounts sync-row visibility while Settings stays open.
+_META_AUTH_VISIBILITY_SETTINGS = frozenset((
+	'trakt.user', 'trakt.token', 'simkl.user', 'simkl.token',
+	'mdblist.user', 'mdblist.token',
+))
 _NEW_SETTING_VALUE_MIGRATIONS = {
 	'trakt.calendar_display': 'single_ep_display',
 	'trakt.calendar_display_widget': 'single_ep_display_widget',
@@ -293,6 +302,19 @@ class SettingsCache:
 			except: pass
 		if _properties_loaded():
 			self.set_memory_cache(setting_id, setting_value)
+			if setting_id in _SERVICE_AUTH_VISIBILITY_SETTINGS:
+				try:
+					from modules.service_expiry import publish_settings_expiry_properties
+					publish_settings_expiry_properties()
+				except: pass
+			if setting_id in _META_AUTH_VISIBILITY_SETTINGS:
+				try:
+					from modules.settings import watched_provider_options
+					opts = watched_provider_options()
+					current = str(self.read_db_value('watched_indicators') or '0')
+					label = opts.get(current) or opts.get('0', 'Red Light')
+					self.set_memory_cache('watched_indicators_name', label)
+				except: pass
 		if setting_type == 'action' and 'settings_options' in setting_info:
 			name_setting_id = '%s_name' % setting_id
 			if setting_id == 'watched_indicators':
@@ -481,6 +503,10 @@ def refresh_settings_manager_properties():
 		refresh_playback_subs_source()
 		refresh_alert_timing_settings()
 		refresh_external_scraper_properties()
+	except: pass
+	try:
+		from modules.service_expiry import publish_settings_expiry_properties
+		publish_settings_expiry_properties()
 	except: pass
 
 def bootstrap_settings_properties(force=False):
@@ -961,10 +987,8 @@ def set_from_list(params):
 		except: pass
 	if setting_id == 'watched_indicators' and setting_value == '2' and str(prev_value) != '2':
 		try:
-			from modules.settings import trakt_user_active, offer_trakt_import_to_simkl
-			if trakt_user_active() and not offer_trakt_import_to_simkl():
-				from apis.simkl_api import simkl_sync_activities
-				simkl_sync_activities(force_update=True)
+			from apis.simkl_api import simkl_sync_activities
+			simkl_sync_activities(force_update=True)
 		except: pass
 
 def set_source_folder_path(params):
@@ -1279,6 +1303,12 @@ def default_settings():
 {'setting_id': 'provider.easynews', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'services.expiry_alert_days', 'setting_type': 'action', 'setting_default': '7', 'min_value': '0', 'max_value': '90'},
 {'setting_id': 'services.expiry_alert_state', 'setting_type': 'string', 'setting_default': '{}'},
+{'setting_id': 'services.expiry_alert.ad', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'services.expiry_alert.easynews', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'services.expiry_alert.oc', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'services.expiry_alert.pm', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'services.expiry_alert.rd', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'services.expiry_alert.tb', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'easynews_user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'easynews_password', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'easynews.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
@@ -1420,6 +1450,7 @@ def default_settings():
 {'setting_id': 'auto_play_movie', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'results_quality_movie', 'setting_type': 'string', 'setting_default': 'SD, 720p, 1080p, 4K'},
 {'setting_id': 'autoplay_quality_movie', 'setting_type': 'string', 'setting_default': 'SD, 720p, 1080p, 4K'},
+{'setting_id': 'autoplay.movie_size_max', 'setting_type': 'action', 'setting_default': '0', 'min_value': '0'},
 {'setting_id': 'auto_resume_movie', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Never', '1': 'Always', '2': 'Autoplay Only'}},
 {'setting_id': 'stinger_alert.show', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'stinger_alert.window_percentage', 'setting_type': 'action', 'setting_default': '90', 'min_value': '1', 'max_value': '99'},
@@ -1428,6 +1459,7 @@ def default_settings():
 {'setting_id': 'auto_play_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'results_quality_episode', 'setting_type': 'string', 'setting_default': 'SD, 720p, 1080p, 4K'},
 {'setting_id': 'autoplay_quality_episode', 'setting_type': 'string', 'setting_default': 'SD, 720p, 1080p, 4K'},
+{'setting_id': 'autoplay.episode_size_max', 'setting_type': 'action', 'setting_default': '0', 'min_value': '0'},
 {'setting_id': 'autoplay_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoplay_alert_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Window', '1': 'Notification'}},
 {'setting_id': 'autoplay_default_action', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Play', '1': 'Cancel', '2': 'Pause & Wait'}},

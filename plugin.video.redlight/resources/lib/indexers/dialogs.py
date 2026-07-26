@@ -683,9 +683,9 @@ def trakt_manager_choice(params):
 	else:
 		choices.append(('Add to [B]Watchlist[/B]', 'add_watchlist'))
 	if trakt_api.trakt_item_in_sync_list('collection', media_type, tmdb_id, imdb_id, tvdb_id):
-		choices.append(('Remove from [B]Collection[/B]', 'remove_collection'))
+		choices.append(('Remove from [B]Library[/B]', 'remove_collection'))
 	else:
-		choices.append(('Add to [B]Collection[/B]', 'add_collection'))
+		choices.append(('Add to [B]Library[/B]', 'add_collection'))
 	if trakt_api.trakt_item_in_favorites(media_type, tmdb_id, imdb_id, tvdb_id):
 		choices.append(('Remove from [B]Favorites[/B]', 'remove_favorites'))
 	else:
@@ -700,7 +700,7 @@ def trakt_manager_choice(params):
 	if in_lists:
 		choices.append(('Remove from [B]Personal List[/B]...', 'remove'))
 	watchlist_label = 'Movies Watchlist' if list_media == 'movie' else 'TV Shows Watchlist'
-	collection_label = 'Movies Collection' if list_media == 'movie' else 'TV Shows Collection'
+	collection_label = 'Movies Library' if list_media == 'movie' else 'TV Shows Library'
 	favorites_label = 'Favorite Movies' if list_media == 'movie' else 'Favorite TV Shows'
 	list_mode = 'build_movie_list' if list_media == 'movie' else 'build_tvshow_list'
 	choices.extend([
@@ -708,7 +708,7 @@ def trakt_manager_choice(params):
 		('Mark as [B]Unwatched[/B]', 'mark_unwatched'),
 		('Reset [B]Scrobble[/B]', 'reset_scrobble'),
 		('Open [B]Watchlist[/B]', 'open_watchlist'),
-		('Open [B]Collection[/B]', 'open_collection'),
+		('Open [B]Library[/B]', 'open_collection'),
 		('Open [B]Favorites[/B]', 'open_favorites'),
 		('Open [B]Liked Lists[/B]', 'open_liked_lists'),
 		('Open [B]My Lists[/B]', 'open_my_lists'),
@@ -754,7 +754,7 @@ def trakt_manager_choice(params):
 def _trakt_list_shortcut_choice(params, list_type):
 	if not settings.trakt_user_active(): return kodi_utils.notification('No Active Trakt Account', 3500)
 	from apis import trakt_api
-	label = 'Watchlist' if list_type == 'watchlist' else 'Collection'
+	label = 'Watchlist' if list_type == 'watchlist' else 'Library'
 	heading = params.get('title') or ('Trakt %s' % label)
 	in_list = trakt_api.trakt_item_in_sync_list(list_type, params['media_type'], params.get('tmdb_id'), params.get('imdb_id'), params.get('tvdb_id'))
 	text = 'Remove from %s?' % label if in_list else 'Add to %s?' % label
