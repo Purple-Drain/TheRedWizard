@@ -27,20 +27,23 @@ Original 4-step plan (from the other session that owned this work):
 
 ## Done (2026-07-26, worktree `hosted-repo-pages`)
 
-- **Step 2 — hosting workflow added.** `.github/workflows/publish-repo.yml`
-  runs `tools/build-repo.sh` on every push to `main` that touches the addon
-  or the build script (plus manual `workflow_dispatch`), and publishes
-  `dist/` to an orphan `gh-pages` branch via `peaceiris/actions-gh-pages`.
-  **Not yet pushed to `origin`, and GitHub Pages is not yet enabled in repo
-  settings** — both are visible/external actions that need an explicit go
-  before this becomes a live public URL.
+- **Step 2 — hosting is LIVE.** `.github/workflows/publish-repo.yml` builds
+  `dist/` via `tools/build-repo.sh` (invoked with `bash` — the script isn't
+  marked executable in this Windows-originated checkout) and publishes it to
+  an orphan `gh-pages` branch via `peaceiris/actions-gh-pages`, pinned to
+  commit SHAs (not mutable tags — closes a `ci-cd-supply-chain` finding from
+  automated review). GitHub Pages enabled via `gh api` sourced from
+  `gh-pages` root. Confirmed serving `2.0.3+pd.1`'s `addons.xml` at
+  **https://purple-drain.github.io/TheRedWizard/** as of 2026-07-26.
+  Reviewed for leaks before enabling: repo was already public, built zip and
+  addon source contain no credentials (debrid tokens/WebDAV creds live only
+  in `kodi-shield-config`'s gitignored `secrets.env` / on-device
+  `settings.xml`, untouched by this workflow).
 
 ## Not done
 
-- **Hosting not live.** The workflow exists but hasn't run yet — no
-  `gh-pages` branch on the remote, GitHub Pages isn't turned on in repo
-  settings, so there's no public URL serving `dist/`.
-  `repository.purpledrain` as an installable addon doesn't exist yet.
+- **`repository.purpledrain` addon doesn't exist yet** — nothing installed
+  on the Shield points at the hosted URL above; it's live but unconsumed.
 - **Step 3 — Shield not pointed at anything hosted.** It still gets Redlight
   via `adb push` with `general.addonupdates = 2` (Never), confirmed live
   2026-07-26. This is intentional/safe for now — nothing to point it at.
@@ -52,8 +55,7 @@ Original 4-step plan (from the other session that owned this work):
 
 ## Next steps (tracked as tasks)
 
-1. Decide hosting mechanism (`gh-pages` vs. other) and wire up serving
-   `dist/` at a stable URL.
+1. ~~Decide hosting mechanism and wire up serving `dist/` at a stable URL.~~ Done — https://purple-drain.github.io/TheRedWizard/
 2. Install `repository.purpledrain` on the Shield, verify Kodi resolves
    `plugin.video.redlight` from it (not `repository.redwizard`) at the
    version tie-break, then switch the update source.
