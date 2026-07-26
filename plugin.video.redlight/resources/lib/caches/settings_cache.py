@@ -25,6 +25,7 @@ _SERVICE_AUTH_VISIBILITY_SETTINGS = frozenset((
 _META_AUTH_VISIBILITY_SETTINGS = frozenset((
 	'trakt.user', 'trakt.token', 'simkl.user', 'simkl.token',
 	'mdblist.user', 'mdblist.token',
+	'wetrakr.user', 'wetrakr.token',
 ))
 _NEW_SETTING_VALUE_MIGRATIONS = {
 	'trakt.calendar_display': 'single_ep_display',
@@ -1097,6 +1098,12 @@ def default_settings():
 {'setting_id': 'external_scraper.cm_menu_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cm_manager_order_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cm_manager_order_migrated_v2', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'cm_manager_order_migrated_v3', 'setting_type': 'boolean', 'setting_default': 'false'},
+#======+============= WeTrakr (scrobble only)
+{'setting_id': 'wetrakr.user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
+{'setting_id': 'wetrakr.token', 'setting_type': 'string', 'setting_default': '0'},
+{'setting_id': 'wetrakr.scrobble', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'wetrakr.scrobble_threshold', 'setting_type': 'action', 'setting_default': '90', 'min_value': '50', 'max_value': '99'},
 #======+============= Trakt Cache
 {'setting_id': 'trakt.sync_interval', 'setting_type': 'action', 'setting_default': '60', 'min_value': '5', 'max_value': '600'},
 {'setting_id': 'trakt.refresh_widgets', 'setting_type': 'boolean', 'setting_default': 'true'},
@@ -1186,10 +1193,10 @@ def default_settings():
 #==================== Context Menu
 {'setting_id': 'context_menu.enabled', 'setting_type': 'string',
 'setting_default': 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-'mdblist_manager,simkl_manager,trakt_manager,tmdb_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
+'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
 {'setting_id': 'context_menu.order', 'setting_type': 'string',
 'setting_default': 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-'mdblist_manager,simkl_manager,trakt_manager,tmdb_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
+'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
 
 
 #==================================================================================#

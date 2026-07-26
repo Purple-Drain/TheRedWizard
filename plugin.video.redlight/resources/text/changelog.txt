@@ -1,3 +1,10 @@
+[COLOR red][B]Version 2.0.8[/B][/COLOR]
+- [B]WeTrakr[/B]: authorise under Meta Accounts for [B]scrobble only[/B] — Red Light reports play/pause/finish to WeTrakr. [B]Enable Scrobbling[/B] toggles reporting without revoking (default on). [B]Scrobble at %[/B] defaults to [B]90[/B] (aligned with Red Light's watched mark). Watched ticks, resume, Next Episodes, and lists stay with [B]Watched Status Provider[/B] (recommended: [B]Red Light[/B]). Details via About WeTrakr Scrobble and the settings descriptions. Defers when the official [B]script.wetrakr[/B] add-on is already authorised.
+- [B]Menus / Context / Info[/B]: list/auth services ordered A–Z where it helps (context catalog, Options, Random Lists, cache clears, related info text). [B]Meta Accounts[/B]: MDBList → Simkl → Trakt → WeTrakr → OMDb → TMDb API → TMDb Lists → RPDb → Google → Groq. Existing context-menu order migrates on upgrade.
+- [B]My Lists[/B]: nested items use context icons (Calendar, Favorites, Movies/TV, Next Up, etc.); service brand icons stay on the root folders.
+- [B]Settings[/B]: [B]Context Menu[/B] (Choose Content / Choose Order) moved from [B]Content[/B] to [B]Features[/B], beside Extras.
+- [B]Import & Export[/B]: post-import Meta Accounts re-authorise reminder now includes [B]TMDb Lists[/B] and [B]WeTrakr[/B] (with MDBList / Simkl / Trakt). API-key metas unchanged. New tip under Tips for Use covers all three backup pairs (Settings, Favorites & History, Kodi Favorites).
+
 [COLOR red][B]Version 2.0.7[/B][/COLOR]
 - [B]Real-Debrid[/B]: with [B]Add Resolved Debrid Cache to Cloud = None[/B], do not delete Downloads history before Kodi opens the play URL (that could invalidate the unrestricted CDN link — same class of failure as Offcloud #160). Temp torrent is still removed at resolve; Downloads history is cleared after playback finishes or fails so Check Before Full Search leftovers stay fixed.
 

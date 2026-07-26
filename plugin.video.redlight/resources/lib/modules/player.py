@@ -231,6 +231,7 @@ class RedLightPlayer(xbmc.Player):
 			ku.hide_busy_dialog()
 			ku.sleep(1000)
 			self._simkl_scrobble_start()
+			self._wetrakr_scrobble_start()
 			self._maybe_start_subtitle_alert_fetch()
 			self._maybe_start_introdb_alert_fetch()
 			self._intro_skip_fetch_started = False
@@ -268,6 +269,7 @@ class RedLightPlayer(xbmc.Player):
 						self._start_intro_skip_fetch()
 					self._maybe_apply_intro_skip()
 					self.current_point = round(float(self.curr_time/self.total_time * 100), 1)
+					self._wetrakr_progress_tick()
 					if play_random_continual:
 						if self._should_prep_random_continual():
 							self.random_continual_triggered = True
@@ -439,16 +441,78 @@ class RedLightPlayer(xbmc.Player):
 		if not simkl_official_status(self.media_type): return
 		Thread(target=simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
 
+	def _wetrakr_meta_kwargs(self, percent):
+		ep_title = ''
+		show_title = None
+		if self.media_type == 'episode':
+			try: ep_title = (self.meta_get('ep_name') if getattr(self, 'meta_get', None) else '') or ''
+			except: ep_title = ''
+			show_title = getattr(self, 'title', '') or ''
+			title = ep_title or show_title
+		else:
+			title = getattr(self, 'title', '') or ''
+		return {
+			'progress': percent,
+			'title': title,
+			'year': getattr(self, 'year', None),
+			'tmdb_id': getattr(self, 'tmdb_id', None),
+			'imdb_id': getattr(self, 'imdb_id', None),
+			'tvdb_id': getattr(self, 'tvdb_id', None),
+			'season': getattr(self, 'season', None),
+			'episode': getattr(self, 'episode', None),
+			'show_title': show_title
+		}
+
+	def _wetrakr_send(self, event, percent):
+		if self.is_generic or not st.wetrakr_user_active(): return
+		from apis.wetrakr_api import wetrakr_should_scrobble, wetrakr_send_event
+		if not wetrakr_should_scrobble(): return
+		kwargs = self._wetrakr_meta_kwargs(percent)
+		Thread(target=wetrakr_send_event, args=(event, self.media_type), kwargs=kwargs).start()
+
+	def _wetrakr_scrobble_start(self):
+		self._wetrakr_scrobbled = False
+		self._wetrakr_last_progress_send = 0
+		percent = self.playback_percent if self.playback_percent else 0
+		self._wetrakr_send('playing', percent)
+
+	def _wetrakr_progress_tick(self):
+		if self.is_generic or getattr(self, '_wetrakr_scrobbled', False): return
+		if not st.wetrakr_user_active(): return
+		from apis.wetrakr_api import wetrakr_should_scrobble, wetrakr_scrobble_threshold
+		if not wetrakr_should_scrobble(): return
+		now = time.time()
+		last = getattr(self, '_wetrakr_last_progress_send', 0) or 0
+		if now - last >= 30:
+			self._wetrakr_last_progress_send = now
+			self._wetrakr_send('playing', self.current_point)
+		threshold = wetrakr_scrobble_threshold()
+		if self.current_point >= threshold and not getattr(self, '_wetrakr_scrobbled', False):
+			self._wetrakr_scrobbled = True
+			self._wetrakr_send('scrobble', self.current_point)
+
+	def _wetrakr_on_stop(self, percent, force_scrobble=False):
+		if getattr(self, '_wetrakr_scrobbled', False): return
+		from apis.wetrakr_api import wetrakr_scrobble_threshold
+		threshold = wetrakr_scrobble_threshold()
+		if force_scrobble or percent >= threshold:
+			self._wetrakr_scrobbled = True
+			self._wetrakr_send('scrobble', 100 if force_scrobble else percent)
+		elif percent >= 5:
+			self._wetrakr_send('paused', percent)
+
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
 		try:
 			if self.current_point >= 90 or force_watched:
 				self._simkl_scrobble_stop(100)
+				self._wetrakr_on_stop(100, force_scrobble=True)
 				watched_function = ws.mark_movie if self.media_type == 'movie' else ws.mark_episode
 				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
 				Thread(target=self.run_media_progress, args=(watched_function, watched_params)).start()
 			else:
+				self._wetrakr_on_stop(self.current_point)
 				ku.clear_property('redlight.random_episode_history')
 				if self.current_point >= 5:
 					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,

@@ -73,6 +73,9 @@ def routing(sys):
 	elif 'mdblist.' in mode:
 		from apis import mdblist_api
 		return exec('mdblist_api.%s(params)' % mode.split('.')[1])
+	elif 'wetrakr.' in mode:
+		from apis import wetrakr_api
+		return exec('wetrakr_api.%s(params)' % mode.split('.')[1])
 	elif 'trakt.' in mode:
 		if '.list' in mode:
 			from indexers import trakt_lists

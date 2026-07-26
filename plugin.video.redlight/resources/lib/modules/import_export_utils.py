@@ -49,10 +49,13 @@ def _same_folder(a, b):
 def meta_account_names(accounts):
 	if not accounts:
 		return ''
+	# A–Z; OAuth / session metas only.
 	names = []
-	if accounts.get('trakt'): names.append('Trakt')
-	if accounts.get('simkl'): names.append('Simkl')
 	if accounts.get('mdblist'): names.append('MDBList')
+	if accounts.get('simkl'): names.append('Simkl')
+	if accounts.get('tmdb_lists'): names.append('TMDb Lists')
+	if accounts.get('trakt'): names.append('Trakt')
+	if accounts.get('wetrakr'): names.append('WeTrakr')
 	return ', '.join(names)
 
 
