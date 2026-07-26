@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Build repo (dist/)
-        run: ./tools/build-repo.sh plugin.video.redlight
+        run: bash ./tools/build-repo.sh plugin.video.redlight
 
       - name: Publish dist/ to gh-pages
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
