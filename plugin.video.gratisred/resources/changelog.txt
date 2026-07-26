@@ -1,4 +1,7 @@
 
+[B]- 1.1.9 (2026-07-26)[/B] Playback unwatch safety (#157 / #163):
+ * [B]Playback[/B]: stop sending automatic Trakt/Simkl "not watched" updates while progress is below the 92% watched threshold (and on rewind). Auto-mark at >=92% and manual Unwatched are unchanged - avoids wiping remote watched history when indicators are stale.
+
 [B]- 1.1.8 (2026-07-25)[/B] Trakt watched follow-up (#157):
  * [B]Trakt[/B]: after auto-mark during playback, refresh the underlying list once playback stops/ends (same [I]Container.Refresh[/I] as manual Watched) so checkmarks appear without leaving and re-entering — all platforms, no device-specific branching.
  * [B]Trakt[/B]: episode auto-mark now passes TVDb as well as TMDb/IMDb into the history ID fallback.
