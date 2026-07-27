@@ -8,3 +8,6 @@ __pycache__/
 
 # Claude Code local session/tooling state -- never meant to be committed or pushed.
 .claude/
+
+# Local session handoff notes -- private, never meant to reach the fork or upstream.
+CLAUDE.md

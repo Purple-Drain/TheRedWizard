@@ -1622,11 +1622,11 @@
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.user),empty_setting)</visible>
-                          <property name="setting_label">    - Import Trakt to Simkl</property>
+                          <property name="setting_label">    - Import Trakt History</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Open Simkl's official Trakt import page (QR code or copied link). Use when moving watch history from Trakt to Simkl.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=simkl.simkl_import_trakt)</onclick>
+                          <property name="setting_description">Pull your Trakt watched history directly via the Trakt/Simkl APIs and add it to Simkl. Requires an authorised Trakt account. Use this instead of Simkl's own hosted Trakt-import page, which is now paywalled on Simkl's free plan.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=simkl.simkl_migrate_trakt_history)</onclick>
                       </item>
         <!-- Trakt -->
                       <item>
