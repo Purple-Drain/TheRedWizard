@@ -112,7 +112,16 @@ def call_trakt(path, params=None, data=None, is_delete=False, with_auth=True, me
 	headers = response.headers
 	if status_code == 401:
 		if with_auth:
-			if settings.trakt_user_active(): trakt_refresh_token()
+			if settings.trakt_user_active():
+				old_token = _trakt_setting('trakt.token')
+				trakt_refresh_token()
+				new_token = _trakt_setting('trakt.token')
+				if not new_token or new_token == old_token: return None
+				response = send_query()
+				try: status_code = response.status_code
+				except: return None
+				headers = response.headers
+				if status_code == 401: return None
 			else: return None
 		else: return None
 	elif status_code == 429:
@@ -408,7 +417,8 @@ def trakt_watched_status_mark(action, media, media_id, tvdb_id=0, season=None, e
 		elif media =='shows': data = {'shows': [{'ids': {key: media_id}}]}
 		else: data = {'shows': [{'ids': {key: media_id}, 'seasons': [{'number': int(season)}]}]}#season
 	result = call_trakt(url, data=data)
-	success = result[result_key][success_key] > 0
+	if not isinstance(result, dict): return False
+	success = (result.get(result_key) or {}).get(success_key, 0) > 0
 	if not success:
 		if media != 'movies' and tvdb_id != 0 and key != 'tvdb': return trakt_watched_status_mark(action, media, tvdb_id, 0, season, episode, 'tvdb')
 	return success

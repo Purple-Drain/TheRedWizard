@@ -131,28 +131,87 @@ def simkl_authenticate(dummy=''):
 	except: pass
 	return True
 
-SIMKL_TRAKT_IMPORT_URL = 'https://simkl.com/apps/import/trakt/'
-
-def simkl_import_trakt(params=None):
-	from threading import Thread
-	url = SIMKL_TRAKT_IMPORT_URL
-	icon = kodi_utils.get_icon('simkl') or kodi_utils.addon_icon()
-	try: copy2clip(url)
-	except: pass
-	try: qr_code = make_qrcode(url) or icon
-	except: qr_code = icon
-	content = ('Official Simkl Trakt import page:[CR][CR][B]%s[/B][CR][CR]'
-		'Scan the QR code with your phone, or paste the copied link into a browser.[CR][CR]'
-		'Complete the import on Simkl, then close this dialog to sync.' % url)
-	try:
-		progress = kodi_utils.progress_dialog('Import Trakt to Simkl', qr_code)
-		progress.update(content, 0)
-		while not progress.iscanceled(): kodi_utils.sleep(500)
+def simkl_migrate_trakt_history(dummy=''):
+	"""Bulk-push Trakt watched history into Simkl via the sync/history API, bypassing Simkl's own (paywalled) hosted import wizard."""
+	from apis import trakt_api
+	if not settings.trakt_user_active(): return kodi_utils.notification('No Active Trakt Account', 3500)
+	if not settings.simkl_user_active(): return kodi_utils.notification('No Active Simkl Account', 3500)
+	progress = kodi_utils.progress_dialog('Import Trakt History to Simkl', kodi_utils.get_icon('simkl') or kodi_utils.addon_icon())
+	progress.update('Reading Trakt watched history...', 0)
+	movies_result = trakt_api.get_trakt({'path': 'sync/watched/movies%s', 'with_auth': True, 'fetch_all': True})
+	shows_result = trakt_api.get_trakt({'path': 'sync/watched/shows%s', 'params': {'extended': 'progress'}, 'with_auth': True, 'fetch_all': True})
+	if movies_result is None and shows_result is None:
 		progress.close()
-	except:
-		kodi_utils.ok_dialog(heading='Import Trakt to Simkl',
-			text='Open this official Simkl page in a browser:[CR][CR][B]%s[/B][CR][CR]The link has been copied where supported.[CR][CR]When finished, use Force Sync under Meta Accounts > Simkl.' % url)
-	Thread(target=simkl_sync_activities, kwargs={'force_update': True}, daemon=True).start()
+		return kodi_utils.notification('Could Not Read Trakt History', 3500)
+	movies_payload = []
+	for item in (movies_result or []):
+		try:
+			movie = item['movie']
+			tmdb_id = trakt_api.get_trakt_movie_id(movie['ids'])
+			if not tmdb_id: continue
+			entry = {'ids': {'tmdb': int(tmdb_id)}}
+			if item.get('last_watched_at'): entry['watched_at'] = item['last_watched_at']
+			movies_payload.append(entry)
+		except Exception: continue
+	shows_payload = []
+	for item in (shows_result or []):
+		try:
+			show = item['show']
+			tmdb_id = trakt_api.get_trakt_tvshow_id(show['ids'])
+			if not tmdb_id: continue
+			seasons_payload = []
+			for s in item.get('seasons') or []:
+				episodes_payload = []
+				for e in s.get('episodes') or []:
+					ep = {'number': int(e['number'])}
+					if e.get('last_watched_at'): ep['watched_at'] = e['last_watched_at']
+					episodes_payload.append(ep)
+				if episodes_payload: seasons_payload.append({'number': int(s['number']), 'episodes': episodes_payload})
+			if seasons_payload: shows_payload.append({'ids': {'tmdb': int(tmdb_id)}, 'seasons': seasons_payload})
+		except Exception: continue
+	kodi_utils.logger('Simkl Migrate', 'trakt fetch: %s movies, %s shows-with-watched-seasons' % (len(movies_payload), len(shows_payload)))
+	if not movies_payload and not shows_payload:
+		progress.close()
+		return kodi_utils.notification('No Trakt History Found', 3500)
+	progress.update('Sending history to Simkl...', 40)
+
+	def _tally(result):
+		if not isinstance(result, dict): return 0, 0
+		statuses = (result.get('added') or {}).get('statuses') or []
+		ok = sum(1 for s in statuses if isinstance(s, dict) and s.get('response'))
+		not_found = result.get('not_found') or {}
+		missed = sum(len(v) for v in not_found.values() if isinstance(v, list))
+		return ok, missed
+
+	ok_movies = ok_shows = missed_total = 0
+	CHUNK = 200
+	total_chunks = max(1, -(-len(movies_payload) // CHUNK) + -(-len(shows_payload) // CHUNK))
+	done_chunks = 0
+	for i in range(0, len(movies_payload), CHUNK):
+		if progress.iscanceled(): break
+		result = call_simkl('/sync/history', data={'movies': movies_payload[i:i + CHUNK]})
+		kodi_utils.logger('Simkl Migrate', 'movies chunk result: %s' % result)
+		ok, missed = _tally(result)
+		ok_movies += ok
+		missed_total += missed
+		done_chunks += 1
+		progress.update('Sending history to Simkl...', 40 + int(50 * done_chunks / total_chunks))
+	for i in range(0, len(shows_payload), CHUNK):
+		if progress.iscanceled(): break
+		result = call_simkl('/sync/history', data={'shows': shows_payload[i:i + CHUNK]})
+		kodi_utils.logger('Simkl Migrate', 'shows chunk result: %s' % result)
+		ok, missed = _tally(result)
+		ok_shows += ok
+		missed_total += missed
+		done_chunks += 1
+		progress.update('Sending history to Simkl...', 40 + int(50 * done_chunks / total_chunks))
+	progress.close()
+	msg = 'Synced %s Movies, %s Shows to Simkl' % (ok_movies, ok_shows)
+	if missed_total: msg += ' (%s not matched)' % missed_total
+	kodi_utils.notification(msg, 4000)
+	simkl_sync_activities(force_update=True)
+	try: kodi_utils.container_refresh()
+	except Exception: pass
 	return True
 
 def simkl_revoke_authentication(dummy=''):
@@ -439,12 +498,15 @@ def simkl_manager_choice(params):
 		('Open [B]Simkl Lists[/B]', 'open_lists'),
 		('Refresh Widgets', 'refresh'),
 	])
+	if settings.trakt_user_active(): choices.append(('Import Trakt History (Direct)', 'import_trakt_history'))
 	list_items = [{'line1': item[0], 'icon': icon} for item in choices]
 	choice = kodi_utils.select_dialog([i[1] for i in choices], **{'items': json.dumps(list_items), 'heading': 'Simkl Lists Manager'})
 	if choice == None: return
 	if choice == 'refresh':
 		kodi_utils.kodi_refresh()
 		return kodi_utils.notification('Widgets Refreshed', 2500)
+	if choice == 'import_trakt_history':
+		return simkl_migrate_trakt_history()
 	open_modes = {
 		'open_plantowatch': 'navigator.simkl_watchlists',
 		'open_completed': 'navigator.simkl_completed',
