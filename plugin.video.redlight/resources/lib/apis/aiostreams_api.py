@@ -636,12 +636,20 @@ def search(media_type, imdb_id, season=None, episode=None, timeout=30):
 	return [], []
 
 def is_direct_easynews_item(item):
-	"""True for AIOStreams direct EasyNews rows (AIO / EN badge)."""
+	"""True for AIOStreams EasyNews rows (AIO / EN or EN+ badge)."""
 	if not item or not isinstance(item, dict):
 		return False
 	if item.get('scrape_provider') != 'aiostreams':
 		return False
-	if str(item.get('aio_source') or '').strip().upper() == 'EN':
+	# Cached EN badges use EN+ via _debrid_short — strip the cache marker.
+	short = str(item.get('aio_source') or '').strip().upper().rstrip('+')
+	if short == 'EN':
+		return True
+	name = str(item.get('aio_source_name') or '').strip().lower()
+	if 'easynews' in name:
+		return True
+	icon = str(item.get('aio_source_icon') or '').strip().lower()
+	if icon == 'easynews':
 		return True
 	url = str(item.get('url_dl') or item.get('url') or '').lower()
 	return 'easynews' in url
@@ -660,6 +668,10 @@ def _probe_final_url(url, headers=None, timeout=12):
 	try:
 		resp = requests.get(url, headers=headers or {}, allow_redirects=True, stream=True, timeout=timeout)
 		try:
+			# 404/5xx on the AIO wrapper must not be handed to Kodi as a playable URL —
+			# RETRYx / failover need a failed resolve (None), not one dead OpenFile.
+			if resp.status_code >= 400:
+				return None
 			return (resp.url or url).strip()
 		finally:
 			resp.close()
@@ -715,9 +727,24 @@ def resolve_playback_url(item):
 	needs_probe = '/debrid/playback/' in bare.lower() or item.get('cached') is False
 	if needs_probe:
 		final = _probe_final_url(bare, headers)
-		if final and _is_placeholder_stream_url(final):
+		if not final:
+			return None
+		if _is_placeholder_stream_url(final):
 			logger('aiostreams playback', 'rejected uncached placeholder stream: %s' % final)
 			return None
+		# Some EN rows are mis-labelled by the instance; still apply No Seek when the
+		# wrapper lands on EasyNews CDN.
+		if 'easynews.com' in final.lower():
+			use_non_seek = None
+			try:
+				from modules.settings import easynews_playback_method
+				use_non_seek = easynews_playback_method('non_seek')
+			except Exception:
+				use_non_seek = False
+			if use_non_seek:
+				logger('aiostreams playback', 'EN No Seek applied (probe) | %s' % final[:120])
+				return _append_play_options(final, None, seekable=0)
+			return _append_play_options(final, None)
 	if headers: return '%s|%s' % (url, urlencode(headers))
 	return url
 

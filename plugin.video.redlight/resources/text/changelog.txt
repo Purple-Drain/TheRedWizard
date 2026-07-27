@@ -1,3 +1,7 @@
+[COLOR red][B]Version 2.1.0[/B][/COLOR]
+- [B]Subtitles[/B]: rate-limit reject no longer treats SRT cue index [I]429[/I] (or long real downloads) as an error — restores auto-apply after OpenSubtitles/SubMaker pick.
+- [B]AIOStreams EasyNews[/B]: Retry/No Seek also apply to cached [I]EN+[/I] badge rows (were only matched as exact [I]EN[/I]); AIO wrapper HTTP 404/5xx fails resolve so RETRYx can re-probe instead of one dead OpenFile.
+
 [COLOR red][B]Version 2.0.9[/B][/COLOR]
 - [B]PunchPlay[/B]: full meta provider — Meta Accounts auth (public Client ID + device code), [B]Watched Status Provider[/B] option, background sync/monitor, native playback scrobble (~90%), My Lists (Watchlist / Collection / Favourites / status shelves / custom lists), manager, calendar, Random Lists, import-export re-auth reminder. Place after MDBList, before Simkl. Defers native scrobble when [B]script.punchplay[/B] is already authorised. Shelf labels use PunchPlay terms (not Trakt Library parity); collection format fixed to [B]digital[/B] on add in v1.
 - [B]PunchPlay[/B]: TV Shows / Movies [B]Watched[/B] (and Recently Watched) refresh PunchPlay history before building the list — same pattern as MDBList — so the first open is not empty or half-synced.

@@ -20,10 +20,15 @@ _SUBS_FINAL_TAIL_SCAN_SEC = 65
 _SUB_EXTS = ('.srt', '.ass', '.ssa', '.sub', '.vtt')
 _ACTIVE_SUB_PROP = 'redlight.active_subtitle_path'
 _SUBMAKER_SKIP_LANGS = frozenset(('sub toolbox',))
+# Phrases seen in tiny provider error bodies wrapped as fake .srt downloads.
+# Do NOT match bare "429" — that is a normal SRT cue index on long episodes.
 _SUBMAKER_ERROR_RE = re.compile(
 	r'scs:\s*an error occurred|provider error|api error|rate limit(?:ed| exceeded)?'
-	r'|too many requests|try again later|invalid api key|unauthorized|\b429\b',
+	r'|too many requests|try again later|invalid api key|unauthorized|http\s*429|\bstatus\s*429\b',
 	re.I)
+# Real episode subs are long; rate-limit stubs are a few lines / one cue.
+_SUB_ERROR_PAYLOAD_MAX_CHARS = 800
+_SUB_ERROR_PAYLOAD_MAX_CUES = 1
 _VTT_TIMESTAMP_RE = re.compile(r'(\d{2}:\d{2}:\d{2})\.(\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2})\.(\d{3})')
 _RELEASE_SOURCE_PATTERNS = (
 	('BLURAY', ('bluray', 'blu.ray', 'blu-ray', 'bdrip', 'bd.rip', 'bdr')),
@@ -363,7 +368,6 @@ def _subtitle_text(content):
 def _is_submaker_error_content(content):
 	text = _subtitle_text(content).strip()
 	if not text: return True
-	if _SUBMAKER_ERROR_RE.search(text): return True
 	sample = text.lstrip()[:256].lower()
 	if sample.startswith('<!doctype') or sample.startswith('<html'): return True
 	if sample.startswith('{'):
@@ -371,6 +375,11 @@ def _is_submaker_error_content(content):
 			data = json.loads(text)
 			if isinstance(data, dict) and (data.get('error') or data.get('message')): return True
 		except: pass
+	# Multi-cue / long files are real subs (dialogue can contain "try again later",
+	# and cue index 429 must never be treated as HTTP 429).
+	if len(text) > _SUB_ERROR_PAYLOAD_MAX_CHARS or _count_subtitle_cues(text) > _SUB_ERROR_PAYLOAD_MAX_CUES:
+		return False
+	if _SUBMAKER_ERROR_RE.search(text): return True
 	return False
 
 def _count_subtitle_cues(content):
