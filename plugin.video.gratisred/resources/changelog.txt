@@ -1,4 +1,19 @@
 
+[B]- 1.2.0 (2026-07-26)[/B] OpenSubtitles dedicated API key:
+ * [B]OpenSubtitles.com[/B]: ships a Gratis Red–only API consumer (separate from Red Light). Existing installs on the old shared key are migrated automatically; the stored login JWT is cleared once so the next check re-authorises with username/password — no manual re-entry.
+
+[B]- 1.1.9 (2026-07-26)[/B] Playback unwatch safety (#157 / #163):
+ * [B]Playback[/B]: stop sending automatic Trakt/Simkl "not watched" updates while progress is below the 92% watched threshold (and on rewind). Auto-mark at >=92% and manual Unwatched are unchanged - avoids wiping remote watched history when indicators are stale.
+
+[B]- 1.1.8 (2026-07-25)[/B] Trakt watched follow-up (#157):
+ * [B]Trakt[/B]: after auto-mark during playback, refresh the underlying list once playback stops/ends (same [I]Container.Refresh[/I] as manual Watched) so checkmarks appear without leaving and re-entering — all platforms, no device-specific branching.
+ * [B]Trakt[/B]: episode auto-mark now passes TVDb as well as TMDb/IMDb into the history ID fallback.
+ * [B]Trakt[/B]: marking a season watched/unwatched uses one season-level [I]/sync/history[/I] call instead of posting every episode.
+
+[B]- 1.1.7 (2026-07-25)[/B] Trakt watched checkmarks (#157):
+ * [B]Trakt[/B]: watched TV sync uses [I]/sync/watched/shows?extended=progress[/I] (paginated) so show/season/episode overlays get the season–episode breakdown again after Trakt's API change; local cache key bumped so the old [I]extended=full[/I] payload is not reused.
+ * [B]Trakt[/B]: mark watched / unwatched for movies, shows, and episodes prefers TMDb, then TVDb, then IMDb (same idea as Red Light); movie Mark Watched context menu now passes TMDb when available.
+
 [B]- 1.1.6 (2026-07-24)[/B] TV Explore menu order + menu view flash:
  * [B]TV Shows[/B]: Explore menus ordered Simkl > Trakt > TMDb (then TVmaze), matching Movies Explore / My Stuff.
  * [B]Menus[/B]: no longer force Estuary WideList/Poster after every folder open (that caused a brief jump through another view); views apply only if saved under Tools > Setup ViewTypes.

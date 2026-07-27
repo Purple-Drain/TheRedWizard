@@ -1,5 +1,5 @@
 !!NEW!!
-[B]List Sort Order[/B] (Settings > Content) sets the default order for movie and TV lists from Trakt (Watchlist / Library), Simkl status shelves, and MDBList.
+[B]List Sort Order[/B] (Settings > Content) sets the default order for movie and TV lists from MDBList, Simkl status shelves, and Trakt (Watchlist / Library).
 
 [B]Per-list overrides[/B]
 Use the context menu [B]Set Custom Sort[/B] on an individual list to override the default for that list only. [B]Use Default[/B] clears the override.

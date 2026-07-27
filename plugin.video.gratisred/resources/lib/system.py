@@ -330,7 +330,7 @@ def router(_argv):
 
     elif action == 'movies_playcount':
         from resources.lib.modules import playcount
-        playcount.movies(imdb, query)
+        playcount.movies(imdb, query, tmdb=tmdb)
 
 
     elif action == 'movies_tmdb_certifications':

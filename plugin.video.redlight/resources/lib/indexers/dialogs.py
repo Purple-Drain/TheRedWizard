@@ -319,12 +319,16 @@ def favorites_manager_choice(params):
 	if people_favorite and success: return text
 
 def ai_model_order_choice(params):
-	model_descriptions = {'gemini-2.5-flash-lite': ('GEMINI FAST, 20 RPD', 'gemini'), 'llama-3.3-70b-versatile': ('GROQ FAST, 140 RPD', 'groq'),
-							'gemma-3-27b-it': ('GEMMA Fast, MANY RPD', 'gemma'), 'llama-3.1-8b-instant': ('GROQ FAST, MANY RPD', 'groq')}
+	model_descriptions = {
+		'gemini-3.1-flash-lite': ('GEMINI FAST, 20 RPD', 'gemini'),
+		'llama-3.3-70b-versatile': ('GROQ FAST, 140 RPD', 'groq'),
+		'gemma-4-31b-it': ('GEMMA Fast, MANY RPD', 'gemma'),
+		'llama-3.1-8b-instant': ('GROQ FAST, MANY RPD', 'groq'),
+	}
 	default_order = default_setting_values('ai_model.order')['setting_default'].split(',')
 	current_order = settings.ai_model_order()
-	choices = [{'line1': 'Position %02d' % (count + 1), 'line2': 'Currently [B]%s[/B] (%s)' % (item, model_descriptions[item][0]),
-				'icon': kodi_utils.get_icon(model_descriptions[item][1]), 'current_item': item, 'display_position': count + 1, 'position': count}
+	choices = [{'line1': 'Position %02d' % (count + 1), 'line2': 'Currently [B]%s[/B] (%s)' % (item, model_descriptions.get(item, ('?', 'folder'))[0]),
+				'icon': kodi_utils.get_icon(model_descriptions.get(item, ('?', 'folder'))[1]), 'current_item': item, 'display_position': count + 1, 'position': count}
 				for count, item in enumerate(current_order)]
 	kwargs = {'items': json.dumps(choices), 'multi_line': 'true', 'heading': 'Choose Sort Order Of AI Models'}
 	choice = kodi_utils.select_dialog(choices, **kwargs)
@@ -332,7 +336,7 @@ def ai_model_order_choice(params):
 	current_model_id = choice['current_item']
 	position = choice['position']
 	display_position = choice['display_position']
-	choices = [{'line1': item, 'line2': model_descriptions[item][0], 'icon': kodi_utils.get_icon(model_descriptions[item][1]), 'model_id': item}
+	choices = [{'line1': item, 'line2': model_descriptions.get(item, ('?', 'folder'))[0], 'icon': kodi_utils.get_icon(model_descriptions.get(item, ('?', 'folder'))[1]), 'model_id': item}
 				for item in default_order if item != current_model_id]
 	kwargs = {'items': json.dumps(choices), 'multi_line': 'true', 'heading': 'Choose Model for Position %02d' % display_position}
 	choice = kodi_utils.select_dialog(choices, **kwargs)
@@ -1233,7 +1237,8 @@ def options_menu_choice(params, meta=None):
 	tmdb_id, content, poster = params_get('tmdb_id', None), params_get('content', None), params_get('poster', None)
 	is_external, from_extras = params_get('is_external') in (True, 'True', 'true'), params_get('from_extras', 'false') == 'true'
 	season, episode = params_get('season', ''), params_get('episode', '')
-	single_ep_list = ('episode.progress', 'episode.recently_watched', 'episode.next_trakt', 'episode.next_redlight', 'episode.next_simkl', 'episode.trakt_recently_aired', 'episode.trakt_calendar')
+	single_ep_list = ('episode.progress', 'episode.recently_watched', 'episode.next_trakt', 'episode.next_redlight', 'episode.next_simkl', 'episode.next_mdblist',
+					'episode.trakt_recently_aired', 'episode.trakt_calendar', 'episode.mdblist_calendar')
 	if not content: content = kodi_utils.container_content()[:-1]
 	menu_type = content
 	if content.startswith('episode.'): content = 'episode'
@@ -1250,8 +1255,8 @@ def options_menu_choice(params, meta=None):
 	if menu_type in ('movie', 'tvshow'):
 		if settings.mdblist_user_active(): listing_append(('MDBList Manager', '', 'mdblist_manager'))
 		if settings.simkl_user_active(): listing_append(('Simkl Lists Manager', '', 'simkl_manager'))
-		if settings.trakt_user_active(): listing_append(('Trakt Lists Manager', '', 'trakt_manager'))
 		if settings.tmdblist_user_active(): listing_append(('TMDb Lists Manager', '', 'tmdblists_manager_choice'))
+		if settings.trakt_user_active(): listing_append(('Trakt Lists Manager', '', 'trakt_manager'))
 		listing_append(('Personal Lists Manager', '', 'personallists_manager_choice'))
 		listing_append(('Favorites Manager', '', 'favorites_manager_choice'))
 	if menu_type == 'tvshow': listing_append(('Play Random', 'Based On %s' % rootname, 'random'))

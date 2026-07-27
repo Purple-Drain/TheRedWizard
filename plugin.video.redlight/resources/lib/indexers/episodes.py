@@ -2,12 +2,38 @@
 import sys
 from modules import kodi_utils, settings, watched_status as ws
 from modules.metadata import tvshow_meta, episodes_meta, all_episodes_meta
-from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool
+from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool, datetime_workaround
+from datetime import timedelta
 # logger = kodi_utils.logger
 
-def _nextep_indicator_watchlist():
-	"""Never-started shows from the active Watched Indicators service watchlist (empty for Red Light)."""
-	indicators = settings.watched_indicators()
+def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
+	"""Use Trakt/MDBList air date for calendar label + sort (not TMDb premiered).
+
+	Do not apply the TMDb 20:00 + (UTC+5) fudge here — that pushes service calendar
+	days one day ahead. Date-only events keep their calendar day; ISO timestamps
+	use the user UTC (+/-) setting only.
+	"""
+	if service_first_aired:
+		fa = str(service_first_aired)
+		try:
+			if 'T' in fa:
+				dt = datetime_workaround(fa, '%Y-%m-%dT%H:%M:%S.%fZ')
+				if dt is None:
+					dt = datetime_workaround(fa.split('.')[0].rstrip('Z'), '%Y-%m-%dT%H:%M:%S')
+				if dt is not None:
+					adjusted = dt + timedelta(hours=settings.datetime_utc_offset())
+					return adjusted.date(), adjusted.strftime('%Y-%m-%d')
+			day = fa.split('T')[0][:10]
+			d = jsondate_to_datetime(day, '%Y-%m-%d', remove_time=True)
+			if d is not None:
+				return d, day
+		except Exception:
+			pass
+	return adjust_premiered_date(tmdb_premiered, adjust_hours)
+
+def _nextep_indicator_watchlist(indicators=None):
+	"""Never-started shows from a Watched Indicators service watchlist (empty for Red Light)."""
+	if indicators is None: indicators = settings.watched_indicators()
 	try:
 		if indicators == 1:
 			from apis.trakt_api import trakt_watchlist
@@ -82,6 +108,7 @@ def build_episode_list(params):
 					try: cm = sorted([i for i in cm if i[0] in cm_sort_order], key=lambda k: cm_sort_order[k[0]])
 					except: pass
 				cm = [i[1] for i in cm]
+				studios = list(studio) if isinstance(studio, tuple) else (studio or [])
 				info_tag = listitem.getVideoInfoTag(True)
 				info_tag.setMediaType('episode'), info_tag.setTitle(display), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setGenres(genre)
 				info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot)
@@ -89,15 +116,13 @@ def build_episode_list(params):
 				info_tag.setFirstAired(premiered), info_tag.setTvShowStatus(show_status)
 				info_tag.setCountries(country), info_tag.setTrailer(trailer), info_tag.setDirectors(item_get('director'))
 				info_tag.setYear(int(year)), info_tag.setRating(item_get('rating')), info_tag.setVotes(item_get('votes')), info_tag.setMpaa(mpaa)
-				info_tag.setStudios(studio), info_tag.setWriters(item_get('writer'))
-				full_cast = cast + item_get('guest_stars', [])
+				info_tag.setStudios(studios), info_tag.setWriters(item_get('writer'))
+				full_cast = cast + (item_get('guest_stars') or [])
 				info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
 				if progress and not unaired:
+					# Time only — total would make Kodi/skins show a resume dialog we cannot honour.
 					resume_secs = ws.get_resume_seconds(progress, duration)
-					try: total_secs = float(duration)
-					except Exception: total_secs = 0
-					if total_secs > 0: info_tag.setResumePoint(resume_secs, total_secs)
-					else: info_tag.setResumePoint(resume_secs)
+					info_tag.setResumePoint(resume_secs)
 					set_properties({'WatchedProgress': progress})
 				listitem.setLabel(display)
 				listitem.addContextMenuItems(cm)
@@ -163,12 +188,16 @@ def build_episode_list(params):
 	kodi_utils.set_view_mode('view.episodes', 'episodes', is_external)
 
 def build_single_episode(list_type, params={}):
+	category_override = None
 	def _get_category_name():
+		if category_override: return category_override
 		try:
 			cat_name = {'episode.progress': 'In Progress Episodes',
 						'episode.recently_watched': 'Recently Watched Episodes',
-						'episode.next_trakt': 'Next Episodes', 'episode.next_redlight': 'Next Episodes', 'episode.next_simkl': 'Next Episodes',
-						'episode.trakt': {'true': 'Recently Aired Episodes', None: 'Trakt Calendar'}}[list_type]
+						'episode.next_trakt': 'Next Episodes', 'episode.next_redlight': 'Next Episodes',
+						'episode.next_simkl': 'Next Episodes', 'episode.next_mdblist': 'Next Episodes',
+						'episode.trakt': {'true': 'Recently Aired Episodes', None: 'Trakt Calendar'},
+						'episode.mdblist': 'MDBList Calendar', 'episode.mdblist_next': 'MDBList Next Up'}[list_type]
 			if isinstance(cat_name, dict): cat_name = cat_name[params.get('recently_aired')]
 		except: cat_name = 'Episodes'
 		return cat_name
@@ -198,7 +227,10 @@ def build_single_episode(list_type, params={}):
 			if not item: return
 			item_get = item.get
 			season, episode, ep_name = item_get('season'), item_get('episode'), item_get('title')
-			episode_date, premiered = adjust_premiered_date(item_get('premiered'), adjust_hours)
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'trakt_recently_aired'):
+				episode_date, premiered = _calendar_episode_date(ep_data_get('first_aired'), item_get('premiered'), adjust_hours)
+			else:
+				episode_date, premiered = adjust_premiered_date(item_get('premiered'), adjust_hours)
 			episode_type = item_get('episode_type') or ''
 			episode_id = item_get('episode_id') or None
 			if not episode_date or current_date < episode_date:
@@ -242,7 +274,7 @@ def build_single_episode(list_type, params={}):
 				elif unaired: highlight_start, highlight_end = '[COLOR red]', '[/COLOR]'
 				else: highlight_start, highlight_end = '', ''
 				display = '%s%s%s%s%s%s' % (display_premiered, title_str, highlight_start, seas_ep, ep_name, highlight_end)
-			elif list_type_compare == 'trakt_calendar':
+			elif list_type_compare in ('trakt_calendar', 'mdblist_calendar'):
 				if not episode_date:
 					display_premiered = 'UNKNOWN'
 				else:
@@ -298,6 +330,9 @@ def build_single_episode(list_type, params={}):
 				try: cm = sorted([i for i in cm if i[0] in cm_sort_order], key=lambda k: cm_sort_order[k[0]])
 				except: pass
 			cm = [i[1] for i in cm]
+			# Legacy metacache used 1-tuples for studio; setStudios requires a list.
+			if isinstance(studio, tuple): studio = list(studio)
+			elif not studio: studio = []
 			info_tag = listitem.getVideoInfoTag(True)
 			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display), info_tag.setGenres(genre)
 			info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
@@ -305,14 +340,12 @@ def build_single_episode(list_type, params={}):
 			info_tag.setCountries(meta_get('country', [])), info_tag.setTrailer(trailer), info_tag.setTvShowStatus(show_status)
 			info_tag.setStudios(studio), info_tag.setWriters(item_get('writer')), info_tag.setDirectors(item_get('director'))
 			info_tag.setYear(int(year)), info_tag.setRating(item_get('rating')), info_tag.setVotes(item_get('votes')), info_tag.setMpaa(mpaa)
-			full_cast = cast + item_get('guest_stars', [])
+			full_cast = cast + (item_get('guest_stars') or [])
 			info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
 			if progress and not unaired:
+				# Time only — total would make Kodi/skins show a resume dialog we cannot honour.
 				resume_secs = ws.get_resume_seconds(progress, duration)
-				try: total_secs = float(duration)
-				except Exception: total_secs = 0
-				if total_secs > 0: info_tag.setResumePoint(resume_secs, total_secs)
-				else: info_tag.setResumePoint(resume_secs)
+				info_tag.setResumePoint(resume_secs)
 				set_properties({'WatchedProgress': progress})
 			listitem.setLabel(display)
 			listitem.addContextMenuItems(cm)
@@ -324,19 +357,28 @@ def build_single_episode(list_type, params={}):
 				})
 			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str_season_zfill2, str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
-		except: pass
+		except Exception as e:
+			# Silent drops blank calendars/next-ep lists; log so meta/InfoTag failures are visible.
+			try: kodi_utils.logger('Red Light', 'build_single_episode item failed (%s): %s' % (list_type, e))
+			except: pass
 	kodi_actor, make_listitem, build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
 	poster_empty, fanart_empty = kodi_utils.get_icon('box_office'), kodi_utils.addon_fanart()
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
 	is_anime_list = 'is_anime_list' in params
-	if not is_anime_list and settings.include_anime_tvshow(): is_anime_list = None
+	# Calendars / Next Up are not anime-filtered shelves — never pass False into meta_valid_check.
+	if list_type in ('episode.trakt', 'episode.mdblist', 'episode.mdblist_next'):
+		is_anime_list = None
+	elif not is_anime_list and settings.include_anime_tvshow():
+		is_anime_list = None
 	item_list, airing_today, unwatched, return_results = [], [], [], False
 	resinsert = ''
 	item_list_append = item_list.append
 	window_command = 'ActivateWindow(Videos,%s,return)' if is_external else 'Container.Update(%s)'
 	no_spoilers = settings.avoid_episode_spoilers()
 	watched_indicators = settings.watched_indicators()
-	if list_type == 'episode.trakt':
+	# MDBList Lists → Next Up always uses MDBList watched history (not global Watched Indicators).
+	if list_type == 'episode.mdblist_next': watched_indicators = 3
+	if list_type in ('episode.trakt', 'episode.mdblist'):
 		display_format = settings.calendar_display_format(is_external)
 		calendar_date_strftime, calendar_use_words, calendar_include_date = settings.calendar_date_label_options()
 		calendar_date_format = None if calendar_use_words else calendar_date_strftime
@@ -356,11 +398,12 @@ def build_single_episode(list_type, params={}):
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
 	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
-	if list_type == 'episode.next':
+	if list_type in ('episode.next', 'episode.mdblist_next'):
+		mdblist_menu_next = list_type == 'episode.mdblist_next'
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
 		sort_key, sort_direction = settings.nextep_sort_key(), settings.nextep_sort_direction()
 		include_airdate = settings.nextep_include_airdate()
-		data = ws.get_next_episodes(nextep_content)
+		data = ws.get_next_episodes(nextep_content, watched_indicators)
 		if settings.nextep_limit_history(): data = data[:settings.nextep_limit()]
 		hidden_list = ws.get_hidden_progress_items(watched_indicators)
 		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
@@ -368,10 +411,11 @@ def build_single_episode(list_type, params={}):
 			resformat, resinsert = '%Y-%m-%dT%H:%M:%S.%fZ', '2000-01-01T00:00:00.000Z'
 			list_type = {1: 'episode.next_trakt', 2: 'episode.next_simkl', 3: 'episode.next_mdblist'}[watched_indicators]
 		else: resformat, resinsert, list_type = '%Y-%m-%d %H:%M:%S', '2000-01-01 00:00:00', 'episode.next_redlight'
+		if mdblist_menu_next: category_override = 'MDBList Next Up'
 		if include_unwatched != 0:
 			if include_unwatched in (1, 3):
 				try:
-					watchlist = _nextep_indicator_watchlist()
+					watchlist = _nextep_indicator_watchlist(watched_indicators)
 					unwatched.extend([{'media_ids': i['media_ids'], 'season': 1, 'episode': 0, 'unwatched': True, 'title': i['title']} for i in watchlist])
 				except: pass
 			if include_unwatched in (2, 3):
@@ -391,6 +435,22 @@ def build_single_episode(list_type, params={}):
 		hidden_list = ws.get_hidden_progress_items(watched_indicators)
 		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
 		list_type = 'episode.trakt_recently_aired' if recently_aired else 'episode.trakt_calendar'
+		if settings.flatten_episodes():
+			try:
+				duplicates = set()
+				data.sort(key=lambda i: i['sort_title'])
+				data = [i for i in data if not ((i['media_ids']['tmdb'], i['first_aired'].split('T')[0]) in duplicates
+						or duplicates.add((i['media_ids']['tmdb'], i['first_aired'].split('T')[0])))]
+			except: pass
+		else:
+			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
+			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
+	elif list_type == 'episode.mdblist':
+		from apis.mdblist_api import mdblist_get_my_calendar
+		data = mdblist_get_my_calendar()
+		hidden_list = ws.get_hidden_progress_items(watched_indicators)
+		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
+		list_type = 'episode.mdblist_calendar'
 		if settings.flatten_episodes():
 			try:
 				duplicates = set()
@@ -424,14 +484,14 @@ def build_single_episode(list_type, params={}):
 		item_list = airing_today + item_list
 	else:
 		item_list.sort(key=lambda i: i['sort_order'])
-		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired'):
-			if list_type_compare == 'trakt_calendar': reverse = settings.calendar_sort_order() == 0
+		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar'):
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar'): reverse = settings.calendar_sort_order() == 0
 			else: reverse = True
 			try: item_list = sorted(item_list, key=lambda i: i.get('first_aired', '2100-12-31'), reverse=reverse)
 			except:
 				item_list = [i for i in item_list if i.get('first_aired') not in (None, 'None', '')]
 				item_list = sorted(item_list, key=lambda i: i.get('first_aired'), reverse=reverse)
-			if list_type_compare == 'trakt_calendar' and not calendar_date_format:
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar') and not calendar_date_format:
 				airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
 										key=lambda i: i['first_aired'])
 				item_list = [i for i in item_list if not i in airing_today]
@@ -439,5 +499,8 @@ def build_single_episode(list_type, params={}):
 	kodi_utils.add_items(handle, [i['list_items'] for i in item_list])
 	kodi_utils.set_content(handle, 'episodes')
 	kodi_utils.set_category(handle, _get_category_name())
+	# Keep plugin order for calendars — Kodi "Sort by Date" was reordering vs day labels.
+	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'trakt_recently_aired'):
+		kodi_utils.set_sort_method(handle, 'none')
 	kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))

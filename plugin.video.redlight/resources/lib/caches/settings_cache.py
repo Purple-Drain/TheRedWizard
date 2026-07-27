@@ -25,6 +25,7 @@ _SERVICE_AUTH_VISIBILITY_SETTINGS = frozenset((
 _META_AUTH_VISIBILITY_SETTINGS = frozenset((
 	'trakt.user', 'trakt.token', 'simkl.user', 'simkl.token',
 	'mdblist.user', 'mdblist.token',
+	'wetrakr.user', 'wetrakr.token',
 ))
 _NEW_SETTING_VALUE_MIGRATIONS = {
 	'trakt.calendar_display': 'single_ep_display',
@@ -164,6 +165,12 @@ def sanitize_setting_value(setting_id, value, setting_info=None, validate_paths=
 		if value == '3':
 			from modules.settings import mdblist_user_active
 			if mdblist_user_active(): return value
+		return '0'
+	if setting_id == 'recommend_service':
+		from modules.settings import recommend_service_options
+		value = str(value)
+		opts = recommend_service_options()
+		if value in opts: return value
 		return '0'
 	if setting_id == 'playback.subs_source':
 		from modules.settings import subtitles_source_options
@@ -315,11 +322,36 @@ class SettingsCache:
 					label = opts.get(current) or opts.get('0', 'Red Light')
 					self.set_memory_cache('watched_indicators_name', label)
 				except: pass
+				try:
+					from modules.settings import recommend_service_options
+					opts = recommend_service_options()
+					current = str(self.read_db_value('recommend_service') or '0')
+					if current not in opts:
+						current = '0'
+						self.write_db('recommend_service', current)
+						self.set_memory_cache('recommend_service', current)
+					self.set_memory_cache('recommend_service_name', opts.get(current, opts['0']))
+				except: pass
+			if setting_id in ('google_api', 'groq_api'):
+				try:
+					from modules.settings import recommend_service_options
+					opts = recommend_service_options()
+					current = str(self.read_db_value('recommend_service') or '0')
+					if current not in opts:
+						current = '0'
+						self.write_db('recommend_service', current)
+						self.set_memory_cache('recommend_service', current)
+					self.set_memory_cache('recommend_service_name', opts.get(current, opts['0']))
+				except: pass
 		if setting_type == 'action' and 'settings_options' in setting_info:
 			name_setting_id = '%s_name' % setting_id
 			if setting_id == 'watched_indicators':
 				from modules.settings import watched_provider_options
 				opts = watched_provider_options()
+				name_setting_value = opts.get(str(setting_value)) or setting_info['settings_options'].get(str(setting_value), opts['0'])
+			elif setting_id == 'recommend_service':
+				from modules.settings import recommend_service_options
+				opts = recommend_service_options()
 				name_setting_value = opts.get(str(setting_value)) or setting_info['settings_options'].get(str(setting_value), opts['0'])
 			elif setting_id == 'playback.subs_source':
 				from modules.settings import subtitles_source_options
@@ -414,6 +446,14 @@ def _apply_settings_properties_from_db():
 				info = defaults_map.get(setting_id) or {}
 				static_opts = info.get('settings_options', {})
 				settings_cache.set_memory_cache('watched_indicators_name', opts.get(sanitized) or static_opts.get(sanitized, opts['0']))
+			except: pass
+		if setting_id == 'recommend_service':
+			try:
+				from modules.settings import recommend_service_options
+				opts = recommend_service_options()
+				info = defaults_map.get(setting_id) or {}
+				static_opts = info.get('settings_options', {})
+				settings_cache.set_memory_cache('recommend_service_name', opts.get(sanitized) or static_opts.get(sanitized, opts['0']))
 			except: pass
 		if setting_id == 'playback.subs_source':
 			try:
@@ -558,7 +598,7 @@ def run_deferred_setup_background_if_needed():
 _DIRECTORY_LISTING_MODES = frozenset((
 	'build_movie_list', 'build_tvshow_list', 'build_season_list', 'build_episode_list',
 	'build_in_progress_episode', 'build_recently_watched_episode', 'build_next_episode',
-	'build_my_calendar', 'build_next_episode_manager'))
+	'build_my_calendar', 'build_mdbl_calendar', 'build_mdbl_next_up', 'build_next_episode_manager'))
 
 # The five settings the unified-list-sort migration reads. They are no longer in default_settings(),
 # so the obsolete-id purge in sync_settings() would delete them on the same pass that migrates them -
@@ -916,6 +956,11 @@ def set_from_list(params):
 		settings_options = watched_provider_options().items()
 		settings_list = [(v, k) for k, v in settings_options]
 		settings_list.sort(key=lambda item: item[0].lower())
+	elif setting_id == 'recommend_service':
+		from modules.settings import recommend_service_options
+		settings_options = recommend_service_options().items()
+		settings_list = [(v, k) for k, v in settings_options]
+		settings_list.sort(key=lambda item: item[0].lower())
 	elif setting_id == 'playback.subs_source':
 		from modules.settings import subtitles_source_options
 		settings_options = subtitles_source_options().items()
@@ -1030,7 +1075,7 @@ def default_settings():
 {'setting_id': 'addon_icon_choice', 'setting_type': 'string', 'setting_default': 'resources/media/addon_icons/icon.png'},
 {'setting_id': 'default_addon_fanart', 'setting_type': 'path', 'setting_default': kodi_utils.addon_fanart(), 'browse_mode': '2'},
 {'setting_id': 'limit_concurrent_threads', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'max_threads', 'setting_type': 'action', 'setting_default': '60', 'min_value': '10', 'max_value': '250'},
+{'setting_id': 'max_threads', 'setting_type': 'action', 'setting_default': '20', 'min_value': '10', 'max_value': '250'},
 #==================== Window Theme
 {'setting_id': 'window_theme', 'setting_type': 'string', 'setting_default': 'CC1F2020'},
 {'setting_id': 'window_theme_opacity', 'setting_type': 'string', 'setting_default': 'CC'},
@@ -1053,6 +1098,12 @@ def default_settings():
 {'setting_id': 'external_scraper.cm_menu_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cm_manager_order_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cm_manager_order_migrated_v2', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'cm_manager_order_migrated_v3', 'setting_type': 'boolean', 'setting_default': 'false'},
+#======+============= WeTrakr (scrobble only)
+{'setting_id': 'wetrakr.user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
+{'setting_id': 'wetrakr.token', 'setting_type': 'string', 'setting_default': '0'},
+{'setting_id': 'wetrakr.scrobble', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'wetrakr.scrobble_threshold', 'setting_type': 'action', 'setting_default': '90', 'min_value': '50', 'max_value': '99'},
 #======+============= Trakt Cache
 {'setting_id': 'trakt.sync_interval', 'setting_type': 'action', 'setting_default': '60', 'min_value': '5', 'max_value': '600'},
 {'setting_id': 'trakt.refresh_widgets', 'setting_type': 'boolean', 'setting_default': 'true'},
@@ -1080,7 +1131,7 @@ def default_settings():
 {'setting_id': 'media_open_action_skip_inprogress_movie', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'media_open_action_skip_inprogress_tvshow', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== AI Generated Similar Titles
-{'setting_id': 'ai_model.order', 'setting_type': 'string', 'setting_default': 'gemini-2.5-flash-lite,llama-3.3-70b-versatile,gemma-3-27b-it,llama-3.1-8b-instant'},
+{'setting_id': 'ai_model.order', 'setting_type': 'string', 'setting_default': 'gemini-3.1-flash-lite,llama-3.3-70b-versatile,gemma-4-31b-it,llama-3.1-8b-instant'},
 {'setting_id': 'ai_model.limit', 'setting_type': 'action', 'setting_default': '15', 'min_value': '1', 'max_value': '25'},
 
 
@@ -1142,10 +1193,10 @@ def default_settings():
 #==================== Context Menu
 {'setting_id': 'context_menu.enabled', 'setting_type': 'string',
 'setting_default': 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-'mdblist_manager,simkl_manager,trakt_manager,tmdb_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
+'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
 {'setting_id': 'context_menu.order', 'setting_type': 'string',
 'setting_default': 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-'mdblist_manager,simkl_manager,trakt_manager,tmdb_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
+'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'},
 
 
 #==================================================================================#
@@ -1165,7 +1216,7 @@ def default_settings():
 {'setting_id': 'nextep.include_airdate', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'nextep.airing_today', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'nextep.include_unaired', 'setting_type': 'boolean', 'setting_default': 'false'},
-#======+============= Trakt Calendar
+#======+============= Calendars (Trakt + MDBList)
 {'setting_id': 'trakt.flatten_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'trakt.calendar_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'trakt.calendar_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.gratisred.artwork" version="1.0.4" name="[COLOR red]Gratis Red Artwork[/COLOR]" provider-name="[COLOR red]The Red Wizard[/COLOR]">
+<addon id="script.gratisred.artwork" version="1.0.5" name="[COLOR red]Gratis Red Artwork[/COLOR]" provider-name="[COLOR red]The Red Wizard[/COLOR]">
     <extension point="xbmc.python.module" library="lib"/>
     <extension point="xbmc.addon.metadata">
         <summary lang="en">[COLOR red]Gratis Red Artwork[/COLOR]</summary>
@@ -11,8 +11,8 @@
 		<website>https://redwizard.xyz/</website> 
 		<email>info@redwizard.xyz</email>
 		<source>https://github.com/The-Red-Wizard</source>
-        <news>[COLOR red]2026-07-24
-- Added mdblist.png for all themes (transparent: official MDBList mark)[/COLOR]</news>
+        <news>[COLOR red]2026-07-25
+- Correct mdblist.png, resolveurl.png, simkl.png and tmdb.png shipped for Exodus, Scrubs v2 and Venom themes (thanks Knuckles)[/COLOR]</news>
         <assets>
             <icon>icon.png</icon>
 			<fanart>fanart.jpg</fanart>

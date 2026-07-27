@@ -165,11 +165,51 @@ class RealDebridAPI:
 		return self._get(url)
 
 	def unrestrict_link(self, link):
-		url = 'unrestrict/link'
-		post_data = {'link': link}
-		response = self._post(url, post_data)
-		try: return response['download']
-		except: return None
+		download_url, _download_id = self._unrestrict_link_details(link)
+		return download_url
+
+	def _unrestrict_link_details(self, link):
+		response = self._post('unrestrict/link', {'link': link})
+		if not isinstance(response, dict): return None, None
+		return response.get('download'), response.get('id')
+
+	@staticmethod
+	def _download_token_from_url(url):
+		'''Extract the /d/<token>/ segment from an RD unrestricted download URL.'''
+		if not url:
+			return None
+		try:
+			text = str(url)
+			marker = '/d/'
+			if marker not in text:
+				return None
+			token = text.split(marker, 1)[1].split('/', 1)[0].strip()
+			return token or None
+		except Exception:
+			return None
+
+	def cleanup_resolved_download(self, download_id=None, file_url=None):
+		'''Remove Downloads history after playback when Store Resolved to Cloud is off.
+
+		Must not run during resolve — deleting the Downloads entry before OpenFile can
+		invalidate the unrestricted CDN URL (same class of failure as Offcloud #160).
+		'''
+		try:
+			if download_id:
+				self.delete_download(download_id)
+			elif file_url:
+				token = self._download_token_from_url(file_url)
+				for item in self.downloads(fresh=True) or []:
+					item_id = item.get('id')
+					if not item_id:
+						continue
+					item_url = item.get('download') or ''
+					if item_url == file_url or (token and self._download_token_from_url(item_url) == token):
+						self.delete_download(item_id)
+						break
+		except: pass
+		try: self.clear_cache(clear_hashes=False)
+		except: pass
 
 	def rd_free_active_slot(self):
 		if get_setting('redlight.rd.free_active_slot', 'false') != 'true':
@@ -294,10 +334,16 @@ class RealDebridAPI:
 					match, index = True, value[0]; break
 			if match:
 				rd_link = torrent_info['links'][index]
-				file_url = self.unrestrict_link(rd_link)
-				if file_url.endswith('rar'): file_url = None
-				if not any(file_url.lower().endswith(x) for x in extensions): file_url = None
-				if not store_to_cloud: Thread(target=self.delete_torrent, args=(torrent_id,)).start()
+				file_url, _download_id = self._unrestrict_link_details(rd_link)
+				if file_url and file_url.endswith('rar'): file_url = None
+				if file_url and not any(file_url.lower().endswith(x) for x in extensions): file_url = None
+				# POV-style: drop the temp torrent before play. Do NOT delete Downloads
+				# history here — that can kill the CDN URL before Kodi opens it.
+				# Downloads cleanup runs after play/fail (Sources._cleanup_rd_resolved_url).
+				if not store_to_cloud and torrent_id:
+					Thread(target=self.delete_torrent, args=(torrent_id,), daemon=True).start()
+					try: self.clear_cache(clear_hashes=False)
+					except: pass
 				return file_url
 			else: self.delete_torrent(torrent_id)
 		except:

@@ -1,3 +1,6 @@
+v1.0.5 (2026-07-25)
+- Correct mdblist.png, resolveurl.png, simkl.png and tmdb.png shipped for Exodus, Scrubs v2 and Venom themes (thanks Knuckles).
+
 v1.0.4 (2026-07-24)
 - Added mdblist.png for all themes (transparent uses official MDBList mark; other themes use Trakt-styled placeholder until themed icons ship).
 

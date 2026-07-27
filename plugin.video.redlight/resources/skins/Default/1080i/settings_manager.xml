@@ -755,6 +755,29 @@
                           <property name="setting_description">Choose this and the individual lists within the Extras window will each utilize a scrollbar when needed</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=extras.enable_scrollbars)</onclick>
                       </item>
+        <!-- Context Menu -->
+                      <item>
+                          <visible>Container(2000).HasFocus(20)</visible>
+                          <property name="setting_label">Context Menu</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(20)</visible>
+                          <property name="setting_label">Choose Content for the Context Menu</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Choose what content is included within the Context Menu</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=context_menu_choice)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(20)</visible>
+                          <property name="setting_label">Choose Order for the Context Menu</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Choose how the content within the Context Menu is ordered</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=context_menu_order_choice)</onclick>
+                      </item>
         <!-- Special Open Actions -->
                     <item>
                           <visible>Container(2000).HasFocus(20)</visible>
@@ -844,7 +867,7 @@
                           <property name="setting_label">[I]Enter API Keys for Google/Groq for access[/I]</property>
                           <property name="setting_type">info</property>
                           <property name="setting_value"></property>
-                          <property name="setting_description">Navigate to Meta Accounts to enter your Google AI and/or Groq AI API Keys for access to this feature</property>
+                          <property name="setting_description">Enter Google AI and/or Groq AI API keys under Meta Accounts. AI Similar is used for Extras > Similar, Browse Similar in the context menu, and Because You Watched when Content > General > Service used for Because You Watched is Similar (AI).</property>
                           <onclick>noop</onclick>
                       </item>
                       <item>
@@ -853,7 +876,7 @@
                           <property name="setting_label">Choose AI Model Priorities</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Choose the order AI Models will be used for Similar Titles. Top will be used first, bottom used last. You will normally want to keep this order as default. If you don't have an API Key for the model listed, it will be skipped</property>
+                          <property name="setting_description">Choose the order AI models are tried for Extras > Similar, Browse Similar, and Because You Watched (when Content > General > Service used for Because You Watched is Similar (AI)). Top first, bottom last. Models without an API key are skipped.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=ai_model_order_choice)</onclick>
                       </item>
                       <item>
@@ -862,7 +885,7 @@
                           <property name="setting_label">Choose Maximum Similar Titles Results</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.ai_model.limit)]</property>
-                          <property name="setting_description">Choose the maximum number of AI Similar Results returned by Red Light</property>
+                          <property name="setting_description">Maximum AI Similar results for Extras > Similar, Browse Similar, and Because You Watched (when Service used for Because You Watched is Similar (AI)).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=ai_model.limit)</onclick>
                       </item>
 <!-- CONTENT 30 -->
@@ -920,7 +943,7 @@
                           <property name="setting_label">Service used for Because You Watched</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.recommend_service_name)]</property>
-                          <property name="setting_description">Choose which service provides recommendations for the Because You Watched menus. Options are Recommended (TMDb), More Like This (IMDb) or AI Similar (AI)</property>
+                          <property name="setting_description">Choose which service provides Because You Watched recommendations. More Like This (IMDb) and Recommended (TMDb) are always available. Similar (AI) appears when a Google or Groq key is set; Related (Trakt) appears when Trakt is authorised.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=recommend_service)</onclick>
                       </item>
                       <item>
@@ -1134,7 +1157,7 @@
                           <property name="setting_label">Movies</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.movies_name)]</property>
-                          <property name="setting_description">Default for Trakt Watchlist/Library, Simkl, and MDBList movie lists. Override any list with Context Menu → Set Custom Sort (Simkl: each status shelf separately). TMDb contents are not covered here — use Set Custom Sort on the TMDb list.</property>
+                          <property name="setting_description">Default for MDBList, Simkl, and Trakt Watchlist/Library movie lists. Override any list with Context Menu > Set Custom Sort (Simkl: each status shelf separately). TMDb contents are not covered here — use Set Custom Sort on the TMDb list.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=movies)</onclick>
                       </item>
                       <item>
@@ -1142,7 +1165,7 @@
                           <property name="setting_label">TV Shows</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.sort.default.shows_name)]</property>
-                          <property name="setting_description">Default for Trakt Watchlist/Library, Simkl, and MDBList TV lists. Override any list with Context Menu → Set Custom Sort (Simkl: each status shelf separately). TMDb contents are not covered here — use Set Custom Sort on the TMDb list.</property>
+                          <property name="setting_description">Default for MDBList, Simkl, and Trakt Watchlist/Library TV lists. Override any list with Context Menu > Set Custom Sort (Simkl: each status shelf separately). TMDb contents are not covered here — use Set Custom Sort on the TMDb list.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=sort_default_choice&amp;media_type=shows)</onclick>
                       </item>
         <!-- TMDb Lists -->
@@ -1157,7 +1180,7 @@
                           <property name="setting_label">TMDb My Lists Display Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.tmdblist.list_sort_name)]</property>
-                          <property name="setting_description">Order of your TMDb list names under My Lists only — not the titles inside a list. Sort list contents with Set Custom Sort on the list (context menu), or Edit Properties → Change Sort Order.</property>
+                          <property name="setting_description">Order of your TMDb list names under My Lists only — not the titles inside a list. Sort list contents with Set Custom Sort on the list (context menu), or Edit Properties > Change Sort Order.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=list_display_order_choice&amp;list_type=tmdb)</onclick>
                       </item>
         <!-- Personal Lists -->
@@ -1283,29 +1306,6 @@
                           <property name="setting_description">Choose the format used for RPDb Posters. Choices are Default, Blocks or Rounded</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=rpdb_poster_format_choice)</onclick>
                       </item>
-        <!-- Context Menu -->
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">Context Menu</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">Choose Content for the Context Menu</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Choose what content is included within the Context Menu</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=context_menu_choice)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(30)</visible>
-                          <property name="setting_label">Choose Order for the Context Menu</property>
-                          <property name="setting_type">action</property>
-                          <property name="setting_value">...</property>
-                          <property name="setting_description">Choose how the content within the Context Menu is ordered</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=context_menu_order_choice)</onclick>
-                      </item>
 <!-- SINGLE EPISODE LISTS 40 -->
         <!-- General -->
                       <item>
@@ -1391,7 +1391,7 @@
                           <property name="setting_label">Include Watched Indicator Watchlist/Red Light Favorites</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.include_unwatched_name)]</property>
-                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Indicators watchlist (Trakt Watchlist, Simkl Plan to Watch, or MDBList Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Indicators is Red Light, Watchlist has no source and only Favorites apply.</property>
+                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Indicators watchlist (MDBList Watchlist, Simkl Plan to Watch, or Trakt Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Indicators is Red Light, Watchlist has no source and only Favorites apply.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=nextep.include_unwatched)</onclick>
                       </item>
                       <item>
@@ -1418,10 +1418,10 @@
                           <property name="setting_description">Enable this to include unaired episodes within Next Episodes. They will show with a RED highlight and become visible within 7 days of their airdate</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.include_unaired)</onclick>
                       </item>
-        <!-- Trakt Calendar -->
+        <!-- Calendars (MDBList Calendar + Trakt Calendar) -->
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
-                          <property name="setting_label">Trakt Calendar</property>
+                          <property name="setting_label">Calendars</property>
                           <property name="setting_type">separator</property>
                           <onclick>noop</onclick>
                       </item>
@@ -1430,7 +1430,7 @@
                           <property name="setting_label">Flatten TV Shows Airing on Same Day</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.flatten_episodes)]</property>
-                          <property name="setting_description">Enable this to limit to the first instance of a TV Show episode when that TV Show has multiple episodes airing on the same day</property>
+                          <property name="setting_description">Enable this to limit to the first instance of a TV Show episode when that TV Show has multiple episodes airing on the same day in MDBList Calendar and Trakt Calendar</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=trakt.flatten_episodes)</onclick>
                       </item>
                       <item>
@@ -1438,7 +1438,7 @@
                           <property name="setting_label">Calendar Display Format - Within Addon</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_display_name)]</property>
-                          <property name="setting_description">Choose the display format Red Light uses when naming episodes within the Trakt Calendar in the addon</property>
+                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar and Trakt Calendar within the addon</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_display)</onclick>
                       </item>
                       <item>
@@ -1446,7 +1446,7 @@
                           <property name="setting_label">Calendar Display Format - Widgets</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_display_widget_name)]</property>
-                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in the Trakt Calendar for widgets</property>
+                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar and Trakt Calendar for widgets</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_display_widget)</onclick>
                       </item>
                       <item>
@@ -1454,7 +1454,7 @@
                           <property name="setting_label">Calendar Date Labels</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_date_labels_name)]</property>
-                          <property name="setting_description">Choose how Red Light labels the airdate of episodes in the Trakt Calendar. Words / date uses Today, Tomorrow and weekday names for the near week, and the chosen date format outside that. Day + date always shows both. Date-only formats keep the list in plain chronological order (no pin-today). Each group is ordered YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY</property>
+                          <property name="setting_description">Choose how Red Light labels the airdate of episodes in MDBList Calendar and Trakt Calendar. Words / date uses Today, Tomorrow and weekday names for the near week, and the chosen date format outside that. Day + date always shows both. Date-only formats keep the list in plain chronological order (no pin-today). Each group is ordered YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_date_labels)</onclick>
                       </item>
                       <item>
@@ -1462,7 +1462,7 @@
                           <property name="setting_label">Sort Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_sort_order_name)]</property>
-                          <property name="setting_description">Choose the sort direction of the Trakt Calendar list. Ascending or Descending</property>
+                          <property name="setting_description">Choose the sort direction of MDBList Calendar and Trakt Calendar. Ascending or Descending</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_sort_order)</onclick>
                       </item>
                       <item>
@@ -1470,7 +1470,7 @@
                           <property name="setting_label">Show Previous Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_previous_days)]</property>
-                          <property name="setting_description">Choose how many previous days will be shown within the Trakt Calendar</property>
+                          <property name="setting_description">Choose how many previous days will be shown in Trakt Calendar. The MDBList Calendar API does not expose past airings, so this setting has no effect there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_previous_days)</onclick>
                       </item>
                       <item>
@@ -1478,7 +1478,7 @@
                           <property name="setting_label">Show Future Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_future_days)]</property>
-                          <property name="setting_description">Choose how many future days will be shown within the Trakt Calendar</property>
+                          <property name="setting_description">Choose how many future days will be shown in MDBList Calendar and Trakt Calendar.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_future_days)</onclick>
                       </item>
 <!-- META ACCOUNTS 50 -->
@@ -1494,7 +1494,7 @@
                           <property name="setting_label">Watched Status Provider</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.watched_indicators_name)]</property>
-                          <property name="setting_description">Watched ticks, resume bars, scrobble, Next Episodes, and In Progress lists. Choose MDBList, Red Light (local), Simkl, or Trakt. Authorise a service below to use it.</property>
+                          <property name="setting_description">Watched ticks, resume bars, Next Episodes, and In Progress lists. Choose MDBList, Red Light (local), Simkl, or Trakt. Authorise a service below to use it. WeTrakr is separate (scrobble only) and is not a watched provider.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=watched_indicators)</onclick>
                       </item>
         <!-- MDBList -->
@@ -1510,7 +1510,7 @@
                           <property name="setting_label">Authorise</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Authorise your MDBList account. Enter the code on screen or scan the QR code — same flow as Trakt and Simkl.</property>
+                          <property name="setting_description">Authorise your MDBList account. Enter the code on screen or scan the QR code — same flow as Simkl and Trakt.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=mdblist.mdblist_authenticate)</onclick>
                       </item>
                       <item>
@@ -1730,6 +1730,73 @@
                           <property name="setting_description">Check that your Trakt Client ID (and Secret if set) are accepted by Trakt before using Authorise</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=trakt_credentials_check_choice)</onclick>
                       </item>
+        <!-- WeTrakr (scrobble only) -->
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">WeTrakr</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">About WeTrakr Scrobble</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Scrobble only: authorise WeTrakr, then use Enable Scrobbling to turn play/finish reporting on or off without revoking. Does not sync watched ticks, resume, Next Episodes, or lists into Red Light. Keep Watched Status Provider on Red Light (or MDBList / Simkl / Trakt) for ticks and lists. If the official WeTrakr Kodi add-on is authorised, Red Light defers to it.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=wetrakr.wetrakr_about)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.wetrakr.user),empty_setting)</visible>
+                          <property name="setting_label">Authorise</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Authorise WeTrakr for scrobble only. After authorising, use Enable Scrobbling to turn reporting on or off. Watched ticks stay with Watched Status Provider (recommended: Red Light). See About WeTrakr Scrobble for details.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=wetrakr.wetrakr_authenticate)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.wetrakr.user),empty_setting)</visible>
+                          <property name="setting_label">Revoke Authorisation</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.wetrakr.user)]</property>
+                          <property name="setting_description">Disconnect WeTrakr from Red Light (clears the token). To keep the account but stop scrobbling, turn off Enable Scrobbling instead.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=wetrakr.wetrakr_revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.wetrakr.user),empty_setting)</visible>
+                          <property name="setting_label">Enable Scrobbling</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.wetrakr.scrobble)]</property>
+                          <property name="setting_description">When on, Red Light reports play/pause/finish to WeTrakr. When off, stay authorised but do not scrobble. Same idea as keeping Trakt/Simkl authorised while using a different Watched Status Provider.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=wetrakr.scrobble)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.wetrakr.user),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.wetrakr.scrobble),true)</visible>
+                          <property name="setting_label">    - Scrobble at % Watched</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.wetrakr.scrobble_threshold)]</property>
+                          <property name="setting_description">Mark the title watched on WeTrakr when playback reaches this percent (default 90, same as Red Light's watched mark). Red Light ticks still follow Watched Status Provider.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=wetrakr.scrobble_threshold)</onclick>
+                      </item>
+        <!-- OMDb -->
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">OMDb</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">API Key</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.omdb_api)]</property>
+                          <property name="setting_description">Enter here your OMDb API key. This will allow you to utilize extra ratings information in Red Lights Extras window</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=omdb_api)</onclick>
+                      </item>
         <!-- TMDb API -->
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
@@ -1814,21 +1881,6 @@
                           <property name="setting_description">Revoke authorisation of your TMDb account</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=tmdblist_api.revoke_authentication)</onclick>
                       </item>
-        <!-- OMDb -->
-                      <item>
-                          <visible>Container(2000).HasFocus(50)</visible>
-                          <property name="setting_label">OMDb</property>
-                          <property name="setting_type">separator</property>
-                          <onclick>noop</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(50)</visible>
-                          <property name="setting_label">API Key</property>
-                          <property name="setting_type">numeric</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.omdb_api)]</property>
-                          <property name="setting_description">Enter here your OMDb API key. This will allow you to utilize extra ratings information in Red Lights Extras window</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=omdb_api)</onclick>
-                      </item>
         <!-- RPDb -->
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
@@ -1865,7 +1917,7 @@
                           <property name="setting_label">API Key</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.google_api)]</property>
-                          <property name="setting_description">Enter here your Gemini/Gemma AI API key. This will allow you to utilize the features within Red Light that use AI, such as Browse AI Similar</property>
+                          <property name="setting_description">Google Gemini/Gemma API key for AI Similar. Used in three places: Extras > Similar, Browse Similar (context menu), and Because You Watched when Content > General > Service used for Because You Watched is Similar (AI).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=google_api)</onclick>
                       </item>
         <!-- GROQ -->
@@ -1880,7 +1932,7 @@
                           <property name="setting_label">API Key</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.groq_api)]</property>
-                          <property name="setting_description">Enter here your Groq AI API key. This will allow you to utilize the features within Red Light that use AI, such as Browse AI Similar</property>
+                          <property name="setting_description">Groq API key for AI Similar. Used in three places: Extras > Similar, Browse Similar (context menu), and Because You Watched when Content > General > Service used for Because You Watched is Similar (AI).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=groq_api)</onclick>
                       </item>
 <!-- TORRENT SOURCES 61 / DIRECT SOURCES 62 -->

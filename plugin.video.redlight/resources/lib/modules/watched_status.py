@@ -511,8 +511,8 @@ def batch_watched_status_mark(watched_indicators, insert_list, action):
 		# clear_cache_watched_tvshow_status()
 	except: notification('Error')
 
-def get_next_episodes(nextep_content):
-	watched_db = get_database()
+def get_next_episodes(nextep_content, watched_indicators=None):
+	watched_db = get_database(watched_indicators)
 	if nextep_content == 0:
 		sql = '''WITH cte AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY season DESC, episode DESC) rn FROM watched WHERE db_type = ?)
 				SELECT media_id, season, episode, title, last_played FROM cte WHERE rn = 1'''

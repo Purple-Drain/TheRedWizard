@@ -991,25 +991,51 @@ def timeoutsyncMovies():
     return timeout
 
 
-def syncTVShows(user):
+def syncTVShows(user, sync_version='progress_v1'):
+    """Watched TV indicators for overlays.
+
+    Trakt no longer returns season/episode breakdown with extended=full (#775).
+    Use /sync/watched/shows?extended=progress (same pattern as Red Light).
+    sync_version busts the local cache key after the progress migration.
+    """
     try:
         if getTraktCredentialsInfo() == False:
             return
-        indicators = getTraktAsJsonPaged('/users/me/watched/shows?extended=full') or []
-        indicators = [(i['show']['ids']['tmdb'], i['show']['aired_episodes'], sum([[(s['number'], e['number']) for e in s['episodes']] for s in i['seasons']], [])) for i in indicators]
-        indicators = [(str(i[0]), int(i[1]), i[2]) for i in indicators]
-        return indicators
+        indicators = getTraktAsJsonPaged('/sync/watched/shows?extended=progress') or []
+        rows = []
+        for item in indicators:
+            try:
+                show = item.get('show') or {}
+                tmdb = (show.get('ids') or {}).get('tmdb')
+                if not tmdb:
+                    continue
+                aired = show.get('aired_episodes') or 0
+                watched = []
+                for season in item.get('seasons') or []:
+                    try:
+                        snum = int(season.get('number'))
+                    except Exception:
+                        continue
+                    for ep in season.get('episodes') or []:
+                        try:
+                            watched.append((snum, int(ep.get('number'))))
+                        except Exception:
+                            continue
+                rows.append((str(tmdb), int(aired), watched))
+            except Exception:
+                continue
+        return rows
     except:
         pass
 
 
 def cachesyncTVShows(timeout=0):
-    indicators = cache.get(syncTVShows, timeout, control.setting('trakt.user').strip())
+    indicators = cache.get(syncTVShows, timeout, control.setting('trakt.user').strip(), 'progress_v1')
     return indicators
 
 
 def timeoutsyncTVShows():
-    timeout = cache.timeout(syncTVShows, control.setting('trakt.user').strip())
+    timeout = cache.timeout(syncTVShows, control.setting('trakt.user').strip(), 'progress_v1')
     if not timeout:
         timeout = 0
     return timeout
@@ -1028,34 +1054,105 @@ def syncSeason(imdb):
         pass
 
 
-def markMovieAsWatched(imdb):
-    if not imdb.startswith('tt'):
-        imdb = 'tt' + imdb
-    return __getTrakt('/sync/history', {"movies": [{"ids": {"imdb": imdb}}]})[0]
+def _history_id_candidates(imdb=None, tmdb=None, tvdb=None):
+    """Ordered (key, value) attempts for sync/history — TMDb, then TVDb, then IMDb."""
+    candidates = []
+    if tmdb and str(tmdb) not in ('0', '', 'None'):
+        try:
+            candidates.append(('tmdb', int(tmdb)))
+        except Exception:
+            pass
+    if tvdb and str(tvdb) not in ('0', '', 'None'):
+        try:
+            candidates.append(('tvdb', int(tvdb)))
+        except Exception:
+            pass
+    if imdb and str(imdb) not in ('0', '', 'None'):
+        imdb = str(imdb).strip()
+        if not imdb.startswith('tt'):
+            imdb = 'tt' + re.sub(r'[^0-9]', '', imdb)
+        if imdb not in ('tt', 'tt0'):
+            candidates.append(('imdb', imdb))
+    return candidates
 
 
-def markMovieAsNotWatched(imdb):
-    if not imdb.startswith('tt'):
-        imdb = 'tt' + imdb
-    return __getTrakt('/sync/history/remove', {"movies": [{"ids": {"imdb": imdb}}]})[0]
+def _history_sync_success(body, path, success_key):
+    if not body:
+        return False
+    try:
+        data = client_utils.json_loads_as_str(body) if not isinstance(body, dict) else body
+    except Exception:
+        try:
+            data = json.loads(body)
+        except Exception:
+            return False
+    if not isinstance(data, dict):
+        return False
+    result_key = 'deleted' if ('/remove' in (path or '')) else 'added'
+    try:
+        return int((data.get(result_key) or {}).get(success_key, 0) or 0) > 0
+    except Exception:
+        return False
 
 
-def markTVShowAsWatched(imdb):
-    return __getTrakt('/sync/history', {"shows": [{"ids": {"imdb": imdb}}]})[0]
+def _history_mark(path, media, imdb=None, tmdb=None, tvdb=None, season=None, episode=None):
+    """Post sync/history with Red Light-style ID fallback (tmdb → tvdb → imdb)."""
+    candidates = _history_id_candidates(imdb=imdb, tmdb=tmdb, tvdb=tvdb)
+    if not candidates:
+        return None
+    # Trakt history responses count TV under "episodes" (even for whole-show marks).
+    success_key = 'movies' if media == 'movies' else 'episodes'
+    if season is not None:
+        season = int('%01d' % int(season))
+    if episode is not None:
+        episode = int('%01d' % int(episode))
+    last_body = None
+    for key, value in candidates:
+        if media == 'movies':
+            payload = {'movies': [{'ids': {key: value}}]}
+        elif season is not None and episode is not None:
+            payload = {'shows': [{'ids': {key: value}, 'seasons': [{'number': season, 'episodes': [{'number': episode}]}]}]}
+        elif season is not None:
+            payload = {'shows': [{'ids': {key: value}, 'seasons': [{'number': season}]}]}
+        else:
+            payload = {'shows': [{'ids': {key: value}}]}
+        body, _headers = __getTrakt(path, post=payload)
+        last_body = body
+        if _history_sync_success(body, path, success_key):
+            return body
+    return last_body
 
 
-def markTVShowAsNotWatched(imdb):
-    return __getTrakt('/sync/history/remove', {"shows": [{"ids": {"imdb": imdb}}]})[0]
+def markMovieAsWatched(imdb, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history', 'movies', imdb=imdb, tmdb=tmdb, tvdb=tvdb)
 
 
-def markEpisodeAsWatched(imdb, season, episode):
-    season, episode = int('%01d' % int(season)), int('%01d' % int(episode))
-    return __getTrakt('/sync/history', {"shows": [{"seasons": [{"episodes": [{"number": episode}], "number": season}], "ids": {"imdb": imdb}}]})[0]
+def markMovieAsNotWatched(imdb, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history/remove', 'movies', imdb=imdb, tmdb=tmdb, tvdb=tvdb)
 
 
-def markEpisodeAsNotWatched(imdb, season, episode):
-    season, episode = int('%01d' % int(season)), int('%01d' % int(episode))
-    return __getTrakt('/sync/history/remove', {"shows": [{"seasons": [{"episodes": [{"number": episode}], "number": season}], "ids": {"imdb": imdb}}]})[0]
+def markTVShowAsWatched(imdb, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb)
+
+
+def markTVShowAsNotWatched(imdb, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history/remove', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb)
+
+
+def markSeasonAsWatched(imdb, season, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season)
+
+
+def markSeasonAsNotWatched(imdb, season, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history/remove', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season)
+
+
+def markEpisodeAsWatched(imdb, season, episode, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season, episode=episode)
+
+
+def markEpisodeAsNotWatched(imdb, season, episode, tmdb=None, tvdb=None):
+    return _history_mark('/sync/history/remove', 'shows', imdb=imdb, tmdb=tmdb, tvdb=tvdb, season=season, episode=episode)
 
 
 def getMovieTranslation(id, lang, full=False):

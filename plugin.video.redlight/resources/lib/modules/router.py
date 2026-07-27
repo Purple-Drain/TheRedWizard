@@ -73,6 +73,9 @@ def routing(sys):
 	elif 'mdblist.' in mode:
 		from apis import mdblist_api
 		return getattr(mdblist_api, mode.split('.')[1])(params)
+	elif 'wetrakr.' in mode:
+		from apis import wetrakr_api
+		return getattr(wetrakr_api, mode.split('.')[1])(params)
 	elif 'trakt.' in mode:
 		if '.list' in mode:
 			from indexers import trakt_lists
@@ -104,6 +107,12 @@ def routing(sys):
 		elif mode == 'build_my_calendar':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.trakt', params)
+		elif mode == 'build_mdbl_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.mdblist', params)
+		elif mode == 'build_mdbl_next_up':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.mdblist_next', params)
 		elif mode == 'build_next_episode_manager':
 			from modules.episode_tools import build_next_episode_manager
 			return build_next_episode_manager()
