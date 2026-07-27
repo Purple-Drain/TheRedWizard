@@ -136,12 +136,14 @@ class source:
 		if not folder_name and not raw_folder:
 			return False
 		if self.media_type == 'movie':
-			if not self.folder_query or self.folder_query not in folder_name:
+			if not self._title_match('', folder_name):
 				return False
 			if self.year and not self._contains_year(raw_folder):
 				return False
 			return True
 		if self.folder_query and self.folder_query in folder_name:
+			return True
+		if any(q and q in folder_name for q in self.title_queries):
 			return True
 		if source_utils.seas_ep_filter_exact(self.season, self.episode, raw_folder):
 			return True

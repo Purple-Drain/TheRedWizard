@@ -65,9 +65,14 @@ def tvshow_external_id(external_source, external_id, api_key):
 		string = 'tvshow_external_id_%s_%s' % (external_source, external_id)
 		url = 'https://api.themoviedb.org/3/find/%s?api_key=%s&external_source=%s' % (external_id, api_key, external_source)
 		result = cache_function(get_tmdb, string, url)
-		result = result['tv_results']
-		if result: return result[0]
-		else: return None
+		tv_results = result.get('tv_results') or []
+		if tv_results: return tv_results[0]
+		# Season-split anime IMDb ids often map to an episode/season, not the show record.
+		for key in ('tv_episode_results', 'tv_season_results'):
+			for row in result.get(key) or []:
+				show_id = row.get('show_id')
+				if show_id: return {'id': show_id}
+		return None
 	except: return None
 
 def tmdb_movies_oscar_winners(page_no):

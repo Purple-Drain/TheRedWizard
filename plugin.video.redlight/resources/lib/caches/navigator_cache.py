@@ -254,12 +254,32 @@ class NavigatorCache:
 		return [
 			{'mode': 'random.build_movie_list', 'action': 'simkl_plantowatch', 'name': 'Random Simkl Movie Plan to Watch', 'iconImage': 'simkl', 'random': 'true'},
 			{'mode': 'random.build_tvshow_list', 'action': 'simkl_plantowatch', 'name': 'Random Simkl TV Plan to Watch', 'iconImage': 'simkl', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'simkl_plantowatch', 'is_anime_list': 'true', 'name': 'Random Simkl Anime Plan to Watch', 'iconImage': 'anime', 'random': 'true'},
 			{'mode': 'random.build_tvshow_list', 'action': 'simkl_watching', 'name': 'Random Simkl TV Watching', 'iconImage': 'simkl', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'simkl_watching', 'is_anime_list': 'true', 'name': 'Random Simkl Anime Watching', 'iconImage': 'anime', 'random': 'true'},
 			{'mode': 'random.build_movie_list', 'action': 'simkl_completed', 'name': 'Random Simkl Movie Completed', 'iconImage': 'simkl', 'random': 'true'},
 			{'mode': 'random.build_tvshow_list', 'action': 'simkl_completed', 'name': 'Random Simkl TV Completed', 'iconImage': 'simkl', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'simkl_completed', 'is_anime_list': 'true', 'name': 'Random Simkl Anime Completed', 'iconImage': 'anime', 'random': 'true'},
 			{'mode': 'random.build_tvshow_list', 'action': 'simkl_hold', 'name': 'Random Simkl TV On Hold', 'iconImage': 'simkl', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'simkl_hold', 'is_anime_list': 'true', 'name': 'Random Simkl Anime On Hold', 'iconImage': 'anime', 'random': 'true'},
 			{'mode': 'random.build_movie_list', 'action': 'simkl_dropped', 'name': 'Random Simkl Movie Dropped', 'iconImage': 'simkl', 'random': 'true'},
 			{'mode': 'random.build_tvshow_list', 'action': 'simkl_dropped', 'name': 'Random Simkl TV Dropped', 'iconImage': 'simkl', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'simkl_dropped', 'is_anime_list': 'true', 'name': 'Random Simkl Anime Dropped', 'iconImage': 'anime', 'random': 'true'},
+				]
+
+	def random_punchplay_lists(self):
+		return [
+			{'mode': 'random.build_movie_list', 'action': 'punchplay_watchlist', 'name': 'Random PunchPlay Movie Watchlist', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_watchlist', 'name': 'Random PunchPlay TV Watchlist', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_watchlist', 'is_anime_list': 'true', 'name': 'Random PunchPlay Anime Watchlist', 'iconImage': 'anime', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'punchplay_collection', 'name': 'Random PunchPlay Movie Collection', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_collection', 'name': 'Random PunchPlay TV Collection', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_collection', 'is_anime_list': 'true', 'name': 'Random PunchPlay Anime Collection', 'iconImage': 'anime', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_watching', 'name': 'Random PunchPlay TV Watching', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_watching', 'is_anime_list': 'true', 'name': 'Random PunchPlay Anime Watching', 'iconImage': 'anime', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'punchplay_completed', 'name': 'Random PunchPlay Movie Watched', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_completed', 'name': 'Random PunchPlay TV Watched', 'iconImage': 'punchplay', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_completed', 'is_anime_list': 'true', 'name': 'Random PunchPlay Anime Watched', 'iconImage': 'anime', 'random': 'true'},
 				]
 
 def migrate_my_content_nav_mode():

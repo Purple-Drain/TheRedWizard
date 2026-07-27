@@ -10,12 +10,12 @@ Set a default backup folder under Settings > General > Import & Export. File bro
   - Does NOT include Red Light Favorites, local watch history, or Kodi Favorites — use the options below for those.
   - The zip can contain API keys and account logins. Keep it private.
   - After import, check folder paths if you changed device or OS, and that your scraper package is still installed.
-  - Meta Accounts that use authorisation (MDBList, Simkl, TMDb Lists, Trakt, WeTrakr) may need re-authorising if sync or scrobble fails. API-key metas (Google, Groq, OMDb, RPDb, etc.) usually travel with the settings and just work.
+  - Meta Accounts that use authorisation (MDBList, PunchPlay, Simkl, TMDb Lists, Trakt, WeTrakr) may need re-authorising if sync or scrobble fails. API-key metas (Google, Groq, OMDb, RPDb, etc.) usually travel with the settings and just work.
 
 2) Red Light Favorites & History (.json)
   - Export / Import Red Light Favorites & History
   - Favorites: Red Light's own Favorites lists (Movies / TV / Anime / People).
-  - History: local watched ticks and in-progress resume points — only when Watched Status Provider is Red Light (local). If Indicators are Trakt, Simkl, or MDBList, watch history is not included in this backup (that data lives on the service).
+  - History: local watched ticks and in-progress resume points — only when Watched Status Provider is Red Light (local). If Indicators are Trakt, Simkl, MDBList, or PunchPlay, watch history is not included in this backup (that data lives on the service).
   - Import mode when this device already has data:
       - Merge — add from the backup; keep what is already here.
       - Replace — clear local favorites/history first, then import the backup.

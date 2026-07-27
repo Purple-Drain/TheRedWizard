@@ -43,6 +43,8 @@ def get_key_id(params):
 		url_params, string = {'mode': 'trakt.list.search_trakt_my_lists'}, 'trakt_my_list_queries'
 	elif search_type == 'simkl_lists':
 		url_params, string = {'mode': 'simkl.list.search_simkl_lists'}, 'simkl_list_queries'
+	elif search_type == 'punchplay_lists':
+		url_params, string = {'mode': 'punchplay.list.search_punchplay_lists'}, 'punchplay_list_queries'
 	if string: add_to_search(key_id, string)
 	if search_type == 'people':
 		person_search(key_id)

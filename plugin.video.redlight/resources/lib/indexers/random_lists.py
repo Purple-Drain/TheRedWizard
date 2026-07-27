@@ -76,6 +76,8 @@ class RandomLists():
 	'tmdb_anime_genres': meta_lists.anime_genres, 'tmdb_anime_providers': meta_lists.watch_providers_tvshows, 'trakt_anime_certifications': meta_lists.tvshow_certifications}
 	tvshow_trakt_special = ('trakt_tv_certifications', 'trakt_anime_certifications')
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
+	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
+		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
 
 	def __init__(self, params):
 		self.database = RandomWidgets()
@@ -105,6 +107,7 @@ class RandomLists():
 		if self.action in self.tvshow_special_main: return self.random_special_main()
 		if self.action in ('trakt_collection_lists', 'trakt_watchlist_lists'): return self.random_trakt_collection_watchlist()
 		if self.action in self.simkl_personal: return self.random_simkl_personal()
+		if self.action in self.punchplay_personal: return self.random_punchplay_personal()
 		if self.action == 'because_you_watched': return self.random_because_you_watched()
 		if self.mode == 'build_trakt_lists': return self.random_trakt_lists()
 		if self.mode == 'build_personal_lists': return self.random_personal_lists()
@@ -197,18 +200,27 @@ class RandomLists():
 		self.make_directory()
 
 	def random_simkl_personal(self):
-		random_list, cache_to_memory = get_persistent_content(self.database, '%s_%s' % (self.menu_type, self.action), self.is_external)
+		is_anime = self.params_get('is_anime_list') == 'true'
+		if self.menu_type in ('movie', 'movies'): media_kind = 'movies'
+		elif is_anime: media_kind = 'anime'
+		else: media_kind = 'shows'
+		cache_key = '%s_%s' % (media_kind, self.action)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
 		if not random_list:
 			list_function = self.get_function()
-			self.random_results = list_function('movies' if self.menu_type in ('movie', 'movies') else 'shows', None) or []
+			self.random_results = list_function(media_kind, None) or []
 			if paginate(self.is_external): random_list = random.sample(self.random_results, min(len(self.random_results), page_limit(self.is_external))) if self.random_results else []
 			else: random_list = random.sample(self.random_results, len(self.random_results)) if self.random_results else []
-			if cache_to_memory: set_persistent_content(self.database, '%s_%s' % (self.menu_type, self.action), random_list)
+			if cache_to_memory: set_persistent_content(self.database, cache_key, random_list)
 		self.params['list'] = [i['media_ids'] for i in random_list]
 		self.params['id_type'] = 'trakt_dict'
+		if is_anime: self.params['is_anime_list'] = 'true'
 		self.list_items = self.function(self.params).worker()
 		self.category_name = self.base_list_name or ''
 		self.make_directory()
+
+	def random_punchplay_personal(self):
+		return self.random_simkl_personal()
 
 	def random_because_you_watched(self):
 		from apis.tmdb_api import tmdb_movies_recommendations, tmdb_tv_recommendations

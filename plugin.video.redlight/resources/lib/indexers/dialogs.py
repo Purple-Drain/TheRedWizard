@@ -784,16 +784,22 @@ def simkl_plantowatch_shortcut_choice(params):
 	media_type = params.get('media_type') or 'movie'
 	list_media = 'movie' if media_type == 'movie' else 'tvshow'
 	tmdb_id, imdb_id, tvdb_id = params.get('tmdb_id'), params.get('imdb_id'), params.get('tvdb_id')
+	simkl_id, media_kind = params.get('simkl_id'), params.get('simkl_media_kind')
 	heading = params.get('title') or 'Simkl Plan to Watch'
-	in_list = simkl_api._simkl_item_in_status(list_media, 'plantowatch', imdb_id, tvdb_id, tmdb_id)
+	in_list = simkl_api._simkl_item_in_status(list_media, 'plantowatch', imdb_id, tvdb_id, tmdb_id, simkl_id)
 	text = 'Remove from Plan to Watch?' if in_list else 'Add to Plan to Watch?'
 	if not kodi_utils.confirm_dialog(heading=heading, text=text): return
-	if in_list: return simkl_api.simkl_remove_from_list('plantowatch', tmdb_id, list_media, imdb_id, tvdb_id)
-	return simkl_api.simkl_add_to_list('plantowatch', tmdb_id, list_media, imdb_id, tvdb_id)
+	if in_list: return simkl_api.simkl_remove_from_list('plantowatch', tmdb_id, list_media, imdb_id, tvdb_id, simkl_id, media_kind)
+	return simkl_api.simkl_add_to_list('plantowatch', tmdb_id, list_media, imdb_id, tvdb_id, simkl_id, media_kind)
 
 def mdblist_manager_choice(params):
 	from apis import mdblist_api
 	return mdblist_api.mdblist_manager_choice(params)
+
+def punchplay_manager_choice(params):
+	from apis import punchplay_api
+	if not settings.punchplay_user_active(): return kodi_utils.notification('No Active PunchPlay Account', 3500)
+	return punchplay_api.punchplay_manager_choice(params)
 
 def _mdblist_list_shortcut_choice(params, list_type):
 	if not settings.mdblist_user_active(): return kodi_utils.notification('No Active MDBList Account', 3500)
@@ -1238,7 +1244,8 @@ def options_menu_choice(params, meta=None):
 	is_external, from_extras = params_get('is_external') in (True, 'True', 'true'), params_get('from_extras', 'false') == 'true'
 	season, episode = params_get('season', ''), params_get('episode', '')
 	single_ep_list = ('episode.progress', 'episode.recently_watched', 'episode.next_trakt', 'episode.next_redlight', 'episode.next_simkl', 'episode.next_mdblist',
-					'episode.trakt_recently_aired', 'episode.trakt_calendar', 'episode.mdblist_calendar')
+					'episode.trakt_recently_aired', 'episode.trakt_calendar', 'episode.mdblist_calendar',
+					'episode.punchplay_calendar')
 	if not content: content = kodi_utils.container_content()[:-1]
 	menu_type = content
 	if content.startswith('episode.'): content = 'episode'
@@ -1254,6 +1261,7 @@ def options_menu_choice(params, meta=None):
 		if menu_type in ('movie', 'episode'): listing_append(('Playback Options', 'Scrapers Options', 'playback_choice'))
 	if menu_type in ('movie', 'tvshow'):
 		if settings.mdblist_user_active(): listing_append(('MDBList Manager', '', 'mdblist_manager'))
+		if settings.punchplay_user_active(): listing_append(('PunchPlay Manager', '', 'punchplay_manager'))
 		if settings.simkl_user_active(): listing_append(('Simkl Lists Manager', '', 'simkl_manager'))
 		if settings.tmdblist_user_active(): listing_append(('TMDb Lists Manager', '', 'tmdblists_manager_choice'))
 		if settings.trakt_user_active(): listing_append(('Trakt Lists Manager', '', 'trakt_manager'))
@@ -1334,6 +1342,9 @@ def options_menu_choice(params, meta=None):
 									'title': title, 'season': season, 'episode': episode})
 	if choice == 'mdblist_manager':
 		return mdblist_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': content, 'icon': poster,
+									'title': title, 'season': season, 'episode': episode})
+	if choice == 'punchplay_manager':
+		return punchplay_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': content, 'icon': poster,
 									'title': title, 'season': season, 'episode': episode})
 	if choice == 'personallists_manager_choice':
 		from modules.utils import get_current_timestamp

@@ -103,6 +103,7 @@ def _detect_accounts():
 	# OAuth / session metas only (API-key metas travel fine via settings_db).
 	return {
 		'mdblist': settings.mdblist_user_active(),
+		'punchplay': settings.punchplay_user_active(),
 		'simkl': settings.simkl_user_active(),
 		'tmdb_lists': settings.tmdblist_user_active(),
 		'trakt': settings.trakt_user_active(),

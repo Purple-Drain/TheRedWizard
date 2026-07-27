@@ -231,6 +231,7 @@ class RedLightPlayer(xbmc.Player):
 			ku.hide_busy_dialog()
 			ku.sleep(1000)
 			self._simkl_scrobble_start()
+			self._punchplay_scrobble_start()
 			self._wetrakr_scrobble_start()
 			self._maybe_start_subtitle_alert_fetch()
 			self._maybe_start_introdb_alert_fetch()
@@ -270,6 +271,7 @@ class RedLightPlayer(xbmc.Player):
 					self._maybe_apply_intro_skip()
 					self.current_point = round(float(self.curr_time/self.total_time * 100), 1)
 					self._wetrakr_progress_tick()
+					self._punchplay_scrobble_progress()
 					if play_random_continual:
 						if self._should_prep_random_continual():
 							self.random_continual_triggered = True
@@ -441,6 +443,40 @@ class RedLightPlayer(xbmc.Player):
 		if not simkl_official_status(self.media_type): return
 		Thread(target=simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
 
+	def _punchplay_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
+		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
+		if not punchplay_official_status(self.media_type): return
+		import uuid
+		self._punchplay_session_id = str(uuid.uuid4())
+		self._punchplay_last_progress_send = 0
+		percent = self.playback_percent if self.playback_percent else 0
+		Thread(target=punchplay_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
+				'session_id': self._punchplay_session_id}).start()
+
+	def _punchplay_scrobble_progress(self):
+		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
+		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
+		if not punchplay_official_status(self.media_type): return
+		now = time.time()
+		last = getattr(self, '_punchplay_last_progress_send', 0) or 0
+		if now - last < 30: return
+		self._punchplay_last_progress_send = now
+		session_id = getattr(self, '_punchplay_session_id', None)
+		Thread(target=punchplay_scrobble, args=('progress', self.media_type, self.tmdb_id, self.current_point, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
+				'session_id': session_id}).start()
+
+	def _punchplay_scrobble_stop(self, percent):
+		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
+		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
+		if not punchplay_official_status(self.media_type): return
+		session_id = getattr(self, '_punchplay_session_id', None)
+		Thread(target=punchplay_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
+				'session_id': session_id}).start()
+
 	def _wetrakr_meta_kwargs(self, percent):
 		ep_title = ''
 		show_title = None
@@ -506,12 +542,14 @@ class RedLightPlayer(xbmc.Player):
 		try:
 			if self.current_point >= 90 or force_watched:
 				self._simkl_scrobble_stop(100)
+				self._punchplay_scrobble_stop(100)
 				self._wetrakr_on_stop(100, force_scrobble=True)
 				watched_function = ws.mark_movie if self.media_type == 'movie' else ws.mark_episode
 				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
 				Thread(target=self.run_media_progress, args=(watched_function, watched_params)).start()
 			else:
+				self._punchplay_scrobble_stop(self.current_point)
 				self._wetrakr_on_stop(self.current_point)
 				ku.clear_property('redlight.random_episode_history')
 				if self.current_point >= 5:

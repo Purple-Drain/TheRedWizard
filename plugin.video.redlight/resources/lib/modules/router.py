@@ -73,6 +73,12 @@ def routing(sys):
 	elif 'mdblist.' in mode:
 		from apis import mdblist_api
 		return exec('mdblist_api.%s(params)' % mode.split('.')[1])
+	elif 'punchplay.' in mode:
+		if '.list.' in mode:
+			from indexers import punchplay_lists
+			return exec('punchplay_lists.%s(params)' % mode.split('.')[2])
+		from apis import punchplay_api
+		return exec('punchplay_api.%s(params)' % mode.split('.')[1])
 	elif 'wetrakr.' in mode:
 		from apis import wetrakr_api
 		return exec('wetrakr_api.%s(params)' % mode.split('.')[1])
@@ -110,6 +116,9 @@ def routing(sys):
 		elif mode == 'build_mdbl_calendar':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist', params)
+		elif mode == 'build_punchplay_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.punchplay', params)
 		elif mode == 'build_mdbl_next_up':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist_next', params)

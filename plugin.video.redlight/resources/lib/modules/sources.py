@@ -2041,8 +2041,11 @@ class Sources():
 			return
 		try:
 			from apis.offcloud_api import OffcloudAPI
-			request_id = OffcloudAPI.request_id_from_download_url(url)
+			request_id = item.pop('_offcloud_cleanup_request_id', None)
 			if not request_id:
+				return
+			url_request_id = OffcloudAPI.request_id_from_download_url(url)
+			if url_request_id and url_request_id != request_id:
 				return
 			api = OffcloudAPI()
 			Thread(target=api.cleanup_resolved_request, args=(request_id,), daemon=True).start()
@@ -2192,7 +2195,8 @@ class Sources():
 			processed_items_append = processed_items.append
 			for count, item in enumerate(items, 1):
 				resolve_item = dict(item)
-				provider = item['scrape_provider']
+				scrape_provider = item['scrape_provider']
+				provider = scrape_provider
 				if provider == 'external': provider = item['debrid'].replace('.me', '')
 				elif provider == 'folders': provider = item['source']
 				elif provider == 'aiostreams': provider = item.get('aio_source_label') or provider
@@ -2202,7 +2206,15 @@ class Sources():
 				display_name = item['display_name'].upper()
 				resolve_item['resolve_display'] = '%02d. [B]%s[/B][CR]%s[CR]%s' % (count, provider_text, extra_info, display_name)
 				processed_items_append(resolve_item)
-				if provider == 'easynews' and retry_easynews:
+				# Native EN + AIOStreams EN badge rows share EasyNews Playback Method (Retry).
+				en_retry = scrape_provider == 'easynews'
+				if not en_retry and scrape_provider == 'aiostreams':
+					try:
+						from apis.aiostreams_api import is_direct_easynews_item
+						en_retry = is_direct_easynews_item(item)
+					except Exception:
+						en_retry = False
+				if en_retry and retry_easynews:
 					for retry in range(1, retry_easynews_limit):
 						resolve_item = dict(item)
 						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
@@ -2774,7 +2786,7 @@ class Sources():
 					pack = 'package' in item
 				else: title, season, episode, pack = self.get_search_title(), None, None, False
 				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox'):
-					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack)
+					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack, item)
 					try:
 						self._log_nextep_resolve_diag(item, phase='resolved', url=url, resolve_se=(season, episode))
 					except Exception:
@@ -2785,10 +2797,18 @@ class Sources():
 			return None
 		return url
 
-	def resolve_cached(self, debrid_provider, item_url, _hash, title, season, episode, pack):
+	def resolve_cached(self, debrid_provider, item_url, _hash, title, season, episode, pack, source_item=None):
 		debrid_function = self.debrid_importer(debrid_provider)
 		store_to_cloud = settings.store_resolved_to_cloud(debrid_provider, pack)
-		try: url = debrid_function().resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
+		try:
+			api = debrid_function()
+			if debrid_provider == 'Offcloud' and hasattr(api, 'resolve_magnet_with_cleanup'):
+				url, cleanup_request_id = api.resolve_magnet_with_cleanup(item_url, _hash, store_to_cloud, title, season, episode)
+				if source_item is not None:
+					if cleanup_request_id: source_item['_offcloud_cleanup_request_id'] = cleanup_request_id
+					else: source_item.pop('_offcloud_cleanup_request_id', None)
+			else:
+				url = api.resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
 		except: url = None
 		return url
 

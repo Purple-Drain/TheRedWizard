@@ -86,6 +86,57 @@ def get_aliases_titles(aliases):
 	except: result = []
 	return result
 
+_ALT_TITLE_COUNTRIES = ('US', 'GB', 'UK', 'JP', '')
+
+def _alt_title_usable(title, iso_3166_1=''):
+	"""Keep US/GB/UK/JP/blank alts, plus mostly-Latin names from other regions (romaji-style releases)."""
+	if not title: return False
+	iso = (iso_3166_1 or '').upper()
+	if iso in _ALT_TITLE_COUNTRIES: return True
+	try:
+		normalized = normalize(title)
+		letters = [c for c in normalized if c.isalpha()]
+		if len(letters) < 3: return False
+		# Basic Latin + Latin-1 Supplement + Latin Extended-A/B — skip CJK/Hangul/Thai/etc.
+		latin = sum(1 for c in letters if ord(c) < 0x0250)
+		return latin >= int(len(letters) * 0.85)
+	except: return False
+
+def filter_alternative_titles(entries, titles_key='results'):
+	"""Normalize TMDb movie (titles) / TV (results) alternative_titles into a usable string list."""
+	if not entries: return []
+	if isinstance(entries, dict):
+		alternatives = entries.get(titles_key) or entries.get('titles') or entries.get('results') or []
+	else:
+		alternatives = entries
+	out, seen = [], set()
+	for item in alternatives:
+		if not isinstance(item, dict): continue
+		title = item.get('title') or ''
+		if not _alt_title_usable(title, item.get('iso_3166_1', '')): continue
+		key = title.casefold()
+		if key in seen: continue
+		seen.add(key)
+		out.append(title)
+	return out
+
+def folder_title_queries(title, aliases=None):
+	"""Cleaned primary title + aliases for cloud folder substring gates."""
+	queries, seen = [], set()
+	for candidate in [title] + list(aliases or []):
+		if not candidate: continue
+		query = clean_title(normalize(candidate))
+		if not query or query in seen: continue
+		seen.add(query)
+		queries.append(query)
+	return queries
+
+def folder_name_matches(folder_name, title, aliases=None):
+	cleaned = clean_title(normalize(folder_name or ''))
+	if not cleaned: return True
+	queries = folder_title_queries(title, aliases)
+	return any(q in cleaned for q in queries)
+
 def make_alias_dict(meta, title):
 	aliases = []
 	alternative_titles = meta.get('alternative_titles', [])
@@ -133,6 +184,15 @@ def seas_ep_filter(season, episode, release_title, split=False, return_match=Fal
 	season_fill, episode_fill = str_season.zfill(2), str_episode.zfill(2)
 	str_ep_plus_1, str_ep_minus_1 = str(episode+1), str(episode-1)
 	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
+	# If the name has an explicit Sxx / NxN season, it must match. Stops S12E01-E02
+	# matching S01E02 via episode-only patterns like -e02 (complete show packs).
+	season_tags = re.findall(r'(?:^|[.-])s(\d{1,2})[.-]?e', release_title)
+	season_tags += re.findall(r'(?:^|[.-])(\d{1,2})x\d', release_title)
+	if season_tags:
+		requested = {str(int(season)), str_season, season_fill}
+		if not any(str(int(tag)) in requested or tag in requested for tag in season_tags):
+			if return_match: raise AttributeError('seas_ep season mismatch')
+			return False
 	string1 = r'(s<<S>>[.-]?e[p]?[.-]?<<E>>[.-])'
 	string2 = r'(season[.-]?<<S>>[.-]?episode[.-]?<<E>>[.-])'#|([s]?<<S>>[x.]<<E>>[.-])'
 	string3 = r'(s<<S>>e<<E1>>[.-]?e?<<E2>>[.-])'
@@ -164,10 +224,12 @@ def seas_ep_filter(season, episode, release_title, split=False, return_match=Fal
 	string_list_append(string8.replace('<<S>>', season_fill).replace('<<E>>', str_episode))
 	string_list_append(string8.replace('<<S>>', str_season).replace('<<E>>', str_episode))
 	final_string = '|'.join(string_list)
-	reg_pattern = re.compile(final_string)
-	if split: return release_title.split(re.search(reg_pattern, release_title).group(), 1)[1]
-	if return_match: return re.search(reg_pattern, release_title).group()
-	return bool(re.search(reg_pattern, release_title))
+	match = re.search(final_string, release_title)
+	if split:
+		if not match: return release_title
+		return release_title.split(match.group(), 1)[1]
+	if return_match: return match.group()
+	return bool(match)
 
 def seas_ep_filter_exact(season, episode, release_title):
 	"""Exact S/E only — for debrid cloud files (no multi-episode pack ranges)."""

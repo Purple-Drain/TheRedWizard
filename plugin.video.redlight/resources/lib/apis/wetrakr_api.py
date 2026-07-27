@@ -22,7 +22,7 @@ WETRAKR_SCROBBLE_ONLY_TEXT = (
 	'so titles can show in WeTrakr (Now Playing / history).[CR][CR]'
 	'It does [B]not[/B] bring watched ticks, resume points, Next Episodes, or lists '
 	'back into Red Light.[CR][CR]'
-	'Keep [B]Watched Status Provider[/B] on [B]Red Light[/B] (or MDBList / Simkl / Trakt) '
+	'Keep [B]Watched Status Provider[/B] on [B]Red Light[/B] (or MDBList / PunchPlay / Simkl / Trakt) '
 	'for ticks and lists in the addon.'
 )
 

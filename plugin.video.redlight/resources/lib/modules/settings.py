@@ -35,6 +35,20 @@ def mdblist_user_active():
 	token = settings_cache.read_db_value('mdblist.token')
 	return user not in (None, 'empty_setting', '') and token not in (None, '0', '', 'empty_setting')
 
+def punchplay_user_active():
+	"""Authorised when a usable access token exists (username is display-only)."""
+	from caches.settings_cache import settings_cache, get_setting
+	token = settings_cache.read_db_value('punchplay.token')
+	if token in (None, '0', '', 'empty_setting'):
+		token = get_setting('redlight.punchplay.token', '0')
+	return token not in (None, '0', '', 'empty_setting')
+
+def punchplay_sync_interval():
+	setting = get_setting('redlight.punchplay.sync_interval', '60')
+	try: interval = max(5, int(setting))
+	except: interval = 60
+	return interval, interval * 60
+
 def wetrakr_user_active():
 	from caches.settings_cache import settings_cache
 	user = settings_cache.read_db_value('wetrakr.user')
@@ -983,7 +997,7 @@ def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
 
 def calendar_day_window():
-	'''Inclusive start/end dates for Trakt and MDBList calendars (Show Previous/Future Days).'''
+	'''Inclusive start/end dates for Trakt, MDBList, and PunchPlay calendars (Show Previous/Future Days).'''
 	from datetime import timedelta
 	from modules.utils import get_datetime
 	try: previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '7'))
@@ -1043,11 +1057,13 @@ def _resolve_watched_provider():
 	if ind == 1 and not trakt_user_active(): return 0
 	if ind == 2 and not simkl_user_active(): return 0
 	if ind == 3 and not mdblist_user_active(): return 0
+	if ind == 4 and not punchplay_user_active(): return 0
 	return ind
 
 def watched_provider_options():
 	options = {}
 	if mdblist_user_active(): options['3'] = 'MDBList'
+	if punchplay_user_active(): options['4'] = 'PunchPlay'
 	options['0'] = 'Red Light'
 	if simkl_user_active(): options['2'] = 'Simkl'
 	if trakt_user_active(): options['1'] = 'Trakt'
@@ -1064,12 +1080,18 @@ def offer_watched_provider(provider_index, name):
 def fallback_watched_provider_on_revoke(revoked_index):
 	current = int(get_setting('redlight.watched_indicators', '0'))
 	if current != revoked_index: return
+	def _next(*candidates):
+		for idx, active in candidates:
+			if active: return str(idx)
+		return '0'
 	if revoked_index == 1:
-		set_setting('watched_indicators', '2' if simkl_user_active() else ('3' if mdblist_user_active() else '0'))
+		set_setting('watched_indicators', _next((2, simkl_user_active()), (4, punchplay_user_active()), (3, mdblist_user_active())))
 	elif revoked_index == 2:
-		set_setting('watched_indicators', '1' if trakt_user_active() else ('3' if mdblist_user_active() else '0'))
+		set_setting('watched_indicators', _next((1, trakt_user_active()), (4, punchplay_user_active()), (3, mdblist_user_active())))
 	elif revoked_index == 3:
-		set_setting('watched_indicators', '2' if simkl_user_active() else ('1' if trakt_user_active() else '0'))
+		set_setting('watched_indicators', _next((4, punchplay_user_active()), (2, simkl_user_active()), (1, trakt_user_active())))
+	elif revoked_index == 4:
+		set_setting('watched_indicators', _next((3, mdblist_user_active()), (2, simkl_user_active()), (1, trakt_user_active())))
 
 def watched_indicators():
 	return _resolve_watched_provider()
@@ -1078,7 +1100,7 @@ def provider_sync_refresh_widgets(provider_index):
 	"""Refresh home widgets after a provider sync only when that provider owns watched/progress indicators."""
 	if watched_indicators() != provider_index:
 		return False
-	keys = {1: 'trakt.refresh_widgets', 2: 'simkl.refresh_widgets', 3: 'mdblist.refresh_widgets'}
+	keys = {1: 'trakt.refresh_widgets', 2: 'simkl.refresh_widgets', 3: 'mdblist.refresh_widgets', 4: 'punchplay.refresh_widgets'}
 	key = keys.get(provider_index)
 	if not key:
 		return False

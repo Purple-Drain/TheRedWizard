@@ -25,6 +25,7 @@ _SERVICE_AUTH_VISIBILITY_SETTINGS = frozenset((
 _META_AUTH_VISIBILITY_SETTINGS = frozenset((
 	'trakt.user', 'trakt.token', 'simkl.user', 'simkl.token',
 	'mdblist.user', 'mdblist.token',
+	'punchplay.user', 'punchplay.token', 'punchplay.client',
 	'wetrakr.user', 'wetrakr.token',
 ))
 _NEW_SETTING_VALUE_MIGRATIONS = {
@@ -165,6 +166,9 @@ def sanitize_setting_value(setting_id, value, setting_info=None, validate_paths=
 		if value == '3':
 			from modules.settings import mdblist_user_active
 			if mdblist_user_active(): return value
+		if value == '4':
+			from modules.settings import punchplay_user_active
+			if punchplay_user_active(): return value
 		return '0'
 	if setting_id == 'recommend_service':
 		from modules.settings import recommend_service_options
@@ -598,7 +602,7 @@ def run_deferred_setup_background_if_needed():
 _DIRECTORY_LISTING_MODES = frozenset((
 	'build_movie_list', 'build_tvshow_list', 'build_season_list', 'build_episode_list',
 	'build_in_progress_episode', 'build_recently_watched_episode', 'build_next_episode',
-	'build_my_calendar', 'build_mdbl_calendar', 'build_mdbl_next_up', 'build_next_episode_manager'))
+	'build_my_calendar', 'build_mdbl_calendar', 'build_punchplay_calendar', 'build_mdbl_next_up', 'build_next_episode_manager'))
 
 # The five settings the unified-list-sort migration reads. They are no longer in default_settings(),
 # so the obsolete-id purge in sync_settings() would delete them on the same pass that migrates them -
@@ -1035,6 +1039,11 @@ def set_from_list(params):
 			from apis.simkl_api import simkl_sync_activities
 			simkl_sync_activities(force_update=True)
 		except: pass
+	if setting_id == 'watched_indicators' and setting_value == '4' and str(prev_value) != '4':
+		try:
+			from apis.punchplay_api import punchplay_sync_activities
+			punchplay_sync_activities(force_update=True)
+		except: pass
 
 def set_source_folder_path(params):
 	setting_id = params['setting_id']
@@ -1080,7 +1089,7 @@ def default_settings():
 {'setting_id': 'window_theme', 'setting_type': 'string', 'setting_default': 'CC1F2020'},
 {'setting_id': 'window_theme_opacity', 'setting_type': 'string', 'setting_default': 'CC'},
 #==================== Watched Indicators
-{'setting_id': 'watched_indicators', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'3': 'MDBList', '0': 'Red Light', '2': 'Simkl', '1': 'Trakt'}},
+{'setting_id': 'watched_indicators', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'3': 'MDBList', '4': 'PunchPlay', '0': 'Red Light', '2': 'Simkl', '1': 'Trakt'}},
 #======+============= MDBList Cache
 {'setting_id': 'mdblist.user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'mdblist.client', 'setting_type': 'string', 'setting_default': 'JFZCpEIYFtpvGk47pEEprjEkXzlPL8hJR45jqddJ'},
@@ -1088,6 +1097,15 @@ def default_settings():
 {'setting_id': 'mdblist.refresh', 'setting_type': 'string', 'setting_default': '0'},
 {'setting_id': 'mdblist.sync_interval', 'setting_type': 'action', 'setting_default': '60', 'min_value': '5', 'max_value': '600'},
 {'setting_id': 'mdblist.refresh_widgets', 'setting_type': 'boolean', 'setting_default': 'true'},
+#======+============= PunchPlay Cache
+{'setting_id': 'punchplay.user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
+{'setting_id': 'punchplay.client', 'setting_type': 'string', 'setting_default': 'ppc_20f43c36d33f17d01241ed83'},
+{'setting_id': 'punchplay.token', 'setting_type': 'string', 'setting_default': '0'},
+{'setting_id': 'punchplay.refresh', 'setting_type': 'string', 'setting_default': '0'},
+{'setting_id': 'punchplay.expires', 'setting_type': 'string', 'setting_default': '0'},
+{'setting_id': 'punchplay.device_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
+{'setting_id': 'punchplay.sync_interval', 'setting_type': 'action', 'setting_default': '60', 'min_value': '5', 'max_value': '600'},
+{'setting_id': 'punchplay.refresh_widgets', 'setting_type': 'boolean', 'setting_default': 'true'},
 #======+============= Simkl Cache
 {'setting_id': 'simkl.user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'simkl.token', 'setting_type': 'string', 'setting_default': '0'},
@@ -1095,6 +1113,7 @@ def default_settings():
 {'setting_id': 'simkl.refresh_widgets', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'simkl.cm_menu_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'mdblist.cm_menu_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'punchplay.cm_menu_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'external_scraper.cm_menu_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cm_manager_order_migrated', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cm_manager_order_migrated_v2', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -1216,7 +1235,7 @@ def default_settings():
 {'setting_id': 'nextep.include_airdate', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'nextep.airing_today', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'nextep.include_unaired', 'setting_type': 'boolean', 'setting_default': 'false'},
-#======+============= Calendars (Trakt + MDBList)
+#======+============= Calendars (Trakt + MDBList + PunchPlay — shared episode-list UI)
 {'setting_id': 'trakt.flatten_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'trakt.calendar_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'trakt.calendar_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},

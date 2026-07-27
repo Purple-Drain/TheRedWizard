@@ -11,7 +11,7 @@ BACKUP_FORMAT = 1
 BACKUP_MASK = '.json'
 PROGRESS_MIN_PERCENT = 1.0
 
-_EXTERNAL_HISTORY_PROVIDERS = {1: 'Trakt', 2: 'Simkl', 3: 'MDBList'}
+_EXTERNAL_HISTORY_PROVIDERS = {1: 'Trakt', 2: 'Simkl', 3: 'MDBList', 4: 'PunchPlay'}
 
 
 def _local_history_active():

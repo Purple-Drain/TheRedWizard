@@ -22,8 +22,9 @@ class source:
 			self.year, self.season, self.episode = int(info.get('year')), info.get('season'), info.get('episode')
 			self.tmdb_id = info.get('tmdb_id')
 			self.title = title
-			self.folder_query = source_utils.clean_title(normalize(title))
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
+			self.folder_query = source_utils.clean_title(normalize(title))
+			self.folder_queries = source_utils.folder_title_queries(title, self.aliases)
 			self._scrape_history()
 			self._scrape_links()
 			self._scrape_cloud()
@@ -61,9 +62,13 @@ class source:
 		self.scrape_results.append(item)
 
 	def _folder_matches(self, folder_name):
+		# Substring gate like RD/Fen — primary title or aliases (e.g. JP romaji).
 		if not folder_name: return True
 		if not self.filter_title: return True
-		return source_utils.check_title(self.title, folder_name, self.aliases, self.year, self.season, self.episode)
+		cleaned = source_utils.clean_title(normalize(folder_name))
+		if not cleaned: return True
+		queries = getattr(self, 'folder_queries', None) or [self.folder_query]
+		return any(q and q in cleaned for q in queries)
 
 	def _file_matches(self, filename):
 		if self.media_type == 'movie':

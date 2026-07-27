@@ -16,14 +16,15 @@ def addon_themes_opacity():
 def random_valid_type_check():
 	return {'build_movie_list': 'movie', 'build_tvshow_list': 'tvshow', 'build_season_list': 'season', 'build_episode_list': 'episode',
 	'build_in_progress_episode': 'single_episode', 'build_recently_watched_episode': 'single_episode', 'build_next_episode': 'single_episode',
-	'build_my_calendar': 'single_episode', 'build_mdbl_calendar': 'single_episode', 'build_mdbl_next_up': 'single_episode', 'build_trakt_lists': 'trakt_list',
+	'build_my_calendar': 'single_episode', 'build_mdbl_calendar': 'single_episode', 'build_punchplay_calendar': 'single_episode',
+	'build_mdbl_next_up': 'single_episode', 'build_trakt_lists': 'trakt_list',
 	'trakt.list.build_trakt_list': 'trakt_list', 'build_trakt_lists_contents': 'trakt_list', 'personal_lists.build_personal_list': 'personal_list',
 	'build_personal_lists_contents': 'personal_list', 'tmdblist.build_tmdb_list': 'tmdb_list', 'build_tmdb_lists_contents': 'tmdb_list'}
 
 def random_episodes_check():
 	return {'build_in_progress_episode': 'episode.progress', 'build_recently_watched_episode': 'episode.recently_watched',
 	'build_next_episode': 'episode.next', 'build_my_calendar': 'episode.trakt', 'build_mdbl_calendar': 'episode.mdblist',
-	'build_mdbl_next_up': 'episode.mdblist_next'}
+	'build_mdbl_next_up': 'episode.mdblist_next', 'build_punchplay_calendar': 'episode.punchplay'}
 
 def extras_button_label_values():
 	return {'movie':
@@ -31,7 +32,7 @@ def extras_button_label_values():
 				'show_director': 'Director', 'show_options': 'Options', 'show_recommended': 'Recommended', 'show_related': 'Related', 'show_more_like_this': 'More Like This',
 				'show_similar': 'Similar', 'show_reviews': 'Reviews', 'show_comments': 'Comments', 'show_trivia': 'Trivia', 'show_blunders': 'Blunders',
 				'show_year': 'More Year', 'show_genre': 'More Genres', 'show_network': 'More Network',
-				'show_mdblist_manager': 'MDBList', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
+				'show_mdblist_manager': 'MDBList', 'show_punchplay_manager': 'PunchPlay', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
 				'show_favorites_manager': 'Favorites Lists', 'playback_choice': 'Play Options', 'show_plot': 'Plot', 'show_keywords': 'Keywords',
 				'show_in_trakt_lists': 'In Trakt Lists', 'close_all': 'Close'},
 			'tvshow':
@@ -39,7 +40,7 @@ def extras_button_label_values():
 				'play_nextep': 'Play Next', 'show_options': 'Options', 'show_recommended': 'Recommended', 'show_related': 'Related', 'show_more_like_this': 'More Like This',
 				'show_similar': 'Similar', 'show_reviews': 'Reviews', 'show_comments': 'Comments', 'show_trivia': 'Trivia', 'show_blunders': 'Blunders',
 				'show_year': 'More Year', 'show_genre': 'More Genres', 'show_network': 'More Network',
-				'show_mdblist_manager': 'MDBList', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
+				'show_mdblist_manager': 'MDBList', 'show_punchplay_manager': 'PunchPlay', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
 				'show_favorites_manager': 'Favorites Lists', 'play_random_episode': 'Play Random', 'show_plot': 'Plot', 'show_keywords': 'Keywords',
 				'show_in_trakt_lists': 'In Trakt Lists', 'close_all': 'Close'}}
 
@@ -59,6 +60,7 @@ def context_menu_items():
 	{'name': 'Browse Season Episodes', 'value': 'browse_episodes'}, {'name': 'Browse Recommended', 'value': 'recommended'}, {'name': 'Browse Related', 'value': 'related'},
 	{'name': 'Browse More Like This', 'value': 'more_like_this'}, {'name': 'Browse Similar', 'value': 'similar'}, {'name': 'In Trakt Lists', 'value': 'in_trakt_list'},
 	{'name': 'MDBList Manager', 'value': 'mdblist_manager'}, {'name': 'MDBList Watchlist', 'value': 'mdblist_watchlist'}, {'name': 'MDBList Library', 'value': 'mdblist_library'},
+	{'name': 'PunchPlay Manager', 'value': 'punchplay_manager'},
 	{'name': 'Simkl Lists Manager', 'value': 'simkl_manager'}, {'name': 'Simkl Plan to Watch', 'value': 'simkl_plantowatch'},
 	{'name': 'TMDb Lists Manager', 'value': 'tmdb_manager'}, {'name': 'TMDb Watchlist', 'value': 'tmdb_watchlist'}, {'name': 'TMDb Favorites', 'value': 'tmdb_favorites'},
 	{'name': 'Trakt Lists Manager', 'value': 'trakt_manager'}, {'name': 'Trakt Watchlist', 'value': 'trakt_watchlist'}, {'name': 'Trakt Library', 'value': 'trakt_collection'},
@@ -311,7 +313,7 @@ def set_browse_exit_params(list_mode='tvshow', action=None):
 
 def browse_list_exit_params(list_mode='tvshow', action=None):
 	folder_path = get_infolabel('Container.FolderPath')
-	parent_tokens = ('navigator.', 'mdblist.', 'simkl.', 'trakt.list', 'tmdblist.', 'personal_lists.', 'build_tmdb_lists_contents')
+	parent_tokens = ('navigator.', 'mdblist.', 'punchplay.', 'simkl.', 'trakt.list', 'tmdblist.', 'personal_lists.', 'build_tmdb_lists_contents')
 	if any(token in folder_path for token in parent_tokens):
 		return sanitize_folder_url(folder_path)
 	if action:
@@ -329,7 +331,7 @@ def list_collection_exit_params(params=None):
 	folder_path = get_infolabel('Container.FolderPath')
 	parent_tokens = (
 		'trakt.list.get_trakt_lists', 'trakt.list.search_trakt', 'trakt.list.get_trakt_user_lists',
-		'tmdblist.get_tmdb_lists', 'personal_lists.get_personal_lists', 'navigator.', 'mdblist.', 'simkl.')
+		'tmdblist.get_tmdb_lists', 'personal_lists.get_personal_lists', 'navigator.', 'mdblist.', 'punchplay.', 'simkl.')
 	if any(token in folder_path for token in parent_tokens):
 		return sanitize_folder_url(folder_path)
 	params = params or {}
@@ -343,8 +345,8 @@ def list_collection_exit_params(params=None):
 	return sanitize_folder_url(folder_path)
 
 _browse_action_exit_params = {
-	'mdblist_watchlist': {'mode': 'navigator.mdblist_lists'},
-	'mdblist_collection': {'mode': 'navigator.mdblist_lists'},
+	'mdblist_watchlist': {'mode': 'navigator.mdblist_watchlists'},
+	'mdblist_collection': {'mode': 'navigator.mdblist_library'},
 	'mdblist_droplist': {'mode': 'navigator.mdblist_lists'},
 	'trakt_collection': {'mode': 'navigator.trakt_collections'},
 	'trakt_collection_lists': {'mode': 'navigator.trakt_collections'},
@@ -352,11 +354,19 @@ _browse_action_exit_params = {
 	'trakt_watchlist_lists': {'mode': 'navigator.trakt_watchlists'},
 	'trakt_favorites': {'mode': 'navigator.trakt_favorites', 'category_name': 'Favorites'},
 	'trakt_recommendations': {'mode': 'navigator.trakt_recommendations', 'category_name': 'Recommended'},
-	'simkl_plantowatch': {'mode': 'navigator.simkl_lists'},
-	'simkl_completed': {'mode': 'navigator.simkl_lists'},
-	'simkl_watching': {'mode': 'navigator.simkl_lists'},
-	'simkl_hold': {'mode': 'navigator.simkl_lists'},
-	'simkl_dropped': {'mode': 'navigator.simkl_lists'},
+	'simkl_plantowatch': {'mode': 'navigator.simkl_watchlists'},
+	'simkl_completed': {'mode': 'navigator.simkl_completed'},
+	'simkl_watching': {'mode': 'navigator.simkl_watching'},
+	'simkl_hold': {'mode': 'navigator.simkl_hold'},
+	'simkl_dropped': {'mode': 'navigator.simkl_dropped'},
+	'punchplay_watchlist': {'mode': 'navigator.punchplay_watchlists'},
+	'punchplay_collection': {'mode': 'navigator.punchplay_collections'},
+	'punchplay_favorites': {'mode': 'navigator.punchplay_favourites'},
+	'punchplay_plantowatch': {'mode': 'navigator.punchplay_planning'},
+	'punchplay_watching': {'mode': 'navigator.punchplay_watching_menu'},
+	'punchplay_hold': {'mode': 'navigator.punchplay_on_hold'},
+	'punchplay_completed': {'mode': 'navigator.punchplay_watched'},
+	'punchplay_dropped': {'mode': 'navigator.punchplay_dropped_menu'},
 	'favorites_movies': {'mode': 'navigator.favorites'},
 	'favorites_tvshows': {'mode': 'navigator.favorites'},
 	'favorites_anime': {'mode': 'navigator.favorites'},
@@ -1059,7 +1069,8 @@ def confirm_dialog(heading='', text='Are you sure?', ok_label='OK', cancel_label
 	from windows.base_window import open_window
 	needs_scroll = scroll and _dialog_needs_scroll(text)
 	kwargs = {'heading': heading, 'text': text, 'ok_label': ok_label, 'cancel_label': cancel_label, 'default_control': default_control,
-				'third_label': third_label or '', 'scroll': 'true' if needs_scroll else 'false', 'scroll_focus': 'false'}
+				'third_label': third_label or '', 'scroll': 'true' if needs_scroll else 'false',
+				'scroll_focus': 'true' if needs_scroll else 'false'}
 	raw = open_window(('windows.default_dialogs', 'Confirm'), 'confirm.xml', **kwargs)
 	if third_label:
 		return raw

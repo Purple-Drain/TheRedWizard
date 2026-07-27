@@ -6,14 +6,37 @@ from apis.tmdb_api import movie_details, tvshow_details, season_episodes_details
 from modules.utils import jsondate_to_datetime, subtract_dates
 # from modules.kodi_utils import logger
 
-def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, dbcon=None):
+_ID_EMPTY = (None, '', 'None', 'empty_setting', 0, '0')
+
+def _media_id_candidates(id_type, media_id, keys=('tmdb', 'imdb', 'tvdb')):
+	"""Ordered (id_type, id) lookups for trakt_dict maps. Prefer TMDb, then IMDb/TVDb."""
+	key_map = {'tmdb': 'tmdb_id', 'imdb': 'imdb_id', 'tvdb': 'tvdb_id'}
 	if id_type == 'trakt_dict':
-		if media_id.get('tmdb', None): id_type, media_id = 'tmdb_id', media_id['tmdb']
-		elif media_id.get('imdb', None): id_type, media_id = 'imdb_id', media_id['imdb']
-		else: id_type, media_id = None, None
+		if not isinstance(media_id, dict): return []
+		candidates = []
+		for key in keys:
+			value = media_id.get(key, None)
+			if value in _ID_EMPTY: continue
+			candidates.append((key_map[key], value))
+		return candidates
+	if media_id in _ID_EMPTY: return []
+	return [(id_type, media_id)]
+
+def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, dbcon=None, _alt_ids=None):
+	if id_type == 'trakt_dict':
+		candidates = _media_id_candidates('trakt_dict', media_id, keys=('tmdb', 'imdb'))
+		if not candidates: return None
+		id_type, media_id = candidates[0]
+		_alt_ids = candidates[1:]
+	elif _alt_ids is None:
+		_alt_ids = []
 	if media_id == None: return None
 	meta = meta_cache.get('movie', id_type, media_id, current_time, dbcon=dbcon)
-	if meta: return meta
+	if meta:
+		if meta.get('blank_entry') and _alt_ids:
+			nxt_type, nxt_id = _alt_ids[0]
+			return movie_meta(nxt_type, nxt_id, api_key, mpaa_region, current_date, current_time, dbcon, _alt_ids=_alt_ids[1:])
+		return meta
 	try:
 		if id_type in ('tmdb_id', 'imdb_id'): data = movie_details(media_id, api_key)
 		else:
@@ -25,6 +48,9 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 			if id_type == 'tmdb_id': meta = {'tmdb_id': media_id, 'imdb_id': 'tt0000000', 'tvdb_id': '0000000', 'blank_entry': True}
 			else: meta = {'tmdb_id': '0000000', 'imdb_id': media_id, 'tvdb_id': '0000000', 'blank_entry': True}
 			meta_cache.set('movie', id_type, meta, 24, current_time, dbcon=dbcon)
+			if _alt_ids:
+				nxt_type, nxt_id = _alt_ids[0]
+				return movie_meta(nxt_type, nxt_id, api_key, mpaa_region, current_date, current_time, dbcon, _alt_ids=_alt_ids[1:])
 			return meta
 		tmdb_image_url, youtube_url = 'https://image.tmdb.org/t/p/%s%s', 'plugin://plugin.video.youtube/play/?video_id=%s'
 		data_get = data.get
@@ -101,8 +127,8 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 				except: pass
 		alternative_titles = data_get('alternative_titles', [])
 		if alternative_titles:
-			alternatives = alternative_titles['titles']
-			alternative_titles = [i['title'] for i in alternatives if i['iso_3166_1'] in ('US', 'GB', 'UK', '')]
+			from modules.source_utils import filter_alternative_titles
+			alternative_titles = filter_alternative_titles(alternative_titles, titles_key='titles')
 		else: alternative_titles = []
 		videos = data_get('videos', None)
 		if videos:
@@ -138,15 +164,23 @@ def movie_meta(id_type, media_id, api_key, mpaa_region, current_date, current_ti
 	except: pass
 	return meta
 
-def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, is_anime_list=None, dbcon=None):
+def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_time=None, is_anime_list=None, dbcon=None, _alt_ids=None):
+	# Simkl (and others) sometimes attach a movie TMDb id / dead TV id to season-split anime.
+	# Keep TMDb first, but fall through to IMDb/TVDb so Plan to Watch still resolves.
 	if id_type == 'trakt_dict':
-		if media_id.get('tmdb', None): id_type, media_id = 'tmdb_id', media_id['tmdb']
-		elif media_id.get('imdb', None): id_type, media_id = 'imdb_id', media_id['imdb']
-		elif media_id.get('tvdb', None): id_type, media_id = 'tvdb_id', media_id['tvdb']
-		else: id_type, media_id = None, None
+		candidates = _media_id_candidates('trakt_dict', media_id)
+		if not candidates: return None
+		id_type, media_id = candidates[0]
+		_alt_ids = candidates[1:]
+	elif _alt_ids is None:
+		_alt_ids = []
 	if media_id == None: return None
 	meta = meta_cache.get('tvshow', id_type, media_id, current_time, dbcon=dbcon)
-	if meta: return meta_valid_check(meta, is_anime_list)
+	if meta:
+		if meta.get('blank_entry') and _alt_ids:
+			nxt_type, nxt_id = _alt_ids[0]
+			return tvshow_meta(nxt_type, nxt_id, api_key, mpaa_region, current_date, current_time, is_anime_list, dbcon, _alt_ids=_alt_ids[1:])
+		return meta_valid_check(meta, is_anime_list)
 	try:
 		if id_type == 'tmdb_id': data = tvshow_details(media_id, api_key)
 		else:
@@ -158,6 +192,9 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 			elif id_type == 'imdb_id': meta = {'tmdb_id': '0000000', 'imdb_id': media_id, 'tvdb_id': '0000000', 'blank_entry': True}
 			else: meta = {'tmdb_id': '0000000', 'imdb_id': 'tt0000000', 'tvdb_id': media_id, 'blank_entry': True}
 			meta_cache.set('tvshow', id_type, meta, 24, current_time, dbcon=dbcon)
+			if _alt_ids:
+				nxt_type, nxt_id = _alt_ids[0]
+				return tvshow_meta(nxt_type, nxt_id, api_key, mpaa_region, current_date, current_time, is_anime_list, dbcon, _alt_ids=_alt_ids[1:])
 			return meta
 		tmdb_image_url, youtube_url = 'https://image.tmdb.org/t/p/%s%s', 'plugin://plugin.video.youtube/play/?video_id=%s'
 		data_get = data.get
@@ -235,8 +272,9 @@ def tvshow_meta(id_type, media_id, api_key, mpaa_region, current_date, current_t
 				except: pass
 		alternative_titles = data_get('alternative_titles', [])
 		if alternative_titles:
-			alternatives = alternative_titles['results']
-			alternative_titles = [i['title'] for i in alternatives if i['iso_3166_1'] in ('US', 'GB', 'UK', '')]
+			from modules.source_utils import filter_alternative_titles
+			alternative_titles = filter_alternative_titles(alternative_titles, titles_key='results')
+		else: alternative_titles = []
 		videos = data_get('videos', None)
 		if videos:
 			try:

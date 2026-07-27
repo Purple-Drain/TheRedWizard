@@ -238,6 +238,40 @@ class MdblistMonitor:
 		except: pass
 		return kodi_utils.logger('Red Light', 'MDBListMonitor Service Finished')
 
+class PunchPlayMonitor:
+	def run(self, monitor):
+		kodi_utils.logger('Red Light', 'PunchPlayMonitor Service Starting')
+		from apis.punchplay_api import punchplay_sync_activities
+		from modules.settings import punchplay_user_active, punchplay_sync_interval
+		player = kodi_utils.kodi_player()
+		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
+		wait_for_abort(55)
+		while not monitor.abortRequested():
+			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			wait_time = 1800
+			try:
+				from caches.settings_cache import sync_kodi_profile_context
+				sync_kodi_profile_context()
+				sync_interval, wait_time = punchplay_sync_interval()
+				next_update_string = 'PunchPlay Sync finished - Next Sync in %s minutes' % sync_interval
+				if punchplay_user_active(): status = punchplay_sync_activities()
+				else: status = 'no_auth'
+				if status == 'failed': kodi_utils.logger('Red Light', 'PunchPlay Sync Failed')
+				elif status == 'no_auth': kodi_utils.logger('Red Light', 'PunchPlay Sync Not Run - No Account')
+				else: kodi_utils.logger('Red Light', 'PunchPlay Sync %s - %s' % ('OK' if status == 'success' else 'No Changes', next_update_string))
+				if status == 'success' and not kodi_utils.service_shutting_down(monitor):
+					from modules.settings import provider_sync_refresh_widgets
+					if provider_sync_refresh_widgets(4):
+						try:
+							if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+						except Exception as exc:
+							kodi_utils.logger('Red Light', 'PunchPlay widget refresh skipped: %s' % exc)
+			except Exception as e: kodi_utils.logger('Red Light', 'PunchPlay Sync Failed: %s' % str(e))
+			wait_for_abort(wait_time)
+		try: del player
+		except: pass
+		return kodi_utils.logger('Red Light', 'PunchPlayMonitor Service Finished')
+
 class WidgetRefresher:
 	def run(self, monitor):
 		kodi_utils.logger('Red Light', 'WidgetRefresher Service Starting')
@@ -336,6 +370,7 @@ class RedLightMonitor(Monitor):
 		_start_daemon(lambda: TraktMonitor().run(self))
 		_start_daemon(lambda: SimklMonitor().run(self))
 		_start_daemon(lambda: MdblistMonitor().run(self))
+		_start_daemon(lambda: PunchPlayMonitor().run(self))
 		_start_daemon(lambda: WidgetRefresher().run(self))
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))

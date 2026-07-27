@@ -144,6 +144,8 @@ class Navigator:
 		# Authorised services A–Z, then public/local discovery.
 		if s.mdblist_user_active():
 			self._safe_add({'mode': 'navigator.mdblist_lists'}, 'MDBList Lists', 'mdblist')
+		if s.punchplay_user_active():
+			self._safe_add({'mode': 'navigator.punchplay_lists'}, 'PunchPlay Lists', 'punchplay')
 		if s.simkl_user_active():
 			self._safe_add(self._simkl_lists_menu(), 'Simkl Lists', 'simkl')
 		if s.tmdblist_user_active(): self._safe_add({'mode': 'navigator.tmdb_lists_personal'}, 'TMDb Lists', 'tmdb')
@@ -216,6 +218,7 @@ class Navigator:
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'anime'}, 'Random Anime Lists', 'anime')
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'because_you_watched'}, 'Random Because You Watched', 'because_you_watched')
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'personal_lists'}, 'Random Personal Lists', 'lists')
+		if s.punchplay_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'punchplay_lists'}, 'Random PunchPlay Lists', 'punchplay')
 		if s.simkl_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'simkl_lists'}, 'Random Simkl Lists', 'simkl')
 		if s.tmdblist_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'tmdb_lists'}, 'Random TMDb Lists', 'tmdb')
 		if s.trakt_user_active():
@@ -234,86 +237,184 @@ class Navigator:
 		"""Per-status Simkl sort scope (simkl.plantowatch / watching / …), movies and TV separate."""
 		return self._sort_cm('simkl.%s' % status, media_type, 'simkl')
 
+	def _simkl_anime_list_link(self, action, category_name):
+		link = self._simkl_list_link('build_tvshow_list', action, category_name)
+		link['is_anime_list'] = 'true'
+		return link
+
 	def simkl_lists(self):
-		"""Flat status lists — Plan to Watch (≈ Watchlist), then active → paused → finished → dropped."""
+		"""Grouped status shelves — Plan to Watch → Watching → On Hold → Completed → Dropped."""
 		self.category_name = 'Simkl Lists'
-		simkl_icons = {
-			'plantowatch': ('movies', 'tv'),
-			'watching': ('player', 'player'),
-			'hold': ('ontheair', 'ontheair'),
-			'completed': ('watched_1', 'watched_1'),
-			'dropped': ('lists', 'lists'),
-		}
-		for url_params, label in (
-			(self._simkl_list_link('build_movie_list', 'simkl_plantowatch', 'Movies Plan to Watch'), 'Movies Plan to Watch'),
-			(self._simkl_list_link('build_tvshow_list', 'simkl_plantowatch', 'TV Shows Plan to Watch'), 'TV Shows Plan to Watch'),
-			(self._simkl_list_link('build_movie_list', 'simkl_watching', 'Movies Watching'), 'Movies Watching'),
-			(self._simkl_list_link('build_tvshow_list', 'simkl_watching', 'TV Shows Watching'), 'TV Shows Watching'),
-			(self._simkl_list_link('build_movie_list', 'simkl_hold', 'Movies On Hold'), 'Movies On Hold'),
-			(self._simkl_list_link('build_tvshow_list', 'simkl_hold', 'TV Shows On Hold'), 'TV Shows On Hold'),
-			(self._simkl_list_link('build_movie_list', 'simkl_completed', 'Movies Completed'), 'Movies Completed'),
-			(self._simkl_list_link('build_tvshow_list', 'simkl_completed', 'TV Shows Completed'), 'TV Shows Completed'),
-			(self._simkl_list_link('build_movie_list', 'simkl_dropped', 'Movies Dropped'), 'Movies Dropped'),
-			(self._simkl_list_link('build_tvshow_list', 'simkl_dropped', 'TV Shows Dropped'), 'TV Shows Dropped'),
+		for mode, label, icon in (
+			('simkl_watchlists', 'Plan to Watch', 'lists'),
+			('simkl_watching', 'Watching', 'player'),
+			('simkl_hold', 'On Hold', 'ontheair'),
+			('simkl_completed', 'Completed', 'watched_1'),
+			('simkl_dropped', 'Dropped', 'lists'),
 		):
-			media_type = 'movies' if url_params['mode'] == 'build_movie_list' else 'shows'
-			status = url_params['action'].replace('simkl_', '', 1)
-			icon_pair = simkl_icons.get(status, ('simkl', 'simkl'))
-			icon = icon_pair[0] if media_type == 'movies' else icon_pair[1]
-			self._safe_add(url_params, label, icon, cm_items=self._simkl_sort_cm(media_type, status))
+			self._safe_add({'mode': 'navigator.%s' % mode}, label, icon)
 		self._safe_add({'mode': 'navigator.search_history', 'action': 'simkl_lists'}, 'Search My Simkl Lists', 'search')
+		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
 
 	def simkl_watchlists(self):
 		self.category_name = 'Plan to Watch'
 		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_plantowatch', 'Movies Plan to Watch'), 'Movies', 'movies', cm_items=self._simkl_sort_cm('movies', 'plantowatch'))
 		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_plantowatch', 'TV Shows Plan to Watch'), 'TV Shows', 'tv', cm_items=self._simkl_sort_cm('shows', 'plantowatch'))
+		self._safe_add(self._simkl_anime_list_link('simkl_plantowatch', 'Anime Plan to Watch'), 'Anime', 'anime', cm_items=self._simkl_sort_cm('shows', 'plantowatch'))
+		self._set_exit_params({'mode': 'navigator.simkl_lists'})
 		self.end_directory()
 
 	def simkl_completed(self):
 		self.category_name = 'Completed'
 		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_completed', 'Movies Completed'), 'Movies', 'watched_1', cm_items=self._simkl_sort_cm('movies', 'completed'))
 		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_completed', 'TV Shows Completed'), 'TV Shows', 'watched_1', cm_items=self._simkl_sort_cm('shows', 'completed'))
+		self._safe_add(self._simkl_anime_list_link('simkl_completed', 'Anime Completed'), 'Anime', 'anime', cm_items=self._simkl_sort_cm('shows', 'completed'))
+		self._set_exit_params({'mode': 'navigator.simkl_lists'})
 		self.end_directory()
 
 	def simkl_watching(self):
 		self.category_name = 'Watching'
 		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_watching', 'Movies Watching'), 'Movies', 'player', cm_items=self._simkl_sort_cm('movies', 'watching'))
 		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_watching', 'TV Shows Watching'), 'TV Shows', 'player', cm_items=self._simkl_sort_cm('shows', 'watching'))
+		self._safe_add(self._simkl_anime_list_link('simkl_watching', 'Anime Watching'), 'Anime', 'anime', cm_items=self._simkl_sort_cm('shows', 'watching'))
+		self._set_exit_params({'mode': 'navigator.simkl_lists'})
 		self.end_directory()
 
 	def simkl_hold(self):
 		self.category_name = 'On Hold'
 		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_hold', 'Movies On Hold'), 'Movies', 'ontheair', cm_items=self._simkl_sort_cm('movies', 'hold'))
 		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_hold', 'TV Shows On Hold'), 'TV Shows', 'ontheair', cm_items=self._simkl_sort_cm('shows', 'hold'))
+		self._safe_add(self._simkl_anime_list_link('simkl_hold', 'Anime On Hold'), 'Anime', 'anime', cm_items=self._simkl_sort_cm('shows', 'hold'))
+		self._set_exit_params({'mode': 'navigator.simkl_lists'})
 		self.end_directory()
 
 	def simkl_dropped(self):
 		self.category_name = 'Dropped'
 		self._safe_add(self._simkl_list_link('build_movie_list', 'simkl_dropped', 'Movies Dropped'), 'Movies', 'lists', cm_items=self._simkl_sort_cm('movies', 'dropped'))
 		self._safe_add(self._simkl_list_link('build_tvshow_list', 'simkl_dropped', 'TV Shows Dropped'), 'TV Shows', 'lists', cm_items=self._simkl_sort_cm('shows', 'dropped'))
+		self._safe_add(self._simkl_anime_list_link('simkl_dropped', 'Anime Dropped'), 'Anime', 'anime', cm_items=self._simkl_sort_cm('shows', 'dropped'))
+		self._set_exit_params({'mode': 'navigator.simkl_lists'})
 		self.end_directory()
 
 	def mdblist_lists(self):
-		# Shared meta-list order: Watchlist → Library → Dropped → My Lists → Liked → Popular → Next Up → Calendar.
+		"""Grouped: Watchlist → Library → Dropped → My Lists → Liked → Popular → Next Up → Calendar."""
 		self.category_name = 'MDBList Lists'
-		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies Watchlist', 'movies',
-					cm_items=self._sort_cm('mdblist.watchlist', 'movies', 'mdblist_watchlist'))
-		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_watchlist', 'category_name': 'TV Shows Watchlist'}, 'TV Shows Watchlist', 'tv',
-					cm_items=self._sort_cm('mdblist.watchlist', 'shows', 'mdblist_watchlist'))
-		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_collection', 'category_name': 'Movies Library'}, 'Movies Library', 'movies',
-					cm_items=self._sort_cm('mdblist.collection', 'movies', 'mdblist_collection'))
-		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_collection', 'category_name': 'TV Shows Library'}, 'TV Shows Library', 'tv',
-					cm_items=self._sort_cm('mdblist.collection', 'shows', 'mdblist_collection'))
-		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_droplist', 'category_name': 'Dropped TV Shows'}, 'Dropped TV Shows', 'lists')
+		self._safe_add({'mode': 'navigator.mdblist_watchlists'}, 'Watchlist', 'lists')
+		self._safe_add({'mode': 'navigator.mdblist_library'}, 'Library', 'folder')
+		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_droplist', 'category_name': 'Dropped TV Shows'}, 'Dropped', 'lists')
 		self._safe_add({'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists'}, 'My Lists', 'lists')
-		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Movies Liked Lists', 'media_type': 'movie'}, 'Movies Liked Lists', 'movies')
-		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'TV Shows Liked Lists', 'media_type': 'tvshow'}, 'TV Shows Liked Lists', 'tv')
+		self._safe_add({'mode': 'navigator.mdblist_liked'}, 'Liked Lists', 'favorites')
 		self._safe_add({'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Popular MDBLists'}, 'Popular MDBLists', 'popular')
 		self._safe_add({'mode': 'build_mdbl_next_up'}, 'Next Up', 'next_episodes')
 		self._safe_add({'mode': 'build_mdbl_calendar'}, 'Calendar', 'calender')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
+
+	def mdblist_watchlists(self):
+		self.category_name = 'Watchlist'
+		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_watchlist', 'category_name': 'Movies Watchlist'}, 'Movies', 'movies',
+					cm_items=self._sort_cm('mdblist.watchlist', 'movies', 'mdblist_watchlist'))
+		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_watchlist', 'category_name': 'TV Shows Watchlist'}, 'TV Shows', 'tv',
+					cm_items=self._sort_cm('mdblist.watchlist', 'shows', 'mdblist_watchlist'))
+		self._set_exit_params({'mode': 'navigator.mdblist_lists'})
+		self.end_directory()
+
+	def mdblist_library(self):
+		self.category_name = 'Library'
+		self._safe_add({'mode': 'build_movie_list', 'action': 'mdblist_collection', 'category_name': 'Movies Library'}, 'Movies', 'movies',
+					cm_items=self._sort_cm('mdblist.collection', 'movies', 'mdblist_collection'))
+		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_collection', 'category_name': 'TV Shows Library'}, 'TV Shows', 'tv',
+					cm_items=self._sort_cm('mdblist.collection', 'shows', 'mdblist_collection'))
+		self._set_exit_params({'mode': 'navigator.mdblist_lists'})
+		self.end_directory()
+
+	def mdblist_liked(self):
+		self.category_name = 'Liked Lists'
+		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Movies Liked Lists', 'media_type': 'movie'}, 'Movies', 'movies')
+		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'TV Shows Liked Lists', 'media_type': 'tvshow'}, 'TV Shows', 'tv')
+		self._set_exit_params({'mode': 'navigator.mdblist_lists'})
+		self.end_directory()
+
+	def _punchplay_anime_link(self, action, category_name, list_id=None):
+		params = {'mode': 'build_tvshow_list', 'action': action, 'category_name': category_name, 'is_anime_list': 'true'}
+		if list_id is not None: params['list_id'] = list_id
+		return params
+
+	def _punchplay_media_folder(self, action, category_name, exit_mode='punchplay_lists', list_id=None):
+		self.category_name = category_name
+		movie_params = {'mode': 'build_movie_list', 'action': action, 'category_name': 'Movies %s' % category_name}
+		tv_params = {'mode': 'build_tvshow_list', 'action': action, 'category_name': 'TV Shows %s' % category_name}
+		if list_id is not None:
+			movie_params['list_id'] = list_id
+			tv_params['list_id'] = list_id
+		self._safe_add(movie_params, 'Movies', 'movies')
+		self._safe_add(tv_params, 'TV Shows', 'tv')
+		self._safe_add(self._punchplay_anime_link(action, 'Anime %s' % category_name, list_id), 'Anime', 'anime')
+		self._set_exit_params({'mode': 'navigator.%s' % exit_mode})
+		self.end_directory()
+
+	def punchplay_lists(self):
+		"""Grouped: Watchlist → Collection → Favourites → status shelves → My Lists → Calendar → Search."""
+		self.category_name = 'PunchPlay Lists'
+		for mode, label, icon in (
+			('punchplay_watchlists', 'Watchlist', 'lists'),
+			('punchplay_collections', 'Collection', 'folder'),
+			('punchplay_favourites', 'Favourites', 'favorites'),
+			('punchplay_watching_menu', 'Watching', 'player'),
+			('punchplay_planning', 'Planning', 'lists'),
+			('punchplay_on_hold', 'On Hold', 'ontheair'),
+			('punchplay_watched', 'Watched', 'watched_1'),
+			('punchplay_dropped_menu', 'Dropped', 'lists'),
+		):
+			self._safe_add({'mode': 'navigator.%s' % mode}, label, icon)
+		self._safe_add({'mode': 'navigator.punchplay_my_lists'}, 'My Lists', 'lists')
+		self._safe_add({'mode': 'build_punchplay_calendar'}, 'Calendar', 'calender')
+		self._safe_add({'mode': 'navigator.search_history', 'action': 'punchplay_lists'}, 'Search My PunchPlay Lists', 'search')
+		self._set_exit_params({'mode': 'navigator.my_lists'})
+		self.end_directory()
+
+	def punchplay_watchlists(self):
+		self._punchplay_media_folder('punchplay_watchlist', 'Watchlist')
+
+	def punchplay_collections(self):
+		self._punchplay_media_folder('punchplay_collection', 'Collection')
+
+	def punchplay_favourites(self):
+		self._punchplay_media_folder('punchplay_favorites', 'Favourites')
+
+	def punchplay_watching_menu(self):
+		self._punchplay_media_folder('punchplay_watching', 'Watching')
+
+	def punchplay_planning(self):
+		self._punchplay_media_folder('punchplay_plantowatch', 'Planning')
+
+	def punchplay_on_hold(self):
+		self._punchplay_media_folder('punchplay_hold', 'On Hold')
+
+	def punchplay_watched(self):
+		self._punchplay_media_folder('punchplay_completed', 'Watched')
+
+	def punchplay_dropped_menu(self):
+		self._punchplay_media_folder('punchplay_dropped', 'Dropped')
+
+	def punchplay_my_lists(self):
+		self.category_name = 'My Lists'
+		try:
+			from apis.punchplay_api import punchplay_get_lists
+			for entry in punchplay_get_lists() or []:
+				if entry.get('isWatchlist'): continue
+				list_id, name = entry.get('id'), entry.get('name') or 'List'
+				if not list_id: continue
+				self._safe_add({'mode': 'navigator.punchplay_user_list', 'list_id': list_id, 'list_name': name}, name, 'lists')
+		except: pass
+		self._set_exit_params({'mode': 'navigator.punchplay_lists'})
+		self.end_directory()
+
+	def punchplay_user_list(self):
+		list_id = self.params.get('list_id')
+		list_name = self.params.get('list_name') or 'List'
+		self._punchplay_media_folder('punchplay_user_list', list_name, exit_mode='punchplay_my_lists', list_id=list_id)
 
 	def trakt_collections(self):
 		self.category_name = 'Library'
@@ -420,6 +521,7 @@ class Navigator:
 		self.add({'mode': 'clear_cache', 'cache': 'meta', 'isFolder': 'false'}, 'Clear Meta Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'imdb', 'isFolder': 'false'}, 'Clear IMDb Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'mdblist', 'isFolder': 'false'}, 'Clear MDBList Cache', 'settings')
+		self.add({'mode': 'clear_cache', 'cache': 'punchplay', 'isFolder': 'false'}, 'Clear PunchPlay Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'simkl', 'isFolder': 'false'}, 'Clear Simkl Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'tmdb_list', 'isFolder': 'false'}, 'Clear TMDb Personal List Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'trakt', 'isFolder': 'false'}, 'Clear Trakt Cache', 'settings')
@@ -568,7 +670,8 @@ class Navigator:
 		'nzb_search': ('nzb_queries', {'mode': 'search.get_key_id', 'search_type': 'nzb_search', 'isFolder': 'false'}),
 		'trakt_lists': ('trakt_list_queries', {'mode': 'search.get_key_id', 'search_type': 'trakt_lists', 'isFolder': 'false'}),
 		'trakt_my_lists': ('trakt_my_list_queries', {'mode': 'search.get_key_id', 'search_type': 'trakt_my_lists', 'isFolder': 'false'}),
-		'simkl_lists': ('simkl_list_queries', {'mode': 'search.get_key_id', 'search_type': 'simkl_lists', 'isFolder': 'false'})}
+		'simkl_lists': ('simkl_list_queries', {'mode': 'search.get_key_id', 'search_type': 'simkl_lists', 'isFolder': 'false'}),
+		'punchplay_lists': ('punchplay_list_queries', {'mode': 'search.get_key_id', 'search_type': 'punchplay_lists', 'isFolder': 'false'})}
 		setting_id, action_dict = search_mode_dict[self.list_name]
 		url_params = dict(action_dict)
 		data = main_cache.get(setting_id) or []
@@ -778,7 +881,8 @@ class Navigator:
 		'personal_lists': ('Random Personal Lists', nc.random_personal_lists),
 		'trakt_personal': ('Random Trakt Lists (Personal)', nc.random_trakt_lists_personal),
 		'trakt_public': ('Random Trakt Lists (Public)', nc.random_trakt_lists_public),
-		'simkl_lists': ('Random Simkl Lists', nc.random_simkl_lists)}
+		'simkl_lists': ('Random Simkl Lists', nc.random_simkl_lists),
+		'punchplay_lists': ('Random PunchPlay Lists', nc.random_punchplay_lists)}
 		self.category_name, function = random_list_dict[self.params_get('menu_type')]
 		func = function()
 		for item in func: self.add(item, item['name'], item['iconImage'])

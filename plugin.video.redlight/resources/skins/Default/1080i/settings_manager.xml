@@ -1391,7 +1391,7 @@
                           <property name="setting_label">Include Watched Indicator Watchlist/Red Light Favorites</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.include_unwatched_name)]</property>
-                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Indicators watchlist (MDBList Watchlist, Simkl Plan to Watch, or Trakt Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Indicators is Red Light, Watchlist has no source and only Favorites apply.</property>
+                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Indicators watchlist (MDBList Watchlist, PunchPlay Watchlist, Simkl Plan to Watch, or Trakt Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Indicators is Red Light, Watchlist has no source and only Favorites apply.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=nextep.include_unwatched)</onclick>
                       </item>
                       <item>
@@ -1418,11 +1418,12 @@
                           <property name="setting_description">Enable this to include unaired episodes within Next Episodes. They will show with a RED highlight and become visible within 7 days of their airdate</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.include_unaired)</onclick>
                       </item>
-        <!-- Calendars (MDBList Calendar + Trakt Calendar) -->
+        <!-- Calendars (MDBList + PunchPlay + Trakt — shared episode-list UI) -->
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Calendars</property>
                           <property name="setting_type">separator</property>
+                          <property name="setting_description">Shared options for [B]MDBList Calendar[/B], [B]PunchPlay Calendar[/B], and [B]Trakt Calendar[/B] (same episode-list UI under My Lists).</property>
                           <onclick>noop</onclick>
                       </item>
                       <item>
@@ -1430,7 +1431,7 @@
                           <property name="setting_label">Flatten TV Shows Airing on Same Day</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.flatten_episodes)]</property>
-                          <property name="setting_description">Enable this to limit to the first instance of a TV Show episode when that TV Show has multiple episodes airing on the same day in MDBList Calendar and Trakt Calendar</property>
+                          <property name="setting_description">Enable this to limit to the first instance of a TV Show episode when that TV Show has multiple episodes airing on the same day in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=trakt.flatten_episodes)</onclick>
                       </item>
                       <item>
@@ -1438,7 +1439,7 @@
                           <property name="setting_label">Calendar Display Format - Within Addon</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_display_name)]</property>
-                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar and Trakt Calendar within the addon</property>
+                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar within the addon.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_display)</onclick>
                       </item>
                       <item>
@@ -1446,7 +1447,7 @@
                           <property name="setting_label">Calendar Display Format - Widgets</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_display_widget_name)]</property>
-                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar and Trakt Calendar for widgets</property>
+                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar for widgets.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_display_widget)</onclick>
                       </item>
                       <item>
@@ -1454,7 +1455,7 @@
                           <property name="setting_label">Calendar Date Labels</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_date_labels_name)]</property>
-                          <property name="setting_description">Choose how Red Light labels the airdate of episodes in MDBList Calendar and Trakt Calendar. Words / date uses Today, Tomorrow and weekday names for the near week, and the chosen date format outside that. Day + date always shows both. Date-only formats keep the list in plain chronological order (no pin-today). Each group is ordered YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY</property>
+                          <property name="setting_description">Choose how Red Light labels the airdate of episodes in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar. Words / date uses Today, Tomorrow and weekday names for the near week, and the chosen date format outside that. Day + date always shows both. Date-only formats keep the list in plain chronological order (no pin-today). Each group is ordered YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_date_labels)</onclick>
                       </item>
                       <item>
@@ -1462,7 +1463,7 @@
                           <property name="setting_label">Sort Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_sort_order_name)]</property>
-                          <property name="setting_description">Choose the sort direction of MDBList Calendar and Trakt Calendar. Ascending or Descending</property>
+                          <property name="setting_description">Choose the sort direction of MDBList Calendar, PunchPlay Calendar, and Trakt Calendar. Ascending or Descending.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_sort_order)</onclick>
                       </item>
                       <item>
@@ -1470,7 +1471,7 @@
                           <property name="setting_label">Show Previous Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_previous_days)]</property>
-                          <property name="setting_description">Choose how many previous days will be shown in Trakt Calendar. The MDBList Calendar API does not expose past airings, so this setting has no effect there.</property>
+                          <property name="setting_description">Choose how many previous days will be shown in PunchPlay Calendar and Trakt Calendar. The MDBList Calendar API does not expose past airings, so this setting has no effect there.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_previous_days)</onclick>
                       </item>
                       <item>
@@ -1478,7 +1479,7 @@
                           <property name="setting_label">Show Future Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_future_days)]</property>
-                          <property name="setting_description">Choose how many future days will be shown in MDBList Calendar and Trakt Calendar.</property>
+                          <property name="setting_description">Choose how many future days will be shown in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_future_days)</onclick>
                       </item>
 <!-- META ACCOUNTS 50 -->
@@ -1494,7 +1495,7 @@
                           <property name="setting_label">Watched Status Provider</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.watched_indicators_name)]</property>
-                          <property name="setting_description">Watched ticks, resume bars, Next Episodes, and In Progress lists. Choose MDBList, Red Light (local), Simkl, or Trakt. Authorise a service below to use it. WeTrakr is separate (scrobble only) and is not a watched provider.</property>
+                          <property name="setting_description">Watched ticks, resume bars, Next Episodes, and In Progress lists. Choose MDBList, PunchPlay, Red Light (local), Simkl, or Trakt. Authorise a service below to use it. WeTrakr is separate (scrobble only) and is not a watched provider.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=watched_indicators)</onclick>
                       </item>
         <!-- MDBList -->
@@ -1557,6 +1558,76 @@
                           <property name="setting_value">...</property>
                           <property name="setting_description">Clear cached MDBList lists and sync data, then resync from MDBList</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=mdblist)</onclick>
+                      </item>
+        <!-- PunchPlay -->
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">PunchPlay</property>
+                          <property name="setting_type">separator</property>
+                          <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">Authorise</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Authorise your PunchPlay account. Enter the code on screen or scan the QR code — same flow as MDBList and Trakt. Defers native scrobble when script.punchplay is already authorised.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=punchplay.punchplay_authenticate)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">Revoke Authorisation</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.punchplay.user)]</property>
+                          <property name="setting_description">Revoke authorisation of your PunchPlay account</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=punchplay.punchplay_revoke_authentication)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">    - Resync Interval (mins)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.punchplay.sync_interval)]</property>
+                          <property name="setting_description">Choose how often Red Light polls PunchPlay for watched status and progress changes</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=punchplay.sync_interval)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">    - Refresh Widgets After Sync</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.punchplay.refresh_widgets)]</property>
+                          <property name="setting_description">Refresh widgets after a PunchPlay sync when changes were detected. Only runs when [B]Watched Status Provider[/B] is set to [B]PunchPlay[/B].</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=punchplay.refresh_widgets)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">    - Force Sync</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Pull watched status and playback progress from PunchPlay now</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=punchplay.punchplay_force_sync)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">    - Clear Cache</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Clear cached PunchPlay lists and sync data, then resync from PunchPlay</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=punchplay)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">Client ID Key</property>
+                          <property name="setting_type">string</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.punchplay.client)]</property>
+                          <property name="setting_description">Enter the Client ID from your app at punchplay.tv/developers (or leave the Red Light default)</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=punchplay.client)</onclick>
                       </item>
         <!-- Simkl -->
                       <item>
@@ -1691,6 +1762,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Client ID Key</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.client)]</property>
@@ -1699,7 +1771,9 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.client),30e6c73030cc41dbff996200ac3060cde689555ba207020e08a2175533b912c3)</visible>                          <property name="setting_label">    - Restore Default Client ID Key</property>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.client),30e6c73030cc41dbff996200ac3060cde689555ba207020e08a2175533b912c3)</visible>
+                          <property name="setting_label">    - Restore Default Client ID Key</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
                           <property name="setting_description">Restore default Trakt Client ID Key</property>
@@ -1707,6 +1781,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Client Secret Key</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.secret)]</property>
@@ -1715,6 +1790,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.secret),726f6b12a9f0079d5850a7bb0e15860725cd487cbfb54ce5471de217639465c5)</visible>
                           <property name="setting_label">    - Restore Default Client Secret Key</property>
                           <property name="setting_type">action</property>
@@ -1724,10 +1800,11 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Test Client Keys...</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Check that your Trakt Client ID (and Secret if set) are accepted by Trakt before using Authorise</property>
+                          <property name="setting_description">Check that your Trakt Client ID (and Secret if set) are accepted by Trakt</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=trakt_credentials_check_choice)</onclick>
                       </item>
         <!-- WeTrakr (scrobble only) -->
@@ -1742,7 +1819,7 @@
                           <property name="setting_label">About WeTrakr Scrobble</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Scrobble only: authorise WeTrakr, then use Enable Scrobbling to turn play/finish reporting on or off without revoking. Does not sync watched ticks, resume, Next Episodes, or lists into Red Light. Keep Watched Status Provider on Red Light (or MDBList / Simkl / Trakt) for ticks and lists. If the official WeTrakr Kodi add-on is authorised, Red Light defers to it.</property>
+                          <property name="setting_description">Scrobble only: authorise WeTrakr, then use Enable Scrobbling to turn play/finish reporting on or off without revoking. Does not sync watched ticks, resume, Next Episodes, or lists into Red Light. Keep Watched Status Provider on Red Light (or MDBList / PunchPlay / Simkl / Trakt) for ticks and lists. If the official WeTrakr Kodi add-on is authorised, Red Light defers to it.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=wetrakr.wetrakr_about)</onclick>
                       </item>
                       <item>
@@ -1769,7 +1846,7 @@
                           <property name="setting_label">Enable Scrobbling</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.wetrakr.scrobble)]</property>
-                          <property name="setting_description">When on, Red Light reports play/pause/finish to WeTrakr. When off, stay authorised but do not scrobble. Same idea as keeping Trakt/Simkl authorised while using a different Watched Status Provider.</property>
+                          <property name="setting_description">When on, Red Light reports play/pause/finish to WeTrakr. When off, stays authorised but does not scrobble.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=wetrakr.scrobble)</onclick>
                       </item>
                       <item>
@@ -4075,23 +4152,21 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.easynews),true)</visible>
-                          <visible>![String.IsEmpty(Window(10000).Property(redlight.easynews_user)) + String.IsEmpty(Window(10000).Property(redlight.easynews_password))]</visible>
+                          <visible>[String.IsEqual(Window(10000).Property(redlight.provider.easynews),true) + ![String.IsEmpty(Window(10000).Property(redlight.easynews_user)) + String.IsEmpty(Window(10000).Property(redlight.easynews_password))]] | String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <property name="setting_label">EasyNews Playback Method</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.easynews.playback_method_name)]</property>
-                          <property name="setting_description">Choose the method for Red Light to use to attempt optimal EasyNews playback. RETRY will retry once the link if it fails to resolve (slow). NO SEEK will tell Kodi the stream is not seekable. This results in quick and consistent resolving of the stream, but you will be unable to seek the stream outside of the cached data. Both is to use both methods. None is to use none of the methods.</property>
+                          <property name="setting_description">Choose the method for Red Light to use to attempt optimal EasyNews playback (native EasyNews and AIOStreams EN rows). RETRY will retry the link if it fails to resolve (slow). NO SEEK will tell Kodi the stream is not seekable. This results in quick and consistent resolving of the stream, but you will be unable to seek the stream outside of the cached data. Both is to use both methods. None is to use none of the methods.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=easynews.playback_method)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.easynews),true)</visible>
-                          <visible>![String.IsEmpty(Window(10000).Property(redlight.easynews_user)) + String.IsEmpty(Window(10000).Property(redlight.easynews_password))]</visible>
+                          <visible>[String.IsEqual(Window(10000).Property(redlight.provider.easynews),true) + ![String.IsEmpty(Window(10000).Property(redlight.easynews_user)) + String.IsEmpty(Window(10000).Property(redlight.easynews_password))]] | String.IsEqual(Window(10000).Property(redlight.provider.aiostreams),true)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.easynews.playback_method),1) | String.IsEqual(Window(10000).Property(redlight.easynews.playback_method),3)</visible>
                           <property name="setting_label">    - Set Max. Retries for Playback</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.easynews.playback_method_retries)]</property>
-                          <property name="setting_description">Choose the maximum retries allowed for EasyNews playback attempts</property>
+                          <property name="setting_description">Choose the maximum retries allowed for EasyNews playback attempts (native EasyNews and AIOStreams EN)</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=easynews.playback_method_retries)</onclick>
                       </item>
                       <item>

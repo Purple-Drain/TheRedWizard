@@ -52,6 +52,7 @@ def meta_account_names(accounts):
 	# A–Z; OAuth / session metas only.
 	names = []
 	if accounts.get('mdblist'): names.append('MDBList')
+	if accounts.get('punchplay'): names.append('PunchPlay')
 	if accounts.get('simkl'): names.append('Simkl')
 	if accounts.get('tmdb_lists'): names.append('TMDb Lists')
 	if accounts.get('trakt'): names.append('Trakt')

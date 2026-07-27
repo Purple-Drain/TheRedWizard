@@ -646,10 +646,78 @@ def is_direct_easynews_item(item):
 	url = str(item.get('url_dl') or item.get('url') or '').lower()
 	return 'easynews' in url
 
+_PLACEHOLDER_STREAM_MARKERS = (
+	'/static/downloading.mp4',
+	'/static/downloading.',
+	'downloading.mp4',
+)
+
+def _is_placeholder_stream_url(url):
+	lower = (url or '').lower().split('|', 1)[0]
+	return any(marker in lower for marker in _PLACEHOLDER_STREAM_MARKERS)
+
+def _probe_final_url(url, headers=None, timeout=12):
+	try:
+		resp = requests.get(url, headers=headers or {}, allow_redirects=True, stream=True, timeout=timeout)
+		try:
+			return (resp.url or url).strip()
+		finally:
+			resp.close()
+	except Exception as exc:
+		logger('aiostreams playback probe', str(exc))
+		return None
+
+def _append_play_options(url, headers=None, seekable=None):
+	"""Build a Kodi play URL with optional request headers and seekable=0."""
+	parts = []
+	if headers:
+		parts.append(urlencode(headers))
+	if seekable is not None:
+		parts.append('seekable=%s' % seekable)
+	if not parts:
+		return url
+	return '%s|%s' % (url, '&'.join(parts))
+
+def _resolve_easynews_playback(url, headers=None):
+	"""Materialize AIO EN → EasyNews CDN; apply No Seek when enabled.
+
+	Each call follows redirects again so RETRYx attempts can land a different farm.
+	Cannot use Red Light's native EasyNews auth resolve — AIO's link is already
+	signed/wrapped by the instance's EN credentials.
+	"""
+	from modules.settings import easynews_playback_method
+	final = _probe_final_url(url, headers)
+	if not final:
+		return None
+	if _is_placeholder_stream_url(final):
+		logger('aiostreams playback', 'rejected EN placeholder stream: %s' % final)
+		return None
+	play_url = final
+	out_headers = None
+	# Direct EasyNews CDN URLs are signed; keep AIO headers only if still on the AIO host.
+	if 'easynews.com' not in play_url.lower() and headers:
+		out_headers = headers
+	use_non_seek = easynews_playback_method('non_seek')
+	if use_non_seek:
+		logger('aiostreams playback', 'EN No Seek applied | %s' % play_url[:120])
+		return _append_play_options(play_url, out_headers, seekable=0)
+	return _append_play_options(play_url, out_headers)
+
 def resolve_playback_url(item):
 	url = item.get('url_dl') or item.get('url')
 	if not url: return None
 	headers = playback_headers(item)
+	bare = url.split('|', 1)[0]
+	if is_direct_easynews_item(item):
+		return _resolve_easynews_playback(bare, headers)
+	# Uncached debrid playback with AIOStreams Failover often 302s to a short placeholder mp4
+	# (static/downloading.mp4). Kodi treats that as successful playback and nextep/autoscrape runs.
+	needs_probe = '/debrid/playback/' in bare.lower() or item.get('cached') is False
+	if needs_probe:
+		final = _probe_final_url(bare, headers)
+		if final and _is_placeholder_stream_url(final):
+			logger('aiostreams playback', 'rejected uncached placeholder stream: %s' % final)
+			return None
 	if headers: return '%s|%s' % (url, urlencode(headers))
 	return url
 
