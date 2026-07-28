@@ -570,8 +570,8 @@ def service_scrobbler_defer(addon_id, auth_keys=(), scrobble_enable_keys=()):
 def container_content():
 	return get_infolabel('Container.Content')
 
-def set_sort_method(handle, method):
-	xbmcplugin.addSortMethod(handle, {'episodes': 24, 'files': 5, 'label': 2, 'none': 0}[method])
+def set_sort_method(handle, method, labelMask=''):
+	xbmcplugin.addSortMethod(handle, {'episodes': 24, 'files': 5, 'label': 2, 'none': 0}[method], labelMask=labelMask)
 
 def make_session(url='https://'):
 	import requests

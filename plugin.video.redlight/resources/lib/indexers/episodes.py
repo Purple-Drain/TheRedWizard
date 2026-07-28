@@ -81,10 +81,12 @@ def build_episode_list(params):
 				if not duration:
 					duration = show_duration
 					item['duration'] = duration
+				str_episode_zfill2 = str(episode).zfill(2)
+				seas_ep = '%sx%s. ' % (season, str_episode_zfill2)
 				if not episode_date or current_date < episode_date:
-					display, unaired = '[COLOR red][I]%s[/I][/COLOR]' % ep_name, True
+					display, unaired = '[COLOR red][I]%s%s[/I][/COLOR]' % (seas_ep, ep_name), True
 					item['title'] = display
-				else: display, unaired = ep_name, False
+				else: display, unaired = '%s%s' % (seas_ep, ep_name), False
 				extras_params = build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'episode', 'is_external': is_external})
 				options_params = build_url({'mode': 'options_menu_choice', 'content': 'episode', 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external})
 				playback_options_params = build_url({'mode': 'playback_choice', 'media_type': 'episode', 'meta': tmdb_id, 'season': season, 'playcount': playcount,
@@ -114,7 +116,7 @@ def build_episode_list(params):
 				cm = [i[1] for i in cm]
 				studios = list(studio) if isinstance(studio, tuple) else (studio or [])
 				info_tag = listitem.getVideoInfoTag(True)
-				info_tag.setMediaType('episode'), info_tag.setTitle(display), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setGenres(genre)
+				info_tag.setMediaType('episode'), info_tag.setTitle(ep_name), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setGenres(genre)
 				info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot)
 				info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 				info_tag.setFirstAired(premiered), info_tag.setTvShowStatus(show_status)
@@ -185,7 +187,7 @@ def build_episode_list(params):
 		except: season_poster = show_poster
 		category_name = 'Season %s' % season
 	kodi_utils.add_items(handle, list(_process()))
-	kodi_utils.set_sort_method(handle, 'episodes')
+	kodi_utils.set_sort_method(handle, 'episodes', labelMask='%L')
 	kodi_utils.set_content(handle, 'episodes')
 	kodi_utils.set_category(handle, category_name)
 	kodi_utils.end_directory(handle, cacheToDisc=False if is_external else True)
@@ -261,10 +263,10 @@ def build_single_episode(list_type, params={}):
 				poster_path = next((i['poster_path'] for i in season_data if i['season_number'] == int(season)), None)
 				season_poster = 'https://image.tmdb.org/t/p/w780%s' % poster_path if poster_path is not None else show_poster
 			except: season_poster = show_poster
-			str_season_zfill2, str_episode_zfill2 = str(season).zfill(2), str(episode).zfill(2)
-			if display_format == 0: title_str = '%s: ' % title
+			str_episode_zfill2 = str(episode).zfill(2)
+			if display_format == 0: title_str = '%s - ' % title
 			else: title_str = ''
-			if display_format in (0, 1): seas_ep = '%sx%s - ' % (str_season_zfill2, str_episode_zfill2)
+			if display_format in (0, 1): seas_ep = '%sx%s. ' % (str(season), str_episode_zfill2)
 			else: seas_ep = ''
 			if not list_type_starts_with('next_'):
 				playcount = ws.get_watched_status_episode(watched_info, (season, episode))
@@ -339,7 +341,7 @@ def build_single_episode(list_type, params={}):
 			if isinstance(studio, tuple): studio = list(studio)
 			elif not studio: studio = []
 			info_tag = listitem.getVideoInfoTag(True)
-			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display), info_tag.setGenres(genre)
+			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(ep_name), info_tag.setGenres(genre)
 			info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
 			info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 			info_tag.setCountries(meta_get('country', [])), info_tag.setTrailer(trailer), info_tag.setTvShowStatus(show_status)
@@ -360,7 +362,7 @@ def build_single_episode(list_type, params={}):
 				'episode_type': episode_type, 'redlight.extras_params': extras_params, 'redlight.options_params': options_params,
 				'redlight.playback_options_params': playback_options_params
 				})
-			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str_season_zfill2, str_episode_zfill2),
+			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(season), str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
 		except Exception as e:
 			# Silent drops blank calendars/next-ep lists; log so meta/InfoTag failures are visible.
@@ -521,6 +523,6 @@ def build_single_episode(list_type, params={}):
 	kodi_utils.set_category(handle, _get_category_name())
 	# Keep plugin order for calendars — Kodi "Sort by Date" was reordering vs day labels.
 	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'trakt_recently_aired'):
-		kodi_utils.set_sort_method(handle, 'none')
+		kodi_utils.set_sort_method(handle, 'none', labelMask='%L')
 	kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))

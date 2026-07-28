@@ -1222,8 +1222,8 @@ def default_settings():
 #====================================SINGLE EPISODE LISTS==========================#
 #==================================================================================#
 #==================== General
-{'setting_id': 'single_ep_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
-{'setting_id': 'single_ep_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
+{'setting_id': 'single_ep_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE - SxE. EPISODE', '1': 'SxE. EPISODE', '2': 'EPISODE'}},
+{'setting_id': 'single_ep_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE - SxE. EPISODE', '1': 'SxE. EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'single_ep_unwatched_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== Next Episodes
 {'setting_id': 'nextep.method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Last Aired', '1': 'Last Watched'}},
@@ -1237,8 +1237,8 @@ def default_settings():
 {'setting_id': 'nextep.include_unaired', 'setting_type': 'boolean', 'setting_default': 'false'},
 #======+============= Calendars (Trakt + MDBList + PunchPlay — shared episode-list UI)
 {'setting_id': 'trakt.flatten_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
-{'setting_id': 'trakt.calendar_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
-{'setting_id': 'trakt.calendar_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE: SxE - EPISODE', '1': 'SxE - EPISODE', '2': 'EPISODE'}},
+{'setting_id': 'trakt.calendar_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE - SxE. EPISODE', '1': 'SxE. EPISODE', '2': 'EPISODE'}},
+{'setting_id': 'trakt.calendar_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE - SxE. EPISODE', '1': 'SxE. EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'trakt.calendar_sort_order', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Descending', '1': 'Ascending'}},
 {'setting_id': 'trakt.calendar_date_labels', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {
 	'0': 'Words / YYYY-MM-DD', '7': 'Words / MM-DD-YYYY', '8': 'Words / DD-MM-YYYY',
