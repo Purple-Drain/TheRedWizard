@@ -94,15 +94,54 @@ def _schedule_playback_widget_refresh(from_playback):
 		from modules.kodi_utils import schedule_playback_widget_refresh
 		schedule_playback_widget_refresh()
 
+def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None):
+	"""Count episodes that have aired using the same premiered rules as episode lists.
+
+	Keeps season/show episode totals in line with unaired colouring (TMDb date + 20:00 + UTC offset).
+	If season is set, only that season is counted. Specials follow Exclude Specials from Progress.
+	"""
+	from modules.metadata import episodes_meta
+	from modules.utils import adjust_premiered_date, get_datetime
+	if not meta: return 0
+	if current_date is None: current_date = get_datetime()
+	if adjust_hours is None: adjust_hours = settings.date_offset()
+	exclude_specials = settings.exclude_specials_from_progress()
+	season_data = meta.get('season_data') or []
+	if season is not None:
+		seasons = [int(season)]
+	else:
+		seasons = sorted({int(i.get('season_number', 0)) for i in season_data
+			if i.get('season_number') is not None and not (exclude_specials and int(i.get('season_number', 0)) == 0)})
+	count = 0
+	for snum in seasons:
+		if exclude_specials and snum == 0: continue
+		try: eps = episodes_meta(snum, meta) or []
+		except Exception: eps = []
+		for ep in eps:
+			premiered = ep.get('premiered')
+			if not premiered: continue
+			try:
+				ep_date = adjust_premiered_date(premiered, adjust_hours)[0]
+			except Exception:
+				continue
+			if ep_date and ep_date <= current_date:
+				count += 1
+	return count
+
 def progress_aired_eps(meta):
 	"""Aired episode total used for show-level In Progress / Watched / progress %."""
 	total = meta.get('total_aired_eps') or 0
-	if not settings.exclude_specials_from_progress(): return total
-	# Still-airing totals from metadata already exclude Season 0.
 	status = meta.get('status', '')
+	# Still-airing: recount with premiered-date rules so totals match unaired colouring
+	# (TMDb last_episode_to_air often lags same-day releases).
+	if status not in ('Ended', 'Canceled'):
+		try:
+			return count_aired_episodes(meta)
+		except Exception:
+			return total
+	if not settings.exclude_specials_from_progress(): return total
 	extra_info = meta.get('extra_info') or {}
 	last_ep = extra_info.get('last_episode_to_air')
-	if last_ep and status not in ('Ended', 'Canceled'): return total
 	season_data = meta.get('season_data') or []
 	if not season_data: return total
 	# Ended/Canceled: count through last aired only so placeholder seasons (e.g. S2E1 with no

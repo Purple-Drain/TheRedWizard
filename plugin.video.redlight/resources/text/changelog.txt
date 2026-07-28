@@ -1,3 +1,9 @@
+[COLOR red][B]Version 2.1.3[/B][/COLOR]
+- [B]Extras[/B]: whole-page scroll without the mouse-breaking focus animations — genre/ratings and action buttons sit in the scrolling list so they move off-screen with Plot/Cast/etc., while only the title/logo stay fixed.
+- [B]Simkl[/B]: Mark Watched for anime titles posts under Simkl [I]anime[/I]/[I]shows[/I] history with TVDB-style season mapping. Mark Unwatched always uses [I]shows[/I] (Simkl's remove endpoint silently ignores top-level [I]anime[][/I], which left titles watched online while Red Light toasted Success). Watched sync imports [I]/sync/all-items/anime[/I], anime activity refreshes indicators, and history calls stop after a network failure instead of stacking bucket timeouts.
+- [B]UTC (+/-)[/B]: uses your real timezone offset only. The old Fen-style extra +5 hours is removed. TMDb dates are still treated as 20:00 before applying the offset. If you previously set a value to compensate, reset to your real offset.
+- [B]Aired episode counts[/B]: still-airing shows recount aired episodes with the same premiered-date rules as unaired colouring, so season/show totals (e.g. "4 episodes") stay in sync when a new episode is treated as aired.
+
 [COLOR red][B]Version 2.1.2[/B][/COLOR]
 - [B]Anime / Next Episodes[/B]: airing show and season episode caches refresh much sooner (was up to 96h). When Next Episodes cannot find a following episode for a still-airing show, Red Light force-refreshes that show's TMDb meta once so newly listed episodes (common with weekly anime) can appear without waiting for cache expiry. Next Episodes also refreshes MDBList/Trakt/Simkl/PunchPlay watched data before building (same idea as In Progress).
 

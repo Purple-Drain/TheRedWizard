@@ -1435,7 +1435,11 @@ def media_extra_info_choice(params):
 						next_ep['season_number'], next_ep['episode_number'], next_ep['name']))
 			except: pass
 			append('[B]Seasons:[/B] %s' % meta['total_seasons'])
-			append('[B]Episodes:[/B] %s' % meta['total_aired_eps'])
+			try:
+				from modules.watched_status import progress_aired_eps
+				append('[B]Episodes:[/B] %s' % progress_aired_eps(meta))
+			except Exception:
+				append('[B]Episodes:[/B] %s' % meta['total_aired_eps'])
 			append('[B]Homepage:[/B] %s' % extra_info['homepage'])
 	except: return kodi_utils.notification('Error', 2000)
 	return '[CR][CR]'.join(listings)

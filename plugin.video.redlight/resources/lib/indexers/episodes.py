@@ -9,7 +9,7 @@ from datetime import timedelta
 def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	"""Use Trakt/MDBList air date for calendar label + sort (not TMDb premiered).
 
-	Do not apply the TMDb 20:00 + (UTC+5) fudge here — that pushes service calendar
+	Do not invent TMDb 20:00 / apply date_offset() here — that can push service calendar
 	days one day ahead. Date-only events keep their calendar day; ISO timestamps
 	use the user UTC (+/-) setting only.
 	"""

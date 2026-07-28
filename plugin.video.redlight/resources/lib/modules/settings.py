@@ -1035,13 +1035,13 @@ def jump_to_enabled():
 	return get_setting('redlight.paginate.jump_to', 'true') == 'true'
 
 def datetime_utc_offset():
-	'''User UTC (+/-) setting only — no TMDb air-date fudge.'''
+	'''User UTC (+/-) setting only — genuine timezone hours from UTC.'''
 	try: return int(get_setting('redlight.datetime.offset', '0'))
 	except (TypeError, ValueError): return 0
 
 def date_offset():
-	# +5 matches Fen-style TMDb premiered handling (assume ~20:00 air + region fudge).
-	return datetime_utc_offset() + 5
+	# TMDb dates are still assumed at 20:00 locally in adjust_premiered_date; offset is real UTC (+/-) only.
+	return datetime_utc_offset()
 
 def media_open_action(media_type):
 	return int(get_setting('redlight.media_open_action_%s' % media_type, '0'))

@@ -630,7 +630,7 @@
                           <property name="setting_label">UTC (+/-)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.datetime.offset)]</property>
-                          <property name="setting_description">Choose the correct UTC offset based on your location</property>
+                          <property name="setting_description">Your timezone offset from UTC (e.g. UK winter 0, UK summer +1 / BST). Combined with TMDb episode dates (treated as 20:00) for unaired colouring and aired episode counts. Set the real offset for your location — Red Light no longer adds an extra +5 hours</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=datetime.offset)</onclick>
                       </item>
         <!-- Downloads -->
