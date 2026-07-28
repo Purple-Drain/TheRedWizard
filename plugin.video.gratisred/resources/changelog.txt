@@ -1,4 +1,8 @@
 
+[B]- 1.2.2 (2026-07-28)[/B] Trakt standalone live scrobble:
+ * [B]Trakt[/B]: native live scrobble (Playing now) when Watched Indicators = Trakt — standalone without script.trakt; defers only if the official Trakt add-on is authorised and set to scrobble HTTP playback.
+ * [B]OpenSubtitles[/B]: keep per-title subtitle files in temp and reuse them on replay — toast says [I]cached[/I] instead of [I]downloaded[/I] when the file is already on disk.
+
 [B]- 1.2.1 (2026-07-28)[/B] OpenSubtitles + Trakt Manager / watched UX (#157):
  * [B]Trakt Manager[/B]: Collection labelled [I]Library[/I] (matches My Trakt menus). Library, Watchlist, and personal lists are state-aware (Add or Remove); if a personal-list membership check fails under rate-limit, that list still shows both so Manager stays usable.
  * [B]Trakt Manager[/B]: Watchlist / personal-list success follows Trakt [I]deleted[/I] counts (no post-remove re-paging that could toast Removed while the title stayed on Trakt). Library still confirms [I]deleted: 0[/I] show-level removes with one membership check.
@@ -6,7 +10,8 @@
  * [B]My Trakt shelves[/B]: short-TTL cache (Manager clears it and legacy 12h [I]trakt_list[/I] rows); shelves disable Kodi disc cache and live-fetch so add/remove is visible without restarting the add-on.
  * [B]TMDb Lists Manager[/B]: Favorites, Watchlist, and custom lists are state-aware like Simkl / Trakt — Add when not on the shelf, Remove when already there (no paired Add+Remove rows).
  * [B]Watched[/B]: Mark Watched / Unwatched toasts for Trakt, Simkl, and Local; list refresh reloads search results from the last term (no keyboard reopen) without breaking New Search.
- * [B]Menus[/B]: Movies / TV Shows / My Stuff / context Lists Managers / Accounts settings ordered Simkl > TMDb > Trakt; My Simkl / My TMDb / My Trakt shelves use content icons (movies / TV / episodes) instead of service logos.
+ * [B]Menus[/B]: Movies / TV Shows / My Stuff / context Lists Managers / Accounts settings ordered Simkl > TMDb > Trakt.
+ * [B]My Stuff[/B]: nested menus use context-specific icons (movies / TV / episodes, and similar) instead of repeating service logos on every shelf.
  * [B]OpenSubtitles.com[/B]: reject rate-limit / error bodies (e.g. [I]Too many requests[/I] wrapped as a tiny subtitle file) so they are not applied or toasted as a successful download.
  * [B]OpenSubtitles.com[/B]: rate-limit reject no longer treats SRT cue index [I]429[/I] (or long real downloads) as an error — same class of fix as Red Light 2.1.0.
 

@@ -390,6 +390,11 @@ def _prepare_subtitle_content(content):
     return text
 
 
+def usable_subtitle_text(content):
+    """Public wrapper — True/text when content is a real subtitle (not an error stub)."""
+    return _prepare_subtitle_content(content)
+
+
 def fetch_playback_subtitle(imdb_id, season=None, episode=None, year=None, languages='en', title=None):
     if not configured():
         return None, None

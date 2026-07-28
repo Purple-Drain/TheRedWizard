@@ -170,7 +170,7 @@ def __getTraktALT(url, post=None):
         pass
 
 
-def __getTrakt(url, post=None):
+def __getTrakt(url, post=None, timeout=30):
     # ---------------------------------------------------------------------
     # FIX (Trakt lists missing): the original implementation returned a bare
     # ``None`` on any server / rate-limit / transport error.  Every caller in
@@ -195,9 +195,9 @@ def __getTrakt(url, post=None):
             _ensureTraktTokenFresh()
             headers.update({'Authorization': 'Bearer %s' % control.setting('trakt.token')})
         if not post:
-            r = requests.get(url, headers=headers, timeout=30)
+            r = requests.get(url, headers=headers, timeout=timeout)
         else:
-            r = requests.post(url, data=post, headers=headers, timeout=30)
+            r = requests.post(url, data=post, headers=headers, timeout=timeout)
         r.encoding = 'utf-8'
         resp_code = str(r.status_code)
         resp_header = r.headers
@@ -221,9 +221,9 @@ def __getTrakt(url, post=None):
             log_utils.log('Trakt Rate Limit %s - sleeping %ss then retrying %s' % (resp_code, wait, url))
             time.sleep(wait)
             if not post:
-                r = requests.get(url, headers=headers, timeout=30)
+                r = requests.get(url, headers=headers, timeout=timeout)
             else:
-                r = requests.post(url, data=post, headers=headers, timeout=30)
+                r = requests.post(url, data=post, headers=headers, timeout=timeout)
             r.encoding = 'utf-8'
             if str(r.status_code) == '200':
                 return r.text, r.headers
@@ -239,9 +239,9 @@ def __getTrakt(url, post=None):
             return None, resp_header
         headers['Authorization'] = 'Bearer %s' % token
         if not post:
-            r = requests.get(url, headers=headers, timeout=30)
+            r = requests.get(url, headers=headers, timeout=timeout)
         else:
-            r = requests.post(url, data=post, headers=headers, timeout=30)
+            r = requests.post(url, data=post, headers=headers, timeout=timeout)
         r.encoding = 'utf-8'
         return r.text, r.headers
     except Exception as e:
@@ -745,40 +745,117 @@ def getTraktIndicatorsInfo():
 
 
 def getTraktAddonMovieInfo():
+    """True when official script.trakt should own movie scrobble (we defer)."""
+    try:
+        if not control.condVisibility('System.HasAddon(script.trakt)'):
+            return False
+    except Exception:
+        return False
+    try:
+        authorization = control.addon('script.trakt').getSetting('authorization')
+    except Exception:
+        authorization = ''
+    # Match Red Light: unauthorised / empty token → we scrobble ourselves.
+    if not authorization:
+        return False
     try:
         scrobble = control.addon('script.trakt').getSetting('scrobble_movie')
-    except:
+    except Exception:
         scrobble = ''
     try:
         ExcludeHTTP = control.addon('script.trakt').getSetting('ExcludeHTTP')
-    except:
+    except Exception:
         ExcludeHTTP = ''
-    try:
-        authorization = control.addon('script.trakt').getSetting('authorization')
-    except:
-        authorization = ''
-    if scrobble == 'true' and ExcludeHTTP == 'false' and not authorization == '':
-        return True
-    else:
+    # ExcludeHTTP true/empty → plugin HTTP playback is excluded; we scrobble.
+    if ExcludeHTTP in ('true', ''):
         return False
+    return scrobble == 'true'
 
 
 def getTraktAddonEpisodeInfo():
+    """True when official script.trakt should own episode scrobble (we defer)."""
+    try:
+        if not control.condVisibility('System.HasAddon(script.trakt)'):
+            return False
+    except Exception:
+        return False
+    try:
+        authorization = control.addon('script.trakt').getSetting('authorization')
+    except Exception:
+        authorization = ''
+    if not authorization:
+        return False
     try:
         scrobble = control.addon('script.trakt').getSetting('scrobble_episode')
-    except:
+    except Exception:
         scrobble = ''
     try:
         ExcludeHTTP = control.addon('script.trakt').getSetting('ExcludeHTTP')
-    except:
+    except Exception:
         ExcludeHTTP = ''
+    if ExcludeHTTP in ('true', ''):
+        return False
+    return scrobble == 'true'
+
+
+def _trakt_scrobble_payload(media_type, percent, tmdb=None, imdb=None, tvdb=None, season=None, episode=None):
+    """Build /scrobble/* body. Prefer TMDb, then IMDb, then TVDb."""
+    ids = {}
     try:
-        authorization = control.addon('script.trakt').getSetting('authorization')
-    except:
-        authorization = ''
-    if scrobble == 'true' and ExcludeHTTP == 'false' and not authorization == '':
-        return True
-    else:
+        if tmdb not in (None, '', '0', 0):
+            ids['tmdb'] = int(tmdb)
+    except Exception:
+        pass
+    if imdb not in (None, '', '0'):
+        ids['imdb'] = str(imdb)
+    try:
+        if tvdb not in (None, '', '0', 0):
+            ids['tvdb'] = int(tvdb)
+    except Exception:
+        pass
+    if not ids:
+        return None
+    progress = float(percent or 0)
+    if media_type == 'movie':
+        return {'movie': {'ids': ids}, 'progress': progress}
+    try:
+        return {
+            'show': {'ids': ids},
+            'episode': {'season': int(season), 'number': int(episode)},
+            'progress': progress
+        }
+    except Exception:
+        return None
+
+
+def trakt_scrobble(action, media_type, percent=0, tmdb=None, imdb=None, tvdb=None, season=None, episode=None):
+    """Native Trakt live scrobble (Playing now). Standalone when Indicators = Trakt.
+
+    Defers when official script.trakt is authorised and set to scrobble that media type
+    with ExcludeHTTP off (same idea as Simkl / Red Light).
+    Short request timeout — never block Kodi player teardown on a hung Trakt call.
+    """
+    if not getTraktIndicatorsInfo():
+        return False
+    if not getTraktCredentialsInfo():
+        return False
+    if media_type == 'movie' and getTraktAddonMovieInfo():
+        return False
+    if media_type != 'movie' and getTraktAddonEpisodeInfo():
+        return False
+    path = {'start': '/scrobble/start', 'pause': '/scrobble/pause', 'stop': '/scrobble/stop'}.get(action)
+    if not path:
+        return False
+    payload = _trakt_scrobble_payload(media_type, percent, tmdb=tmdb, imdb=imdb, tvdb=tvdb, season=season, episode=episode)
+    if not payload:
+        return False
+    try:
+        body, _headers = __getTrakt(path, post=payload, timeout=8)
+        ok = body is not None
+        log_utils.log('Trakt scrobble %s %s percent=%s ok=%s' % (action, media_type, percent, ok))
+        return ok
+    except Exception as e:
+        log_utils.log('Trakt scrobble %s failed: %s' % (action, e))
         return False
 
 
