@@ -225,7 +225,20 @@ def build_single_episode(list_type, params={}):
 			season_data = meta_get('season_data')
 			watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
 			if list_type_starts_with('next'):
+				last_watched_season, last_watched_episode = orig_season, orig_episode
 				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta)
+				# Weekly anime: stale season/show cache often stops at the last watched ep until expiry.
+				if (not orig_season or not orig_episode) and meta_get('status') not in ('Ended', 'Canceled'):
+					try:
+						from modules.metadata import refresh_airing_show_meta
+						refresh_airing_show_meta(meta_get('tmdb_id'), last_watched_season)
+						meta = tvshow_meta('tmdb_id', meta_get('tmdb_id'), api_key, mpaa_region_value, current_date, current_time, is_anime_list=is_anime_list)
+						if not meta: return
+						meta_get = meta.get
+						season_data = meta_get('season_data')
+						watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
+						orig_season, orig_episode = ws.get_next(last_watched_season, last_watched_episode, watched_info, season_data, nextep_content, meta)
+					except: pass
 				if not orig_season or not orig_episode: return
 				if ws.get_watched_status_episode(watched_info, (orig_season, orig_episode)): return
 			episodes_data = episodes_meta(orig_season, meta)
@@ -409,6 +422,19 @@ def build_single_episode(list_type, params={}):
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
 		sort_key, sort_direction = settings.nextep_sort_key(), settings.nextep_sort_direction()
 		include_airdate = settings.nextep_include_airdate()
+		# Keep external watched DBs fresh before building Next (In Progress already refreshes).
+		if watched_indicators == 3 and settings.mdblist_user_active():
+			try: ws._refresh_mdblist_tvshow_watched()
+			except: pass
+		elif watched_indicators == 1 and settings.trakt_user_active():
+			try: ws._refresh_trakt_tvshow_watched()
+			except: pass
+		elif watched_indicators == 2 and settings.simkl_user_active():
+			try: ws._refresh_simkl_tvshow_watched()
+			except: pass
+		elif watched_indicators == 4 and settings.punchplay_user_active():
+			try: ws._refresh_punchplay_tvshow_watched()
+			except: pass
 		data = ws.get_next_episodes(nextep_content, watched_indicators)
 		if settings.nextep_limit_history(): data = data[:settings.nextep_limit()]
 		hidden_list = ws.get_hidden_progress_items(watched_indicators)

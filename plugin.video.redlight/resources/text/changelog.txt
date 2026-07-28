@@ -1,3 +1,6 @@
+[COLOR red][B]Version 2.1.2[/B][/COLOR]
+- [B]Anime / Next Episodes[/B]: airing show and season episode caches refresh much sooner (was up to 96h). When Next Episodes cannot find a following episode for a still-airing show, Red Light force-refreshes that show's TMDb meta once so newly listed episodes (common with weekly anime) can appear without waiting for cache expiry. Next Episodes also refreshes MDBList/Trakt/Simkl/PunchPlay watched data before building (same idea as In Progress).
+
 [COLOR red][B]Version 2.1.1[/B][/COLOR]
 - [B]Notifications / Progress[/B]: use the transparent mini addon icon for toasts and the progress dialog poster slot (thanks [B]OfficerKD637[/B]). The corner badge was already mini.
 - [B]Episode lists[/B]: separate [I]ListItem.Title[/I] (plain episode name) from [I]ListItem.Label[/I] (SxE + styling), match Kodi [I]SxE.[/I] formatting, and wrap unaired colour/italics around the full label — better for combined season/episode skin views (thanks [B]OfficerKD637[/B]).

@@ -348,7 +348,7 @@ def movieset_meta(media_id, api_key, current_time=None):
 	except: pass
 	return meta
 
-def episodes_meta(season, meta):
+def episodes_meta(season, meta, force_refresh=False):
 	def _process():
 		midseason_premiere = False
 		for ep_data in details:
@@ -389,23 +389,39 @@ def episodes_meta(season, meta):
 					'duration': duration, 'premiered': premiered, 'season': season, 'episode': episode, 'rating': rating, 'votes': votes, 'thumb': thumb, 'guest_stars': guest_stars}
 	media_id, data = meta['tmdb_id'], None
 	prop_string = '%s_%s' % (media_id, season)
-	data = meta_cache.get_season(prop_string)
-	if data is not None: return data
+	if force_refresh:
+		try: meta_cache.delete_season(prop_string)
+		except: pass
+	else:
+		data = meta_cache.get_season(prop_string)
+		if data is not None: return data
 	try:
 		tmdb_image_url = 'https://image.tmdb.org/t/p/%s%s'
 		season, tvshow_status, total_seasons = int(season), meta['status'], meta['total_seasons']
 		if season == 1: season_type = 'premiere_finale' if (total_seasons == season and tvshow_status in ('Ended', 'Canceled')) else 'premiere'
 		else: season_type = 'finale' if (total_seasons == season and tvshow_status in ('Ended', 'Canceled')) else ''
+		# Airing current seasons need frequent refresh — weekly anime often lands mid-window.
 		if tvshow_status in ('Ended', 'Canceled') or total_seasons > int(season): expiration = 4368
-		else: expiration = 96
+		else: expiration = 12
 		try:
 			details = season_episodes_details(media_id, season)['episodes']
 			total_episodes = len(details)
 			data = list(_process())
-		except: data, expiration = [], 96
-	except: data, expiration = [], 96
+		except: data, expiration = [], 12
+	except: data, expiration = [], 12
 	meta_cache.set_season(prop_string, data, expiration)
 	return data
+
+def refresh_airing_show_meta(tmdb_id, season=None):
+	"""Drop cached show + season episode lists so newly aired eps can appear in Next/In Progress."""
+	try:
+		if not tmdb_id: return
+		meta_cache.delete('tvshow', 'tmdb_id', str(tmdb_id))
+		if season not in (None, '', 'None'):
+			meta_cache.delete_season('%s_%s' % (tmdb_id, int(season)))
+		else:
+			meta_cache.delete_all_seasons(str(tmdb_id))
+	except: pass
 
 def all_episodes_meta(meta, include_specials=False):
 	from threading import Thread
@@ -460,10 +476,15 @@ def tvshow_expiry(current_date, meta):
 	try:
 		if meta['status'] in ('Ended', 'Canceled'): expiration = 4368
 		else:
-			data = subtract_dates(jsondate_to_datetime(meta['extra_info']['next_episode_to_air']['air_date'], '%Y-%m-%d', remove_time=True), current_date) - 24
-			if data <= 1: expiration = 24
-			else: expiration = data*24
-	except: expiration = 96
+			try:
+				next_air = meta['extra_info']['next_episode_to_air']['air_date']
+				data = subtract_dates(jsondate_to_datetime(next_air, '%Y-%m-%d', remove_time=True), current_date) - 24
+				if data <= 1: expiration = 24
+				else: expiration = min(data * 24, 72)
+			except:
+				# Still-airing but TMDb has no next_episode_to_air yet — keep short for weekly anime.
+				expiration = 12
+	except: expiration = 12
 	return expiration
 
 def meta_valid_check(meta, is_anime_list):
