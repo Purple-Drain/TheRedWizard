@@ -262,24 +262,58 @@ def _released_key(item):
 
 def sort_list(sort_key, sort_direction, list_data):
     reverse = False if sort_direction == 'asc' else True
-    if sort_key == 'rank':
-        return sorted(list_data, key=lambda x: x['rank'], reverse=reverse)
-    elif sort_key == 'added':
-        return sorted(list_data, key=lambda x: x['listed_at'], reverse=reverse)
-    elif sort_key == 'title':
-        return sorted(list_data, key=lambda x: x[x['type']].get('title'), reverse=reverse)
-    elif sort_key == 'released':
-        return sorted(list_data, key=lambda x: _released_key(x[x['type']]), reverse=reverse)
-    elif sort_key == 'runtime':
-        return sorted(list_data, key=lambda x: x[x['type']].get('runtime', 0), reverse=reverse)
-    elif sort_key == 'popularity':
-        return sorted(list_data, key=lambda x: x[x['type']].get('votes', 0), reverse=reverse)
-    elif sort_key == 'percentage':
-        return sorted(list_data, key=lambda x: x[x['type']].get('rating', 0), reverse=reverse)
-    elif sort_key == 'votes':
-        return sorted(list_data, key=lambda x: x[x['type']].get('votes', 0), reverse=reverse)
-    else:
+    if not isinstance(list_data, list):
         return list_data
+    try:
+        if sort_key == 'rank':
+            return sorted(list_data, key=lambda x: x.get('rank') or 0, reverse=reverse)
+        elif sort_key == 'added':
+            return sorted(list_data, key=lambda x: x.get('listed_at') or '', reverse=reverse)
+        elif sort_key == 'title':
+            def _title(x):
+                try:
+                    return (x.get(x.get('type')) or {}).get('title') or ''
+                except Exception:
+                    return ''
+            return sorted(list_data, key=_title, reverse=reverse)
+        elif sort_key == 'released':
+            def _released(x):
+                try:
+                    return _released_key(x.get(x.get('type')) or {})
+                except Exception:
+                    return '0'
+            return sorted(list_data, key=_released, reverse=reverse)
+        elif sort_key == 'runtime':
+            def _runtime(x):
+                try:
+                    return (x.get(x.get('type')) or {}).get('runtime') or 0
+                except Exception:
+                    return 0
+            return sorted(list_data, key=_runtime, reverse=reverse)
+        elif sort_key == 'popularity':
+            def _votes(x):
+                try:
+                    return (x.get(x.get('type')) or {}).get('votes') or 0
+                except Exception:
+                    return 0
+            return sorted(list_data, key=_votes, reverse=reverse)
+        elif sort_key == 'percentage':
+            def _rating(x):
+                try:
+                    return (x.get(x.get('type')) or {}).get('rating') or 0
+                except Exception:
+                    return 0
+            return sorted(list_data, key=_rating, reverse=reverse)
+        elif sort_key == 'votes':
+            def _votes(x):
+                try:
+                    return (x.get(x.get('type')) or {}).get('votes') or 0
+                except Exception:
+                    return 0
+            return sorted(list_data, key=_votes, reverse=reverse)
+    except Exception:
+        return list_data
+    return list_data
 
 
 def choose_list_sort(media, shelf, label=None):
@@ -298,6 +332,170 @@ def apply_my_shelf_sort(items, url, media):
     return shelf_sort.sort_items(items, 'trakt', media, shelf, sortable=shelf_sort.TRAKT_SORTABLE)
 
 
+# Home-window property: shelf removals that must not reappear in directory
+# listings even if Trakt's list endpoint lags behind sync/remove.
+_SHELF_EXCLUDE_PROP = 'gratisred.trakt_shelf_exclude'
+
+
+def _exclude_window():
+    from kodi_six import xbmcgui
+    return xbmcgui.Window(10000)
+
+
+def _parse_shelf_exclusions():
+    """Return {shelf: set([id, ...])} from the home window property."""
+    out = {}
+    try:
+        raw = _exclude_window().getProperty(_SHELF_EXCLUDE_PROP) or ''
+    except Exception:
+        return out
+    if not raw:
+        return out
+    for chunk in raw.split(';'):
+        if ':' not in chunk:
+            continue
+        shelf, _, ids = chunk.partition(':')
+        shelf = (shelf or '').strip()
+        if not shelf:
+            continue
+        out[shelf] = set(x for x in ids.split(',') if x)
+    return out
+
+
+def _save_shelf_exclusions(data):
+    parts = []
+    for shelf in sorted(data.keys()):
+        ids = sorted(x for x in (data.get(shelf) or set()) if x)
+        if ids:
+            parts.append('%s:%s' % (shelf, ','.join(ids[:80])))
+    try:
+        _exclude_window().setProperty(_SHELF_EXCLUDE_PROP, ';'.join(parts))
+    except Exception:
+        pass
+
+
+def _shelf_exclusion_allowed(shelf):
+    if shelf in ('watchlist', 'collection'):
+        return True
+    try:
+        from resources.lib.modules import shelf_sort
+        return shelf_sort.is_personal_shelf(shelf)
+    except Exception:
+        return False
+
+
+def note_shelf_exclusion(shelf, imdb=None, tmdb=None):
+    """Hide this title on Watchlist/Library/personal lists until added again."""
+    if not _shelf_exclusion_allowed(shelf):
+        return
+    data = _parse_shelf_exclusions()
+    bucket = data.setdefault(shelf, set())
+    if tmdb and str(tmdb) not in ('0', '', 'None'):
+        bucket.add(str(tmdb))
+    if imdb and str(imdb) not in ('0', '', 'None'):
+        bucket.add(str(imdb))
+    _save_shelf_exclusions(data)
+
+
+def clear_shelf_exclusion(shelf, imdb=None, tmdb=None):
+    """Clear a prior remove-exclusion after a successful add."""
+    if not _shelf_exclusion_allowed(shelf):
+        return
+    data = _parse_shelf_exclusions()
+    bucket = data.get(shelf) or set()
+    if not bucket:
+        return
+    if tmdb and str(tmdb) in bucket:
+        bucket.discard(str(tmdb))
+    if imdb and str(imdb) in bucket:
+        bucket.discard(str(imdb))
+    if bucket:
+        data[shelf] = bucket
+    else:
+        data.pop(shelf, None)
+    _save_shelf_exclusions(data)
+
+
+def filter_shelf_exclusions(items, url):
+    """Drop locally excluded titles from a My Trakt shelf / personal list page."""
+    try:
+        from resources.lib.modules import shelf_sort
+        shelf = shelf_sort.trakt_shelf_from_url(url)
+        if not _shelf_exclusion_allowed(shelf) or not items:
+            return items
+        excluded = _parse_shelf_exclusions().get(shelf) or set()
+        if not excluded:
+            return items
+        kept = []
+        for item in items:
+            tmdb = str((item or {}).get('tmdb') or '')
+            imdb = str((item or {}).get('imdb') or '')
+            if tmdb in excluded or imdb in excluded:
+                continue
+            kept.append(item)
+        return kept
+    except Exception:
+        return items
+
+
+def _manager_shelf_from_path(path):
+    """Return (shelf_key, list_slug_or_None) for Manager add/remove paths."""
+    path = path or ''
+    if '/sync/watchlist' in path:
+        return 'watchlist', None
+    if '/sync/collection' in path:
+        return 'collection', None
+    if path.startswith('/users/') and '/lists/' in path:
+        parts = path.split('/')
+        # /users/{user}/lists/{slug}/items[/remove]
+        if len(parts) >= 6 and parts[3] == 'lists':
+            try:
+                from resources.lib.modules import shelf_sort
+                return shelf_sort.personal_shelf_key(parts[2], parts[4]), parts[4]
+            except Exception:
+                return None, parts[4]
+    return None, None
+
+
+def _folder_matches_manager_shelf(folder_raw, shelf, list_slug=None):
+    """True when the open container is the shelf/list just changed."""
+    folder_raw = folder_raw or ''
+    if not folder_raw:
+        return False
+    if list_slug:
+        return (
+            ('/lists/%s/' % list_slug) in folder_raw
+            or ('/lists/%s/items' % list_slug) in folder_raw
+        )
+    if shelf in ('watchlist', 'collection'):
+        return (
+            ('url=trakt_%s' % shelf) in folder_raw
+            or ('/%s/' % shelf) in folder_raw
+            or '/users/me/%s/' % shelf in folder_raw
+        )
+    return False
+
+
+def _trakt_id_from_sync(kind, content, ids):
+    """Return Trakt's numeric id for a watchlist/collection member, if found."""
+    try:
+        media = 'movies' if content == 'movie' else 'shows'
+        media_key = 'movie' if content == 'movie' else 'show'
+        items = getTraktAsJsonPaged('/users/me/%s/%s' % (kind, media))
+        if not items:
+            return None
+        for item in items:
+            block = (item or {}).get(media_key) or {}
+            if not _ids_match(block.get('ids'), ids):
+                continue
+            trakt_id = (block.get('ids') or {}).get('trakt')
+            if trakt_id not in (None, '', 'None', 0, '0'):
+                return int(trakt_id)
+    except Exception:
+        pass
+    return None
+
+
 def getTraktAsJson(url, post=None):
     try:
         r, res_headers = __getTrakt(url, post)
@@ -308,8 +506,13 @@ def getTraktAsJson(url, post=None):
         if not r:
             return None
         r = client_utils.json_loads_as_str(r)
-        if 'X-Sort-By' in res_headers and 'X-Sort-How' in res_headers:
-            r = sort_list(res_headers['X-Sort-By'], res_headers['X-Sort-How'], r)
+        # Never let header re-sort wipe a page (KeyError on missing rank/listed_at
+        # used to make getTraktAsJson return None → empty Watchlist page).
+        if isinstance(r, list) and res_headers and 'X-Sort-By' in res_headers and 'X-Sort-How' in res_headers:
+            try:
+                r = sort_list(res_headers['X-Sort-By'], res_headers['X-Sort-How'], r)
+            except Exception:
+                pass
         return r
     except:
         pass
@@ -376,16 +579,15 @@ def getTraktAsJsonPaged(url, page_size=None):
 
             r, res_headers = __getTrakt(page_url, None)
             if not r:
-                # Transport/5xx error on this page: stop but return what we
-                # already have rather than dropping the whole enumeration.
-                break
+                # Incomplete page walks must not look like "not a member".
+                return None
             try:
                 data = client_utils.json_loads_as_str(r)
             except Exception:
-                break
+                return None
             if not isinstance(data, list):
                 # Unexpected payload (e.g. an error dict); bail.
-                return data
+                return None
             merged.extend(data)
 
             # Determine total pages from Trakt's response headers.  If the
@@ -414,7 +616,7 @@ def getTraktAsJsonPaged(url, page_size=None):
         return merged
     except Exception as e:
         log_utils.log('getTraktAsJsonPaged failed for %s : %s' % (url, e))
-        return []
+        return None
 
 
 def revokeTrakt(reopen_settings=False):
@@ -733,29 +935,36 @@ def _entry_media_ids(item, content):
 
 
 def _item_in_sync(kind, content, ids):
+    """Return True/False if membership is known, or None if the check failed."""
     try:
         media = 'movies' if content == 'movie' else 'shows'
-        items = getTraktAsJsonPaged('/users/me/%s/%s' % (kind, media)) or []
+        items = getTraktAsJsonPaged('/users/me/%s/%s' % (kind, media))
+        if items is None:
+            return None
         for item in items:
             if _ids_match(_entry_media_ids(item, content), ids):
                 return True
+        return False
     except Exception:
-        pass
-    return False
+        return None
 
 
 def _item_in_personal_list(slug, content, ids):
+    """Return True/False if membership is known, or None if the check failed."""
     try:
-        items = getTraktAsJsonPaged('/users/me/lists/%s/items' % slug) or []
+        items = getTraktAsJsonPaged('/users/me/lists/%s/items' % slug)
+        if items is None:
+            return None
         for item in items:
             if _ids_match(_entry_media_ids(item, content), ids):
                 return True
+        return False
     except Exception:
-        pass
-    return False
+        return None
 
 
 def _manager_still_member(path, content, ids):
+    """Return True/False/None (None = membership check failed)."""
     path = path or ''
     if path == '/sync/collection/remove':
         return _item_in_sync('collection', content, ids)
@@ -772,7 +981,7 @@ def _manager_still_member(path, content, ids):
 def _manager_remove_label(path):
     path = path or ''
     if path == '/sync/collection/remove':
-        return 'Collection'
+        return 'Library'
     if path == '/sync/watchlist/remove':
         return 'Watchlist'
     if path.startswith('/users/me/lists/') and path.endswith('/items/remove'):
@@ -791,6 +1000,19 @@ def _sync_counts(bucket, keys):
     return total
 
 
+def _not_found_count(data):
+    not_found = (data or {}).get('not_found') or {}
+    if not isinstance(not_found, dict):
+        return 0
+    total = 0
+    for key in ('movies', 'shows', 'seasons', 'episodes', 'people'):
+        try:
+            total += len(not_found.get(key) or [])
+        except Exception:
+            pass
+    return total
+
+
 def _manager_sync_outcome(path, data):
     """Interpret Trakt sync JSON; never treat not_found / zero-adds as success."""
     if not isinstance(data, dict):
@@ -798,9 +1020,14 @@ def _manager_sync_outcome(path, data):
     path = path or ''
     is_remove = path.endswith('/remove') or '/remove' in path
     if '/sync/collection' in path:
-        keys = ('movies', 'episodes')
+        # Shows are stored as collected episodes; some payloads also count shows.
+        keys = ('movies', 'episodes', 'shows')
         if is_remove:
-            return 'deleted' if _sync_counts(data.get('deleted'), keys) else 'error'
+            # Non-zero deleted counts are definitive. Zero counts are common for
+            # show-level Library removes — caller must confirm via membership.
+            if _sync_counts(data.get('deleted'), keys):
+                return 'deleted'
+            return 'error'
         if _sync_counts(data.get('added'), keys):
             return 'added'
         if _sync_counts(data.get('existing'), keys):
@@ -809,7 +1036,11 @@ def _manager_sync_outcome(path, data):
     if '/sync/watchlist' in path or '/users/me/lists/' in path:
         keys = ('movies', 'shows', 'seasons', 'episodes', 'people')
         if is_remove:
-            return 'deleted' if _sync_counts(data.get('deleted'), keys) else 'error'
+            # Do not treat deleted:0 as success — that left Watchlist items
+            # (e.g. One Piece) still on Trakt while the UI toasted Removed.
+            if _sync_counts(data.get('deleted'), keys):
+                return 'deleted'
+            return 'error'
         if _sync_counts(data.get('added'), keys):
             return 'added'
         if _sync_counts(data.get('existing'), keys):
@@ -822,15 +1053,25 @@ def manager(name, imdb, tmdb, content):
     try:
         if not getTraktCredentialsInfo():
             return control.infoDialog('Authorise Trakt first.', sound=True, icon='ERROR')
+        # Capture before selectDialog — after RunPlugin(-1) + dialogs,
+        # Container.FolderPath is often wrong/empty so Refresh misses the shelf.
+        folder_at_open = ''
+        try:
+            folder_at_open = control.infoLabel('Container.FolderPath') or ''
+        except Exception:
+            folder_at_open = ''
         ids = _manager_ids(imdb=imdb, tmdb=tmdb)
         post = _manager_post(content, imdb=imdb, tmdb=tmdb)
         if not post:
-            return control.infoDialog('Missing IDs for Trakt Manager.', heading=str(name), sound=True, icon='ERROR')
+            return control.infoDialog('Missing IDs for Trakt Lists Manager.', heading=str(name), sound=True, icon='ERROR')
         items = []
+        # State-aware Library, Watchlist, and personal lists (Add OR Remove).
+        # If a personal-list membership check fails (rate-limit), show both for
+        # that list only so Manager stays usable.
         if _item_in_sync('collection', content, ids):
-            items.append(('Remove from [B]Collection[/B]', '/sync/collection/remove'))
+            items.append(('Remove from [B]Library[/B]', '/sync/collection/remove'))
         else:
-            items.append(('Add to [B]Collection[/B]', '/sync/collection'))
+            items.append(('Add to [B]Library[/B]', '/sync/collection'))
         if _item_in_sync('watchlist', content, ids):
             items.append(('Remove from [B]Watchlist[/B]', '/sync/watchlist/remove'))
         else:
@@ -843,17 +1084,27 @@ def manager(name, imdb, tmdb, content):
                 slug = entry['ids']['slug']
             except Exception:
                 continue
-            if _item_in_personal_list(slug, content, ids):
+            in_list = _item_in_personal_list(slug, content, ids)
+            if in_list is True:
                 items.append((
                     ensure_str('Remove from [B]%s[/B]' % list_name),
                     '/users/me/lists/%s/items/remove' % slug
+                ))
+            elif in_list is False:
+                items.append((
+                    ensure_str('Add to [B]%s[/B]' % list_name),
+                    '/users/me/lists/%s/items' % slug
                 ))
             else:
                 items.append((
                     ensure_str('Add to [B]%s[/B]' % list_name),
                     '/users/me/lists/%s/items' % slug
                 ))
-        select = control.selectDialog([i[0] for i in items], 'Trakt Manager')
+                items.append((
+                    ensure_str('Remove from [B]%s[/B]' % list_name),
+                    '/users/me/lists/%s/items/remove' % slug
+                ))
+        select = control.selectDialog([i[0] for i in items], 'Trakt Lists Manager')
         if select == -1:
             return
         path = items[select][1]
@@ -870,24 +1121,34 @@ def manager(name, imdb, tmdb, content):
             except:
                 return control.infoDialog('Could not create list.', heading=str(name), sound=True, icon='ERROR')
             path = path % slug
-        elif path.endswith('/remove'):
-            if not _manager_still_member(path, content, ids):
-                label = _manager_remove_label(path)
-                try:
-                    chosen = items[select][0]
-                    if '[B]' in chosen and '[/B]' in chosen:
-                        label = chosen.split('[B]', 1)[1].split('[/B]', 1)[0]
-                except Exception:
-                    pass
-                return control.infoDialog('Item is not in %s.' % label, heading=str(name), sound=True, icon='ERROR')
         result = __getTrakt(path, post=post)[0]
         if result is None:
             return control.infoDialog('Trakt request failed.', heading=str(name), sound=True, icon='ERROR')
         try:
-            data = client_utils.json_loads_as_str(result)
+            data = client_utils.json_loads_as_str(result) if not isinstance(result, dict) else result
         except Exception:
             data = None
         outcome = _manager_sync_outcome(path, data)
+        is_remove = path.endswith('/remove') or '/remove' in path
+        # Watchlist / personal lists: trust Trakt deleted counts only (same as
+        # Red Light). Re-paging membership after remove was slow and, when
+        # rate-limited mid-walk, toasted Removed while the title stayed on Trakt.
+        # Library show-level removes often return deleted:0 even when they worked
+        # — confirm with one membership check only in that case.
+        if is_remove and '/sync/collection' in path and outcome != 'deleted':
+            still = _item_in_sync('collection', content, ids)
+            if still is False:
+                outcome = 'deleted'
+            elif still is True:
+                outcome = 'error'
+        try:
+            from kodi_six import xbmc as _xbmc
+            _xbmc.log(
+                '[Gratis Red] Trakt Manager path=%s post=%s response=%s outcome=%s' % (
+                    path, post, data, outcome),
+                _xbmc.LOGINFO)
+        except Exception:
+            pass
         label = _manager_remove_label(path)
         try:
             chosen = items[select][0]
@@ -896,33 +1157,63 @@ def manager(name, imdb, tmdb, content):
         except Exception:
             pass
         if outcome == 'error':
-            try:
-                log_utils.log('Trakt Manager sync failed path=%s post=%s response=%s' % (path, post, data))
-            except Exception:
-                pass
             return control.infoDialog('Trakt did not update this item.', heading=str(name), sound=True, icon='ERROR')
         if outcome == 'existing':
             return control.infoDialog('Already on %s.' % label, heading=str(name), sound=True)
-        if outcome == 'deleted' or path.endswith('/remove') or '/remove' in path:
+        if outcome == 'deleted':
             message = 'Removed from %s.' % label
         else:
             message = 'Added to %s.' % label
-        control.infoDialog(message, heading=str(name), sound=True, icon=control.infoLabel('ListItem.Icon'))
         try:
             from resources.lib.modules import trakt_cache
-            trakt_cache.clear()
+            trakt_cache.clear_shelf_caches()
+        except Exception:
+            pass
+        shelf, list_slug = _manager_shelf_from_path(path)
+        try:
+            if shelf and is_remove and outcome == 'deleted':
+                note_shelf_exclusion(shelf, imdb=imdb, tmdb=tmdb)
+                still = _manager_still_member(path, content, ids)
+                try:
+                    from kodi_six import xbmc as _xbmc
+                    _xbmc.log(
+                        '[Gratis Red] Trakt Manager after-remove still_member=%s shelf=%s ids=%s folder=%s' % (
+                            still, shelf, ids, folder_at_open),
+                        _xbmc.LOGINFO)
+                except Exception:
+                    pass
+                if still is True and shelf in ('watchlist', 'collection'):
+                    trakt_id = _trakt_id_from_sync(shelf, content, ids)
+                    if trakt_id:
+                        retry_post = (
+                            {'movies': [{'ids': {'trakt': trakt_id}}]}
+                            if content == 'movie' else
+                            {'shows': [{'ids': {'trakt': trakt_id}}]}
+                        )
+                        try:
+                            __getTrakt(path, post=retry_post)
+                        except Exception:
+                            pass
+            elif shelf and not is_remove and outcome in ('added', 'existing', 'ok'):
+                clear_shelf_exclusion(shelf, imdb=imdb, tmdb=tmdb)
         except Exception:
             pass
         try:
-            control.refresh()
+            # Refresh the open shelf/list — exclusion drops the row on rebuild.
+            if shelf and is_remove and outcome == 'deleted' and folder_at_open:
+                from six.moves import urllib_parse
+                folder_raw = urllib_parse.unquote(folder_at_open)
+                if _folder_matches_manager_shelf(folder_raw, shelf, list_slug):
+                    control.refresh_folder(folder_at_open)
         except Exception:
             pass
+        control.infoDialog(message, heading=str(name), sound=True, icon=control.infoLabel('ListItem.Icon'))
     except Exception as e:
         try:
             log_utils.log('Trakt Manager failed: %s' % e)
         except Exception:
             pass
-        control.infoDialog('Trakt Manager failed.', heading=str(name), sound=True, icon='ERROR')
+        control.infoDialog('Trakt Lists Manager failed.', heading=str(name), sound=True, icon='ERROR')
 
 
 def getPlaybackEpisodes():

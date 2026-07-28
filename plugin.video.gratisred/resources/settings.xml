@@ -93,17 +93,6 @@
         <!--<setting id="resolve.dbird" type="bool" label="Resolve With Debrid(UnTested)" default="false" />-->
         <setting type="lsep" label="FilePursuit" />
         <setting id="filepursuit.api" type="text" label="API:" default="" />
-        <setting type="lsep" label="Trakt" />
-        <setting id="trakt.token" type="text" label="" default="" enable="false" visible="false" />
-        <setting id="trakt.refresh" type="text" label="" default="" enable="false" visible="false" />
-        <setting id="trakt.expires" type="text" label="" default="" enable="false" visible="false" />
-        <setting id="trakt.authorize" type="action" label="Authorize Trakt (QR Code)" option="close" action="RunPlugin(plugin://plugin.video.gratisred/?action=auth_trakt&amp;source=settings)" visible="eq(-3,)" />
-        <setting id="trakt.revoke" type="action" label="Revoke Trakt Account" option="close" action="RunPlugin(plugin://plugin.video.gratisred/?action=revoke_trakt&amp;source=settings)" visible="!eq(-4,)" />
-        <setting id="trakt.user" type="text" label="Trakt Account:" default="" enable="false" visible="!eq(-5,)" />
-        <setting type="lsep" label="Auto Trakt Library Syncing" visible="!eq(-6,)" />
-        <setting id="trakt.sync" type="bool" label="Trakt Library Sync on Kodi Startup" default="false" visible="!eq(-7,)" />
-        <setting id="trakt.synctime" type="slider" label="Delay Trakt Library Sync _ Hour/s" default="0" range="0,24" option="int" subsetting="true" enable="!eq(-1,false)" visible="eq(-1,true)+!eq(-8,)" />
-        <setting id="trakt.synctext" type="text" label="0 Value Disables Delay" subsetting="true" enable="!eq(-2,false)" visible="eq(-2,true)+!eq(-9,)" />
         <setting type="lsep" label="Simkl" />
         <setting id="simkl.token" type="text" label="" default="" enable="false" visible="false" />
         <setting id="simkl.authed" type="text" label="" default="" enable="false" visible="false" />
@@ -123,6 +112,17 @@
         <setting id="tmdb.api.note" type="text" label="Leave blank to use the built-in default v3 key." enable="false" subsetting="true" />
         <setting id="tmdb.user" type="text" label="Username:" default="" enable="false" subsetting="true" visible="!eq(-6,)" />
         <setting id="tmdb.id" type="text" label="Account ID:" default="" enable="false" visible="false" />
+        <setting type="lsep" label="Trakt" />
+        <setting id="trakt.token" type="text" label="" default="" enable="false" visible="false" />
+        <setting id="trakt.refresh" type="text" label="" default="" enable="false" visible="false" />
+        <setting id="trakt.expires" type="text" label="" default="" enable="false" visible="false" />
+        <setting id="trakt.authorize" type="action" label="Authorize Trakt (QR Code)" option="close" action="RunPlugin(plugin://plugin.video.gratisred/?action=auth_trakt&amp;source=settings)" visible="eq(-3,)" />
+        <setting id="trakt.revoke" type="action" label="Revoke Trakt Account" option="close" action="RunPlugin(plugin://plugin.video.gratisred/?action=revoke_trakt&amp;source=settings)" visible="!eq(-4,)" />
+        <setting id="trakt.user" type="text" label="Trakt Account:" default="" enable="false" visible="!eq(-5,)" />
+        <setting type="lsep" label="Auto Trakt Library Syncing" visible="!eq(-6,)" />
+        <setting id="trakt.sync" type="bool" label="Trakt Library Sync on Kodi Startup" default="false" visible="!eq(-7,)" />
+        <setting id="trakt.synctime" type="slider" label="Delay Trakt Library Sync _ Hour/s" default="0" range="0,24" option="int" subsetting="true" enable="!eq(-1,false)" visible="eq(-1,true)+!eq(-8,)" />
+        <setting id="trakt.synctext" type="text" label="0 Value Disables Delay" subsetting="true" enable="!eq(-2,false)" visible="eq(-2,true)+!eq(-9,)" />
         <setting type="lsep" label="Fanart.tv" />
         <setting id="fanart.api" type="text" label="API:" default="" />
     </category>

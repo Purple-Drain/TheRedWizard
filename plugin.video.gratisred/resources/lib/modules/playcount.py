@@ -140,6 +140,27 @@ def _flag_playback_marked():
         pass
 
 
+def _notify_marked(watched):
+    try:
+        message = 'Marked as watched.' if int(watched) == 7 else 'Marked as unwatched.'
+        control.infoDialog(message, sound=True)
+    except Exception:
+        pass
+
+
+def _finish_manual_mark(watched):
+    """Toast + list refresh for Trakt / Simkl / Local manual mark (parity)."""
+    try:
+        control.idle()
+    except Exception:
+        pass
+    _notify_marked(watched)
+    try:
+        control.refresh_list()
+    except Exception:
+        pass
+
+
 def markMovieDuringPlayback(imdb, watched, tmdb=None):
     provider = _provider()
     try:
@@ -210,16 +231,12 @@ def movies(imdb, watched, tmdb=None):
             else:
                 trakt.markMovieAsNotWatched(imdb, tmdb=tmdb)
             trakt.cachesyncMovies()
-            control.refresh()
-            control.idle()
         elif provider == 'simkl':
             if int(watched) == 7:
                 simkl.markMovieAsWatched(imdb, tmdb=tmdb)
             else:
                 simkl.markMovieAsNotWatched(imdb, tmdb=tmdb)
             simkl.cachesyncMovies(timeout=0)
-            control.refresh()
-            control.idle()
         else:
             raise Exception()
     except:
@@ -229,11 +246,9 @@ def movies(imdb, watched, tmdb=None):
             bookmarks.reset(1, 1, 'movie', imdb, '', '')
         else:
             bookmarks._delete_record('movie', imdb, '', '')
-        if provider == 'local':
-            control.refresh()
-        control.idle()
     except:
         pass
+    _finish_manual_mark(watched)
 
 
 def episodes(imdb, tmdb, season, episode, watched):
@@ -246,16 +261,12 @@ def episodes(imdb, tmdb, season, episode, watched):
             else:
                 trakt.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
             trakt.cachesyncTVShows()
-            control.refresh()
-            control.idle()
         elif provider == 'simkl':
             if int(watched) == 7:
                 simkl.markEpisodeAsWatched(imdb, season, episode, tmdb=tmdb)
             else:
                 simkl.markEpisodeAsNotWatched(imdb, season, episode, tmdb=tmdb)
             simkl.cachesyncTVShows(timeout=0)
-            control.refresh()
-            control.idle()
         else:
             raise Exception()
     except:
@@ -265,11 +276,9 @@ def episodes(imdb, tmdb, season, episode, watched):
             bookmarks.reset(1, 1, 'episode', imdb, season, episode)
         else:
             bookmarks._delete_record('episode', imdb, season, episode)
-        if provider == 'local':
-            control.refresh()
-        control.idle()
     except:
         pass
+    _finish_manual_mark(watched)
 
 
 def tvshows(tvshowtitle, imdb, tmdb, season, watched):
@@ -355,5 +364,4 @@ def tvshows(tvshowtitle, imdb, tmdb, season, watched):
             simkl.cachesyncTVShows(timeout=0)
     except:
         pass
-    control.refresh()
-    control.idle()
+    _finish_manual_mark(watched)

@@ -216,12 +216,30 @@ class player(xbmc.Player):
                 xbmc.sleep(2000)
         control.window.clearProperty(pname)
 
+    def _playback_folder_is_sources(self):
+        """True when the visible plugin folder is the sources / play container."""
+        try:
+            folder = control.infoLabel('Container.FolderPath') or ''
+            return any(x in folder for x in (
+                'action=add_item', 'action=play_item', 'action=play_', 'action=sources'
+            ))
+        except Exception:
+            return False
+
+
     def _refresh_after_playback_mark(self):
-        """Refresh the underlying list after auto-mark (same as manual Watched). All platforms."""
+        """Refresh a content list after auto-mark — never the sources folder.
+
+        After play, FolderPath is usually add_item (sources). Refreshing that
+        races two listings and blanks the screen (or hard-crashes with Update).
+        Episode/Library checkmarks update when the user returns to those lists.
+        """
         try:
             if control.window.getProperty(playcount.PLAYBACK_MARKED_PROPERTY) != 'true':
                 return
             control.window.clearProperty(playcount.PLAYBACK_MARKED_PROPERTY)
+            if self._playback_folder_is_sources():
+                return
             control.refresh()
         except Exception:
             pass
@@ -236,7 +254,8 @@ class player(xbmc.Player):
             elif self.content == 'episode':
                 rpc = '{"jsonrpc": "2.0", "method": "VideoLibrary.SetEpisodeDetails", "params": {"episodeid" : %s, "playcount" : 1 }, "id": 1 }' % str(self.DBID)
             control.jsonrpc(rpc)
-            control.refresh()
+            if not self._playback_folder_is_sources():
+                control.refresh()
         except:
             pass
 
@@ -391,6 +410,7 @@ class player(xbmc.Player):
             pass
         self.libForPlayback()
         self.onPlayBackStopped()
-        if control.setting('crefresh') == 'true':
+        # Optional setting — never on sources (doubles with mark-refresh / blanks UI).
+        if control.setting('crefresh') == 'true' and not self._playback_folder_is_sources():
             control.refresh()
 

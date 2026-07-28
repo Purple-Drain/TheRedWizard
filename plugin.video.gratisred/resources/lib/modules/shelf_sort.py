@@ -123,7 +123,7 @@ def get_list_sort(provider, media, shelf):
         return 'title:asc'
     if provider == 'tmdb' and shelf in TMDB_SORTABLE:
         return 'title:asc'
-    # Personal lists: keep provider order until the user picks a sort.
+    # Personal lists / Watchlist: keep provider order until the user picks a sort.
     return SORT_DEFAULT
 
 

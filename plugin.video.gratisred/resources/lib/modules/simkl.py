@@ -1095,7 +1095,7 @@ def refreshSimklCache(silent=False):
         if not silent:
             control.infoDialog('Simkl Cache Refresh Failed.', sound=True)
     try:
-        control.refresh()
+        control.refresh_list()
     except Exception:
         pass
 
@@ -1108,7 +1108,7 @@ def manager(name, imdb, tmdb, content):
         media_kind = 'movies' if is_movie else 'shows'
         ids = _list_ids(tmdb=tmdb, imdb=imdb)
         if not ids:
-            return control.infoDialog('Missing IDs for Simkl Manager.', sound=True, icon='ERROR')
+            return control.infoDialog('Missing IDs for Simkl Lists Manager.', sound=True, icon='ERROR')
         choices = []
         for status in _STATUSES:
             if is_movie and status in ('watching', 'hold'):
@@ -1118,7 +1118,7 @@ def manager(name, imdb, tmdb, content):
                 choices.append(('Remove from [B]%s[/B]' % label, 'remove', status))
             else:
                 choices.append(('Add to [B]%s[/B]' % label, 'add', status))
-        select = control.selectDialog([c[0] for c in choices], 'Simkl Manager')
+        select = control.selectDialog([c[0] for c in choices], 'Simkl Lists Manager')
         if select < 0:
             return
         _, action, status = choices[select]
@@ -1148,4 +1148,4 @@ def manager(name, imdb, tmdb, content):
         except Exception:
             pass
     except Exception:
-        control.infoDialog('Simkl Manager failed.', heading=str(name), sound=True, icon='ERROR')
+        control.infoDialog('Simkl Lists Manager failed.', heading=str(name), sound=True, icon='ERROR')
