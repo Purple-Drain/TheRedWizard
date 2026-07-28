@@ -405,20 +405,39 @@ def trakt_watched_status_mark(action, media, media_id, tvdb_id=0, season=None, e
 		elif media =='shows': data = {'shows': [{'ids': {key: media_id}}]}
 		else: data = {'shows': [{'ids': {key: media_id}, 'seasons': [{'number': int(season)}]}]}#season
 	result = call_trakt(url, data=data)
-	success = result[result_key][success_key] > 0
+	try: success = result[result_key][success_key] > 0
+	except: success = False
 	if not success:
 		if media != 'movies' and tvdb_id != 0 and key != 'tvdb': return trakt_watched_status_mark(action, media, tvdb_id, 0, season, episode, 'tvdb')
+		# Remove with 0 deleted = already unwatched on Trakt — not a failure.
+		if action != 'mark_as_watched': return True
 	return success
+
+def _trakt_scrobble_payload(media_type, tmdb_id, percent, season=None, episode=None):
+	progress = float(percent or 0)
+	if media_type in ('movie', 'movies'):
+		return {'movie': {'ids': {'tmdb': int(tmdb_id)}}, 'progress': progress}
+	return {
+		'show': {'ids': {'tmdb': int(tmdb_id)}},
+		'episode': {'season': int(season), 'number': int(episode)},
+		'progress': progress
+	}
+
+def trakt_scrobble(action, media_type, tmdb_id, percent=0, season=None, episode=None):
+	"""Live Trakt scrobble (Playing now). Caller must honour trakt_official_status."""
+	if not settings.trakt_user_active(): return
+	path = {'start': 'scrobble/start', 'pause': 'scrobble/pause', 'stop': 'scrobble/stop'}.get(action)
+	if not path: return
+	try:
+		call_trakt(path, data=_trakt_scrobble_payload(media_type, tmdb_id, percent, season, episode))
+	except: pass
 
 def trakt_progress(action, media, media_id, percent, season=None, episode=None, resume_id=None, refresh_trakt=False):
 	if action == 'clear_progress':
 		url = 'sync/playback/%s' % resume_id
 		result = call_trakt(url, is_delete=True)
 	else:
-		url = 'scrobble/pause'
-		if media in ('movie', 'movies'): data = {'movie': {'ids': {'tmdb': media_id}}, 'progress': float(percent)}
-		else: data = {'show': {'ids': {'tmdb': media_id}}, 'episode': {'season': int(season), 'number': int(episode)}, 'progress': float(percent)}
-		call_trakt(url, data=data)
+		trakt_scrobble('pause', media, media_id, percent, season, episode)
 	if refresh_trakt: trakt_sync_activities()
 
 def trakt_reset_scrobble(params):
@@ -429,10 +448,12 @@ def trakt_reset_scrobble(params):
 	try:
 		watched_db = get_database(1)
 		if media_type == 'movie':
+			trakt_scrobble('stop', 'movie', tmdb_id, 0)
 			resume_id = get_bookmarks_movie(watched_db).get(str(tmdb_id), {}).get('resume_id')
 			if resume_id: trakt_progress('clear_progress', 'movie', tmdb_id, 0, resume_id=resume_id)
 			erase_bookmark('movie', tmdb_id, '', '', 'true', 1)
 		elif season not in (None, '', 'None') and episode not in (None, '', 'None'):
+			trakt_scrobble('stop', 'episode', tmdb_id, 0, season, episode)
 			bookmarks = get_bookmarks_episode(str(tmdb_id), season, watched_db) or {}
 			resume_id = bookmarks.get(int(episode), {}).get('resume_id')
 			if resume_id: trakt_progress('clear_progress', 'episode', tmdb_id, 0, season, episode, resume_id)

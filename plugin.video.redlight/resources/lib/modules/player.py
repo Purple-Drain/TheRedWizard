@@ -230,6 +230,7 @@ class RedLightPlayer(xbmc.Player):
 				total_check_time += 0.10
 			ku.hide_busy_dialog()
 			ku.sleep(1000)
+			self._trakt_scrobble_start()
 			self._simkl_scrobble_start()
 			self._punchplay_scrobble_start()
 			self._wetrakr_scrobble_start()
@@ -430,6 +431,24 @@ class RedLightPlayer(xbmc.Player):
 			self.set_playback_properties()
 		return listitem
 
+	def _trakt_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 1 or not st.trakt_user_active(): return
+		from apis.trakt_api import trakt_scrobble, trakt_official_status
+		if not trakt_official_status(self.media_type): return
+		percent = self.playback_percent if self.playback_percent else 0
+		Thread(target=trakt_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+
+	def _trakt_scrobble_stop(self, percent):
+		# Synchronous: ending playback tears down the player; a background thread often never finishes, leaving Trakt Playing now stuck.
+		if self.is_generic or st.watched_indicators() != 1 or not st.trakt_user_active(): return
+		from apis.trakt_api import trakt_scrobble, trakt_official_status
+		if not trakt_official_status(self.media_type): return
+		try: pct = float(percent or 0)
+		except: pct = 0
+		# Trakt returns 422 for stop below 1% and leaves watching active — clamp so Playing now still clears.
+		if pct < 1: pct = 1
+		trakt_scrobble('stop', self.media_type, self.tmdb_id, pct, self.season, self.episode)
+
 	def _simkl_scrobble_start(self):
 		if self.is_generic or st.watched_indicators() != 2 or not st.simkl_user_active(): return
 		from apis.simkl_api import simkl_scrobble, simkl_official_status
@@ -540,7 +559,9 @@ class RedLightPlayer(xbmc.Player):
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
 		try:
-			if self.current_point >= 90 or force_watched:
+			current_point = getattr(self, 'current_point', 0) or 0
+			if current_point >= 90 or force_watched:
+				self._trakt_scrobble_stop(100)
 				self._simkl_scrobble_stop(100)
 				self._punchplay_scrobble_stop(100)
 				self._wetrakr_on_stop(100, force_scrobble=True)
@@ -549,10 +570,13 @@ class RedLightPlayer(xbmc.Player):
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
 				Thread(target=self.run_media_progress, args=(watched_function, watched_params)).start()
 			else:
-				self._punchplay_scrobble_stop(self.current_point)
-				self._wetrakr_on_stop(self.current_point)
+				# Always stop Trakt live scrobble so Playing now clears. Below ~80% Trakt treats stop as pause + resume.
+				self._trakt_scrobble_stop(current_point)
+				self._simkl_scrobble_stop(current_point)
+				self._punchplay_scrobble_stop(current_point)
+				self._wetrakr_on_stop(current_point)
 				ku.clear_property('redlight.random_episode_history')
-				if self.current_point >= 5:
+				if current_point >= 5:
 					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
 									'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
 					Thread(target=self.run_media_progress, args=(ws.set_bookmark, progress_params)).start()
@@ -1243,6 +1267,7 @@ class RedLightPlayer(xbmc.Player):
 			self.meta_get, self.playback_percent = self.meta.get, self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
+			self.current_point = 0
 			self.subs_searched = False
 			self._subtitle_end_remaining_cached = '__unset__'
 			self._subtitle_alert_fetch_started = False

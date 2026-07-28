@@ -414,7 +414,8 @@ class ExtrasUtils:
 				template = template.format(**insert_values)
 				finished_templates.append(template)
 			body = ''.join(finished_templates)
-			content = self.prefix_template().format(first_container=first_container, last_container=last_container) + body + self.suffix_template()
+			fmt = {'first_container': first_container, 'last_container': last_container}
+			content = self.prefix_template().format(**fmt) + body + self.suffix_template().format(**fmt)
 			with kodi_utils.open_file(file, 'w') as f: f.write(content)
 			FontUtils().execute_custom_fonts(skin_files=[skin_file])
 		except Exception as e:
@@ -677,7 +678,7 @@ class ExtrasUtils:
 		return '''\
 <?xml version="1.0" encoding="UTF-8"?>
 <window>
-    <defaultcontrol always="true">10</defaultcontrol>
+    <defaultcontrol>10</defaultcontrol>
     <controls>
         <control type="group">
             <width>1920</width>
@@ -784,7 +785,6 @@ class ExtrasUtils:
                 </control>
             </control>
             <control type="group">
-                <animation effect="fade" start="100" end="0" time="0" condition="!Control.HasFocus(10) + !Control.HasFocus(11) + !Control.HasFocus(12) + !Control.HasFocus(13) + !Control.HasFocus(14) + !Control.HasFocus(15) + !Control.HasFocus(16) + !Control.HasFocus(17)">Conditional</animation>
                 <top>295</top>
                 <left>50</left>
                 <control type="group">
@@ -945,18 +945,26 @@ class ExtrasUtils:
                     </control>
                 </control>
             </control>
-            <control type="grouplist">
-                <animation effect="slide" end="0,-220" time="0" reversible="true" condition="[!Control.HasFocus(10) + !Control.HasFocus(11) + !Control.HasFocus(12) + !Control.HasFocus(13) + !Control.HasFocus(14) + !Control.HasFocus(15) + !Control.HasFocus(16) + !Control.HasFocus(17)]">Conditional</animation>
+            <!-- Buttons outside grouplist (drawn last) for mouse hits. No focus-linked slide/fade — those flickered under mouse hover. -->
+            <control type="group">
                 <top>520</top>
                 <left>35</left>
                 <width>1190</width>
-                <height>780</height>
-                <orientation>vertical</orientation>
-                <scrolltime tween="sine">500</scrolltime>
-                <itemgap>-300</itemgap>
-                <usecontrolcoords>true</usecontrolcoords>
+                <control type="grouplist">
+                    <top>200</top>
+                    <width>1190</width>
+                    <height>780</height>
+                    <orientation>vertical</orientation>
+                    <scrolltime tween="sine">500</scrolltime>
+                    <itemgap>-300</itemgap>
+                    <usecontrolcoords>true</usecontrolcoords>
+
+'''
+
+	def suffix_template(self):
+		return '''\
+                </control>
                 <control type="group">
-                    <height>500</height>
                     <control type="group">
                         <control type="button" id="10">
                             <width>275</width>
@@ -987,7 +995,7 @@ class ExtrasUtils:
                             <textcolor>FFCCCCCC</textcolor>
                             <focusedcolor>FF1F2020</focusedcolor>
                             <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
-                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>  
+                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>
                             <align>center</align>
                             <aligny>center</aligny>
                         </control>
@@ -1004,7 +1012,7 @@ class ExtrasUtils:
                             <textcolor>FFCCCCCC</textcolor>
                             <focusedcolor>FF1F2020</focusedcolor>
                             <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
-                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>  
+                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>
                             <align>center</align>
                             <aligny>center</aligny>
                         </control>
@@ -1021,7 +1029,7 @@ class ExtrasUtils:
                             <textcolor>FFCCCCCC</textcolor>
                             <focusedcolor>FF1F2020</focusedcolor>
                             <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
-                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>  
+                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>
                             <align>center</align>
                             <aligny>center</aligny>
                         </control>
@@ -1040,7 +1048,7 @@ class ExtrasUtils:
                             <textcolor>FFCCCCCC</textcolor>
                             <focusedcolor>FF1F2020</focusedcolor>
                             <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
-                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus> 
+                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>
                             <align>center</align>
                             <aligny>center</aligny>
                         </control>
@@ -1057,7 +1065,8 @@ class ExtrasUtils:
                             <textcolor>FFCCCCCC</textcolor>
                             <focusedcolor>FF1F2020</focusedcolor>
                             <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
-                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>                         <align>center</align>
+                            <texturenofocus colordiffuse="$INFO[Window(10000).Property(redlight.window_theme.extras)]" border="30">redlight_common/circle.png</texturenofocus>
+                            <align>center</align>
                             <aligny>center</aligny>
                         </control>
                         <control type="button" id="16">
@@ -1096,11 +1105,6 @@ class ExtrasUtils:
                         </control>
                     </control>
                 </control>
-
-'''
-
-	def suffix_template(self):
-		return '''/
             </control>
         </control>
     </controls>

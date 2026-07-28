@@ -335,6 +335,8 @@ def _mdbl_watched_unwatched(action, media, media_id, tvdb_id=0, season=None, epi
 	success = result.get(result_key, {}).get(success_key, 0) > 0
 	if not success and media != 'movies' and tvdb_id:
 		return _mdbl_watched_unwatched(action, media, tvdb_id, 0, season, episode, 'tvdb')
+	# Remove with 0 removed = already unwatched on MDBList — not a failure.
+	if not success and action != 'mark_as_watched': return True
 	return success
 
 def mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=None, episode=None):
@@ -657,7 +659,9 @@ def mdblist_add_to_watchlist(tmdb_id, media_type, imdb_id=None):
 	if isinstance(result, dict) and result.get('added', {}).get('movies', 0) + result.get('added', {}).get('shows', 0) > 0:
 		mdblist_sync_activities()
 		return kodi_utils.notification('Added to MDBList Watchlist', 3000)
-	return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
+	if isinstance(result, dict) and result.get('existing', {}).get('movies', 0) + result.get('existing', {}).get('shows', 0) > 0:
+		return kodi_utils.notification('Already In List', 3000)
+	return kodi_utils.notification('Error', 3000)
 
 def mdblist_remove_from_watchlist(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('watchlist/items/remove', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')
@@ -672,7 +676,9 @@ def mdblist_add_to_library(tmdb_id, media_type, imdb_id=None):
 	if isinstance(result, dict) and result.get('updated', {}).get('movies', 0) + result.get('updated', {}).get('shows', 0) > 0:
 		mdblist_sync_activities()
 		return kodi_utils.notification('Added to MDBList Library', 3000)
-	return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
+	if isinstance(result, dict) and result.get('existing', {}).get('movies', 0) + result.get('existing', {}).get('shows', 0) > 0:
+		return kodi_utils.notification('Already In List', 3000)
+	return kodi_utils.notification('Error', 3000)
 
 def mdblist_remove_from_library(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('sync/collection/remove', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')

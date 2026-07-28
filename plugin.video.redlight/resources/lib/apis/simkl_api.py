@@ -531,9 +531,8 @@ def _simkl_history_ok(result, action, media_type):
 	if bucket.get('episodes', 0) > 0: return True
 	if bucket.get(item_key, 0) > 0: return True
 	if isinstance(bucket.get(item_key), list) and bucket[item_key]: return True
-	if action == 'mark_as_unwatched':
-		not_found = result.get('not_found') or {}
-		if not not_found.get(item_key) and not not_found.get('episodes'): return True
+	# Remove with nothing deleted (often under not_found) = already unwatched — not a failure.
+	if action == 'mark_as_unwatched': return True
 	return False
 
 def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=None, episode=None):

@@ -398,6 +398,7 @@ def mark_movie(params):
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, title=title)
 	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
+	if not from_playback: notification('Success')
 
 def mark_tvshow(params):
 	title, action, tmdb_id = params.get('title', ''), params.get('action'), params.get('tmdb_id')
@@ -437,6 +438,7 @@ def mark_tvshow(params):
 	batch_watched_status_mark(watched_indicators, insert_list, action)
 	progress_backround.close()
 	refresh_container()
+	notification('Success')
 
 def mark_season(params):
 	season = int(params.get('season'))
@@ -474,6 +476,7 @@ def mark_season(params):
 	batch_watched_status_mark(watched_indicators, insert_list, action)
 	progress_backround.close()
 	refresh_container()
+	notification('Success')
 
 def mark_episode(params):
 	season, episode, title = int(params.get('season')), int(params.get('episode')), params.get('title')
@@ -502,6 +505,7 @@ def mark_episode(params):
 	update_hidden_progress(tmdb_id)
 	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
+	if not from_playback: notification('Success')
 
 def unmark_previous_episode(params):
 	try:
