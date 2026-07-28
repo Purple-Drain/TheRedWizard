@@ -988,9 +988,19 @@ class RedLightPlayer(xbmc.Player):
 		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s' % (
 			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log))
 
+	def _log_chapter_timing_unavailable(self):
+		if getattr(self, '_chapter_timing_warned', False):
+			return
+		self._chapter_timing_warned = True
+		ku.logger('Red Light', 'Chapter-based alert timing unavailable: Kodi exposes no infolabel for chapter percentage marks (Player.Chapters is not a real infolabel); falling back to percentage-based timing')
+
 	def final_chapter(self, threshhold):
 		try:
-			final_chapter = float(ku.get_infolabel('Player.Chapters').split(',')[-1])
+			raw = ku.get_infolabel('Player.Chapters')
+			if not raw:
+				self._log_chapter_timing_unavailable()
+				return None
+			final_chapter = float(raw.split(',')[-1])
 			if final_chapter >= threshhold: return final_chapter
 		except: pass
 		return None
@@ -1244,6 +1254,7 @@ class RedLightPlayer(xbmc.Player):
 			self._intro_skip_last_curr = None
 			self._intro_skip_settle_ready = False
 			self._outro_credits_start_cached = '__unset__'
+			self._chapter_timing_warned = False
 
 	def _start_intro_skip_fetch(self):
 		play_type = getattr(self.sources_object, 'play_type', '')
