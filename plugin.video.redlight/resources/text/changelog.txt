@@ -1,3 +1,8 @@
+[COLOR red][B]Version 2.1.5[/B][/COLOR]
+- [B]MDBList sync[/B]: failed watched/progress fetches no longer wipe local ticks (bulk replace is skipped). Failed TMDb season fetches no longer cache an empty episode list.
+- [B]Anime episode groups[/B]: optional Content setting falls back to TMDb's "Seasons" group for anime when none is assigned (off by default). Explicit Assign Episode Group still wins; the fallback is scrape-time only and is not saved as your assigned group.
+- [B]Next Episodes / single-episode lists[/B]: Trakt, MDBList, PunchPlay, Simkl, TMDb, Personal, and Favorites list managers (and watchlist/library shortcuts) are available on the context menu and in Options, acting on the parent show — same as Progress.
+
 [COLOR red][B]Version 2.1.4[/B][/COLOR]
 - [B]MDBList Manager[/B]: status-aware [B]Add To / Remove from Static List[/B] for your editable MDBLists (same idea as Trakt personal lists). Dynamic/AI lists stay browse-only. [B]My Lists[/B] under MDBList refreshes on open and shows static lists first so newly created site lists are not stuck behind a stale cache.
 - [B]Single Episode Lists[/B]: [I]ListItem.Title[/I] now uses the same Single Episode / Calendars display format as [I]ListItem.Label[/I] (without colour tags), so mixed Home widgets that bind Title honour Red Light settings. Season episode lists still keep a plain episode Title for combined season/episode skin views.

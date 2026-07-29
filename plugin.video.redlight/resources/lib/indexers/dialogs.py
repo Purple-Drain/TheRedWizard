@@ -1244,7 +1244,7 @@ def options_menu_choice(params, meta=None):
 	is_external, from_extras = params_get('is_external') in (True, 'True', 'true'), params_get('from_extras', 'false') == 'true'
 	season, episode = params_get('season', ''), params_get('episode', '')
 	single_ep_list = ('episode.progress', 'episode.recently_watched', 'episode.next_trakt', 'episode.next_redlight', 'episode.next_simkl', 'episode.next_mdblist',
-					'episode.trakt_recently_aired', 'episode.trakt_calendar', 'episode.mdblist_calendar',
+					'episode.next_punchplay', 'episode.mdblist_next', 'episode.trakt_recently_aired', 'episode.trakt_calendar', 'episode.mdblist_calendar',
 					'episode.punchplay_calendar')
 	if not content: content = kodi_utils.container_content()[:-1]
 	menu_type = content
@@ -1257,9 +1257,11 @@ def options_menu_choice(params, meta=None):
 	window_function = kodi_utils.activate_window if is_external else kodi_utils.container_update
 	listing = []
 	listing_append = listing.append
+	# Episode / Next Episodes / calendars use the parent show for list managers (same as Progress).
+	list_manager_media = 'movie' if content == 'movie' else 'tvshow'
 	if from_extras:
 		if menu_type in ('movie', 'episode'): listing_append(('Playback Options', 'Scrapers Options', 'playback_choice'))
-	if menu_type in ('movie', 'tvshow'):
+	if menu_type in ('movie', 'tvshow') or content == 'episode' or menu_type in single_ep_list:
 		if settings.mdblist_user_active(): listing_append(('MDBList Manager', '', 'mdblist_manager'))
 		if settings.punchplay_user_active(): listing_append(('PunchPlay Manager', '', 'punchplay_manager'))
 		if settings.simkl_user_active(): listing_append(('Simkl Lists Manager', '', 'simkl_manager'))
@@ -1295,7 +1297,7 @@ def options_menu_choice(params, meta=None):
 		if menu_type in ('movie', 'tvshow'):
 			listing_append(('Re-Cache %s Info' % ('Movies' if menu_type == 'movie' else 'TV Shows'), 'Clear %s Cache' % rootname, 'clear_media_cache'))
 		if menu_type in ('movie', 'episode') or menu_type in single_ep_list: listing_append(('Clear Scrapers Cache', '', 'clear_scrapers_cache'))
-		if menu_type in ('tvshow', 'season', 'episode'): listing_append(('TV Shows Progress Manager', '', 'nextep_manager'))
+		if menu_type in ('tvshow', 'season', 'episode') or menu_type in single_ep_list: listing_append(('TV Shows Progress Manager', '', 'nextep_manager'))
 		listing_append(('Open Download Manager', '', 'open_download_manager'))
 		listing_append(('Open Tools', '', 'open_tools'))
 		if menu_type in ('movie', 'episode', 'tvshow', 'season') or menu_type in single_ep_list:
@@ -1336,24 +1338,24 @@ def options_menu_choice(params, meta=None):
 		kodi_utils.close_all_dialog()
 		return random_choice({'meta': meta, 'poster': poster})
 	if choice == 'trakt_manager':
-		return trakt_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': content, 'icon': poster})
+		return trakt_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': list_manager_media, 'icon': poster})
 	if choice == 'simkl_manager':
-		return simkl_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': content, 'icon': poster,
+		return simkl_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': list_manager_media, 'icon': poster,
 									'title': title, 'season': season, 'episode': episode})
 	if choice == 'mdblist_manager':
-		return mdblist_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': content, 'icon': poster,
+		return mdblist_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': list_manager_media, 'icon': poster,
 									'title': title, 'season': season, 'episode': episode})
 	if choice == 'punchplay_manager':
-		return punchplay_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': content, 'icon': poster,
+		return punchplay_manager_choice({'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id or 'None', 'media_type': list_manager_media, 'icon': poster,
 									'title': title, 'season': season, 'episode': episode})
 	if choice == 'personallists_manager_choice':
 		from modules.utils import get_current_timestamp
-		return personallists_manager_choice({'list_type': content, 'tmdb_id': tmdb_id, 'title': title,
+		return personallists_manager_choice({'list_type': list_manager_media, 'tmdb_id': tmdb_id, 'title': title,
 							'premiered': meta_get('premiered'), 'current_time': get_current_timestamp(), 'icon': poster})
 	if choice == 'favorites_manager_choice':
-		return favorites_manager_choice({'media_type': content if content in ('movie', 'tvshow') else 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
+		return favorites_manager_choice({'media_type': list_manager_media, 'tmdb_id': tmdb_id, 'title': title})
 	if choice == 'tmdblists_manager_choice':
-		return tmdblists_manager_choice({'media_type': 'movie' if content in ('movie', 'movies') else 'tv', 'tmdb_id': tmdb_id, 'icon': poster})
+		return tmdblists_manager_choice({'media_type': 'movie' if list_manager_media == 'movie' else 'tv', 'tmdb_id': tmdb_id, 'icon': poster})
 	if choice == 'toggle_autoplay':
 		set_setting('auto_play_%s' % content, autoplay_toggle)
 	elif choice == 'toggle_autoplay_next':

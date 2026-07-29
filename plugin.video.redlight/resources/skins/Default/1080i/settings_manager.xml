@@ -1028,6 +1028,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(30)</visible>
+                          <property name="setting_label">Anime "Seasons" Episode Group Fallback</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.anime.seasons_episode_group_fallback)]</property>
+                          <property name="setting_description">When enabled, anime with no assigned episode group uses TMDb's "Seasons" group for scrape matching only. Explicit Assign Episode Group always wins. Does not save the fallback as your assigned group</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=anime.seasons_episode_group_fallback)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(30)</visible>
                           <property name="setting_label">Include Unaired Media in Trakt Watchlists</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.show_unaired_watchlist)]</property>

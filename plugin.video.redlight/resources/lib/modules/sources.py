@@ -406,6 +406,12 @@ class Sources():
 		try:
 			if any([self.custom_season, self.custom_episode]) or 'skip_episode_group_check' in self.params: return
 			group_info = episode_groups_cache.get(self.tmdb_id)
+			# Opt-in: anime with no assigned group can use TMDb's "Seasons" order for scrape matching.
+			# Does not write to episode_groups_cache — only an explicit Assign Episode Group persists.
+			if not group_info and settings.anime_seasons_episode_group_fallback() and metadata.is_anime_check(tmdb_id=self.tmdb_id):
+				groups = metadata.episode_groups(self.tmdb_id)
+				if groups:
+					group_info = next((g for g in groups if (g.get('name') or '').lower() == 'seasons'), None)
 			if not group_info: return
 			group_details = metadata.group_episode_data(metadata.group_details(group_info['id']), self.episode_id, self.season, self.episode)
 			if group_details:

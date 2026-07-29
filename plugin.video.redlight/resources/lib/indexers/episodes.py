@@ -327,6 +327,35 @@ def build_single_episode(list_type, params={}):
 			settings.append_external_scraper_settings_cm(cm_append, build_url)
 			cm_append(['browse_seasons', ('[B]Browse Seasons[/B]', window_command % build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id}))])
 			cm_append(['browse_episodes', ('[B]Browse Episodes[/B]', window_command % build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season}))])
+			# Parent-show list managers (same as Progress / TV show rows) — item is an episode play row but lists are show-scoped.
+			trakt_manager_params, simkl_manager_params, punchplay_manager_params, mdblist_manager_params, tmdb_manager_params = '', '', '', '', ''
+			if settings.trakt_user_active():
+				trakt_manager_params = build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+												'title': title, 'icon': show_poster})
+			if settings.simkl_user_active():
+				simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+								'title': title, 'icon': show_poster}
+				if is_anime_list is True: simkl_params['simkl_media_kind'] = 'anime'
+				simkl_manager_params = build_url(simkl_params)
+			if settings.punchplay_user_active():
+				punchplay_manager_params = build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': show_poster})
+			if settings.mdblist_user_active():
+				mdblist_manager_params = build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': show_poster})
+			if settings.tmdblist_user_active():
+				tmdb_manager_params = build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': show_poster})
+			personal_manager_params = build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
+												'premiered': meta_get('premiered'), 'current_time': current_time, 'icon': show_poster})
+			favorites_manager_params = build_url({'mode': 'favorites_manager_choice', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
+			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
+			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
+			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
+			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
+			settings.append_list_shortcut_context_menus(cm_append, build_url, cm_sort_order, 'tvshow', tmdb_id, imdb_id, tvdb_id, title, show_poster)
+			cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
+			cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
 			if not unaired:
 				if playcount:
 					cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_episode', 'action': 'mark_as_unwatched',
@@ -375,7 +404,14 @@ def build_single_episode(list_type, params={}):
 							'season.poster': season_poster, 'tvshow.poster': show_poster, 'tvshow.clearlogo': show_clearlogo})
 			set_properties({
 				'episode_type': episode_type, 'redlight.extras_params': extras_params, 'redlight.options_params': options_params,
-				'redlight.playback_options_params': playback_options_params
+				'redlight.playback_options_params': playback_options_params,
+				'redlight.trakt_manager_params': trakt_manager_params,
+				'redlight.simkl_manager_params': simkl_manager_params,
+				'redlight.punchplay_manager_params': punchplay_manager_params,
+				'redlight.mdblist_manager_params': mdblist_manager_params,
+				'redlight.personal_manager_params': personal_manager_params,
+				'redlight.tmdb_manager_params': tmdb_manager_params,
+				'redlight.favorites_manager_params': favorites_manager_params
 				})
 			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(season), str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})

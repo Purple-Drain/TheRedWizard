@@ -362,6 +362,9 @@ def stingers_percentage():
 def include_anime_tvshow():
 	return get_setting('redlight.include_anime_tvshow', 'false') == 'true'
 
+def anime_seasons_episode_group_fallback():
+	return get_setting('redlight.anime.seasons_episode_group_fallback', 'false') == 'true'
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 
