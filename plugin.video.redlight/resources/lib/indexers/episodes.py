@@ -293,6 +293,8 @@ def build_single_episode(list_type, params={}):
 				if unwatched: highlight_start, highlight_end = '[COLOR darkgoldenrod]', '[/COLOR]'
 				elif unaired: highlight_start, highlight_end = '[COLOR red]', '[/COLOR]'
 				else: highlight_start, highlight_end = '', ''
+				# Title mirrors settings format without BBCode (widgets/skins that bind Title).
+				display_title = '%s%s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
 				display = '%s%s%s%s%s%s' % (display_premiered, title_str, highlight_start, seas_ep, ep_name, highlight_end)
 			elif list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar'):
 				if not episode_date:
@@ -301,8 +303,8 @@ def build_single_episode(list_type, params={}):
 					display_premiered = make_day(
 						current_date, episode_date, calendar_date_strftime,
 						use_words=calendar_use_words, include_date=calendar_include_date)
-				display = '[%s] %s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
-			else: display = '%s%s%s' % (title_str, seas_ep, ep_name)
+				display = display_title = '[%s] %s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
+			else: display = display_title = '%s%s%s' % (title_str, seas_ep, ep_name)
 			if no_spoilers and not playcount: thumb, plot = show_landscape or show_fanart, tvshow_plot or '* Hidden to Prevent Spoilers *'
 			else: thumb, plot = item_get('thumb', None) or show_landscape or show_fanart, item_get('plot') or tvshow_plot
 			duration = item_get('duration')
@@ -354,7 +356,7 @@ def build_single_episode(list_type, params={}):
 			if isinstance(studio, tuple): studio = list(studio)
 			elif not studio: studio = []
 			info_tag = listitem.getVideoInfoTag(True)
-			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(ep_name), info_tag.setGenres(genre)
+			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display_title), info_tag.setGenres(genre)
 			info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
 			info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 			info_tag.setCountries(meta_get('country', [])), info_tag.setTrailer(trailer), info_tag.setTvShowStatus(show_status)

@@ -607,19 +607,41 @@ def mdblist_collection(media_kind, page_no):
 def mdblist_droplist(media_kind, page_no):
 	return [{'id': i, 'imdb_id': ''} for i in mdblist_get_dropped_items()], 1
 
-def mdbl_get_lists(list_type):
-	if list_type == 'external': string, url = 'mdblist_external', 'external/lists/user'
-	else: string, url = 'mdblist_my_lists', 'lists/user'
-	result = mdblist_cache.cache_mdblist_object(call_mdblist, string, url)
-	if isinstance(result, dict): return result.get('items', [])
-	return result or []
-
 def _mdbl_normalize_list_response(result):
 	if isinstance(result, list): return result
 	if isinstance(result, dict):
 		for key in ('items', 'lists', 'liked', 'data', 'results'):
 			if isinstance(result.get(key), list): return result[key]
 	return []
+
+def _mdbl_expand_list_entries(lists):
+	"""Normalize list rows; expand unified twin lists that return `ids` instead of `id`."""
+	expanded = []
+	for item in lists or []:
+		if not isinstance(item, dict): continue
+		list_id = item.get('id')
+		if list_id not in (None, '', 0, '0'):
+			expanded.append(item)
+			continue
+		ids = item.get('ids') or []
+		if not isinstance(ids, (list, tuple)): continue
+		for lid in ids:
+			if lid in (None, '', 0, '0'): continue
+			row = dict(item)
+			row['id'] = lid
+			expanded.append(row)
+	return expanded
+
+def _mdbl_list_is_dynamic(item):
+	if not isinstance(item, dict): return False
+	if item.get('dynamic') is True: return True
+	list_type = (item.get('type') or '').lower()
+	return list_type in ('dynamic', 'ai', 'ailist', 'ai_list')
+
+def _mdbl_list_is_static(item):
+	if not isinstance(item, dict): return False
+	if item.get('source'): return False
+	return not _mdbl_list_is_dynamic(item)
 
 def _mdbl_list_matches_media_type(item, media_type):
 	if not media_type: return True
@@ -628,16 +650,29 @@ def _mdbl_list_matches_media_type(item, media_type):
 	if media_type in ('movie', 'movies'): return mediatype in ('movie', 'movies')
 	return mediatype in ('show', 'shows', 'tvshow', 'tv', 'series')
 
+def mdbl_get_lists(list_type, refresh=False):
+	if list_type == 'external': string, url = 'mdblist_external', 'external/lists/user'
+	else: string, url = 'mdblist_my_lists', 'lists/user'
+	if refresh:
+		mdblist_cache.mdblist_cache.delete(string)
+	result = mdblist_cache.cache_mdblist_object(call_mdblist, string, url)
+	lists = _mdbl_normalize_list_response(result)
+	if not lists and isinstance(result, dict):
+		lists = result.get('items') or []
+	return _mdbl_expand_list_entries(lists)
+
 def mdbl_get_liked_lists(media_type=None):
 	result = mdblist_cache.cache_mdblist_object(call_mdblist, 'mdblist_liked_lists', 'lists/liked')
-	lists = _mdbl_normalize_list_response(result)
+	lists = _mdbl_expand_list_entries(_mdbl_normalize_list_response(result))
 	if not media_type: return lists
 	return [i for i in lists if _mdbl_list_matches_media_type(i, media_type)]
 
 def mdbl_top_lists():
 	result = mdblist_cache.cache_mdblist_object(call_mdblist, 'mdblist_top_lists', 'lists/top')
-	if isinstance(result, dict): return result.get('items', [])
-	return result or []
+	lists = _mdbl_normalize_list_response(result)
+	if not lists and isinstance(result, dict):
+		lists = result.get('items') or []
+	return _mdbl_expand_list_entries(lists)
 
 def get_mdbl_list_contents(list_type, list_id):
 	string = 'mdblist_list_contents_%s_%s' % (list_type, list_id)
@@ -646,6 +681,14 @@ def get_mdbl_list_contents(list_type, list_id):
 	result = mdblist_cache.cache_mdblist_object(_get_mdbl_paginated_list, string, url)
 	return result.get('items', []) if isinstance(result, dict) else []
 
+def mdbl_get_static_lists(media_type=None, refresh=False):
+	"""User-owned static lists (editable). Dynamic/AI/external lists are excluded."""
+	lists = [i for i in mdbl_get_lists('my_lists', refresh=refresh) if _mdbl_list_is_static(i)]
+	if media_type:
+		lists = [i for i in lists if _mdbl_list_matches_media_type(i, media_type)]
+	lists.sort(key=lambda k: (k.get('name') or '').lower())
+	return lists
+
 def _mdblist_list_payload(media_type, tmdb_id, imdb_id=None):
 	if media_type == 'movie':
 		payload = {'movies': [{'ids': {'tmdb': int(tmdb_id)}}]}
@@ -653,6 +696,87 @@ def _mdblist_list_payload(media_type, tmdb_id, imdb_id=None):
 		payload = {'shows': [{'ids': {'tmdb': int(tmdb_id)}}]}
 		if imdb_id and imdb_id not in ('None', '', '0'): payload['shows'][0]['ids']['imdb'] = imdb_id
 	return payload
+
+def _mdblist_static_list_payload(media_type, tmdb_id, imdb_id=None):
+	# Static list modify uses flat tmdb/imdb keys (not the watchlist ids wrapper).
+	entry = {'tmdb': int(tmdb_id)}
+	if imdb_id and imdb_id not in ('None', '', '0'): entry['imdb'] = imdb_id
+	if media_type == 'movie':
+		return {'movies': [entry]}
+	return {'shows': [entry]}
+
+def _mdbl_clear_static_list_cache(list_id):
+	mdblist_cache.mdblist_cache.delete('mdblist_list_contents_my_lists_%s' % list_id)
+	mdblist_cache.mdblist_cache.delete('mdblist_my_lists')
+
+def mdblist_item_in_static_list(list_id, tmdb_id):
+	try: tmdb_id = int(tmdb_id)
+	except: return False
+	for item in get_mdbl_list_contents('my_lists', list_id) or []:
+		try:
+			if int(mdbl_unified_item_tmdb_id(item) or 0) == tmdb_id: return True
+		except: pass
+	return False
+
+def mdblist_static_lists_split_by_membership(media_type, tmdb_id, refresh=True):
+	results = []
+	results_append = results.append
+	def _check(item):
+		list_id = item.get('id')
+		if list_id in (None, '', 0, '0'): return
+		entry = {
+			'name': item.get('name') or 'MDBList',
+			'display': '[B]STATIC:[/B] [I]%s[/I]' % (item.get('name') or 'MDBList').upper(),
+			'list_id': list_id,
+			'list_type': 'my_lists',
+			'item_count': item.get('items') or 0,
+			'dynamic': False,
+		}
+		results_append((entry, mdblist_item_in_static_list(list_id, tmdb_id)))
+	static_lists = mdbl_get_static_lists(media_type, refresh=refresh)
+	if not static_lists: return [], []
+	threads = TaskPool().tasks(_check, static_lists, min(len(static_lists), settings.max_threads()) or 1)
+	[i.join() for i in threads]
+	in_lists, out_lists = [], []
+	for entry, is_in in results:
+		(in_lists if is_in else out_lists).append(entry)
+	in_lists.sort(key=lambda k: k['name'].lower())
+	out_lists.sort(key=lambda k: k['name'].lower())
+	return in_lists, out_lists
+
+def select_mdblist_static_lists(lists):
+	if not lists: return None
+	list_items = [{'line1': '%s [I](x%02d)[/I]' % (item['display'], item.get('item_count', 0))} for item in lists]
+	kwargs = {'items': json.dumps(list_items), 'heading': 'Select MDBList', 'narrow_window': 'true'}
+	return kodi_utils.select_dialog(lists, **kwargs)
+
+def mdblist_add_to_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None):
+	result = call_mdblist('lists/%s/items/add' % list_id, json_data=_mdblist_static_list_payload(media_type, tmdb_id, imdb_id), method='post')
+	_mdbl_clear_static_list_cache(list_id)
+	label = list_name or 'MDBList'
+	if isinstance(result, dict):
+		added = (result.get('added') or {}).get('movies', 0) + (result.get('added') or {}).get('shows', 0)
+		existing = (result.get('existing') or {}).get('movies', 0) + (result.get('existing') or {}).get('shows', 0)
+		if added > 0:
+			kodi_utils.notification('Added to %s' % label, 3000)
+			return result
+		if existing > 0:
+			return kodi_utils.notification('Already In List', 3000)
+	return kodi_utils.notification('Error', 3000)
+
+def mdblist_remove_from_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None):
+	result = call_mdblist('lists/%s/items/remove' % list_id, json_data=_mdblist_static_list_payload(media_type, tmdb_id, imdb_id), method='post')
+	_mdbl_clear_static_list_cache(list_id)
+	label = list_name or 'MDBList'
+	removed = 0
+	if isinstance(result, dict):
+		removed = (result.get('removed') or {}).get('movies', 0) + (result.get('removed') or {}).get('shows', 0)
+	# Some MDBList responses omit removed counts; confirm via fresh membership check.
+	if removed > 0 or (result is not None and 'error' not in (result or {}) and not mdblist_item_in_static_list(list_id, tmdb_id)):
+		kodi_utils.notification('Removed from %s' % label, 3000)
+		if kodi_utils.path_check('build_mdbl_list') or kodi_utils.external(): kodi_utils.kodi_refresh()
+		return result
+	return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
 
 def mdblist_add_to_watchlist(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('watchlist/items/add', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')
@@ -724,6 +848,7 @@ def mdblist_manager_choice(params):
 	list_media = 'movie' if media_type == 'movie' else 'tvshow'
 	icon = params.get('icon') or kodi_utils.get_icon('mdblist')
 	tmdb_id, imdb_id, tvdb_id = params.get('tmdb_id'), params.get('imdb_id'), params.get('tvdb_id')
+	in_lists, out_lists = mdblist_static_lists_split_by_membership(list_media, tmdb_id, refresh=True)
 	choices = []
 	if _mdbl_item_in_watchlist(list_media, tmdb_id):
 		choices.append(('Remove from [B]MDBList Watchlist[/B]', 'remove_watchlist'))
@@ -733,6 +858,10 @@ def mdblist_manager_choice(params):
 		choices.append(('Remove from [B]MDBList Library[/B]', 'remove_library'))
 	else:
 		choices.append(('Add to [B]MDBList Library[/B]', 'add_library'))
+	if out_lists:
+		choices.append(('Add To [B]Static List[/B]...', 'add_static'))
+	if in_lists:
+		choices.append(('Remove from [B]Static List[/B]...', 'remove_static'))
 	if list_media != 'movie':
 		if _mdbl_item_in_dropped(tmdb_id):
 			choices.append(('Undrop [B]TV Show[/B]', 'undrop'))
@@ -791,6 +920,12 @@ def mdblist_manager_choice(params):
 		return mdblist_hide_unhide_progress_items({'action': 'drop', 'media_type': 'shows', 'media_id': tmdb_id, 'imdb_id': imdb_id})
 	if choice == 'undrop':
 		return mdblist_hide_unhide_progress_items({'action': 'undrop', 'media_type': 'shows', 'media_id': tmdb_id, 'imdb_id': imdb_id})
+	if choice in ('add_static', 'remove_static'):
+		selected = select_mdblist_static_lists(out_lists if choice == 'add_static' else in_lists)
+		if selected is None: return
+		if choice == 'add_static':
+			return mdblist_add_to_static_list(selected['list_id'], tmdb_id, list_media, imdb_id, selected.get('name'))
+		return mdblist_remove_from_static_list(selected['list_id'], tmdb_id, list_media, imdb_id, selected.get('name'))
 
 def mdblist_get_my_calendar(dummy=None):
 	"""Episode airings for the authenticated user (undocumented /calendar/events).

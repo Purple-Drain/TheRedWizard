@@ -35,11 +35,15 @@ def get_mdbl_lists(params):
 		for item in lists:
 			try:
 				name, list_id = item.get('name', ''), item.get('id')
+				if list_id in (None, '', 0, '0'): continue
 				list_type = 'external' if item.get('source') else 'my_lists'
 				count = item.get('items', '?')
 				display = '%s (x%s)' % (name, count)
 				if list_type == 'external': display = '[COLOR cyan][I]%s[/I][/COLOR]' % display
-				elif item.get('dynamic'): display = '[COLOR magenta][I]%s[/I][/COLOR]' % display
+				elif item.get('dynamic') or (item.get('type') or '').lower() in ('dynamic', 'ai', 'ailist', 'ai_list'):
+					display = '[COLOR magenta][I]%s[/I][/COLOR]' % display
+				else:
+					display = '[B]%s[/B]' % display
 				url = build_url({'mode': 'mdblist.build_mdbl_list', 'list_id': list_id, 'list_type': list_type, 'list_name': name,
 					'media_type': mdbl_list_media_type(item, params.get('media_type', 'movie'))})
 				listitem = kodi_utils.make_listitem()
@@ -52,7 +56,14 @@ def get_mdbl_lists(params):
 	handle = int(sys.argv[1])
 	_set_mdbl_browse_exit_params()
 	icon, fanart, build_url = kodi_utils.get_icon('mdblist'), kodi_utils.get_addon_fanart(), kodi_utils.build_url
-	lists = mdbl_get_lists('my_lists') + mdbl_get_lists('external')
+	# Always refresh catalogue so newly created site lists appear (cache had no TTL).
+	from apis.mdblist_api import _mdbl_list_is_static, _mdbl_list_is_dynamic
+	my_lists = mdbl_get_lists('my_lists', refresh=True)
+	external = mdbl_get_lists('external', refresh=True)
+	# Static first, then dynamic, then external imports.
+	static = [i for i in my_lists if _mdbl_list_is_static(i)]
+	dynamic = [i for i in my_lists if _mdbl_list_is_dynamic(i)]
+	lists = static + dynamic + external
 	kodi_utils.add_items(handle, list(_process()))
 	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
 	kodi_utils.set_category(handle, params.get('name', 'MDBList Lists'))

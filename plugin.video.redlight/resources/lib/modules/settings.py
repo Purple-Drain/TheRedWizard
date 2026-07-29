@@ -1154,16 +1154,17 @@ def rescrape_action_value(action, default='0'):
 
 def cm_enabled():
 	default = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+				'mdblist_manager,punchplay_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
 	setting = get_setting('redlight.context_menu.enabled', default)
 	if setting in ('', None, 'noop', '[]'): return default.split(',')
 	return setting.split(',')
 
 def _merge_cm_order_with_enabled(order, enabled):
 	order = [i for i in order if i]
-	# Insert missing managers before the next A–Z peer (MDBList → Simkl → TMDb → Trakt).
+	# Insert missing managers before the next A–Z peer (MDBList → PunchPlay → Simkl → TMDb → Trakt).
 	manager_insert = {
-		'mdblist_manager': ('simkl_manager', 'tmdb_manager', 'trakt_manager'),
+		'mdblist_manager': ('punchplay_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager'),
+		'punchplay_manager': ('simkl_manager', 'tmdb_manager', 'trakt_manager'),
 		'simkl_manager': ('tmdb_manager', 'trakt_manager'),
 		'tmdb_manager': ('trakt_manager', 'personal_manager'),
 		'trakt_manager': ('personal_manager',),
@@ -1181,7 +1182,7 @@ def _merge_cm_order_with_enabled(order, enabled):
 
 def _normalize_cm_list_order(order):
 	order = list(order)
-	managers = ('mdblist_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager')
+	managers = ('mdblist_manager', 'punchplay_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager')
 	present = [m for m in managers if m in order]
 	if present:
 		insert_at = min(order.index(m) for m in present)
@@ -1247,6 +1248,31 @@ def migrate_mdblist_context_menu_for_upgrade(had_existing_settings):
 			changed = True
 	return changed
 
+def migrate_punchplay_context_menu_for_upgrade(had_existing_settings):
+	if get_setting('redlight.punchplay.cm_menu_migrated', 'false') == 'true': return False
+	set_setting('punchplay.cm_menu_migrated', 'true')
+	if not had_existing_settings: return False
+	item, changed = 'punchplay_manager', False
+	raw = get_setting('redlight.context_menu.enabled', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = [p for p in raw.split(',') if p]
+		if item not in parts:
+			if 'mdblist_manager' in parts:
+				parts.insert(parts.index('mdblist_manager') + 1, item)
+			elif 'simkl_manager' in parts:
+				parts.insert(parts.index('simkl_manager'), item)
+			else:
+				parts.append(item)
+			set_setting('context_menu.enabled', ','.join(parts))
+			changed = True
+	raw = get_setting('redlight.context_menu.order', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = _normalize_cm_list_order(_merge_cm_order_with_enabled([p for p in raw.split(',') if p], cm_enabled()))
+		if item not in raw.split(','):
+			set_setting('context_menu.order', ','.join(parts))
+			changed = True
+	return changed
+
 def migrate_cm_manager_order_for_upgrade():
 	if get_setting('redlight.cm_manager_order_migrated_v3', 'false') == 'true': return False
 	set_setting('cm_manager_order_migrated_v3', 'true')
@@ -1265,7 +1291,7 @@ def migrate_cm_manager_order_for_upgrade():
 
 def cm_current_order():
 	default = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+				'mdblist_manager,punchplay_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
 	setting = get_setting('redlight.context_menu.order', default)
 	if setting in ('', None, 'noop', '[]'): order = default.split(',')
 	else: order = setting.split(',')

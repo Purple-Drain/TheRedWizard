@@ -725,7 +725,7 @@
                           <property name="setting_label">Enable Extra Ratings</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.extras.enable_extra_ratings)]</property>
-                          <property name="setting_description">Enable this and the Extras menu will show ratings from more services than just TMDb. Must have a valid OMDb API assigned in the Accounts settings for this to show</property>
+                          <property name="setting_description">Enable this and the Extras menu will show ratings from more services than just TMDb. Must have a valid OMDb API assigned in Meta Accounts for this to show</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=extras.enable_extra_ratings)</onclick>
                       </item>
                       <item>

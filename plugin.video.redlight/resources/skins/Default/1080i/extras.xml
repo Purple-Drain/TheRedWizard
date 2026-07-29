@@ -31,7 +31,7 @@
                         <left>1590</left>
                         <width max="300">auto</width>
                         <height>20</height>
-                        <font>font16</font> <!-- REDLIGHT_38 -->
+                        <font>font37</font> <!-- REDLIGHT_38 -->
                         <textcolor>FFCCCCCC</textcolor>
                         <align>right</align>
                         <aligny>center</aligny>
@@ -120,163 +120,163 @@
                     <height>730</height>
                     <control type="group">
                         <left>15</left>
-                    <control type="group">
-                        <animation effect="slide" end="0,25" time="0" condition="String.IsEqual(Window.Property(display_extra_ratings),false)">Conditional</animation>
-                        <control type="label">
-                            <width max="1150">auto</width>
-                            <height>25</height>
-                            <font>font14</font> <!-- REDLIGHT_33 -->
-                            <textcolor>FFCCCCCC</textcolor>
-                            <align>center</align>
-                            <label>[I]$INFO[Window.Property(genre)][/I]</label>
-                        </control>
-                        <control type="grouplist">
-                            <top>55</top>
-                            <width max="1150">auto</width>
-                            <orientation>horizontal</orientation>
-                            <itemgap>10</itemgap>
-                            <align>center</align>
-                            <control type="image" id="203">
-                                <width>45</width>
-                                <height>45</height>
-                                <aspectratio>keep</aspectratio>
-                                <align>center</align>
-                                <aligny>center</aligny>
-                            </control>
-                            <control type="label" id="2001">
-                                <width max="1026">auto</width>
-                                <height>32</height>
-                                <font>font13</font> <!-- REDLIGHT_30 -->
+                        <control type="group">
+                            <animation effect="slide" end="0,25" time="0" condition="String.IsEqual(Window.Property(display_extra_ratings),false)">Conditional</animation>
+                            <control type="label">
+                                <width max="1150">auto</width>
+                                <height>25</height>
+                                <font>font14</font> <!-- REDLIGHT_33 -->
                                 <textcolor>FFCCCCCC</textcolor>
-                                <align>left</align>
-                            </control>
-                        </control>
-                        <control type="label" id="3001">
-                            <top>105</top>
-                            <width max="1150">auto</width>
-                            <height>25</height>
-                            <font>font14</font> <!-- REDLIGHT_33 -->
-                            <textcolor>FFCCCCCC</textcolor>
-                            <align>center</align>
-                        </control>
-                        <control type="grouplist">
-                            <top>165</top>
-                            <width max="1110">auto</width>
-                            <orientation>horizontal</orientation>
-                            <itemgap>30</itemgap>
-                            <align>center</align>
-                            <control type="grouplist">
-                                <width>130</width>
-                                <orientation>horizontal</orientation>
-                                <itemgap>0</itemgap>
                                 <align>center</align>
-                                <visible>String.IsEqual(Window.Property(metascore_rating),true)</visible>
-                                <control type="image" id="4101">
-                                    <width>52</width>
-                                    <height>32</height>
-                                    <aspectratio>keep</aspectratio>
-                                    <align>right</align>
-                                    <aligny>center</aligny>
-                                </control>
-                                <control type="label" id="4001">
-                                    <width max="75">auto</width>
-                                    <height>32</height>
-                                    <font>font13</font> <!-- REDLIGHT_30 -->
-                                    <textcolor>FFCCCCCC</textcolor>
-                                    <align>left</align>
-                                    <aligny>center</aligny>
-                                </control>
+                                <label>[I]$INFO[Window.Property(genre)][/I]</label>
                             </control>
                             <control type="grouplist">
-                                <width>130</width>
-                                <orientation>horizontal</orientation>
-                                <itemgap>0</itemgap>
-                                <align>center</align>
-                                <visible>String.IsEqual(Window.Property(tomatometer_rating),true)</visible>
-                                <control type="image" id="4102">
-                                    <width>52</width>
-                                    <height>32</height>
-                                    <aspectratio>keep</aspectratio>
-                                    <align>right</align>
-                                    <aligny>center</aligny>
-                                </control>
-                                <control type="label" id="4002">
-                                    <width max="75">auto</width>
-                                    <height>32</height>
-                                    <font>font13</font> <!-- REDLIGHT_30 -->
-                                    <textcolor>FFCCCCCC</textcolor>
-                                    <align>left</align>
-                                    <aligny>center</aligny>
-                                </control>
-                            </control>
-                            <control type="grouplist">
-                                <width>130</width>
-                                <orientation>horizontal</orientation>
-                                <itemgap>0</itemgap>
-                                <align>center</align>
-                                <visible>String.IsEqual(Window.Property(tomatousermeter_rating),true)</visible>
-                                <control type="image" id="4103">
-                                    <width>52</width>
-                                    <height>32</height>
-                                    <aspectratio>keep</aspectratio>
-                                    <align>right</align>
-                                    <aligny>center</aligny>
-                                </control>
-                                <control type="label" id="4003">
-                                    <width max="75">auto</width>
-                                    <height>32</height>
-                                    <font>font13</font> <!-- REDLIGHT_30 -->
-                                    <textcolor>FFCCCCCC</textcolor>
-                                    <align>left</align>
-                                    <aligny>center</aligny>
-                                </control>
-                            </control>
-                            <control type="grouplist">
-                                <width>130</width>
+                                <top>55</top>
+                                <width max="1150">auto</width>
                                 <orientation>horizontal</orientation>
                                 <itemgap>10</itemgap>
                                 <align>center</align>
-                                <visible>String.IsEqual(Window.Property(imdb_rating),true)</visible>
-                                <control type="image" id="4104">
-                                    <width>52</width>
-                                    <height>32</height>
+                                <control type="image" id="203">
+                                    <width>45</width>
+                                    <height>45</height>
                                     <aspectratio>keep</aspectratio>
-                                    <align>right</align>
+                                    <align>center</align>
                                     <aligny>center</aligny>
                                 </control>
-                                <control type="label" id="4004">
-                                    <width max="75">auto</width>
+                                <control type="label" id="2001">
+                                    <width max="1026">auto</width>
                                     <height>32</height>
                                     <font>font13</font> <!-- REDLIGHT_30 -->
                                     <textcolor>FFCCCCCC</textcolor>
                                     <align>left</align>
-                                    <aligny>center</aligny>
                                 </control>
                             </control>
-                            <control type="grouplist">
-                                <width>130</width>
-                                <orientation>horizontal</orientation>
-                                <itemgap>0</itemgap>
+                            <control type="label" id="3001">
+                                <top>105</top>
+                                <width max="1150">auto</width>
+                                <height>25</height>
+                                <font>font14</font> <!-- REDLIGHT_33 -->
+                                <textcolor>FFCCCCCC</textcolor>
                                 <align>center</align>
-                                <visible>String.IsEqual(Window.Property(tmdb_rating),true)</visible>
-                                <control type="image" id="4105">
-                                    <width>52</width>
-                                    <height>32</height>
-                                    <aspectratio>keep</aspectratio>
-                                    <align>right</align>
-                                    <aligny>center</aligny>
+                            </control>
+                            <control type="grouplist">
+                                <top>165</top>
+                                <width max="1110">auto</width>
+                                <orientation>horizontal</orientation>
+                                <itemgap>30</itemgap>
+                                <align>center</align>
+                                <control type="grouplist">
+                                    <width>130</width>
+                                    <orientation>horizontal</orientation>
+                                    <itemgap>0</itemgap>
+                                    <align>center</align>
+                                    <visible>String.IsEqual(Window.Property(metascore_rating),true)</visible>
+                                    <control type="image" id="4101">
+                                        <width>52</width>
+                                        <height>32</height>
+                                        <aspectratio>keep</aspectratio>
+                                        <align>right</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                    <control type="label" id="4001">
+                                        <width max="75">auto</width>
+                                        <height>32</height>
+                                        <font>font13</font> <!-- REDLIGHT_30 -->
+                                        <textcolor>FFCCCCCC</textcolor>
+                                        <align>left</align>
+                                        <aligny>center</aligny>
+                                    </control>
                                 </control>
-                                <control type="label" id="4005">
-                                    <width max="75">auto</width>
-                                    <height>32</height>
-                                    <font>font13</font> <!-- REDLIGHT_30 -->
-                                    <textcolor>FFCCCCCC</textcolor>
-                                    <align>left</align>
-                                    <aligny>center</aligny>
+                                <control type="grouplist">
+                                    <width>130</width>
+                                    <orientation>horizontal</orientation>
+                                    <itemgap>0</itemgap>
+                                    <align>center</align>
+                                    <visible>String.IsEqual(Window.Property(tomatometer_rating),true)</visible>
+                                    <control type="image" id="4102">
+                                        <width>52</width>
+                                        <height>32</height>
+                                        <aspectratio>keep</aspectratio>
+                                        <align>right</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                    <control type="label" id="4002">
+                                        <width max="75">auto</width>
+                                        <height>32</height>
+                                        <font>font13</font> <!-- REDLIGHT_30 -->
+                                        <textcolor>FFCCCCCC</textcolor>
+                                        <align>left</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                </control>
+                                <control type="grouplist">
+                                    <width>130</width>
+                                    <orientation>horizontal</orientation>
+                                    <itemgap>0</itemgap>
+                                    <align>center</align>
+                                    <visible>String.IsEqual(Window.Property(tomatousermeter_rating),true)</visible>
+                                    <control type="image" id="4103">
+                                        <width>52</width>
+                                        <height>32</height>
+                                        <aspectratio>keep</aspectratio>
+                                        <align>right</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                    <control type="label" id="4003">
+                                        <width max="75">auto</width>
+                                        <height>32</height>
+                                        <font>font13</font> <!-- REDLIGHT_30 -->
+                                        <textcolor>FFCCCCCC</textcolor>
+                                        <align>left</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                </control>
+                                <control type="grouplist">
+                                    <width>130</width>
+                                    <orientation>horizontal</orientation>
+                                    <itemgap>10</itemgap>
+                                    <align>center</align>
+                                    <visible>String.IsEqual(Window.Property(imdb_rating),true)</visible>
+                                    <control type="image" id="4104">
+                                        <width>52</width>
+                                        <height>32</height>
+                                        <aspectratio>keep</aspectratio>
+                                        <align>right</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                    <control type="label" id="4004">
+                                        <width max="75">auto</width>
+                                        <height>32</height>
+                                        <font>font13</font> <!-- REDLIGHT_30 -->
+                                        <textcolor>FFCCCCCC</textcolor>
+                                        <align>left</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                </control>
+                                <control type="grouplist">
+                                    <width>130</width>
+                                    <orientation>horizontal</orientation>
+                                    <itemgap>0</itemgap>
+                                    <align>center</align>
+                                    <visible>String.IsEqual(Window.Property(tmdb_rating),true)</visible>
+                                    <control type="image" id="4105">
+                                        <width>52</width>
+                                        <height>32</height>
+                                        <aspectratio>keep</aspectratio>
+                                        <align>right</align>
+                                        <aligny>center</aligny>
+                                    </control>
+                                    <control type="label" id="4005">
+                                        <width max="75">auto</width>
+                                        <height>32</height>
+                                        <font>font13</font> <!-- REDLIGHT_30 -->
+                                        <textcolor>FFCCCCCC</textcolor>
+                                        <align>left</align>
+                                        <aligny>center</aligny>
+                                    </control>
                                 </control>
                             </control>
                         </control>
-                    </control>
                     </control>
                     <control type="group">
                         <top>225</top>
@@ -421,6 +421,7 @@
                         </control>
                     </control>
                 </control>
+
                 <control type="group">
                     <visible>String.IsEqual(Window.Property(plot_enabled),true)</visible>
                     <height>760</height>
@@ -2123,3 +2124,4 @@
         </control>
     </controls>
 </window>
+
