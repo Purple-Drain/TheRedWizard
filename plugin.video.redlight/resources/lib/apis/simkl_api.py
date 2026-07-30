@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 from caches import simkl_cache
 from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils, settings, list_sort
+from modules.http_defaults import META_API_TIMEOUT
 from modules.utils import copy2clip, make_qrcode
 
 BASE_URL = 'https://api.simkl.com'
@@ -68,12 +69,12 @@ def call_simkl(path, data=None, method=None, is_delete=False):
 	headers = _headers()
 	try:
 		if is_delete:
-			resp = requests.delete(url, headers=headers, timeout=20)
+			resp = requests.delete(url, headers=headers, timeout=META_API_TIMEOUT)
 		elif method == 'get' or (data is None and not method):
-			resp = requests.get(url, headers=headers, timeout=20)
+			resp = requests.get(url, headers=headers, timeout=META_API_TIMEOUT)
 		else:
 			payload = json.dumps(data) if isinstance(data, (dict, list)) else data
-			resp = requests.post(url, data=payload, headers=headers, timeout=20)
+			resp = requests.post(url, data=payload, headers=headers, timeout=META_API_TIMEOUT)
 		if resp.status_code in (200, 201): return resp.json() if resp.text else True
 		if resp.status_code == 204: return True
 		kodi_utils.logger('Simkl', 'HTTP %s %s' % (resp.status_code, url))
@@ -81,7 +82,7 @@ def call_simkl(path, data=None, method=None, is_delete=False):
 	return None
 
 def simkl_get_pin():
-	try: return requests.get(_pin_url(), headers=_pin_headers(), timeout=20).json()
+	try: return requests.get(_pin_url(), headers=_pin_headers(), timeout=META_API_TIMEOUT).json()
 	except: return None
 
 def simkl_poll_pin(pin):
@@ -102,7 +103,7 @@ def simkl_poll_pin(pin):
 			return None
 		_throttle()
 		try:
-			resp = requests.get(_pin_url(user_code), headers=_pin_headers(), timeout=20).json()
+			resp = requests.get(_pin_url(user_code), headers=_pin_headers(), timeout=META_API_TIMEOUT).json()
 			if resp.get('access_token'):
 				progress.close()
 				return resp['access_token']
@@ -667,7 +668,7 @@ def simkl_progress(action, media_type, tmdb_id, percent, season=None, episode=No
 		_throttle()
 		url = _url('/sync/playback/%s' % resume_id)
 		if not url: return
-		try: requests.delete(url, headers=_headers(), timeout=20)
+		try: requests.delete(url, headers=_headers(), timeout=META_API_TIMEOUT)
 		except: pass
 	else:
 		simkl_scrobble('pause', media_type, tmdb_id, percent, season, episode)
@@ -898,7 +899,7 @@ def _simkl_fetch_trending_today(media_kind):
 	def _fetch(dummy):
 		_throttle()
 		try:
-			resp = requests.get(_simkl_trending_query_url(_simkl_trending_url(media_kind)), headers=_pin_headers(), timeout=20)
+			resp = requests.get(_simkl_trending_query_url(_simkl_trending_url(media_kind)), headers=_pin_headers(), timeout=META_API_TIMEOUT)
 			if resp.status_code != 200:
 				kodi_utils.logger('Simkl Trending', 'HTTP %s for %s' % (resp.status_code, media_kind))
 				return None

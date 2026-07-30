@@ -1648,9 +1648,14 @@ class Sources():
 		title, year, ep_name = self.get_search_title(), self.get_search_year(), self.get_ep_name()
 		aliases = make_alias_dict(self.meta, title)
 		expiry_times = get_cache_expiry(self.media_type, self.meta, self.season)
+		season, episode = self.get_season(), self.get_episode()
+		absolute_episode = None
+		if self.media_type == 'episode':
+			from modules.source_utils import absolute_episode_from_season_data
+			absolute_episode = absolute_episode_from_season_data(self.meta.get('season_data'), season, episode)
 		self.search_info = {'media_type': self.media_type, 'title': title, 'year': year, 'tmdb_id': self.tmdb_id, 'imdb_id': self.meta.get('imdb_id'), 'aliases': aliases,
-							'season': self.get_season(), 'episode': self.get_episode(), 'tvdb_id': self.meta.get('tvdb_id'), 'ep_name': ep_name, 'expiry_times': expiry_times,
-							'total_seasons': self.meta.get('total_seasons', 1)}
+							'season': season, 'episode': episode, 'tvdb_id': self.meta.get('tvdb_id'), 'ep_name': ep_name, 'expiry_times': expiry_times,
+							'total_seasons': self.meta.get('total_seasons', 1), 'absolute_episode': absolute_episode}
 
 	def _get_module(self, module_type, function):
 		if module_type == 'external': module = function.source(*self.external_args)

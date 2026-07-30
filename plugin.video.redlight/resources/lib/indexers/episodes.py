@@ -32,7 +32,7 @@ def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	return adjust_premiered_date(tmdb_premiered, adjust_hours)
 
 def _nextep_indicator_watchlist(indicators=None):
-	"""Never-started shows from a Watched Indicators service watchlist (empty for Red Light)."""
+	"""Never-started shows from a Watched Status Provider service watchlist (empty for Red Light)."""
 	if indicators is None: indicators = settings.watched_indicators()
 	try:
 		if indicators == 1:
@@ -434,7 +434,7 @@ def build_single_episode(list_type, params={}):
 	window_command = 'ActivateWindow(Videos,%s,return)' if is_external else 'Container.Update(%s)'
 	no_spoilers = settings.avoid_episode_spoilers()
 	watched_indicators = settings.watched_indicators()
-	# MDBList Lists → Next Up always uses MDBList watched history (not global Watched Indicators).
+	# MDBList Lists → Next Up always uses MDBList watched history (not global Watched Status Provider).
 	if list_type == 'episode.mdblist_next': watched_indicators = 3
 	if list_type in ('episode.trakt', 'episode.mdblist', 'episode.punchplay'):
 		display_format = settings.calendar_display_format(is_external)

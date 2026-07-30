@@ -1399,7 +1399,7 @@
                           <property name="setting_label">Include Watched Indicator Watchlist/Red Light Favorites</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.include_unwatched_name)]</property>
-                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Indicators watchlist (MDBList Watchlist, PunchPlay Watchlist, Simkl Plan to Watch, or Trakt Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Indicators is Red Light, Watchlist has no source and only Favorites apply.</property>
+                          <property name="setting_description">Optionally include never-started shows in Next Episodes from your active Watched Status Provider watchlist (MDBList Watchlist, PunchPlay Watchlist, Simkl Plan to Watch, or Trakt Watchlist) and/or Red Light Favorites. They show with a DARKGOLDENROD highlight. When Watched Status Provider is Red Light, Watchlist has no source and only Favorites apply.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=nextep.include_unwatched)</onclick>
                       </item>
                       <item>
@@ -1491,19 +1491,19 @@
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_future_days)</onclick>
                       </item>
 <!-- META ACCOUNTS 50 -->
-        <!-- Watched Indicators -->
+        <!-- Watched Status Provider -->
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <property name="setting_label">Watched Indicators</property>
+                          <property name="setting_label">Watched Status Provider</property>
                           <property name="setting_type">separator</property>
                           <onclick>noop</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <property name="setting_label">Watched Status Provider</property>
+                          <property name="setting_label">Provider</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.watched_indicators_name)]</property>
-                          <property name="setting_description">Watched ticks, resume bars, Next Episodes, and In Progress lists. Choose MDBList, PunchPlay, Red Light (local), Simkl, or Trakt. Authorise a service below to use it. WeTrakr is separate (scrobble only) and is not a watched provider.</property>
+                          <property name="setting_description">Watched ticks, resume bars, Next Episodes, and In Progress lists. Choose MDBList, PunchPlay, Red Light, Simkl, or Trakt. Authorise a service below to use it. Red Light stores that data on this device. WeTrakr is separate (scrobble only) and is not a watched provider.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=watched_indicators)</onclick>
                       </item>
         <!-- MDBList -->
@@ -1636,6 +1636,25 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.punchplay.client)]</property>
                           <property name="setting_description">Enter the Client ID from your app at punchplay.tv/developers (or leave the Red Light default)</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=punchplay.client)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.client),ppc_20f43c36d33f17d01241ed83)</visible>
+                          <property name="setting_label">    - Restore Default Client ID Key</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Restore default PunchPlay Client ID Key</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.restore_setting_default&amp;setting_id=punchplay.client)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">Test Client ID Key...</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Check that your PunchPlay Client ID is accepted by PunchPlay</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=punchplay_client_check_choice)</onclick>
                       </item>
         <!-- Simkl -->
                       <item>

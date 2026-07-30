@@ -681,19 +681,19 @@ def _refresh_trakt_movie_progress():
 	except: pass
 
 def _refresh_simkl_tvshow_watched():
+	# Activity-gated (same as SimklMonitor / TV show lists) — skip full watched pull when unchanged.
 	try:
 		if settings.watched_indicators() != 2 or not settings.simkl_user_active(): return
-		from apis.simkl_api import simkl_indicators_tv
-		simkl_indicators_tv()
+		from apis.simkl_api import simkl_sync_activities
+		simkl_sync_activities()
 	except: pass
 
 def _refresh_mdblist_watched():
+	# Activity-gated (same as MDBListMonitor / TV show lists) — skip full watched pull when unchanged.
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
-		from apis.mdblist_api import mdblist_indicators_movies, mdblist_indicators_tv, _get_mdbl_paginated_list
-		watched_info = _get_mdbl_paginated_list('sync/watched')
-		mdblist_indicators_movies(watched_info)
-		mdblist_indicators_tv(watched_info)
+		from apis.mdblist_api import mdblist_sync_activities
+		mdblist_sync_activities()
 	except: pass
 
 def _refresh_mdblist_tvshow_watched():
@@ -702,15 +702,15 @@ def _refresh_mdblist_tvshow_watched():
 def _refresh_mdblist_movie_progress():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
-		from apis.mdblist_api import _get_mdbl_playback_items, mdblist_progress_movies
-		mdblist_progress_movies(_get_mdbl_playback_items())
+		from apis.mdblist_api import mdblist_sync_activities
+		mdblist_sync_activities()
 	except: pass
 
 def _refresh_mdblist_episode_progress():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
-		from apis.mdblist_api import _get_mdbl_playback_items, mdblist_progress_tv
-		mdblist_progress_tv(_get_mdbl_playback_items())
+		from apis.mdblist_api import mdblist_sync_activities
+		mdblist_sync_activities()
 	except: pass
 
 def _refresh_punchplay_watched():

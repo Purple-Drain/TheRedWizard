@@ -250,7 +250,7 @@ def seas_ep_filter_exact(season, episode, release_title):
 			string_list.append(pattern.replace('<<S>>', s).replace('<<E>>', e))
 	return bool(re.search('|'.join(string_list), release_title))
 
-# Cloud filename S/E tokens (left-to-right). Explicit season markers only — no bare episode→S01.
+# Cloud filename S/E tokens (left-to-right). Prefer explicit season markers.
 # Covers S04E17, S4.E17, S4-E17, S4 -17, S4-17, S4.17, S4 - E17, S6x29, S6xE29, 4x17.
 # (?!\d) avoids treating long hash tags like S1E123456… as episode numbers.
 _CLOUD_SE_TOKEN_RE = re.compile(
@@ -264,6 +264,9 @@ _CLOUD_SE_TOKEN_RE = re.compile(
 	r'(\d{1,2})x(\d{1,3})(?!\d)'
 	r')'
 )
+# Anime-style bare episode only when no Sxx/NxN token exists: "Show - 001 - Title", "Show - 255.mkv".
+_CLOUD_BARE_EP_RE = re.compile(r'(?:^|[.-])(\d{1,3})(?=[.-]|$)')
+_BARE_EP_BLOCKLIST = frozenset((480, 720, 1080, 2160))
 
 def _normalize_release_title(release_title):
 	return re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
@@ -284,6 +287,40 @@ def iter_season_episode_tokens(release_title):
 		except Exception:
 			continue
 
+def absolute_episode_from_season_data(season_data, season, episode):
+	"""Aired-order absolute episode for season-relative numbering (e.g. DBZ S09E02 → 255).
+	When TMDb already uses absolute episode numbers inside a season (One Piece S23E1170), return that episode."""
+	try:
+		season_i, episode_i = int(season), int(episode)
+	except Exception:
+		return None
+	if not season_data or season_i < 1 or episode_i < 1:
+		return None
+	try:
+		cur = next((i for i in season_data if int(i.get('season_number') or -1) == season_i), None)
+		ep_count = int((cur or {}).get('episode_count') or 0)
+		# Absolute-style numbers inside the season (episode exceeds that season's count).
+		if ep_count and episode_i > ep_count:
+			return episode_i
+		prior = sum(int(i.get('episode_count') or 0) for i in season_data if 0 < int(i.get('season_number') or -1) < season_i)
+		return prior + episode_i
+	except Exception:
+		return None
+
+def iter_bare_episode_numbers(release_title):
+	"""Yield bare episode candidates when the name has no explicit season token."""
+	normalized = _normalize_release_title(release_title)
+	if _CLOUD_SE_TOKEN_RE.search(normalized):
+		return
+	for match in _CLOUD_BARE_EP_RE.finditer(normalized):
+		try:
+			num = int(match.group(1))
+		except Exception:
+			continue
+		if num < 1 or num in _BARE_EP_BLOCKLIST:
+			continue
+		yield num
+
 def parse_episode_from_filename(release_title, season=None):
 	"""Parse SxxExx / Sxx - ## / 1x## from a filename; prefer requested season; ignore later hash junk."""
 	for s_num, e_num in iter_season_episode_tokens(release_title):
@@ -292,18 +329,35 @@ def parse_episode_from_filename(release_title, season=None):
 		return e_num
 	return None
 
-def cloud_episode_matches(season, episode, filename):
-	"""Match requested episode using the file name only — not parent folder names like Episode 1/."""
+def cloud_episode_matches(season, episode, filename, absolute_episode=None):
+	"""Match requested episode using the file name only — not parent folder names like Episode 1/.
+
+	1) Explicit SxxExx / S# -## / NxN tokens (prefer these; never guess against them).
+	2) Else bare aired-order number: match absolute_episode when known, else S01 + episode only.
+	"""
 	if not filename:
 		return False
 	try:
 		season_i, episode_i = int(season), int(episode)
 	except Exception:
 		return False
-	for s_num, e_num in iter_season_episode_tokens(filename):
-		if s_num == season_i and e_num == episode_i:
-			return True
-	return False
+	tokens = list(iter_season_episode_tokens(filename))
+	if tokens:
+		return any(s_num == season_i and e_num == episode_i for s_num, e_num in tokens)
+	targets = set()
+	if absolute_episode is not None:
+		try:
+			abs_i = int(absolute_episode)
+			if abs_i > 0:
+				targets.add(abs_i)
+		except Exception:
+			pass
+	# Season 1 files often omit S01 ("Show - 001 - Title"); only when no absolute target or same value.
+	if season_i == 1:
+		targets.add(episode_i)
+	if not targets:
+		return False
+	return any(num in targets for num in iter_bare_episode_numbers(filename))
 
 def find_season_in_release_title(release_title):
 	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()

@@ -7,6 +7,7 @@ import requests
 from caches.settings_cache import get_setting, set_setting
 from caches import punchplay_cache as pp_cache
 from modules import kodi_utils, settings
+from modules.http_defaults import META_API_TIMEOUT
 from modules.utils import copy2clip, make_qrcode
 
 BASE_URL = 'https://punchplay.tv'
@@ -100,7 +101,7 @@ def _refresh_access_token():
 		resp = requests.post(
 			_url('/auth/refresh'),
 			data=json.dumps({'client_id': client_id, 'refresh_token': refresh}),
-			headers=_headers(with_auth=False), timeout=20)
+			headers=_headers(with_auth=False), timeout=META_API_TIMEOUT)
 		if resp.status_code != 200: return False
 		return _save_tokens(resp.json() or {})
 	except Exception as e:
@@ -113,13 +114,13 @@ def call_punchplay(path, method='get', data=None, query=None, retry=True):
 	url = _url(path, query)
 	try:
 		if method == 'get':
-			resp = requests.get(url, headers=_headers(), timeout=25)
+			resp = requests.get(url, headers=_headers(), timeout=META_API_TIMEOUT)
 		elif method == 'delete':
-			resp = requests.delete(url, headers=_headers(), timeout=25)
+			resp = requests.delete(url, headers=_headers(), timeout=META_API_TIMEOUT)
 		elif method == 'patch':
-			resp = requests.patch(url, data=json.dumps(data or {}), headers=_headers(), timeout=25)
+			resp = requests.patch(url, data=json.dumps(data or {}), headers=_headers(), timeout=META_API_TIMEOUT)
 		else:
-			resp = requests.post(url, data=json.dumps(data or {}), headers=_headers(), timeout=25)
+			resp = requests.post(url, data=json.dumps(data or {}), headers=_headers(), timeout=META_API_TIMEOUT)
 		if resp.status_code == 401 and retry and _refresh_access_token():
 			return call_punchplay(path, method=method, data=data, query=query, retry=False)
 		if resp.status_code == 204: return True
@@ -192,6 +193,34 @@ def _paginate_interaction_library(path, max_pages=50):
 
 # ---------- Auth ----------
 
+def punchplay_test_client_id():
+	"""Probe /auth/device/code — same acceptance check Trakt uses for client keys."""
+	client_id = punchplay_client_id()
+	if not client_id:
+		return False, 'PunchPlay Client ID Key is not set.'
+	try:
+		resp = requests.post(
+			_url('/auth/device/code'),
+			data=json.dumps({'client_id': client_id, 'scope': DEFAULT_SCOPES}),
+			headers=_headers(with_auth=False), timeout=META_API_TIMEOUT)
+		if resp.status_code == 200:
+			body = {}
+			try: body = resp.json() or {}
+			except: body = {}
+			if body.get('device_code'):
+				return True, 'PunchPlay Client ID Key is valid.'
+			return False, 'PunchPlay Client ID Key failed.[CR]PunchPlay returned an empty device code.'
+		detail = ''
+		try:
+			payload = resp.json() or {}
+			if isinstance(payload, dict):
+				detail = payload.get('error_description') or payload.get('message') or payload.get('error') or ''
+		except: detail = ''
+		if not detail: detail = (resp.text or '').strip() or 'No details returned.'
+		return False, 'PunchPlay Client ID Key failed.[CR]PunchPlay rejected the Client ID (HTTP %s).[CR]%s' % (resp.status_code, detail)
+	except Exception as e:
+		return False, 'PunchPlay Client ID Key failed.[CR]Could not reach PunchPlay: %s' % str(e)
+
 def punchplay_authenticate(dummy=''):
 	icon = _icon()
 	client_id = punchplay_client_id()
@@ -221,7 +250,7 @@ def punchplay_authenticate(dummy=''):
 		resp = requests.post(
 			_url('/auth/device/code'),
 			data=json.dumps({'client_id': client_id, 'scope': DEFAULT_SCOPES}),
-			headers=_headers(with_auth=False), timeout=20)
+			headers=_headers(with_auth=False), timeout=META_API_TIMEOUT)
 		code_data = resp.json() if resp.status_code == 200 else None
 	except Exception as e:
 		kodi_utils.logger('PunchPlay', 'device/code: %s' % e)
@@ -259,7 +288,7 @@ def punchplay_authenticate(dummy=''):
 					'device_id': _device_id(),
 					'device_name': kodi_utils.get_infolabel('System.FriendlyName') or 'Kodi'
 				}),
-				headers=_headers(with_auth=False), timeout=15)
+				headers=_headers(with_auth=False), timeout=META_API_TIMEOUT)
 			body = {}
 			try: body = poll.json() or {}
 			except: body = {}

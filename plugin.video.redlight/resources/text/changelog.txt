@@ -1,3 +1,11 @@
+[COLOR red][B]Version 2.1.6[/B][/COLOR]
+- [B]Changelog / text viewer[/B]: wider scrollbar for easier scrolling on touchscreens; list-based paging so Changelog/Tips scroll reliably; wrapped lines no longer indent; taller minimum scrollbar grip for touch.
+- [B]Next Episodes / Progress (Simkl & MDBList)[/B]: refresh watched/progress via activities first — full sync only when something changed (same idea as the background monitors and TV show lists). Speeds up list open when nothing is new; PunchPlay unchanged (no activities API).
+- [B]Watched Status Provider[/B]: live Settings, tips, and info text consistently use [B]Watched Status Provider[/B] and the picker name [B]Red Light[/B] (not mixed [I]Local[/I] / [I]Watched Indicators[/I]). [I]Local[/I] remains only for unrelated features (e.g. Local Media Folders, Local Subtitles) or when describing on-device storage.
+- [B]Meta Accounts HTTP[/B]: Trakt, Simkl, MDBList, and PunchPlay share a [B]20s[/B] request timeout. MDBList no longer retries connect/read failures (offline/airplane fails once) and only retries flaky [I]429/5xx[/I] a couple of times; Trakt [I]429 Retry-After[/I], Simkl spacing, and PunchPlay token refresh are unchanged.
+- [B]PunchPlay[/B]: [B]Test Client ID Key...[/B] under Meta Accounts (when authorised), plus [B]Restore Default Client ID Key[/B] when a custom ID is set — same idea as Trakt's client key check.
+- [B]Debrid cloud[/B]: when a file has no [I]Sxx[/I]/[I]NxN[/I] marker, bare aired-order numbers can match — [I]Show - 001[/I] as S01E01, or absolute numbers like [I]Dragon Ball Z - 255[/I] for S09E02 from TMDb season counts (#173 follow-up). Explicit season tokens still win; resolution tags (720/1080/…) are ignored. Season-subtitle-only names (e.g. arc title + [I]- 01[/I] with no number) are still not guessed.
+
 [COLOR red][B]Version 2.1.5[/B][/COLOR]
 - [B]MDBList sync[/B]: failed watched/progress fetches no longer wipe local ticks (bulk replace is skipped). Failed TMDb season fetches no longer cache an empty episode list.
 - [B]Anime episode groups[/B]: optional Content setting falls back to TMDb's "Seasons" group for anime when none is assigned (off by default). Explicit Assign Episode Group still wins; the fallback is scrape-time only and is not saved as your assigned group.

@@ -462,6 +462,11 @@ def trakt_credentials_check_choice(params):
 	ok, text = trakt_test_credentials()
 	return kodi_utils.ok_dialog(heading='Success' if ok else 'Failed', text=text)
 
+def punchplay_client_check_choice(params):
+	from apis.punchplay_api import punchplay_test_client_id
+	ok, text = punchplay_test_client_id()
+	return kodi_utils.ok_dialog(heading='Success' if ok else 'Failed', text=text)
+
 def tmdblist_read_token_check_choice(params):
 	import requests
 	from apis.tmdblist_api import TMDbListAPI

@@ -1086,6 +1086,7 @@ def ok_dialog(heading='', text='No Results', ok_label='OK', scroll=False):
 	return open_window(('windows.default_dialogs', 'OK'), 'ok.xml', **kwargs)
 
 def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
+	import textwrap
 	from windows.base_window import open_window
 	heading = heading.replace('[B]', '').replace('[/B]', '')
 	if file:
@@ -1094,8 +1095,15 @@ def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
 		confirm = confirm_dialog(text='Show Log Errors Only?', ok_label='Yes', cancel_label='No')
 		if confirm == None: return
 		if confirm: text = [i for i in text if any(x in i.lower() for x in ('exception', 'error', '[test]'))]
-	text = ''.join(text)
-	return open_window(('windows.textviewer', 'TextViewer'), 'textviewer.xml', heading=heading, text=text, font_size=font_size)
+	if isinstance(text, str): text = text.splitlines()
+	# List-based viewer: wrap long lines so the scrollbar pages reliably (no indent on continuations).
+	processed_lines, max_characters = [], 100
+	for line in text:
+		clean_line = line.rstrip('\r\n')
+		if len(clean_line) > max_characters:
+			processed_lines.extend(textwrap.wrap(clean_line, width=max_characters, break_long_words=False) or [clean_line])
+		else: processed_lines.append(clean_line)
+	return open_window(('windows.textviewer', 'TextViewer'), 'textviewer.xml', heading=heading, text=processed_lines, font_size=font_size)
 
 LIST_ITEM_NOT_IN_LIST = 'Item not in list'
 

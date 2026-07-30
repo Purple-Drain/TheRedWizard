@@ -1089,7 +1089,7 @@ def default_settings():
 #==================== Window Theme
 {'setting_id': 'window_theme', 'setting_type': 'string', 'setting_default': 'CC1F2020'},
 {'setting_id': 'window_theme_opacity', 'setting_type': 'string', 'setting_default': 'CC'},
-#==================== Watched Indicators
+#==================== Watched Status Provider
 {'setting_id': 'watched_indicators', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'3': 'MDBList', '4': 'PunchPlay', '0': 'Red Light', '2': 'Simkl', '1': 'Trakt'}},
 #======+============= MDBList Cache
 {'setting_id': 'mdblist.user', 'setting_type': 'string', 'setting_default': 'empty_setting'},

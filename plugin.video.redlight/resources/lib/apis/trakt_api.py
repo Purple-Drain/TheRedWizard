@@ -13,6 +13,7 @@ def _trakt_setting(setting_id, fallback=''):
 from caches.main_cache import cache_object
 from caches.lists_cache import lists_cache_object
 from modules import kodi_utils, settings, list_sort
+from modules.http_defaults import META_API_TIMEOUT
 from modules.metadata import movie_meta_external_id, tvshow_meta_external_id
 from modules.utils import get_datetime, timedelta, replace_html_codes, copy2clip, make_qrcode, make_tinyurl, \
 							TaskPool, jsondate_to_datetime as js2date
@@ -89,14 +90,14 @@ def call_trakt(path, params={}, data=None, is_delete=False, with_auth=True, meth
 			if token: headers['Authorization'] = 'Bearer ' + token
 		try:
 			if method:
-				if method == 'post': resp = requests.post(API_ENDPOINT % path, headers=headers, timeout=10)
-				elif method == 'delete': resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=10)
-				else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=10)
+				if method == 'post': resp = requests.post(API_ENDPOINT % path, headers=headers, timeout=META_API_TIMEOUT)
+				elif method == 'delete': resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=META_API_TIMEOUT)
+				else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=META_API_TIMEOUT)
 			elif data is not None:
 				assert not params
-				resp = requests.post(API_ENDPOINT % path, json=data, headers=headers, timeout=10)
-			elif is_delete: resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=10)
-			else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=10)
+				resp = requests.post(API_ENDPOINT % path, json=data, headers=headers, timeout=META_API_TIMEOUT)
+			elif is_delete: resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=META_API_TIMEOUT)
+			else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=META_API_TIMEOUT)
 			resp.raise_for_status()
 		except Exception as e: kodi_utils.logger('Trakt Error', str(e))
 		return resp
@@ -148,7 +149,7 @@ def trakt_test_credentials():
 		return False, 'Trakt Client Secret Key is not set.'
 	try:
 		headers = {'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': CLIENT_ID}
-		response = requests.post('https://api.trakt.tv/oauth/device/code', json={'client_id': CLIENT_ID}, headers=headers, timeout=15)
+		response = requests.post('https://api.trakt.tv/oauth/device/code', json={'client_id': CLIENT_ID}, headers=headers, timeout=META_API_TIMEOUT)
 		if response.status_code == 200:
 			return True, 'Trakt client keys are valid.'
 		try:
@@ -188,7 +189,7 @@ def trakt_get_device_token(device_codes):
 			time_passed = 0
 			while not progressDialog.iscanceled() and time_passed < expires_in:
 				kodi_utils.sleep(max(sleep_interval, 1)*1000)
-				response = requests.post(API_ENDPOINT % 'oauth/device/token', data=json.dumps(data), headers=headers, timeout=20)
+				response = requests.post(API_ENDPOINT % 'oauth/device/token', data=json.dumps(data), headers=headers, timeout=META_API_TIMEOUT)
 				status_code = response.status_code
 				if status_code == 200:
 					result = response.json()

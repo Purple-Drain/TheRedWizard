@@ -2,7 +2,7 @@
 """WeTrakr scrobble-only integration (device OAuth + Kodi webhook).
 
 Does not sync watched ticks, resume, or lists into Red Light. Prefer
-Watched Indicators = Red Light (or another provider) for UI state.
+Watched Status Provider = Red Light (or another provider) for UI state.
 """
 import json
 import time

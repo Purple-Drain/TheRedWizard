@@ -26,6 +26,7 @@ class source:
 			self.media_type, title = info.get('media_type'), info.get('title')
 			self.year = int(info.get('year') or 0)
 			self.season, self.episode = info.get('season'), info.get('episode')
+			self.absolute_episode = info.get('absolute_episode')
 			self.tmdb_id = info.get('tmdb_id')
 			self.title = title
 			self.folder_query = source_utils.clean_title(normalize(title))
@@ -48,7 +49,7 @@ class source:
 							continue
 						file_name_latin = normalize(file_name) or file_name
 						if self.media_type == 'episode':
-							if not source_utils.cloud_episode_matches(self.season, self.episode, file_name_latin):
+							if not source_utils.cloud_episode_matches(self.season, self.episode, file_name_latin, self.absolute_episode):
 								continue
 							if filter_title and not source_utils.check_title(title, file_name_latin, self.aliases, self.year, 'pack', self.episode):
 								continue
@@ -151,7 +152,7 @@ class source:
 
 	def _match_cloud_file(self, normalized, folder_name='', raw_file='', raw_folder='', folder_prefiltered=False):
 		if self.media_type == 'episode':
-			return source_utils.cloud_episode_matches(self.season, self.episode, normalized)
+			return source_utils.cloud_episode_matches(self.season, self.episode, normalized, self.absolute_episode)
 		if folder_prefiltered:
 			return True
 		clean_file = source_utils.clean_title(normalized)

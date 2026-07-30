@@ -5,6 +5,7 @@ import requests
 from caches import mdblist_cache
 from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils, settings, list_sort
+from modules.http_defaults import META_API_TIMEOUT, meta_status_retry
 from modules.utils import paginate_list, get_datetime, TaskPool, make_thread_list, copy2clip, make_qrcode, make_tinyurl
 
 BASE_URL = 'https://api.mdblist.com/%s'
@@ -12,7 +13,7 @@ _OAUTH_DEVICE_URL = 'https://api.mdblist.com/oauth/device-authorization/'
 _OAUTH_TOKEN_URL = 'https://api.mdblist.com/oauth/token/'
 MAX_LIST_ITEMS = 250_000
 session = requests.Session()
-session.mount('https://api.mdblist.com', requests.adapters.HTTPAdapter(pool_maxsize=100, max_retries=requests.adapters.Retry(total=4, status_forcelist=(429, 500, 502, 503, 504))))
+session.mount('https://api.mdblist.com', requests.adapters.HTTPAdapter(pool_maxsize=100, max_retries=meta_status_retry()))
 
 def _mdblist_token():
 	from caches.settings_cache import settings_cache
@@ -32,7 +33,7 @@ def call_mdblist(path, params=None, json_data=None, method=None):
 	headers = {'Authorization': 'Bearer %s' % token} if _mdblist_oauth_active() else {}
 	if not headers: params['apikey'] = token
 	try:
-		response = session.request(method or 'get', BASE_URL % path.lstrip('/'), params=params, json=json_data, headers=headers, timeout=20)
+		response = session.request(method or 'get', BASE_URL % path.lstrip('/'), params=params, json=json_data, headers=headers, timeout=META_API_TIMEOUT)
 		if 'json' in response.headers.get('Content-Type', ''):
 			result = response.json()
 		else:
@@ -224,7 +225,7 @@ def mdblist_get_device_code():
 	client_id = settings.mdblist_client()
 	if not client_id or client_id in ('empty_setting', ''): return None
 	try:
-		response = session.post(_OAUTH_DEVICE_URL, data={'client_id': client_id, 'scope': 'write'}, timeout=20)
+		response = session.post(_OAUTH_DEVICE_URL, data={'client_id': client_id, 'scope': 'write'}, timeout=META_API_TIMEOUT)
 		if not response.ok: return None
 		return response.json()
 	except: return None
@@ -255,7 +256,7 @@ def mdblist_poll_device(device_data):
 			response = session.post(_OAUTH_TOKEN_URL, data={
 				'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
 				'device_code': device_code,
-				'client_id': client_id}, timeout=20)
+				'client_id': client_id}, timeout=META_API_TIMEOUT)
 			if response.status_code == 200:
 				result = response.json()
 				progress.close()
