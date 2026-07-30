@@ -80,7 +80,8 @@ class player(xbmc.Player):
             self._trakt_scrobble_started = False
             self._trakt_scrobble_finalized = False
             self._trakt_pending_stop_percent = None
-            self._last_percent = float(getattr(self, 'resume_percent', 0) or 0)
+            # Do not seed from bookmark — failed/zero-time stops must not scrobble at stale resume %.
+            self._last_percent = 0.0
             poster, thumb, fanart, clearlogo, clearart, discart, meta = self.getMeta(meta)
             item = control.item(path=url)
             if self.content == 'movie':
@@ -197,7 +198,8 @@ class player(xbmc.Player):
                 break
             xbmc.sleep(1000)
         # Backup if onAVStarted never ran on this Player instance.
-        self._ensure_live_scrobble_start()
+        if self.isPlayingVideo():
+            self._ensure_live_scrobble_start()
         if overlay == '7':
             while self.isPlayingVideo():
                 try:
@@ -481,9 +483,16 @@ class player(xbmc.Player):
 
     def onPlayBackStopped(self):
         try:
+            try:
+                self.totalTime = self.getTotalTime() or self.totalTime
+                self.currentTime = self.getTime() or self.currentTime
+                self._update_last_percent()
+            except Exception:
+                pass
             if self.totalTime == 0 or self.currentTime == 0:
                 if getattr(self, '_trakt_scrobble_started', False) or trakt.getTraktIndicatorsInfo():
-                    self._trakt_pending_stop_percent = max(float(getattr(self, '_last_percent', 0) or 0), 1)
+                    # Failed open / zero progress — clear Playing now at 1%, never bookmark resume %.
+                    self._trakt_pending_stop_percent = 1
                 control.sleep(2000)
                 return
             percent = self._playback_percent() or getattr(self, '_last_percent', 0) or 0

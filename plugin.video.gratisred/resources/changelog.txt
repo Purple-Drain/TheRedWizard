@@ -1,4 +1,7 @@
 
+[B]- 1.2.3 (2026-07-30)[/B] Trakt failed-playback scrobble guard (#180):
+ * [B]Trakt[/B]: failed or zero-time playback no longer sends a stop scrobble at a stale bookmark resume percentage (clears Playing now at 1% instead). Live start backup only runs if video is actually playing.
+
 [B]- 1.2.2 (2026-07-28)[/B] Trakt standalone live scrobble:
  * [B]Trakt[/B]: native live scrobble (Playing now) when Watched Indicators = Trakt — standalone without script.trakt; defers only if the official Trakt add-on is authorised and set to scrobble HTTP playback.
  * [B]OpenSubtitles[/B]: keep per-title subtitle files in temp and reuse them on replay — toast says [I]cached[/I] instead of [I]downloaded[/I] when the file is already on disk.
