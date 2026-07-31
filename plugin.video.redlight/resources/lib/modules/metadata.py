@@ -444,6 +444,26 @@ def episode_groups(media_id):
 	except: groups = None
 	return groups or None
 
+def preferred_episode_group(groups, prefer_name=None):
+	"""Pick one TMDb episode group for Auto/fallback scrape remaps.
+
+	Order: optional exact name (e.g. anime "Seasons") → Original Air Date (type 1)
+	→ first group. Absolute and other types are not preferred.
+	"""
+	if not groups:
+		return None
+	if prefer_name:
+		named = next((g for g in groups if (g.get('name') or '').lower() == prefer_name.lower()), None)
+		if named:
+			return named
+	def _type(group):
+		try: return int(group.get('type'))
+		except: return 0
+	aired = next((g for g in groups if _type(g) == 1), None)
+	if aired:
+		return aired
+	return groups[0]
+
 def group_details(group_id):
 	return episode_group_details(group_id)
 

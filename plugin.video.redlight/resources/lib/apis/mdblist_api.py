@@ -300,6 +300,19 @@ def mdblist_revoke_authentication(dummy=''):
 	mdblist_cache.clear_all_mdblist_cache_data(silent=True, refresh=False)
 	kodi_utils.notification('MDBList Authorisation Reset', 3000)
 
+MDBLIST_TRAKT_IMPORT_URL = 'https://mdblist.com/preferences/'
+
+def mdblist_import_trakt(params=None):
+	from threading import Thread
+	from modules.trakt_import_help import open_official_trakt_import_page
+	def _after():
+		Thread(target=mdblist_sync_activities, kwargs={'force_update': True}, daemon=True).start()
+	return open_official_trakt_import_page(
+		'MDBList', MDBLIST_TRAKT_IMPORT_URL,
+		icon=kodi_utils.get_icon('mdblist') or kodi_utils.addon_icon(),
+		extra_line='On Preferences, use [B]Import from Trakt[/B].',
+		after_close=_after)
+
 def mdblist_force_sync(params=None):
 	if not settings.mdblist_user_active(): return kodi_utils.notification('MDBList account not authorised', 3000)
 	progress = kodi_utils.progress_dialog('MDBList Sync')

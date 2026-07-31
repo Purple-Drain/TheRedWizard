@@ -121,9 +121,11 @@ def simkl_authenticate(dummy=''):
 	set_setting('simkl.token', token)
 	from caches.settings_cache import settings_cache
 	settings_cache.clear_db_cache()
-	info = call_simkl('/users/settings')
+	# Simkl requires POST /users/settings (no body) — GET fails and falls back to "Simkl User".
+	info = call_simkl('/users/settings', data={})
 	if info and info.get('user'):
-		set_setting('simkl.user', str(info['user'].get('name') or info['user'].get('login') or 'Simkl User'))
+		u = info['user']
+		set_setting('simkl.user', str(u.get('name') or u.get('login') or u.get('username') or 'Simkl User'))
 	else: set_setting('simkl.user', 'Simkl User')
 	settings.offer_watched_provider(2, 'Simkl')
 	kodi_utils.notification('Simkl Account Authorised', 3000)
@@ -136,25 +138,14 @@ SIMKL_TRAKT_IMPORT_URL = 'https://simkl.com/apps/import/trakt/'
 
 def simkl_import_trakt(params=None):
 	from threading import Thread
-	url = SIMKL_TRAKT_IMPORT_URL
-	icon = kodi_utils.get_icon('simkl') or kodi_utils.addon_icon()
-	try: copy2clip(url)
-	except: pass
-	try: qr_code = make_qrcode(url) or icon
-	except: qr_code = icon
-	content = ('Official Simkl Trakt import page:[CR][CR][B]%s[/B][CR][CR]'
-		'Scan the QR code with your phone, or paste the copied link into a browser.[CR][CR]'
-		'Complete the import on Simkl, then close this dialog to sync.' % url)
-	try:
-		progress = kodi_utils.progress_dialog('Import Trakt to Simkl', qr_code)
-		progress.update(content, 0)
-		while not progress.iscanceled(): kodi_utils.sleep(500)
-		progress.close()
-	except:
-		kodi_utils.ok_dialog(heading='Import Trakt to Simkl',
-			text='Open this official Simkl page in a browser:[CR][CR][B]%s[/B][CR][CR]The link has been copied where supported.[CR][CR]When finished, use Force Sync under Meta Accounts > Simkl.' % url)
-	Thread(target=simkl_sync_activities, kwargs={'force_update': True}, daemon=True).start()
-	return True
+	from modules.trakt_import_help import open_official_trakt_import_page
+	def _after():
+		Thread(target=simkl_sync_activities, kwargs={'force_update': True}, daemon=True).start()
+	return open_official_trakt_import_page(
+		'Simkl', SIMKL_TRAKT_IMPORT_URL,
+		icon=kodi_utils.get_icon('simkl') or kodi_utils.addon_icon(),
+		after_close=_after)
+
 
 def simkl_revoke_authentication(dummy=''):
 	set_setting('simkl.user', 'empty_setting')
@@ -588,7 +579,6 @@ def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=Non
 		if watched_at: item['watched_at'] = watched_at
 		result = call_simkl(url, data={'movies': [item]})
 		if _simkl_history_counts_ok(result, action, 'movie'):
-			if action == 'mark_as_unwatched': simkl_sync_activities(force_update=True)
 			return True
 		# Already clear on Simkl.
 		if action == 'mark_as_unwatched' and isinstance(result, dict): return True
@@ -620,7 +610,7 @@ def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=Non
 			kodi_utils.logger('Simkl', 'history %s network failure for %s tmdb=%s tvdb=%s' % (action, item_type, tmdb_id, tvdb_id))
 			return False
 		if _simkl_history_counts_ok(last_result, action, 'shows'):
-			if action == 'mark_as_unwatched': simkl_sync_activities(force_update=True)
+			# Same as Trakt / Mark Watched: local simkl_db + background activities cover cache refresh.
 			return True
 		if action == 'mark_as_unwatched' and _simkl_history_not_found(last_result):
 			saw_not_found = True
@@ -630,7 +620,6 @@ def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=Non
 			kodi_utils.logger('Simkl', 'history %s network failure for %s tmdb=%s tvdb=%s' % (action, item_type, tmdb_id, tvdb_id))
 			return False
 		if _simkl_history_counts_ok(fallback, action, 'shows'):
-			simkl_sync_activities(force_update=True)
 			return True
 		if _simkl_history_not_found(fallback): saw_not_found = True
 		last_result = fallback

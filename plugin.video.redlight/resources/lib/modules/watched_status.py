@@ -433,7 +433,8 @@ def mark_movie(params):
 		elif not mdblist_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
 	elif watched_indicators == 4:
 		if from_playback and punchplay_official_status(media_type) == False: sleep(1000)
-		elif not punchplay_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
+		elif not punchplay_watched_status_mark(action, 'movie', tmdb_id, title=title, year=params.get('year')) and not from_playback:
+			return notification('Error')
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, title=title)
 	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
@@ -454,7 +455,8 @@ def mark_tvshow(params):
 	elif watched_indicators == 3:
 		if not mdblist_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id): return notification('Error')
 	elif watched_indicators == 4:
-		if not punchplay_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id): return notification('Error')
+		if not punchplay_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id, title=title, year=params.get('year')):
+			return notification('Error')
 	current_date = get_datetime()
 	insert_list = []
 	insert_append = insert_list.append
@@ -497,7 +499,8 @@ def mark_season(params):
 	elif watched_indicators == 3:
 		if not mdblist_watched_status_mark(action, 'season', tmdb_id, tvdb_id, season): return notification('Error')
 	elif watched_indicators == 4:
-		if not punchplay_watched_status_mark(action, 'season', tmdb_id, tvdb_id, season): return notification('Error')
+		if not punchplay_watched_status_mark(action, 'season', tmdb_id, tvdb_id, season, title=title, year=params.get('year')):
+			return notification('Error')
 	progress_backround = kodi_progress_background()
 	progress_backround.create('[B]Please Wait..[/B]', '')
 	current_date = get_datetime()
@@ -539,7 +542,10 @@ def mark_episode(params):
 		elif not mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
 	elif watched_indicators == 4:
 		if from_playback and punchplay_official_status(media_type) == False: sleep(1000)
-		elif not punchplay_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
+		elif not punchplay_watched_status_mark(
+				action, media_type, tmdb_id, tvdb_id, season, episode, title=title, year=params.get('year')
+				) and not from_playback:
+			return notification('Error')
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, season, episode, title)
 	update_hidden_progress(tmdb_id)
 	_schedule_playback_widget_refresh(from_playback)
@@ -714,26 +720,28 @@ def _refresh_mdblist_episode_progress():
 	except: pass
 
 def _refresh_punchplay_watched():
+	# Change-feed gated (same idea as Simkl/MDBList activities) — skip full history when unchanged.
 	try:
 		if settings.watched_indicators() != 4 or not settings.punchplay_user_active(): return
-		from apis.punchplay_api import punchplay_indicators_movies, punchplay_indicators_tv, punchplay_sync_playback
-		punchplay_indicators_movies()
-		punchplay_indicators_tv()
-		punchplay_sync_playback()
+		# Set by punchplay_watched_status_mark so Container.Refresh after mark/unmark does not
+		# block on a full history rebuild while DialogBusy is up.
+		from modules.kodi_utils import get_property, clear_property
+		if get_property('redlight.punchplay_skip_list_sync') == 'true':
+			clear_property('redlight.punchplay_skip_list_sync')
+			return
+		from apis.punchplay_api import punchplay_sync_activities
+		punchplay_sync_activities()
 	except: pass
 
 def _refresh_punchplay_tvshow_watched():
-	try:
-		if settings.watched_indicators() != 4 or not settings.punchplay_user_active(): return
-		from apis.punchplay_api import punchplay_indicators_tv
-		punchplay_indicators_tv()
-	except: pass
+	_refresh_punchplay_watched()
 
 def _refresh_punchplay_progress():
+	# Progress-only is a single light call; still go through sync so change-feed can skip work.
 	try:
 		if settings.watched_indicators() != 4 or not settings.punchplay_user_active(): return
-		from apis.punchplay_api import punchplay_sync_playback
-		punchplay_sync_playback()
+		from apis.punchplay_api import punchplay_sync_activities
+		punchplay_sync_activities()
 	except: pass
 
 def _refresh_trakt_episode_progress():

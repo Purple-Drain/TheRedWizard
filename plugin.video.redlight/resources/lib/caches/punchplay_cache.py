@@ -50,7 +50,7 @@ class PunchPlayWatched:
 	def _delete(self, command, args):
 		dbcon = connect_database('punchplay_db')
 		dbcon.execute(command, args)
-		dbcon.execute('VACUUM')
+		# No VACUUM here — it rewrites the whole DB and blocks Next Episodes / list builds for many seconds.
 
 punchplay_watched_cache = PunchPlayWatched()
 
@@ -61,7 +61,6 @@ def clear_all_punchplay_cache_data(silent=False, refresh=True):
 		dbcon.execute('DELETE FROM punchplay_data')
 		dbcon.execute('DELETE FROM watched')
 		dbcon.execute('DELETE FROM progress')
-		dbcon.execute('VACUUM')
 		try:
 			from caches.lists_cache import lists_cache
 			lists_cache.delete_like('punchplay_%')

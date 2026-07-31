@@ -130,14 +130,36 @@ def call_trakt(path, params={}, data=None, is_delete=False, with_auth=True, meth
 		return (result, page_count)
 	else: return result
 
+def _trakt_using_custom_keys():
+	from caches.settings_cache import default_setting_values
+	try:
+		default_client = default_setting_values('trakt.client')['setting_default']
+		default_secret = default_setting_values('trakt.secret')['setting_default']
+	except Exception:
+		return True
+	return settings.trakt_client() != default_client or settings.trakt_secret() != default_secret
+
 def trakt_get_device_code():
 	CLIENT_ID = settings.trakt_client()
 	if CLIENT_ID in (None, 'empty_setting', ''): return no_client_key()
 	data = {'client_id': CLIENT_ID}
 	result = call_trakt('oauth/device/code', data=data, with_auth=False)
 	if result: return result
-	_, message = trakt_test_credentials()
-	kodi_utils.ok_dialog(heading='Trakt Authorise', text=message)
+	ok, message = trakt_test_credentials()
+	if not ok and _trakt_using_custom_keys():
+		restore = kodi_utils.confirm_dialog(
+			heading='Trakt Authorise',
+			text='%s[CR][CR]Restore Red Light default Client ID and Secret now?' % message,
+			ok_label='Restore Defaults', cancel_label='Cancel'
+		)
+		if restore:
+			from caches.settings_cache import restore_setting_default
+			restore_setting_default({'setting_id': 'trakt.client', 'silent': 'true'})
+			restore_setting_default({'setting_id': 'trakt.secret', 'silent': 'true'})
+			kodi_utils.notification('Trakt default keys restored — try Authorise again', 4000)
+			return None
+	else:
+		kodi_utils.ok_dialog(heading='Trakt Authorise', text=message)
 	return None
 
 def trakt_test_credentials():
@@ -157,7 +179,7 @@ def trakt_test_credentials():
 			detail = payload.get('error_description') or payload.get('error') or ''
 		except: detail = ''
 		if not detail: detail = (response.text or '').strip() or 'No details returned.'
-		return False, 'Trakt client keys failed.[CR]Trakt rejected the client ID (HTTP %s).[CR]%s' % (response.status_code, detail)
+		return False, 'Trakt client keys failed.[CR]Trakt rejected the client ID (HTTP %s).[CR]%s[CR][CR]In Meta Accounts > Trakt, use [B]Restore Default Client ID Key[/B] and [B]Restore Default Client Secret Key[/B], then Authorise again.' % (response.status_code, detail)
 	except Exception as e:
 		return False, 'Trakt client keys failed.[CR]Could not reach Trakt: %s' % str(e)
 

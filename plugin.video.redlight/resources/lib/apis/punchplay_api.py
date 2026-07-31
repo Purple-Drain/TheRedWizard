@@ -532,20 +532,40 @@ def punchplay_interact(media_type, tmdb_id, payload):
 	return bool(result) and not (isinstance(result, dict) and result.get('error'))
 
 def _punchplay_episode_history_ids(tmdb_id, season, episode):
-	"""Watch-history row ids for one episode (Mark Unwatched deletes these)."""
+	"""Watch-history row ids for one episode (Mark Unwatched deletes these).
+
+	History is newest-first and has no show/episode filter. Stop after the first
+	page with no hits once we already found matches — avoids crawling the full
+	library for Unmark Previous right after a recent watch (~5s → ~1 API page).
+	"""
 	try:
 		tid, season_num, episode_num = int(tmdb_id), int(season), int(episode)
 	except: return []
-	history_ids = []
-	for item in _paginate_history():
-		try:
-			if item.get('type') != 'episode': continue
-			show_id = item.get('showTmdbId') or item.get('show_tmdb_id') or item.get('tmdbId')
-			if int(show_id) != tid: continue
-			if int(item.get('season')) != season_num or int(item.get('episode')) != episode_num: continue
-			history_id = item.get('id') or item.get('historyId') or item.get('watchHistoryId')
-			if history_id not in (None, ''): history_ids.append(str(history_id))
-		except: continue
+	history_ids, cursor, pages = [], None, 0
+	while pages < 50:
+		pages += 1
+		query = {'limit': 100}
+		if cursor: query['cursor'] = cursor
+		data = call_punchplay('/me/history', method='get', query=query) or {}
+		batch = _library_items(data)
+		if not batch: break
+		page_hits = 0
+		for item in batch:
+			try:
+				if item.get('type') != 'episode': continue
+				show_id = item.get('showTmdbId') or item.get('show_tmdb_id') or item.get('tmdbId')
+				if int(show_id) != tid: continue
+				if int(item.get('season')) != season_num or int(item.get('episode')) != episode_num: continue
+				history_id = item.get('id') or item.get('historyId') or item.get('watchHistoryId')
+				if history_id not in (None, ''):
+					history_ids.append(str(history_id))
+					page_hits += 1
+			except Exception:
+				continue
+		if history_ids and page_hits == 0:
+			break
+		cursor = data.get('nextCursor') if isinstance(data, dict) else None
+		if not cursor: break
 	return history_ids
 
 def _punchplay_delete_episode_history(tmdb_id, season, episode):
@@ -559,22 +579,120 @@ def _punchplay_delete_episode_history(tmdb_id, season, episode):
 			ok = False
 	return ok
 
-def punchplay_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=None, episode=None):
+def _title_year_for_mark(media_type, tmdb_id, title=None, year=None):
+	"""PunchPlay LogWatch / LogSeason require title + year in the JSON body."""
+	title = (title or '').strip()
+	year_int = None
+	try:
+		if year not in (None, '', 'None'): year_int = int(year)
+	except Exception:
+		year_int = None
+	if year_int in (0, 2050): year_int = None
+	if title and year_int:
+		return title, year_int
+	try:
+		from modules import metadata, settings
+		from modules.utils import get_datetime
+		api_key, region, now = settings.tmdb_api_key(), settings.mpaa_region(), get_datetime()
+		if media_type == 'movie':
+			meta = metadata.movie_meta('tmdb_id', tmdb_id, api_key, region, now)
+		else:
+			meta = metadata.tvshow_meta('tmdb_id', tmdb_id, api_key, region, now)
+		if meta:
+			if not title:
+				title = (meta.get('title') or meta.get('tvshowtitle') or '').strip()
+			if not year_int:
+				try: year_int = int(meta.get('year') or 0) or None
+				except Exception: year_int = None
+				if not year_int:
+					try: year_int = int(str(meta.get('premiered') or '')[:4]) or None
+					except Exception: year_int = None
+	except Exception:
+		pass
+	return title or 'Unknown', year_int or 0
+
+def _watched_at_now():
+	"""ISO-8601 UTC timestamp for LogWatch / LogSeason (API requires watchedAt)."""
+	return time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime())
+
+def _season_episode_inputs(tmdb_id, season, episode_numbers=None, watched_at=None):
+	"""Build LogSeason SeasonEpisodeInput rows (episodeNumber + name + watchedAt)."""
+	watched_at = watched_at or _watched_at_now()
+	try:
+		from modules import metadata, settings
+		from modules.utils import get_datetime, adjust_premiered_date
+		meta = metadata.tvshow_meta('tmdb_id', tmdb_id, settings.tmdb_api_key(), settings.mpaa_region(), get_datetime())
+		ep_data = metadata.episodes_meta(int(season), meta) or []
+		current_date = get_datetime()
+		wanted = None
+		if episode_numbers is not None:
+			wanted = {int(n) for n in episode_numbers}
+		rows = []
+		for item in ep_data:
+			try:
+				ep_num = int(item['episode'])
+				if wanted is not None and ep_num not in wanted:
+					continue
+				episode_date, _premiered = adjust_premiered_date(item.get('premiered'), settings.date_offset())
+				if wanted is None and episode_date and current_date < episode_date:
+					continue
+				name = (item.get('title') or item.get('name') or 'Episode %s' % ep_num).strip()
+				row = {
+					'episodeNumber': ep_num,
+					'name': name or ('Episode %s' % ep_num),
+					'watchedAt': watched_at,
+				}
+				air = str(item.get('premiered') or '').strip()
+				if air:
+					row['airDate'] = air[:10]
+				rows.append(row)
+			except Exception:
+				continue
+		return rows
+	except Exception:
+		return []
+
+def punchplay_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=None, episode=None, title=None, year=None):
 	if not punchplay_user_active(): return False
 	kind = _title_kind(media_type)
 	try: tid = int(tmdb_id)
 	except: return False
 	if action == 'mark_as_watched':
+		# Platform API (beta): title+year; LogSeason also needs episodes[{episodeNumber,name,watchedAt}].
+		show_title, show_year = _title_year_for_mark(media_type, tid, title, year)
+		watched_at = _watched_at_now()
 		if media_type == 'movie':
-			result = call_punchplay('/title/%s/%s/history' % (kind, tid), method='post', data={})
+			result = call_punchplay(
+				'/title/%s/%s/history' % (kind, tid), method='post',
+				data={'title': show_title, 'year': show_year, 'watchedAt': watched_at})
 		elif media_type in ('episode',) and season is not None and episode is not None:
+			# Single episode: skip season meta fetch — API only needs episodeNumber + name.
+			ep_rows = [{
+				'episodeNumber': int(episode),
+				'name': 'Episode %s' % int(episode),
+				'watchedAt': watched_at,
+			}]
 			result = call_punchplay(
 				'/title/%s/%s/season/%s/watch' % (kind, tid, int(season)),
-				method='post', data={'episodes': [int(episode)]})
+				method='post',
+				data={
+					'episodes': ep_rows,
+					'title': show_title,
+					'year': show_year,
+					'watchedAt': watched_at,
+				})
 		elif media_type == 'season' and season is not None:
+			ep_rows = _season_episode_inputs(tid, season, watched_at=watched_at)
+			if not ep_rows: return False
 			result = call_punchplay(
 				'/title/%s/%s/season/%s/watch' % (kind, tid, int(season)),
-				method='post', data={})
+				method='post',
+				data={
+					'episodes': ep_rows,
+					'title': show_title,
+					'year': show_year,
+					'watchedAt': watched_at,
+				})
 		else:
 			result = punchplay_interact(media_type, tid, {'showStatus': STATUS_WATCHED})
 		ok = bool(result) and not (isinstance(result, dict) and result.get('error'))
@@ -597,8 +715,12 @@ def punchplay_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season
 		if not ok and media_type != 'episode' and result is not None:
 			ok = True
 	if ok:
-		try: punchplay_sync_activities(force_update=True)
-		except: pass
+		# Local punchplay_db is already updated by watched_status_mark. Skip the next
+		# Next Episodes / list activity refresh (change feed would otherwise full-rebuild
+		# history under DialogBusy), and tip the feed when the mark is already visible.
+		try: kodi_utils.set_property('redlight.punchplay_skip_list_sync', 'true')
+		except Exception: pass
+		_punchplay_ack_local_watched_change()
 	return ok
 
 def punchplay_progress(action, media_type, tmdb_id, percent, season=None, episode=None, resume_id=None, refresh_punchplay=False):
@@ -836,12 +958,95 @@ def punchplay_sync_playback():
 	pp_cache.punchplay_watched_cache.set_bulk_movie_progress(movie_ins)
 	pp_cache.punchplay_watched_cache.set_bulk_tvshow_progress(ep_ins)
 
+# Partner sync change feed — PunchPlay's stand-in for Simkl/MDBList last_activities.
+_PUNCHPLAY_WATCHED_SYNC_RESOURCES = frozenset(('history', 'playback', 'interaction'))
+
+def _punchplay_sync_stale():
+	"""TTL fallback when /me/sync/changes is unavailable — honour Resync Interval."""
+	import calendar
+	last = pp_cache.punchplay_cache.get('last_sync')
+	if not last: return True
+	try:
+		ts = calendar.timegm(time.strptime(str(last).rstrip('Z').split('.')[0], '%Y-%m-%dT%H:%M:%S'))
+	except Exception:
+		return True
+	try:
+		_interval_min, wait_sec = settings.punchplay_sync_interval()
+	except Exception:
+		wait_sec = 3600
+	return (time.time() - ts) >= max(300, int(wait_sec))
+
+def _punchplay_probe_sync_changes():
+	"""Return (needs_refresh, tip_response). tip_response used to advance cursor after a full pull."""
+	cursor = pp_cache.punchplay_cache.get('sync_changes_cursor')
+	query = {'limit': 100}
+	if cursor: query['cursor'] = cursor
+	data = call_punchplay('/me/sync/changes', method='get', query=query)
+	if not isinstance(data, dict) or data.get('error'):
+		# 429 / missing scope / network — do not pile on with a full history crawl.
+		if isinstance(data, dict):
+			err = ('%s %s' % (data.get('error') or '', data.get('message') or '')).lower()
+			if '429' in err or 'rate' in err or 'too many' in err:
+				return False, None
+		return _punchplay_sync_stale(), None
+	if data.get('resetRequired'):
+		pp_cache.punchplay_cache.delete('sync_changes_cursor')
+		return True, data
+	changes = data.get('changes') or []
+	if not changes:
+		next_cursor = data.get('nextCursor')
+		if next_cursor: pp_cache.punchplay_cache.set('sync_changes_cursor', next_cursor)
+		return False, data
+	if any((c.get('resource') or '') in _PUNCHPLAY_WATCHED_SYNC_RESOURCES for c in changes):
+		return True, data
+	# Lists/collection-only — keep cursor moving, skip history rebuild.
+	_punchplay_advance_sync_cursor(data)
+	return False, data
+
+def _punchplay_advance_sync_cursor(start_data=None):
+	"""After a full watched rebuild (or skipping non-watched changes), fast-forward the feed cursor."""
+	data = start_data if isinstance(start_data, dict) else None
+	cursor = (data or {}).get('nextCursor') or pp_cache.punchplay_cache.get('sync_changes_cursor')
+	has_more = bool((data or {}).get('hasMore')) if data else bool(cursor)
+	pages = 0
+	while cursor and pages < 40:
+		pp_cache.punchplay_cache.set('sync_changes_cursor', cursor)
+		if data is not None and not has_more: break
+		pages += 1
+		data = call_punchplay('/me/sync/changes', method='get', query={'cursor': cursor, 'limit': 500}) or {}
+		if not isinstance(data, dict) or data.get('error'): break
+		if data.get('resetRequired'):
+			pp_cache.punchplay_cache.delete('sync_changes_cursor')
+			break
+		cursor = data.get('nextCursor')
+		has_more = bool(data.get('hasMore'))
+		if cursor: pp_cache.punchplay_cache.set('sync_changes_cursor', cursor)
+		if not has_more: break
+
+def _punchplay_ack_local_watched_change():
+	"""After Red Light mark/unmark (API + local DB), tip the change feed without a history rebuild."""
+	try:
+		needs_refresh, probe = _punchplay_probe_sync_changes()
+		if not needs_refresh:
+			return
+		if isinstance(probe, dict):
+			_punchplay_advance_sync_cursor(probe)
+		pp_cache.punchplay_cache.set('last_sync', time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+	except Exception as e:
+		kodi_utils.logger('PunchPlay', 'ack local watched change failed: %s' % e)
+
 def punchplay_sync_activities(params=None, force_update=False):
+	"""Activity-gated sync. Uses PunchPlay /me/sync/changes (not Simkl-style last_activities)."""
 	if isinstance(params, dict):
 		force_update = params.get('force_update', 'false') in ('true', 'True', True) or force_update
 	if not punchplay_user_active(): return 'no account'
 	if force_update:
 		pp_cache.clear_all_punchplay_cache_data(silent=True, refresh=False)
+		pp_cache.punchplay_cache.delete('sync_changes_cursor')
+	probe = None
+	if not force_update:
+		needs_refresh, probe = _punchplay_probe_sync_changes()
+		if not needs_refresh: return 'not needed'
 	try:
 		punchplay_indicators_movies()
 		punchplay_indicators_tv()
@@ -849,10 +1054,26 @@ def punchplay_sync_activities(params=None, force_update=False):
 		pp_cache.punchplay_cache.delete('dropped_items')
 		pp_cache.punchplay_cache.delete('watchlist_list_id')
 		pp_cache.punchplay_cache.set('last_sync', time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+		# Full history rebuild is current as of now — advance change-feed cursor to the tip.
+		if probe is None:
+			probe = call_punchplay('/me/sync/changes', method='get', query={'limit': 100})
+		_punchplay_advance_sync_cursor(probe if isinstance(probe, dict) else None)
 		return 'success'
 	except Exception as e:
 		kodi_utils.logger('PunchPlay', 'sync failed: %s' % e)
 		return 'failed'
+
+PUNCHPLAY_TRAKT_IMPORT_URL = 'https://punchplay.tv/import/trakt'
+
+def punchplay_import_trakt(params=None):
+	from threading import Thread
+	from modules.trakt_import_help import open_official_trakt_import_page
+	def _after():
+		Thread(target=punchplay_sync_activities, kwargs={'force_update': True}, daemon=True).start()
+	return open_official_trakt_import_page(
+		'PunchPlay', PUNCHPLAY_TRAKT_IMPORT_URL,
+		icon=_icon(),
+		after_close=_after)
 
 def punchplay_force_sync(params=None):
 	if not punchplay_user_active(): return kodi_utils.notification('PunchPlay account not authorised', 3000)

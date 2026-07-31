@@ -943,6 +943,9 @@ def set_path(params):
 		new_value = result if result and str(result).strip() else None
 	if not new_value:
 		return
+	if browse_mode == 0:
+		# Under addon_data → special://; OS-wide folders stay absolute.
+		new_value = kodi_utils.portable_addon_data_path(new_value)
 	set_setting(setting_id, new_value)
 	if setting_id == 'import_export_directory':
 		try:

@@ -684,7 +684,7 @@
                           <property name="setting_label">Import &amp; Export Directory</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.import_export_directory)]</property>
-                          <property name="setting_description">Default folder for Tools > Import &amp; Export backups. Import and export file browsers open here. You can also save a new folder as the default when prompted after export</property>
+                          <property name="setting_description">Default folder for Tools > Import &amp; Export backups. Import and export file browsers open here. You can also save a new folder as the default when prompted after export. Folders inside Red Light's addon data stay as special:// (portable); other locations keep a normal device path</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_path&amp;setting_id=import_export_directory)</onclick>
                       </item>
 <!-- FEATURES 20-->
@@ -1031,7 +1031,7 @@
                           <property name="setting_label">Anime "Seasons" Episode Group Fallback</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.anime.seasons_episode_group_fallback)]</property>
-                          <property name="setting_description">When enabled, anime with no assigned episode group uses TMDb's "Seasons" group for scrape matching only. Explicit Assign Episode Group always wins. Does not save the fallback as your assigned group</property>
+                          <property name="setting_description">When enabled, anime with no assigned episode group uses TMDb's "Seasons" group for scrape matching when present, otherwise Original Air Date (not Absolute). Explicit Assign Episode Group always wins. Does not save the fallback as your assigned group</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=anime.seasons_episode_group_fallback)</onclick>
                       </item>
                       <item>
@@ -1567,6 +1567,15 @@
                           <property name="setting_description">Clear cached MDBList lists and sync data, then resync from MDBList</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=mdblist)</onclick>
                       </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.mdblist.user),empty_setting)</visible>
+                          <property name="setting_label">    - Import Trakt to MDBList</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Open MDBList's Preferences page (QR code or copied link) and use Import from Trakt there. Use when moving watch history from Trakt to MDBList. Red Light does not run the import.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=mdblist.mdblist_import_trakt)</onclick>
+                      </item>
         <!-- PunchPlay -->
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
@@ -1627,6 +1636,15 @@
                           <property name="setting_value">...</property>
                           <property name="setting_description">Clear cached PunchPlay lists and sync data, then resync from PunchPlay</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=clear_cache&amp;cache=punchplay)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.punchplay.user),empty_setting)</visible>
+                          <property name="setting_label">    - Import Trakt to PunchPlay</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Open PunchPlay's official Trakt import page (QR code or copied link). Use when moving watch history from Trakt to PunchPlay. Red Light does not run the import.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=punchplay.punchplay_import_trakt)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
@@ -1723,7 +1741,7 @@
                           <property name="setting_label">    - Import Trakt to Simkl</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Open Simkl's official Trakt import page (QR code or copied link). Use when moving watch history from Trakt to Simkl.</property>
+                          <property name="setting_description">Open Simkl's official Trakt import page (QR code or copied link). Use when moving watch history from Trakt to Simkl. Red Light does not run the import.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=simkl.simkl_import_trakt)</onclick>
                       </item>
         <!-- Trakt -->
@@ -1739,7 +1757,7 @@
                           <property name="setting_label">Authorise</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Authorise your Trakt account and use it within Red Light</property>
+                          <property name="setting_description">Authorise your Trakt account and use it within Red Light. If Authorise fails, restore the default Client ID/Secret below (personal Trakt apps may no longer work for free accounts), then try again.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=trakt.trakt_authenticate)</onclick>
                       </item>
                       <item>
@@ -1789,16 +1807,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Client ID Key</property>
-                          <property name="setting_type">numeric</property>
+                          <property name="setting_type">string</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.client)]</property>
-                          <property name="setting_description">Enter the Client ID from your app at trakt.tv/oauth/applications (or leave the Red Light default)</property>
+                          <property name="setting_description">Enter the Client ID from your app at trakt.tv/oauth/applications, or use Restore Default below for Red Light's built-in keys. Shown even before Authorise so dead personal keys can be fixed first.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=trakt.client)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.client),30e6c73030cc41dbff996200ac3060cde689555ba207020e08a2175533b912c3)</visible>
                           <property name="setting_label">    - Restore Default Client ID Key</property>
                           <property name="setting_type">action</property>
@@ -1808,16 +1824,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Client Secret Key</property>
-                          <property name="setting_type">numeric</property>
+                          <property name="setting_type">string</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.secret)]</property>
-                          <property name="setting_description">Enter the Client Secret from the same Trakt app as the Client ID above</property>
+                          <property name="setting_description">Enter the Client Secret from the same Trakt app as the Client ID above, or Restore Default for Red Light's built-in secret</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=trakt.secret)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.secret),726f6b12a9f0079d5850a7bb0e15860725cd487cbfb54ce5471de217639465c5)</visible>
                           <property name="setting_label">    - Restore Default Client Secret Key</property>
                           <property name="setting_type">action</property>
@@ -1827,7 +1841,6 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>
-                          <visible>!String.IsEqual(Window(10000).Property(redlight.trakt.user),empty_setting)</visible>
                           <property name="setting_label">Test Client Keys...</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
@@ -1846,7 +1859,7 @@
                           <property name="setting_label">About WeTrakr Scrobble</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">...</property>
-                          <property name="setting_description">Scrobble only: authorise WeTrakr, then use Enable Scrobbling to turn play/finish reporting on or off without revoking. Does not sync watched ticks, resume, Next Episodes, or lists into Red Light. Keep Watched Status Provider on Red Light (or MDBList / PunchPlay / Simkl / Trakt) for ticks and lists. If the official WeTrakr Kodi add-on is authorised, Red Light defers to it.</property>
+                          <property name="setting_description">Scrobble only: authorise WeTrakr, then use Enable Scrobbling to turn play/finish reporting on or off without revoking. Does not sync watched ticks, resume, Next Episodes, or lists into Red Light. Import Trakt to WeTrakr opens WeTrakr's site only (still no ticks in Red Light). Keep Watched Status Provider on Red Light (or MDBList / PunchPlay / Simkl / Trakt) for ticks and lists. If the official WeTrakr Kodi add-on is authorised, Red Light defers to it.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=wetrakr.wetrakr_about)</onclick>
                       </item>
                       <item>
@@ -1885,6 +1898,15 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.wetrakr.scrobble_threshold)]</property>
                           <property name="setting_description">Mark the title watched on WeTrakr when playback reaches this percent (default 90, same as Red Light's watched mark). Red Light ticks still follow Watched Status Provider.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=wetrakr.scrobble_threshold)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.wetrakr.user),empty_setting)</visible>
+                          <property name="setting_label">    - Import Trakt to WeTrakr</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Open WeTrakr's official Import page (QR code or copied link). Use when moving watch history from Trakt to WeTrakr. Red Light does not run the import, and this does not change watched ticks in Red Light.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=wetrakr.wetrakr_import_trakt)</onclick>
                       </item>
         <!-- OMDb -->
                       <item>
@@ -3544,7 +3566,7 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
-                          <property name="setting_label">Filter Results by Size</property>
+                          <property name="setting_label">Size Filter Method</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.results.filter_size_method_name)]</property>
                           <property name="setting_description">Choose the method used to filter results by their size. Either by internet speed, or actual size of the result</property>

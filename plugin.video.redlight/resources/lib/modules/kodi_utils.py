@@ -149,18 +149,56 @@ def safe_browse_defaultt(path):
 		return ''
 	return path
 
+_ADDON_DATA_SPECIAL = 'special://profile/addon_data/plugin.video.redlight/'
+
+def portable_addon_data_path(path, as_folder=True):
+	'''Prefer special:// when a path is under Red Light addon_data; keep OS-wide paths absolute.'''
+	if not path or str(path).strip() in ('', 'None', 'empty_setting'):
+		return path
+	raw = str(path).strip()
+	slash_form = raw.replace('\\', '/')
+	special_prefix = 'special://profile/addon_data/plugin.video.redlight'
+	if slash_form.lower().startswith(special_prefix):
+		result = slash_form
+		if as_folder and not result.endswith('/'):
+			result += '/'
+		return result
+	try:
+		if slash_form.lower().startswith('special://'):
+			native = os.path.normpath(translate_path(slash_form))
+		else:
+			native = os.path.normpath(raw)
+		profile = os.path.normpath(translate_path(_ADDON_DATA_SPECIAL))
+		native_cmp = os.path.normcase(native)
+		profile_cmp = os.path.normcase(profile)
+		if native_cmp == profile_cmp:
+			return _ADDON_DATA_SPECIAL
+		if not native_cmp.startswith(profile_cmp + os.sep):
+			return raw
+		rel = os.path.relpath(native, profile).replace('\\', '/')
+		if rel in ('.', ''):
+			return _ADDON_DATA_SPECIAL
+		result = _ADDON_DATA_SPECIAL + rel
+		if as_folder and not result.endswith('/'):
+			result += '/'
+		return result
+	except Exception:
+		return raw
+
 def browse_start_path(path, force_defaultt=False):
-	'''Native folder path for Kodi browse defaultt (address bar shows the real location).'''
+	'''Real filesystem path for Kodi browse defaultt.
+
+	Never pass special:// into Dialog.browse — that opens a virtual tree where
+	parent navigation cannot reach storage roots (so users cannot pick an
+	OS-wide Import/Export or download folder). force_defaultt is kept for
+	callers but no longer feeds special:// to the dialog.
+	'''
 	if not path or str(path).strip() in ('', 'None', 'empty_setting'):
 		return None
 	native = translate_path(path)
 	if not native or not str(native).strip():
 		return None
-	if force_defaultt:
-		# Import/export defaults use special:// paths; Kodi browse accepts them on all platforms.
-		if str(path).strip().lower().startswith('special://'):
-			return path
-		return native
+	# Android: opening inside a non-empty folder can block leaving via parent.
 	start = safe_browse_defaultt(native)
 	if start == '':
 		return ''
@@ -1086,7 +1124,7 @@ def ok_dialog(heading='', text='No Results', ok_label='OK', scroll=False):
 	return open_window(('windows.default_dialogs', 'OK'), 'ok.xml', **kwargs)
 
 def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
-	import textwrap
+	import re
 	from windows.base_window import open_window
 	heading = heading.replace('[B]', '').replace('[/B]', '')
 	if file:
@@ -1096,13 +1134,98 @@ def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
 		if confirm == None: return
 		if confirm: text = [i for i in text if any(x in i.lower() for x in ('exception', 'error', '[test]'))]
 	if isinstance(text, str): text = text.splitlines()
-	# List-based viewer: wrap long lines so the scrollbar pages reliably (no indent on continuations).
-	processed_lines, max_characters = [], 100
+	# List labels do not wrap; overflow becomes "...". Wrap by estimated pixel width for
+	# Estuary NotoSans (font14/33 large, font12/25 small). Label is 1214px; keep a small
+	# margin so dense/proportional lines are not truncated mid-word.
+	bbcode_re = re.compile(r'\[/?[^\[\]]+\]')
+	# Keep spaces inside [B]/[I]/[COLOR] spans so wrap cannot split e.g. [I]Original Air Date[/I].
+	bbcode_span_re = re.compile(
+		r'\[(B|I|LIGHT|UPPERCASE|LOWERCASE|CAPITALIZE)\](?:(?!\[/\1\]).)*\[/\1\]'
+		r'|\[COLOR(?:\s|=)[^\]]+\].*?\[/COLOR\]',
+		re.I | re.DOTALL
+	)
+	bbcode_tag_re = re.compile(r'\[(/?)([^\]]+)\]')
+	nbsp = '\u00a0'
+	# ASCII 32-126 advance widths (rounded) for NotoSans-Regular at the active size.
+	if str(font_size).lower() == 'large':
+		char_widths = (9, 9, 13, 21, 19, 27, 24, 7, 10, 10, 18, 19, 9, 11, 9, 12, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 9, 9, 19, 19, 19, 14, 30, 21, 21, 21, 24, 18, 17, 24, 24, 11, 9, 20, 17, 30, 25, 26, 20, 26, 21, 18, 18, 24, 20, 31, 19, 19, 19, 11, 12, 11, 19, 15, 9, 19, 20, 16, 20, 19, 11, 20, 20, 9, 9, 18, 9, 31, 20, 20, 20, 20, 14, 16, 12, 20, 17, 26, 17, 17, 16, 13, 18, 13, 19)
+		extra_widths = {'\u2014': 33, '\u2013': 17, '\u2026': 26, '\u2019': 6, '\u2018': 6, '\u201c': 12, '\u201d': 12, '\u00b7': 9, nbsp: 9}
+		default_width, max_px = 19, 1190
+	else:
+		char_widths = (7, 7, 10, 16, 14, 21, 18, 6, 8, 8, 14, 14, 7, 8, 7, 9, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 7, 7, 14, 14, 14, 11, 22, 16, 16, 16, 18, 14, 13, 18, 19, 8, 7, 15, 13, 23, 19, 20, 15, 20, 16, 14, 14, 18, 15, 23, 15, 14, 14, 8, 9, 8, 14, 11, 7, 14, 15, 12, 15, 14, 9, 15, 15, 6, 6, 13, 6, 23, 15, 15, 15, 15, 10, 12, 9, 15, 13, 20, 13, 13, 12, 10, 14, 10, 14)
+		extra_widths = {'\u2014': 25, '\u2013': 13, '\u2026': 20, '\u2019': 4, '\u2018': 4, '\u201c': 9, '\u201d': 9, '\u00b7': 7, nbsp: 7}
+		default_width, max_px = 14, 1190
+
+	def _text_width(value):
+		total = 0
+		for char in bbcode_re.sub('', value).replace(nbsp, ' '):
+			code = ord(char)
+			if 32 <= code <= 126:
+				total += char_widths[code - 32]
+			else:
+				total += extra_widths.get(char, default_width)
+		return total
+
+	def _protect_bbcode_spaces(value):
+		return bbcode_span_re.sub(lambda m: m.group(0).replace(' ', nbsp), value)
+
+	def _tag_stack_delta(stack, value):
+		for match in bbcode_tag_re.finditer(value):
+			closing, name = match.group(1), match.group(2)
+			base = name.split(' ', 1)[0].split('=', 1)[0].upper()
+			if closing:
+				for idx in range(len(stack) - 1, -1, -1):
+					open_base = stack[idx].split(' ', 1)[0].split('=', 1)[0].upper()
+					if open_base == base:
+						del stack[idx]
+						break
+			else:
+				stack.append(name)
+
+	def _open_tags(stack):
+		return ''.join('[%s]' % name for name in stack)
+
+	def _close_tags(stack):
+		return ''.join('[/%s]' % name.split(' ', 1)[0].split('=', 1)[0] for name in reversed(stack))
+
+	def _balance_bbcode(parts):
+		# Close open markup at each line end and reopen on the next so a wrap cannot leave
+		# orphan tags like [I]Original / Air Date[/I] (which Kodi then fails to italicise).
+		stack, balanced = [], []
+		for part in parts:
+			prefix = _open_tags(stack)
+			_tag_stack_delta(stack, part)
+			balanced.append((prefix + part + _close_tags(stack)).replace(nbsp, ' '))
+		return balanced
+
+	def _wrap_line(value, width):
+		value = _protect_bbcode_spaces(value)
+		if _text_width(value) <= width:
+			return [value.replace(nbsp, ' ')]
+		parts, current = [], ''
+		for word in value.split(' '):
+			candidate = word if not current else '%s %s' % (current, word)
+			if current and _text_width(candidate) > width:
+				parts.append(current)
+				current = word
+				while _text_width(current) > width:
+					# Hard-split oversized tokens (URLs, long unbroken strings).
+					cut, idx = current, 1
+					while idx < len(cut) and _text_width(cut[:idx]) <= width:
+						idx += 1
+					idx = max(1, idx - 1)
+					parts.append(cut[:idx])
+					current = cut[idx:]
+			else:
+				current = candidate
+		if current:
+			parts.append(current)
+		return _balance_bbcode(parts or [value])
+
+	processed_lines = []
 	for line in text:
 		clean_line = line.rstrip('\r\n')
-		if len(clean_line) > max_characters:
-			processed_lines.extend(textwrap.wrap(clean_line, width=max_characters, break_long_words=False) or [clean_line])
-		else: processed_lines.append(clean_line)
+		processed_lines.extend(_wrap_line(clean_line, max_px))
 	return open_window(('windows.textviewer', 'TextViewer'), 'textviewer.xml', heading=heading, text=processed_lines, font_size=font_size)
 
 LIST_ITEM_NOT_IN_LIST = 'Item not in list'
