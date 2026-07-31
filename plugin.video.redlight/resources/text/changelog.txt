@@ -1,3 +1,6 @@
+[COLOR red][B]Version 2.1.7[/B][/COLOR]
+- [B]Continual Random Play[/B]: [B]Check Still Watching After X[/B] applies again (removed in 1.9.6). Same setting as Autoplay Next Episode; default 3. Setting is always listed under Playback > Episodes so source-select users can change it without enabling Autoplay Next Episode. Unsuccessful scrapes / no-results skips do not count toward Still Watching and do not stop the search (#62).
+
 [COLOR red][B]Version 2.1.6[/B][/COLOR]
 - [B]Watched Status Provider[/B]: live Settings, tips, and info text consistently use [B]Watched Status Provider[/B] and the picker name [B]Red Light[/B] (not mixed [I]Local[/I] / [I]Watched Indicators[/I]). [I]Local[/I] remains only for unrelated features (e.g. Local Media Folders, Local Subtitles) or when describing on-device storage.
 - [B]Meta Accounts[/B]: [B]Import Trakt to…[/B] (QR / copied link to each service's own import page) now matches under [B]MDBList[/B], [B]PunchPlay[/B], [B]Simkl[/B], and [B]WeTrakr[/B]. Red Light does not run the import — finish it on the website, then sync where available. WeTrakr remains scrobble-only for ticks in the addon. WeTrakr import URL: [I]https://wetrakr.com/profile/settings/data[/I].
@@ -208,7 +211,7 @@
 - [B]Playback[/B]: when a queued source fails to open (bad demux / dead link) and Red Light tries the next one, Kodi’s brief playback-failed confirm is force-closed instead of flash-clicked — quieter resolve cascade; final all-sources-failed dialog/toast unchanged.
 
 [COLOR red][B]Version 1.8.3[/B][/COLOR]
-- [B]Playback[/B]: start a new source while the current stream is [B]playing[/B] or [B]paused[/B] — scrape and resolve run normally; [B]play_file[/B] stops the current stream before the resolver opens (same replace workflow as v1.8.2 paused play). Closing the source list with [B]Back[/B] during active playback still does not reopen scrape over fullscreen.
+- [B]Playback[/B]: start a new source while the current stream is [B]playing[/B] or [B]paused[/B] — scrape and resolve run normally; [B]play_file[/B] stops the current stream before the resolver opens (same replace workflow as 1.8.2 paused play). Closing the source list with [B]Back[/B] during active playback still does not reopen scrape over fullscreen.
 - [B]Subtitles[/B]: same episode with the same release-tagged cache in [B]special://temp/[/B] no longer re-downloads from SubMaker or OpenSubtitles (replace play, normal play, and alert-timing fetch); no [B]Downloaded subtitles found[/B] toast on cache reuse. [B]Local subtitles found[/B] still suppressed when the embedded track already matches; superseded player threads no longer notify after play-while-playing.
 - [B]Trakt[/B] widgets ([B]In Progress[/B], [B]Watched[/B], etc.): after Kodi boot, list and widget loads use the local Trakt cache until the first background [B]TraktMonitor[/B] sync finishes (or a three-minute fallback), avoiding wrong rows on a slow first paint when sync and widget refresh overlapped; manual [B]Trakt Sync[/B] clears the gate immediately.
 
@@ -496,7 +499,7 @@
 - [B]Anime Providers[/B]: fixed empty lists when browsing [B]Anime[/B] by streaming provider.
 
 [COLOR red][B]Version 1.3.0 - 1.3.3[/B][/COLOR]
-- [B]Releases[/B]: test releases for v1.2.9x and v1.3.4.
+- [B]Releases[/B]: test releases for 1.2.9x and 1.3.4.
 
 [COLOR red][B]Version 1.2.9l[/B][/COLOR]
 - [B]Sources Browse[/B]: after browse playback, return to the sources results list without re-scraping.
@@ -515,7 +518,7 @@
 - [B]Prescrape[/B]: empty-cloud notice subtitle says [B]Results from other enabled scrapers[/B] (not results below) when global [B]Autoplay Movie[/B]/[B]Episode[/B] continues to external search.
 - [B]Playback[/B]: [B]Autoplay Episode[/B]/[B]Movie[/B] off no longer autoplays external torrent results; per-provider [B]Autoplay Cloud Result[/B] still autoplays cloud prescrape hits when the global setting is off.
 - [B]Playback[/B]: [B]Autoplay Cloud Result[/B] now applies on full-scrape cloud hits (not only the prescrape phase), uses provider autoplay settings instead of the active-scraper list, and no longer clears cloud autoplay when falling through to external; failed cloud autoplay shows cloud results instead of jumping straight to external.
-- [B]Playback[/B]: prescrape no longer blocks cloud scrapers from the full scrape when they returned no hits; play_source again autoplays cloud hits from per-provider settings at play time (restores pre-v1.2.9j behaviour while keeping global [B]Autoplay Episode[/B]/[B]Movie[/B] gating external only).
+- [B]Playback[/B]: prescrape no longer blocks cloud scrapers from the full scrape when they returned no hits; play_source again autoplays cloud hits from per-provider settings at play time (restores pre-1.2.9j behaviour while keeping global [B]Autoplay Episode[/B]/[B]Movie[/B] gating external only).
 - [B]Playback[/B]: [B]Autoplay Cloud Result[/B] now switches to a fresh resolver dialog after prescrape (scraper UI was blocking resolve) and falls back to the cloud results list if resolve fails.
 - [B]Playback[/B]: when [B]Check Before Full Search[/B] finds no cloud results but [B]Autoplay[/B] is on and external scrapers are enabled, external results now autoplay instead of always opening the results list (cloud autoplay > external autoplay cascade).
 - [B]Autoplay Next Episode[/B]: release the resolve lock once playback has started so the next episode can scrape in the background while the current episode is still playing; background next-episode searches bypass the resolve/sources busy gate that previously aborted silently.
@@ -544,10 +547,10 @@
 - [B]Autoplay[/B]: show [B]No Results Found[/B] when nothing is playable (e.g. only uncached external torrents, with [B]Include Uncached[/B] on or off) instead of closing silently; same dialog when autoplay/background resolve exhausts all links.
 
 [COLOR red][B]Version 1.2.9f[/B][/COLOR]
-- [B]TorBox[/B] and [B]Offcloud[/B]: [B]Include Uncached Results (External Scrapers)[/B] shown only when [B]Check Cached Status[/B] is enabled, matching Premiumize (v1.2.9e). Include uncached has no effect while cache check is off.
+- [B]TorBox[/B] and [B]Offcloud[/B]: [B]Include Uncached Results (External Scrapers)[/B] shown only when [B]Check Cached Status[/B] is enabled, matching Premiumize (1.2.9e). Include uncached has no effect while cache check is off.
 
 [COLOR red][B]Version 1.2.9e[/B][/COLOR]
-- [B]Intended functionality can[/B]: have unintended consequences! Reverted v1.2.6 cancel navigation: stopping playback or resolve during source selection closes the progress dialog and returns to the episode/results browser instead of reopening the sources list.
+- [B]Intended functionality can[/B]: have unintended consequences! Reverted 1.2.6 cancel navigation: stopping playback or resolve during source selection closes the progress dialog and returns to the episode/results browser instead of reopening the sources list.
 - [B]Resolve cancel[/B]: Fixed occasional FenLightAM behaviour where backing out of resolve causes Kodi crash.
 - [B]Scrape cancel[/B]: Changed FenLightAM behaviour, backing out of the progress dialog now aborts the search, releases the busy lock immediately, and suppresses late results.
 - [B]Prescrape[/B] ([B]Check Before Full Search[/B]): renamed [B]Run Full Source Search[/B] to [B]Run External Scraper Search[/B] in results; confirm prompt asks [B]Run external torrent scrapers?[/B] - cloud/EasyNews prescrape already ran; the follow-up step is external torrent scrapers only.
@@ -573,7 +576,7 @@
 - [B]Rescrape With Episode Group[/B]: fixed crashing when a custom group was already applied (another old FenLightAM bug).
 
 [COLOR red][B]Version 1.2.9a[/B][/COLOR]
-- [B]Offcloud[/B] support (ported from v1.3.x): QR OAuth auth, [B]My Services Cloud Storage[/B] and [B]History[/B], cloud scrape, external cache check, resolve, packs, highlight colour. [B]Include uncached results (Offcloud)[/B] under [B]External Scrapers[/B] (default Off). [B]Notify when added torrents are ready in Cloud[/B]. [B]Clear Offcloud Cache[/B] in cache tools.
+- [B]Offcloud[/B] support (ported from 1.3.x): QR OAuth auth, [B]My Services Cloud Storage[/B] and [B]History[/B], cloud scrape, external cache check, resolve, packs, highlight colour. [B]Include uncached results (Offcloud)[/B] under [B]External Scrapers[/B] (default Off). [B]Notify when added torrents are ready in Cloud[/B]. [B]Clear Offcloud Cache[/B] in cache tools.
 - [B]Sources Accounts[/B]: provider sections reordered alphabetically (AllDebrid, EasyNews, Offcloud, Premiumize, Real-Debrid, TorBox; [B]Local Media Folders[/B] last). [B]External Scrapers[/B] debrid toggles ordered Offcloud, Real-Debrid, TorBox when each provider is enabled.
 - [B]My Services[/B]: same alphabetical provider order (AllDebrid, EasyNews, Offcloud, Premiumize, Real-Debrid, TorBox).
 - [B]Custom Sort to Top[/B]: fixed for movies: [B]Set Filters to Top[/B] now promotes matching rows to the top of each quality band (4K, 1080p, etc.) instead of the 1.3.x tie-breaker that only reordered identical quality/size/provider rows. SD HDR no longer sorts above 1080p Remux. Debrid cloud results keep pref order when quality limits apply.
@@ -584,10 +587,10 @@
 - [B]When a source[/B]: search finds nothing, now shows a Red Light style [B]No results found[/B] dialog after the scrape progress window closes, with the Kodi dialog as a fallback if the skin window cannot open.
 
 [COLOR red][B]Version 1.2.8[/B][/COLOR]
-- [B]Playback[/B]: fixed progress / Trakt scrobbling (and Simkl, MDbList, etc.) not updating for TorBox and TorBox Cloud sources: v1.2.7 played those links with a bare Kodi player, skipping Red Light’s playback monitor and script.trakt.ids.
+- [B]Playback[/B]: fixed progress / Trakt scrobbling (and Simkl, MDbList, etc.) not updating for TorBox and TorBox Cloud sources: 1.2.7 played those links with a bare Kodi player, skipping Red Light’s playback monitor and script.trakt.ids.
 
 [COLOR red][B]Version 1.2.7[/B][/COLOR]
-- [B]Service (AM Lite)[/B]: optional wait for Account Manager Lite Trakt sync only when script.module.acctmgr is installed; runs in the background so startup is not blocked. Fixes “Unknown addon id script.module.acctmgr” log spam and scrape/playback failing to start when AM Lite is not installed (regression from v1.2.6).
+- [B]Service (AM Lite)[/B]: optional wait for Account Manager Lite Trakt sync only when script.module.acctmgr is installed; runs in the background so startup is not blocked. Fixes “Unknown addon id script.module.acctmgr” log spam and scrape/playback failing to start when AM Lite is not installed (regression from 1.2.6).
 
 [COLOR red][B]Version 1.2.6[/B][/COLOR]
 - [B]TorBox Cloud (source search)[/B]: fixed intermittent empty results - folder list cache call was invalid.
@@ -596,7 +599,7 @@
 - [B]Cancel during playback/resolve[/B]: returns straight to the sources results list; progress dialog closes faster on cancel.
 - [B]Cancel during resolve[/B]: stops retrying other sources and returns to the sources list instead of the results/episode browser.
 - [B]Premiumize/TorBox cloud[/B]: episode files use exact S/E matching end-to-end; title filter no longer uses pack-range episode patterns (fixes episode 1 listing episode 2).
-- [B]TorBox cloud scrape[/B]: restored v1.2.5 search speed by using cached mylist during source search (live bypass_cache only for Cloud Storage browse). Keeps RD-style title+year folder prefilter and per-folder fetch cap so large libraries do not hang.
+- [B]TorBox cloud scrape[/B]: restored 1.2.5 search speed by using cached mylist during source search (live bypass_cache only for Cloud Storage browse). Keeps RD-style title+year folder prefilter and per-folder fetch cap so large libraries do not hang.
 - [B]TorBox[/B]: Cloud Storage loads all torrent/usenet/webdl lists in parallel (faster, full list on open); only caches a complete fetch for quick Back navigation. Partial API failures are not cached and show a notification.
 - [B]TorBox[/B]: Fixed Cloud Storage folder browse on Kodi 21 (removed deprecated setInfo; use name/file_id from API). Cloud Storage list loads sequentially in the UI to avoid plugin thread errors; source search still uses parallel mylist fetch.
 - [B]Sources[/B]: fixed debrid cloud (RD/PM/AD/TB) always appearing at the bottom when [B]Show Results at Top[/B] is off: quality limits re-appended all cloud results after non-cloud links; they are now re-sorted into the normal provider/quality order unless [B]Show Results at Top[/B] is enabled for that scraper.
@@ -608,7 +611,7 @@
 [COLOR red][B]Version 1.2.5[/B][/COLOR]
 - [B]Results > Choose Rescrape Actions[/B]: fixed crashing (KeyError) after [B]Start Full Scrape[/B] was added: order labels and the [B]Set Order[/B] dialog now support six priority slots (0–5).
 - [B]Scrape Progress[/B]: fixed progress bar stuck on [B]EXTERNAL[/B] after debrid/EasyNews scrapers finish: the [B]External[/B] scrapers module name was treated as a pending internal provider, so the dialog waited for the full [B]Results Timeout[/B] even when no torrent hosts were still running.
-- [B]External scraper phase taking[/B]: fixed external scraper phase taking much longer than Red Light v1.1.8: since v1.2.2, Debrid Cloud scrapers blocked the Coco/Magneto/Gears External module until every cloud API call finished (v1.2.4 added up to 25s more). Cloud scrapers still start first when enabled, but External runs in parallel again like v1.1.8.
+- [B]External scraper phase taking[/B]: fixed external scraper phase taking much longer than Red Light 1.1.8: since 1.2.2, Debrid Cloud scrapers blocked the Coco/Magneto/Gears External module until every cloud API call finished (1.2.4 added up to 25s more). Cloud scrapers still start first when enabled, but External runs in parallel again like 1.1.8.
 
 [COLOR red][B]Version 1.2.4[/B][/COLOR]
 - [B]TorBox Cloud[/B]: cloud search now respects the Results Timeout budget and skips non-matching folders earlier, so a large TorBox library no longer blocks the entire source search when nothing matches.
@@ -618,7 +621,7 @@
 
 [COLOR red][B]Version 1.2.3[/B][/COLOR]
 - [B]Widgets[/B]: fixed skin widgets (e.g. [B]Movies > Trending[/B]) staying empty after a settings DB upgrade: widget calls no longer block on settings bootstrap, failed Trakt list fetches are not cached, and widgets are silently reloaded with [B]ReloadSkin[/B] only when sync_settings actually migrates or repairs an existing [B]settings.db[/B] (not on every boot).
-- [B]Performance[/B]: fixed slow startup and browsing after the v1.2.2 boot-crash fix: settings reads no longer hit SQLite on every call once properties are loaded, the database is not synced twice on boot, path-existence checks are skipped on the read path, and default-settings metadata is cached in memory.
+- [B]Performance[/B]: fixed slow startup and browsing after the 1.2.2 boot-crash fix: settings reads no longer hit SQLite on every call once properties are loaded, the database is not synced twice on boot, path-existence checks are skipped on the read path, and default-settings metadata is cached in memory.
 - [B]Widgets[/B]: fixed widget and skin list loads hanging after 5 seconds (or failing) after opening Red Light: the font/skin background thread now runs only in the service process, not in the plugin invoker where it blocked every widget exit.
 - [B]Widgets[/B]: fixed widgets staying empty after the above change — widget calls no longer bulk-load settings into window properties (which could fail silently); they read from a warmed in-memory DB cache instead when properties are not yet loaded.
 

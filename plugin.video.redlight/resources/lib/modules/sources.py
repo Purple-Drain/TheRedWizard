@@ -387,7 +387,14 @@ class Sources():
 		if self.background and self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
 			self._log_nextep_scrape_started()
 			self._prefetch_nextep_segment_data()
-		if self.background and self.autoplay_nextep and self.nextep_settings and not getattr(self, '_nextep_alert_handled', False):
+		if self.background and self.play_type == 'random_continual' and not self.nextep_settings:
+			# Continual Random reuses Autoplay Next Episode's "Check Still Watching After X".
+			self.nextep_settings = {'watching_check': settings.auto_nextep_settings('autoplay_nextep')['watching_check']}
+		# Continual Random no-results skips must not run Still Watching — unsuccessful scrapes
+		# must not burn the binge budget (Dateline / #62).
+		continual_skip = self.play_type == 'random_continual' and params_get('continual_skip', 'false') == 'true'
+		if self.background and (self.autoplay_nextep or self.play_type == 'random_continual') and self.nextep_settings \
+				and not getattr(self, '_nextep_alert_handled', False) and not continual_skip:
 			if not self.still_watching_check():
 				self._decline_nextep_prep('still watching')
 				kodi_utils.notification('Cancel Autoplay', icon=self.meta.get('poster'))
@@ -1395,7 +1402,7 @@ class Sources():
 		return self._show_modal_message(heading, 'No results found.', '[B]Next Up:[/B] No Results')
 
 	def _random_continual_skip(self):
-		"""Continual random: no links for this episode — try another (capped)."""
+		"""Continual random: no links — try another (capped). Unsuccessful scrapes do not advance Still Watching."""
 		from modules.episode_tools import EpisodeTools
 		attempts = int(kodi_utils.get_property(PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS) or 0)
 		self._close_progress_before_modal()
@@ -1406,7 +1413,14 @@ class Sources():
 		kodi_utils.logger('Red Light', 'Continual random play: no results for %s S%02dE%02d, skipping to another episode' % (
 			self.meta.get('title', ''), self.meta.get('season', 0), self.meta.get('episode', 0)))
 		meta = metadata.tvshow_meta('tmdb_id', self.tmdb_id, settings.tmdb_api_key(), settings.mpaa_region(), get_datetime())
-		return EpisodeTools(meta).play_random_continual(first_run=False)
+		# Undo Still Watching increment from this failed prep so only played episodes count.
+		try:
+			watch_count = int(self.meta.get('watch_count', self.watch_count or 1))
+		except (TypeError, ValueError):
+			watch_count = 1
+		if watch_count > 1: watch_count -= 1
+		meta['watch_count'] = watch_count
+		return EpisodeTools(meta).play_random_continual(first_run=False, from_skip=True)
 
 	def get_search_title(self):
 		search_title = self.meta.get('custom_title', None) or self.meta.get('english_title') or self.meta.get('title')
@@ -2618,7 +2632,7 @@ class Sources():
 		watching_check = self.nextep_settings.get('watching_check', 0)
 		if watching_check == 0: return True
 		player = kodi_utils.kodi_player()
-		# Autoplay next-episode idle edge case: don't prompt/count when nothing is playing.
+		# Don't prompt/count when nothing is playing (Autoplay idle + Continual Random cold-start skips).
 		if not player.isPlayingVideo():
 			return bool(self.background)
 		watch_count = self.meta.get('watch_count')

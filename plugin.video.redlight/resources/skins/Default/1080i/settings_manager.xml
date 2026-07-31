@@ -4169,11 +4169,10 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true)</visible>
-                          <property name="setting_label">    - Check Still Watching After... (0=Off)</property>
+                          <property name="setting_label">Check Still Watching After... (0=Off)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_watching_check)]</property>
-                          <property name="setting_description">Choose after how many autoplayed episodes Red Light will ask if you are still watching. Set to 0 to disable</property>
+                          <property name="setting_description">After this many played episodes, ask if you are still watching. Applies to Autoplay Next Episode and Continual Random Play. Continual Random no-results skips do not count. Set to 0 to disable. Default 3</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=autoplay_watching_check)</onclick>
                       </item>
                       <item>

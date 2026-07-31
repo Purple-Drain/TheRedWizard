@@ -436,7 +436,7 @@ NEXTEP_STOP_NOTIFY_REMAINING_SEC = 90
 def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
 	# Scrape budget (results.timeout + NEXTEP_SCRAPE_MARGIN_SEC) plus time for still-watching / autoscrape confirm dialogs.
 	headroom = int(scraper_time)
-	if 'autoplay' in play_type and still_watching_due:
+	if still_watching_due:
 		headroom += NEXTEP_COMMAND_HEADROOM_SEC
 	if 'autoscrape' in play_type and autoscrape_confirm():
 		headroom += NEXTEP_COMMAND_HEADROOM_SEC
