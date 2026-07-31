@@ -26,9 +26,10 @@
 		<website>https://redwizard.xyz/</website> 
 		<email>info@redwizard.xyz</email>
 		<source>https://github.com/The-Red-Wizard</source>
-        <news>[COLOR red]2026-07-30
+        <news>[COLOR red]2026-07-31
 - Summary of v1.2.3 (see Tools > Changelog for the detail):
- * Trakt: failed / zero-time playback no longer stop-scrobbles at a stale resume %</COLOR]</news>
+ * Trakt: failed / zero-time playback no longer stop-scrobbles at a stale resume %
+ * Simkl: account row shows your real name (revoke and re-authorise to refresh)[/COLOR]</news>
         <assets>
             <icon>resources/images/icon.png</icon>
             <fanart>resources/images/fanart.jpg</fanart>
