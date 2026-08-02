@@ -423,7 +423,7 @@ def mark_movie(params):
 	watched_indicators = settings.watched_indicators()
 	if watched_indicators == 1:
 		if from_playback and trakt_official_status(media_type) == False: sleep(1000)
-		elif not trakt_watched_status_mark(action, 'movies', tmdb_id): return notification('Error')
+		elif not trakt_watched_status_mark(action, 'movies', tmdb_id) and not from_playback: return notification('Error')
 		clear_trakt_collection_watchlist_data('watchlist', media_type)
 	elif watched_indicators == 2:
 		if from_playback and simkl_official_status(media_type) == False: sleep(1000)
@@ -532,7 +532,8 @@ def mark_episode(params):
 	watched_indicators = settings.watched_indicators()
 	if watched_indicators == 1:
 		if from_playback and trakt_official_status(media_type) == False: sleep(1000)
-		elif not trakt_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode): return notification('Error')
+		elif not trakt_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback:
+			return notification('Error')
 		clear_trakt_collection_watchlist_data('watchlist', 'tvshow')
 	elif watched_indicators == 2:
 		if from_playback and simkl_official_status(media_type) == False: sleep(1000)

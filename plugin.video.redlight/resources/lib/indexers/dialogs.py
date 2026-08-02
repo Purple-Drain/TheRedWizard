@@ -912,8 +912,10 @@ def playback_choice(params):
 	poster = meta.get('poster') or kodi_utils.get_icon('box_office')
 	aliases = get_aliases_titles(make_alias_dict(meta, meta['title']))
 	check_cache_status, check_cache_toggle = ('OFF', 'false') if settings.any_external_cache_check() else ('ON', 'true')
-	items = [{'line': 'Select Source', 'function': 'scrape'},
-			{'line': 'Rescrape & Select Source', 'function': 'clear_and_rescrape'}]
+	items = []
+	if media_type == 'episode': items.append({'line': 'Play # Episodes', 'function': 'play_number_eps'})
+	items.extend([{'line': 'Select Source', 'function': 'scrape'},
+			{'line': 'Rescrape & Select Source', 'function': 'clear_and_rescrape'}])
 	if debrid_cache_check_available():
 		items.append({'line': 'Rescrape with External Cache Check [B]%s[/B]' % check_cache_status, 'function': 'rescrape_external_cache_check'})
 	items.extend([{'line': 'Clear Debrid Cache & Show Results', 'function': 'clear_debrid_cache_and_show'},
@@ -935,7 +937,14 @@ def playback_choice(params):
 		clear_cache('internal_scrapers', silent=True)
 		ExternalCache().delete_cache_single(media_type, str(meta['tmdb_id']))
 		kodi_utils.hide_busy_dialog()
-	if choice == 'scrape':
+	if choice == 'play_number_eps':
+		num_episodes = kodi_utils.kodi_dialog().input('Number of episodes', type=1)
+		try: num_episodes = int(num_episodes)
+		except: num_episodes = 0
+		if num_episodes < 1: return kodi_utils.notification('Cancelled', 2500)
+		play_params = {'mode': play_mode, 'media_type': 'episode', 'tmdb_id': meta['tmdb_id'],
+						'season': season, 'episode': episode, 'num_episodes': str(num_episodes)}
+	elif choice == 'scrape':
 		if media_type == 'movie': play_params = {'mode': play_mode, 'media_type': 'movie', 'tmdb_id': meta['tmdb_id'], 'autoplay': 'false', 'prescrape': 'false'}
 		else: play_params = {'mode': play_mode, 'media_type': 'episode', 'tmdb_id': meta['tmdb_id'],
 							'season': season, 'episode': episode, 'autoplay': 'false', 'prescrape': 'false'}
@@ -1250,7 +1259,7 @@ def options_menu_choice(params, meta=None):
 	season, episode = params_get('season', ''), params_get('episode', '')
 	single_ep_list = ('episode.progress', 'episode.recently_watched', 'episode.next_trakt', 'episode.next_redlight', 'episode.next_simkl', 'episode.next_mdblist',
 					'episode.next_punchplay', 'episode.mdblist_next', 'episode.trakt_recently_aired', 'episode.trakt_calendar', 'episode.mdblist_calendar',
-					'episode.punchplay_calendar')
+					'episode.punchplay_calendar', 'episode.simkl_calendar')
 	if not content: content = kodi_utils.container_content()[:-1]
 	menu_type = content
 	if content.startswith('episode.'): content = 'episode'

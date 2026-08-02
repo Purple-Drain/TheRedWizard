@@ -434,6 +434,14 @@ def trakt_watched_status_mark(action, media, media_id, tvdb_id=0, season=None, e
 		if media != 'movies' and tvdb_id != 0 and key != 'tvdb': return trakt_watched_status_mark(action, media, tvdb_id, 0, season, episode, 'tvdb')
 		# Remove with 0 deleted = already unwatched on Trakt — not a failure.
 		if action != 'mark_as_watched': return True
+		# Add with 0 added = already watched (common after scrobble/stop at 90%) — not a failure
+		# unless Trakt reports the ids as not_found.
+		try:
+			not_found = result.get('not_found') or {}
+			if not any(not_found.get(k) for k in ('movies', 'shows', 'seasons', 'episodes')):
+				return True
+		except:
+			pass
 	return success
 
 def _trakt_scrobble_payload(media_type, tmdb_id, percent, season=None, episode=None):

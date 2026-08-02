@@ -12,6 +12,10 @@ def tmdb_lists_read_token():
 def trakt_client():
 	return get_setting('redlight.trakt.client', '')
 
+def simkl_client():
+	"""Simkl Client ID from Meta Accounts; empty falls back to the shipped default in simkl_api."""
+	return (get_setting('redlight.simkl.client', '') or '').strip()
+
 def mdblist_client():
 	return get_setting('redlight.mdblist.client', '')
 

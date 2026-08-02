@@ -17,14 +17,17 @@ def random_valid_type_check():
 	return {'build_movie_list': 'movie', 'build_tvshow_list': 'tvshow', 'build_season_list': 'season', 'build_episode_list': 'episode',
 	'build_in_progress_episode': 'single_episode', 'build_recently_watched_episode': 'single_episode', 'build_next_episode': 'single_episode',
 	'build_my_calendar': 'single_episode', 'build_mdbl_calendar': 'single_episode', 'build_punchplay_calendar': 'single_episode',
+	'build_simkl_calendar': 'single_episode',
 	'build_mdbl_next_up': 'single_episode', 'build_trakt_lists': 'trakt_list',
 	'trakt.list.build_trakt_list': 'trakt_list', 'build_trakt_lists_contents': 'trakt_list', 'personal_lists.build_personal_list': 'personal_list',
-	'build_personal_lists_contents': 'personal_list', 'tmdblist.build_tmdb_list': 'tmdb_list', 'build_tmdb_lists_contents': 'tmdb_list'}
+	'build_personal_lists_contents': 'personal_list', 'tmdblist.build_tmdb_list': 'tmdb_list', 'build_tmdb_lists_contents': 'tmdb_list',
+	'mdblist.build_mdbl_list': 'mdblist_list', 'build_mdblist_lists_contents': 'mdblist_list'}
 
 def random_episodes_check():
 	return {'build_in_progress_episode': 'episode.progress', 'build_recently_watched_episode': 'episode.recently_watched',
 	'build_next_episode': 'episode.next', 'build_my_calendar': 'episode.trakt', 'build_mdbl_calendar': 'episode.mdblist',
-	'build_mdbl_next_up': 'episode.mdblist_next', 'build_punchplay_calendar': 'episode.punchplay'}
+	'build_mdbl_next_up': 'episode.mdblist_next', 'build_punchplay_calendar': 'episode.punchplay',
+	'build_simkl_calendar': 'episode.simkl'}
 
 def extras_button_label_values():
 	return {'movie':
@@ -351,7 +354,9 @@ def set_browse_exit_params(list_mode='tvshow', action=None):
 
 def browse_list_exit_params(list_mode='tvshow', action=None):
 	folder_path = get_infolabel('Container.FolderPath')
-	parent_tokens = ('navigator.', 'mdblist.', 'punchplay.', 'simkl.', 'trakt.list', 'tmdblist.', 'personal_lists.', 'build_tmdb_lists_contents')
+	parent_tokens = (
+		'navigator.', 'mdblist.', 'punchplay.', 'simkl.', 'trakt.list', 'tmdblist.', 'personal_lists.',
+		'build_tmdb_lists_contents', 'build_mdblist_lists_contents')
 	if any(token in folder_path for token in parent_tokens):
 		return sanitize_folder_url(folder_path)
 	if action:
@@ -380,6 +385,13 @@ def list_collection_exit_params(params=None):
 		return build_folder_url({'mode': 'tmdblist.get_tmdb_lists'})
 	if mode in ('personal_lists.build_personal_list', 'random.build_personal_lists_contents'):
 		return build_folder_url({'mode': 'personal_lists.get_personal_lists'})
+	if mode in ('mdblist.build_mdbl_list', 'random.build_mdblist_lists_contents'):
+		list_type = params.get('list_type', 'my_lists')
+		if list_type == 'liked_lists':
+			return build_folder_url({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Liked Lists'})
+		if list_type == 'user_lists':
+			return build_folder_url({'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Popular MDBLists'})
+		return build_folder_url({'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists'})
 	return sanitize_folder_url(folder_path)
 
 _browse_action_exit_params = {

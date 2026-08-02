@@ -354,6 +354,19 @@ class Sources():
 		self.nextep_settings, self.disable_autoplay_next_episode = params_get('nextep_settings', {}), params_get('disable_autoplay_next_episode', 'false') == 'true'
 		if getattr(self, '_nextep_stash_settings', None):
 			self.nextep_settings = self._nextep_stash_settings
+		self.num_episodes = params_get('num_episodes', None)
+		if not self.num_episodes and isinstance(self.nextep_settings, dict):
+			self.num_episodes = self.nextep_settings.get('num_episodes')
+		# Play # Episodes: force Autoplay Next for the remaining chain; stop after the last.
+		try: _play_n = int(self.num_episodes) if self.num_episodes not in (None, '') else 0
+		except: _play_n = 0
+		if _play_n > 1:
+			self.autoplay_nextep, self.autoscrape_nextep = True, False
+			self.autoscrape = False
+			if not self.play_type: self.play_type = 'autoplay_nextep'
+		elif self.num_episodes not in (None, '') and _play_n <= 1:
+			self.autoplay_nextep, self.autoscrape_nextep = False, False
+			self.autoscrape = False
 		self.disabled_ext_ignored = params_get('disabled_ext_ignored', self.disabled_ext_ignored) == 'true'
 		self.folders_ignore_filters = get_setting('redlight.results.folders_ignore_filters', 'false') == 'true'
 		self.filter_size_method = int(get_setting('redlight.results.filter_size_method', '0'))
@@ -393,8 +406,9 @@ class Sources():
 		# Continual Random no-results skips must not run Still Watching — unsuccessful scrapes
 		# must not burn the binge budget (Dateline / #62).
 		continual_skip = self.play_type == 'random_continual' and params_get('continual_skip', 'false') == 'true'
+		play_n_episodes = bool(self.num_episodes) or bool(isinstance(self.nextep_settings, dict) and self.nextep_settings.get('play_n_episodes'))
 		if self.background and (self.autoplay_nextep or self.play_type == 'random_continual') and self.nextep_settings \
-				and not getattr(self, '_nextep_alert_handled', False) and not continual_skip:
+				and not getattr(self, '_nextep_alert_handled', False) and not continual_skip and not play_n_episodes:
 			if not self.still_watching_check():
 				self._decline_nextep_prep('still watching')
 				kodi_utils.notification('Cancel Autoplay', icon=self.meta.get('poster'))

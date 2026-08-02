@@ -27,7 +27,9 @@ def _throttle():
 		_last_request_time = time.time()
 
 def _client_id():
-	return SIMKL_CLIENT_ID
+	"""Prefer Meta Accounts Simkl Client ID; fall back to the shipped default."""
+	try: return settings.simkl_client() or SIMKL_CLIENT_ID
+	except Exception: return SIMKL_CLIENT_ID
 
 def _simkl_token():
 	from caches.settings_cache import settings_cache
@@ -826,8 +828,10 @@ def simkl_sync_activities(params=None, force_update=False):
 		clear_simkl_list_status_cache('movies')
 	if force_update or _activity_block_changed(shows, cached_shows, _SIMKL_LIST_ACTIVITY_KEYS):
 		clear_simkl_list_status_cache('shows')
+		clear_simkl_calendar_cache()
 	if force_update or _activity_block_changed(anime, cached_anime, _SIMKL_LIST_ACTIVITY_KEYS):
 		clear_simkl_list_status_cache('anime')
+		clear_simkl_calendar_cache()
 	if force_update or _activity_block_changed(movies, cached_movies, watched_keys_movies):
 		simkl_indicators_movies()
 	# Anime watched history lives under activities.anime — must refresh indicators too.
@@ -857,14 +861,140 @@ def simkl_force_sync(params=None):
 	return status
 
 SIMKL_TRENDING_BASE = 'https://data.simkl.in/discover/trending'
+SIMKL_CALENDAR_CDN_BASE = 'https://data.simkl.in/calendar/v2'
+SIMKL_CALENDAR_CACHE_KEY = 'simkl_calendar_v2_joined'
 _SIMKL_TRENDING_TRAKT_KEYS = {'movies': 'movie', 'tv': 'show', 'anime': 'show'}
 
 def _simkl_trending_url(media_kind):
 	return '%s/%s/today_100.json' % (SIMKL_TRENDING_BASE, media_kind)
 
-def _simkl_trending_query_url(url):
+def _simkl_cdn_query_url(url):
 	sep = '&' if '?' in url else '?'
 	return '%s%sclient_id=%s&app-name=%s&app-version=%s' % (url, sep, _client_id(), SIMKL_APP_NAME, kodi_utils.addon_version())
+
+def _simkl_trending_query_url(url):
+	return _simkl_cdn_query_url(url)
+
+def clear_simkl_calendar_cache():
+	try: simkl_cache.simkl_cache.delete(SIMKL_CALENDAR_CACHE_KEY)
+	except: pass
+
+def _simkl_calendar_library_by_simkl():
+	"""Watching + Plan to Watch (shows + anime), keyed by Simkl id."""
+	shows_by_simkl = {}
+	for status in ('watching', 'plantowatch'):
+		for media_kind in ('shows', 'anime'):
+			for row in _simkl_fetch_status(media_kind, status) or []:
+				try:
+					sid = str((row.get('media_ids') or {}).get('simkl') or '')
+					if sid: shows_by_simkl[sid] = row
+				except Exception:
+					continue
+	return shows_by_simkl
+
+def _simkl_fetch_calendar_feed(feed):
+	url = _simkl_cdn_query_url('%s/%s.json' % (SIMKL_CALENDAR_CDN_BASE, feed))
+	_throttle()
+	try:
+		resp = requests.get(url, headers=_pin_headers(), timeout=META_API_TIMEOUT)
+		if resp.status_code != 200:
+			kodi_utils.logger('Simkl', 'Calendar CDN HTTP %s for %s' % (resp.status_code, feed))
+			return []
+		payload = resp.json()
+	except Exception as e:
+		kodi_utils.logger('Simkl', 'Calendar CDN error %s: %s' % (feed, e))
+		return []
+	if isinstance(payload, dict):
+		calendar_rows = payload.get('calendar', [])
+	else:
+		calendar_rows = payload or []
+	return calendar_rows if isinstance(calendar_rows, list) else []
+
+def _simkl_calendar_row(entry, library_row):
+	"""Normalize a CDN airing + library show into the shared calendar row shape."""
+	ep = entry.get('episode', {}) or {}
+	try:
+		ep_no = int(ep.get('episode'))
+	except Exception:
+		return None
+	try:
+		season_no = int(ep.get('season') or 0)
+	except Exception:
+		season_no = 0
+	mids = dict(library_row.get('media_ids') or {})
+	try:
+		tmdb = int(mids.get('tmdb'))
+	except Exception:
+		return None
+	# Anime v2 rows often omit season — include as S01 when TMDb exists (better than FenLight drop).
+	if season_no <= 0: season_no = 1
+	title = library_row.get('title') or ''
+	aired = str(entry.get('date') or '').split('T')[0]
+	if not aired: return None
+	media_ids = {'tmdb': tmdb}
+	for key in ('imdb', 'tvdb', 'simkl'):
+		val = mids.get(key)
+		if val not in _SIMKL_ID_EMPTY: media_ids[key] = val
+	return {
+		'sort_title': '%s s%s e%s' % (title, str(season_no).zfill(2), str(ep_no).zfill(2)),
+		'media_ids': media_ids,
+		'season': season_no,
+		'episode': ep_no,
+		'first_aired': aired
+	}
+
+def _simkl_build_calendar_joined():
+	shows_by_simkl = _simkl_calendar_library_by_simkl()
+	if not shows_by_simkl: return []
+	data = []
+	for feed in ('tv', 'anime'):
+		for entry in _simkl_fetch_calendar_feed(feed):
+			if not isinstance(entry, dict): continue
+			try:
+				row = shows_by_simkl.get(str(entry.get('simkl_id') or ''))
+				if not row: continue
+				normalized = _simkl_calendar_row(entry, row)
+				if normalized: data.append(normalized)
+			except Exception:
+				continue
+	return [i for n, i in enumerate(data) if i not in data[n + 1:]]
+
+def _filter_simkl_calendar_day_window(data):
+	from datetime import date
+	start_date, end_date = settings.calendar_day_window()
+	filtered = []
+	for item in data:
+		try:
+			aired = date.fromisoformat(str(item.get('first_aired', ''))[:10])
+		except Exception:
+			continue
+		if start_date <= aired <= end_date:
+			filtered.append(item)
+	return filtered
+
+def simkl_get_my_calendar(dummy=None):
+	"""Personal episode calendar: CDN calendar/v2 joined to Watching + Plan to Watch.
+
+	Cached joined payload is unfiltered; Show Previous/Future Days is applied on read
+	so shared Calendars settings match PunchPlay/MDBList without waiting for cache expiry.
+	"""
+	if not settings.simkl_user_active(): return []
+	cached = simkl_cache.simkl_cache.get(SIMKL_CALENDAR_CACHE_KEY)
+	if cached:
+		data = cached
+	else:
+		data = _simkl_build_calendar_joined() or []
+		if data: simkl_cache.simkl_cache.set(SIMKL_CALENDAR_CACHE_KEY, data)
+		elif cached is not None:
+			simkl_cache.simkl_cache.delete(SIMKL_CALENDAR_CACHE_KEY)
+	filtered = _filter_simkl_calendar_day_window(data)
+	try:
+		start_date, end_date = settings.calendar_day_window()
+		kodi_utils.logger('Red Light', 'Simkl calendar: %s cached/fetched, %s in day window (%s → %s)' % (
+			len(data), len(filtered), start_date, end_date))
+	except Exception:
+		pass
+	return filtered
 
 def _simkl_trending_ids(item):
 	ids = item.get('ids') or {}

@@ -219,6 +219,7 @@ class Navigator:
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'because_you_watched'}, 'Random Because You Watched', 'because_you_watched')
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'personal_lists'}, 'Random Personal Lists', 'lists')
 		if s.punchplay_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'punchplay_lists'}, 'Random PunchPlay Lists', 'punchplay')
+		if s.mdblist_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'mdblist_lists'}, 'Random MDBList Lists', 'mdblist')
 		if s.simkl_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'simkl_lists'}, 'Random Simkl Lists', 'simkl')
 		if s.tmdblist_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'tmdb_lists'}, 'Random TMDb Lists', 'tmdb')
 		if s.trakt_user_active():
@@ -243,7 +244,7 @@ class Navigator:
 		return link
 
 	def simkl_lists(self):
-		"""Grouped status shelves — Plan to Watch → Watching → On Hold → Completed → Dropped."""
+		"""Grouped status shelves — Plan to Watch → Watching → On Hold → Completed → Dropped → Calendar."""
 		self.category_name = 'Simkl Lists'
 		for mode, label, icon in (
 			('simkl_watchlists', 'Plan to Watch', 'lists'),
@@ -253,6 +254,7 @@ class Navigator:
 			('simkl_dropped', 'Dropped', 'lists'),
 		):
 			self._safe_add({'mode': 'navigator.%s' % mode}, label, icon)
+		self._safe_add({'mode': 'build_simkl_calendar'}, 'Calendar', 'calender')
 		self._safe_add({'mode': 'navigator.search_history', 'action': 'simkl_lists'}, 'Search My Simkl Lists', 'search')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
@@ -298,16 +300,17 @@ class Navigator:
 		self.end_directory()
 
 	def mdblist_lists(self):
-		"""Grouped: Watchlist → Library → Dropped → My Lists → Liked → Popular → Next Up → Calendar."""
+		"""Grouped: Watchlist → Library → Dropped → My Lists → Liked → Popular → Next Up → Calendar → Search."""
 		self.category_name = 'MDBList Lists'
 		self._safe_add({'mode': 'navigator.mdblist_watchlists'}, 'Watchlist', 'lists')
 		self._safe_add({'mode': 'navigator.mdblist_library'}, 'Library', 'folder')
 		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_droplist', 'category_name': 'Dropped TV Shows'}, 'Dropped', 'lists')
 		self._safe_add({'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists'}, 'My Lists', 'lists')
-		self._safe_add({'mode': 'navigator.mdblist_liked'}, 'Liked Lists', 'favorites')
+		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Liked Lists'}, 'Liked Lists', 'favorites')
 		self._safe_add({'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Popular MDBLists'}, 'Popular MDBLists', 'popular')
 		self._safe_add({'mode': 'build_mdbl_next_up'}, 'Next Up', 'next_episodes')
 		self._safe_add({'mode': 'build_mdbl_calendar'}, 'Calendar', 'calender')
+		self._safe_add({'mode': 'navigator.search_history', 'action': 'mdblist_my_lists'}, 'Search My MDBLists', 'search')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
 
@@ -326,13 +329,6 @@ class Navigator:
 					cm_items=self._sort_cm('mdblist.collection', 'movies', 'mdblist_collection'))
 		self._safe_add({'mode': 'build_tvshow_list', 'action': 'mdblist_collection', 'category_name': 'TV Shows Library'}, 'TV Shows', 'tv',
 					cm_items=self._sort_cm('mdblist.collection', 'shows', 'mdblist_collection'))
-		self._set_exit_params({'mode': 'navigator.mdblist_lists'})
-		self.end_directory()
-
-	def mdblist_liked(self):
-		self.category_name = 'Liked Lists'
-		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Movies Liked Lists', 'media_type': 'movie'}, 'Movies', 'movies')
-		self._safe_add({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'TV Shows Liked Lists', 'media_type': 'tvshow'}, 'TV Shows', 'tv')
 		self._set_exit_params({'mode': 'navigator.mdblist_lists'})
 		self.end_directory()
 
@@ -670,6 +666,7 @@ class Navigator:
 		'nzb_search': ('nzb_queries', {'mode': 'search.get_key_id', 'search_type': 'nzb_search', 'isFolder': 'false'}),
 		'trakt_lists': ('trakt_list_queries', {'mode': 'search.get_key_id', 'search_type': 'trakt_lists', 'isFolder': 'false'}),
 		'trakt_my_lists': ('trakt_my_list_queries', {'mode': 'search.get_key_id', 'search_type': 'trakt_my_lists', 'isFolder': 'false'}),
+		'mdblist_my_lists': ('mdblist_my_list_queries', {'mode': 'search.get_key_id', 'search_type': 'mdblist_my_lists', 'isFolder': 'false'}),
 		'simkl_lists': ('simkl_list_queries', {'mode': 'search.get_key_id', 'search_type': 'simkl_lists', 'isFolder': 'false'}),
 		'punchplay_lists': ('punchplay_list_queries', {'mode': 'search.get_key_id', 'search_type': 'punchplay_lists', 'isFolder': 'false'})}
 		setting_id, action_dict = search_mode_dict[self.list_name]
@@ -879,6 +876,7 @@ class Navigator:
 		'because_you_watched': ('Random Because You Watched Lists', nc.random_because_you_watched_lists),
 		'tmdb_lists': ('Random TMDb Lists', nc.random_tmdb_lists),
 		'personal_lists': ('Random Personal Lists', nc.random_personal_lists),
+		'mdblist_lists': ('Random MDBList Lists', nc.random_mdblist_lists),
 		'trakt_personal': ('Random Trakt Lists (Personal)', nc.random_trakt_lists_personal),
 		'trakt_public': ('Random Trakt Lists (Public)', nc.random_trakt_lists_public),
 		'simkl_lists': ('Random Simkl Lists', nc.random_simkl_lists),

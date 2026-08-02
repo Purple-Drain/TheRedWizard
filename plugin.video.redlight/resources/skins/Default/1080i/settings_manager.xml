@@ -1426,12 +1426,12 @@
                           <property name="setting_description">Enable this to include unaired episodes within Next Episodes. They will show with a RED highlight and become visible within 7 days of their airdate</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.include_unaired)</onclick>
                       </item>
-        <!-- Calendars (MDBList + PunchPlay + Trakt — shared episode-list UI) -->
+        <!-- Calendars (MDBList + PunchPlay + Simkl + Trakt — shared episode-list UI) -->
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Calendars</property>
                           <property name="setting_type">separator</property>
-                          <property name="setting_description">Shared options for [B]MDBList Calendar[/B], [B]PunchPlay Calendar[/B], and [B]Trakt Calendar[/B] (same episode-list UI under My Lists).</property>
+                          <property name="setting_description">Shared options for [B]MDBList Calendar[/B], [B]PunchPlay Calendar[/B], [B]Simkl Calendar[/B], and [B]Trakt Calendar[/B] (same episode-list UI under My Lists).</property>
                           <onclick>noop</onclick>
                       </item>
                       <item>
@@ -1439,7 +1439,7 @@
                           <property name="setting_label">Flatten TV Shows Airing on Same Day</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.flatten_episodes)]</property>
-                          <property name="setting_description">Enable this to limit to the first instance of a TV Show episode when that TV Show has multiple episodes airing on the same day in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar.</property>
+                          <property name="setting_description">Enable this to limit to the first instance of a TV Show episode when that TV Show has multiple episodes airing on the same day in MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=trakt.flatten_episodes)</onclick>
                       </item>
                       <item>
@@ -1447,7 +1447,7 @@
                           <property name="setting_label">Calendar Display Format - Within Addon</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_display_name)]</property>
-                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar within the addon.</property>
+                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar within the addon.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_display)</onclick>
                       </item>
                       <item>
@@ -1455,7 +1455,7 @@
                           <property name="setting_label">Calendar Display Format - Widgets</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_display_widget_name)]</property>
-                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar for widgets.</property>
+                          <property name="setting_description">Choose the display format Red Light uses when naming episodes in MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar for widgets.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_display_widget)</onclick>
                       </item>
                       <item>
@@ -1463,7 +1463,7 @@
                           <property name="setting_label">Calendar Date Labels</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_date_labels_name)]</property>
-                          <property name="setting_description">Choose how Red Light labels the airdate of episodes in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar. Words / date uses Today, Tomorrow and weekday names for the near week, and the chosen date format outside that. Day + date always shows both. Date-only formats keep the list in plain chronological order (no pin-today). Each group is ordered YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY.</property>
+                          <property name="setting_description">Choose how Red Light labels the airdate of episodes in MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar. Words / date uses Today, Tomorrow and weekday names for the near week, and the chosen date format outside that. Day + date always shows both. Date-only formats keep the list in plain chronological order (no pin-today). Each group is ordered YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_date_labels)</onclick>
                       </item>
                       <item>
@@ -1471,7 +1471,7 @@
                           <property name="setting_label">Sort Order</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_sort_order_name)]</property>
-                          <property name="setting_description">Choose the sort direction of MDBList Calendar, PunchPlay Calendar, and Trakt Calendar. Ascending or Descending.</property>
+                          <property name="setting_description">Choose the sort direction of MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar. Ascending or Descending.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=trakt.calendar_sort_order)</onclick>
                       </item>
                       <item>
@@ -1479,7 +1479,7 @@
                           <property name="setting_label">Show Previous Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_previous_days)]</property>
-                          <property name="setting_description">Choose how many previous days will be shown in PunchPlay Calendar and Trakt Calendar. The MDBList Calendar API does not expose past airings, so this setting has no effect there.</property>
+                          <property name="setting_description">Choose how many previous days will be shown in PunchPlay Calendar, Simkl Calendar, and Trakt Calendar. The MDBList Calendar API does not expose past airings, so this setting has no effect there. Simkl's public calendar feed is a rolling window (~yesterday + ~33 days), so previous days only apply within that feed.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_previous_days)</onclick>
                       </item>
                       <item>
@@ -1487,7 +1487,7 @@
                           <property name="setting_label">Show Future Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_future_days)]</property>
-                          <property name="setting_description">Choose how many future days will be shown in MDBList Calendar, PunchPlay Calendar, and Trakt Calendar.</property>
+                          <property name="setting_description">Choose how many future days will be shown in MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_future_days)</onclick>
                       </item>
 <!-- META ACCOUNTS 50 -->
@@ -1680,6 +1680,23 @@
                           <property name="setting_label">Simkl</property>
                           <property name="setting_type">separator</property>
                           <onclick>noop</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <property name="setting_label">Client ID Key</property>
+                          <property name="setting_type">string</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.simkl.client)]</property>
+                          <property name="setting_description">Enter the Client ID from your app at simkl.com/settings/developer, or use Restore Default below for Red Light's built-in key. Shown even before Authorise so a custom key can be set first. Changing Client ID may require Authorise again (tokens are app-scoped).</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=simkl.client)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(50)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.simkl.client),6cacc8db22e67b2cd423ef73a9fd3a4f45146ba7fbf30fb2ae28f2fa9d0c2583)</visible>
+                          <property name="setting_label">    - Restore Default Client ID Key</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">...</property>
+                          <property name="setting_description">Restore default Simkl Client ID Key</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.restore_setting_default&amp;setting_id=simkl.client)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(50)</visible>

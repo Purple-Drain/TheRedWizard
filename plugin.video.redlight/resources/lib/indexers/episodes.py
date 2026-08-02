@@ -203,8 +203,10 @@ def build_single_episode(list_type, params={}):
 						'episode.next_trakt': 'Next Episodes', 'episode.next_redlight': 'Next Episodes',
 						'episode.next_simkl': 'Next Episodes', 'episode.next_mdblist': 'Next Episodes', 'episode.next_punchplay': 'Next Episodes',
 						'episode.trakt': {'true': 'Recently Aired Episodes', None: 'Trakt Calendar'},
-						'episode.mdblist': 'MDBList Calendar', 'episode.mdblist_next': 'MDBList Next Up',
-						'episode.punchplay': 'PunchPlay Calendar'}[list_type]
+						'episode.mdblist': 'MDBList Calendar', 'episode.mdblist_calendar': 'MDBList Calendar',
+						'episode.mdblist_next': 'MDBList Next Up',
+						'episode.punchplay': 'PunchPlay Calendar', 'episode.punchplay_calendar': 'PunchPlay Calendar',
+						'episode.simkl': 'Simkl Calendar', 'episode.simkl_calendar': 'Simkl Calendar'}[list_type]
 			if isinstance(cat_name, dict): cat_name = cat_name[params.get('recently_aired')]
 		except: cat_name = 'Episodes'
 		return cat_name
@@ -247,7 +249,7 @@ def build_single_episode(list_type, params={}):
 			if not item: return
 			item_get = item.get
 			season, episode, ep_name = item_get('season'), item_get('episode'), item_get('title')
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'trakt_recently_aired'):
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'trakt_recently_aired'):
 				episode_date, premiered = _calendar_episode_date(ep_data_get('first_aired'), item_get('premiered'), adjust_hours)
 			else:
 				episode_date, premiered = adjust_premiered_date(item_get('premiered'), adjust_hours)
@@ -296,7 +298,7 @@ def build_single_episode(list_type, params={}):
 				# Title mirrors settings format without BBCode (widgets/skins that bind Title).
 				display_title = '%s%s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
 				display = '%s%s%s%s%s%s' % (display_premiered, title_str, highlight_start, seas_ep, ep_name, highlight_end)
-			elif list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar'):
+			elif list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar'):
 				if not episode_date:
 					display_premiered = 'UNKNOWN'
 				else:
@@ -547,6 +549,22 @@ def build_single_episode(list_type, params={}):
 		else:
 			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
 			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
+	elif list_type == 'episode.simkl':
+		from apis.simkl_api import simkl_get_my_calendar
+		data = simkl_get_my_calendar()
+		hidden_list = ws.get_hidden_progress_items(watched_indicators)
+		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
+		list_type = 'episode.simkl_calendar'
+		if settings.flatten_episodes():
+			try:
+				duplicates = set()
+				data.sort(key=lambda i: i['sort_title'])
+				data = [i for i in data if not ((i['media_ids']['tmdb'], i['first_aired'].split('T')[0]) in duplicates
+						or duplicates.add((i['media_ids']['tmdb'], i['first_aired'].split('T')[0])))]
+			except: pass
+		else:
+			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
+			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
 	list_type_compare = list_type.split('episode.')[1]
 	list_type_starts_with = list_type_compare.startswith
@@ -570,14 +588,14 @@ def build_single_episode(list_type, params={}):
 		item_list = airing_today + item_list
 	else:
 		item_list.sort(key=lambda i: i['sort_order'])
-		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar', 'punchplay_calendar'):
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar'): reverse = settings.calendar_sort_order() == 0
+		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar'):
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar'): reverse = settings.calendar_sort_order() == 0
 			else: reverse = True
 			try: item_list = sorted(item_list, key=lambda i: i.get('first_aired', '2100-12-31'), reverse=reverse)
 			except:
 				item_list = [i for i in item_list if i.get('first_aired') not in (None, 'None', '')]
 				item_list = sorted(item_list, key=lambda i: i.get('first_aired'), reverse=reverse)
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar') and not calendar_date_format:
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar') and not calendar_date_format:
 				airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
 										key=lambda i: i['first_aired'])
 				item_list = [i for i in item_list if not i in airing_today]
@@ -586,7 +604,7 @@ def build_single_episode(list_type, params={}):
 	kodi_utils.set_content(handle, 'episodes')
 	kodi_utils.set_category(handle, _get_category_name())
 	# Keep plugin order for calendars — Kodi "Sort by Date" was reordering vs day labels.
-	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'trakt_recently_aired'):
+	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'trakt_recently_aired'):
 		kodi_utils.set_sort_method(handle, 'none', labelMask='%L')
 	kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))

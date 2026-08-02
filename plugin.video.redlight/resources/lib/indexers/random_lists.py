@@ -41,7 +41,8 @@ def _build_random_list_name_lookup():
 	sources = (
 		navigator_cache.random_movie_lists(), navigator_cache.random_tvshow_lists(), navigator_cache.random_anime_lists(),
 		navigator_cache.random_because_you_watched_lists(), navigator_cache.random_tmdb_lists(), navigator_cache.random_personal_lists(),
-		navigator_cache.random_trakt_lists_personal(), navigator_cache.random_trakt_lists_public(), navigator_cache.random_simkl_lists(),
+		navigator_cache.random_mdblist_lists(), navigator_cache.random_trakt_lists_personal(), navigator_cache.random_trakt_lists_public(),
+		navigator_cache.random_simkl_lists(),
 		)
 	for items in sources:
 		for item in items:
@@ -78,6 +79,7 @@ class RandomLists():
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
 	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
 		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
+	mdblist_personal = ('mdblist_watchlist', 'mdblist_collection')
 
 	def __init__(self, params):
 		self.database = RandomWidgets()
@@ -108,13 +110,16 @@ class RandomLists():
 		if self.action in ('trakt_collection_lists', 'trakt_watchlist_lists'): return self.random_trakt_collection_watchlist()
 		if self.action in self.simkl_personal: return self.random_simkl_personal()
 		if self.action in self.punchplay_personal: return self.random_punchplay_personal()
+		if self.action in self.mdblist_personal: return self.random_mdblist_personal()
 		if self.action == 'because_you_watched': return self.random_because_you_watched()
 		if self.mode == 'build_trakt_lists': return self.random_trakt_lists()
 		if self.mode == 'build_personal_lists': return self.random_personal_lists()
 		if self.mode == 'build_tmdb_lists': return self.random_tmdb_lists()
+		if self.mode == 'build_mdblist_lists': return self.random_mdblist_lists()
 		if self.mode == 'build_trakt_lists_contents': return self.trakt_lists_contents()
 		if self.mode == 'build_personal_lists_contents': return self.personal_lists_contents()
 		if self.mode == 'build_tmdb_lists_contents': return self.tmdb_lists_contents()
+		if self.mode == 'build_mdblist_lists_contents': return self.mdblist_lists_contents()
 		if self.action in ('tmdb_movies_discover', 'tmdb_tv_discover'): return self.random_discover()
 
 	def random_main(self):
@@ -362,6 +367,88 @@ class RandomLists():
 		self.view_mode, self.content_type = 'view.%s' % content_type, content_type
 		self.make_directory()
 
+	def random_mdblist_lists(self):
+		from apis.mdblist_api import mdbl_get_lists, mdbl_get_liked_lists, mdbl_top_lists, get_mdbl_list_payload, mdbl_ordered_list_rows
+		from indexers.mdblist_lists import build_mdbl_list
+		list_type = self.params.get('list_type', 'my_lists')
+		list_type_name = {
+			'my_lists': 'MDBList My Lists',
+			'liked_lists': 'MDBList Liked Lists',
+			'user_lists': 'Popular MDBLists'
+		}.get(list_type, 'MDBList Lists')
+		cache_key = '%s_%s' % (self.mode, list_type)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			if list_type == 'liked_lists':
+				self.random_results = [i for i in (mdbl_get_liked_lists() or []) if i.get('id') and i.get('items')]
+			elif list_type == 'user_lists':
+				self.random_results = [i for i in (mdbl_top_lists() or []) if i.get('id') and i.get('items')]
+			else:
+				self.random_results = [i for i in (mdbl_get_lists('my_lists') or []) if i.get('id') and i.get('items')]
+			if not self.random_results:
+				return self._empty_random_lists('No %s' % list_type_name)
+			chosen = random.choice(self.random_results)
+			list_id, list_name = chosen.get('id'), chosen.get('name') or 'MDBList'
+			# Contents URL is lists/{id} for my/liked/top; only external differs.
+			fetch_type = 'external' if list_type == 'external' else 'my_lists'
+			result = mdbl_ordered_list_rows(get_mdbl_list_payload(fetch_type, list_id))
+			random.shuffle(result)
+			if paginate(self.is_external): data = random.sample(result, min(len(result), page_limit(self.is_external))) if result else []
+			else: data = random.sample(result, len(result)) if result else []
+			result = []
+			for c, i in enumerate(data):
+				row = dict(i)
+				row['order'] = c
+				row['custom_order'] = c
+				result.append(row)
+			url_params = {'base_list_name': list_type_name, 'list_name': list_name, 'result': result}
+			content_type, self.list_items = build_mdbl_list(url_params)
+			if cache_to_memory: set_persistent_content(self.database, cache_key, {'name': list_name, 'result': result})
+		else:
+			list_name, result = random_list['name'], random_list['result']
+			url_params = {'base_list_name': list_type_name, 'list_name': list_name, 'result': result}
+			content_type, self.list_items = build_mdbl_list(url_params)
+		self.category_name = list_name or ''
+		self.view_mode, self.content_type = 'view.%s' % content_type, content_type
+		self.make_directory()
+
+	def mdblist_lists_contents(self):
+		from apis.mdblist_api import get_mdbl_list_payload, mdbl_ordered_list_rows
+		from indexers.mdblist_lists import build_mdbl_list
+		list_name, list_type = self.params.get('list_name'), self.params.get('list_type', 'my_lists')
+		list_type_name = {
+			'my_lists': 'MDBList My Lists',
+			'liked_lists': 'MDBList Liked Lists',
+			'user_lists': 'Popular MDBLists',
+			'external': 'MDBList Lists'
+		}.get(list_type, 'MDBList Lists')
+		cache_key = '%s_%s' % (list_type, list_name)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			list_id = self.params_get('list_id')
+			fetch_type = list_type if list_type == 'external' else 'my_lists'
+			result = mdbl_ordered_list_rows(get_mdbl_list_payload(fetch_type, list_id))
+			random.shuffle(result)
+			if paginate(self.is_external): result = random.sample(result, min(len(result), page_limit(self.is_external))) if result else []
+			else: result = random.sample(result, len(result)) if result else []
+			ordered = []
+			for c, i in enumerate(result):
+				row = dict(i)
+				row['order'] = c
+				row['custom_order'] = c
+				ordered.append(row)
+			result = ordered
+			url_params = {'base_list_name': list_type_name, 'list_name': list_name, 'result': result}
+			content_type, self.list_items = build_mdbl_list(url_params)
+			if cache_to_memory: set_persistent_content(self.database, cache_key, {'name': list_name, 'result': result})
+		else:
+			list_name, result = random_list['name'], random_list['result']
+			url_params = {'base_list_name': list_type_name, 'list_name': list_name, 'result': result}
+			content_type, self.list_items = build_mdbl_list(url_params)
+		self.category_name = self.base_list_name or list_name or ''
+		self.view_mode, self.content_type = 'view.%s' % content_type, content_type
+		self.make_directory()
+
 	def trakt_lists_contents(self):
 		from apis.trakt_api import get_trakt_list_contents
 		from indexers.trakt_lists import build_trakt_list
@@ -518,4 +605,7 @@ def random_shortcut_folders(folder_name, random_results):
 	if menu_type == 'tmdb_list':
 		from indexers.tmdb_lists import build_tmdb_list
 		return build_tmdb_list(random_list)
+	if menu_type == 'mdblist_list':
+		from indexers.mdblist_lists import build_mdbl_list
+		return build_mdbl_list(random_list)
 	return kodi_utils.end_directory(int(sys.argv[1]))

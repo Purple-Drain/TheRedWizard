@@ -215,14 +215,25 @@ class RedLightPlayer(xbmc.Player):
 				play_random_continual = self.sources_object.random_continual
 				play_random = self.sources_object.random
 				disable_autoplay_next_episode = self.sources_object.disable_autoplay_next_episode
+				self.num_episodes = getattr(self.sources_object, 'num_episodes', None)
 				if disable_autoplay_next_episode: ku.notification('Scrape with Custom Values - Autoplay Next Episode Cancelled', 4500)
 				if any((play_random_continual, play_random, disable_autoplay_next_episode)): self.autoplay_nextep, self.autoscrape_nextep = False, False
 				else: self.autoplay_nextep, self.autoscrape_nextep = self.sources_object.autoplay_nextep, self.sources_object.autoscrape_nextep
+				# Play # Episodes: remaining count includes the current episode.
+				try: _play_n = int(self.num_episodes) if self.num_episodes not in (None, '') else 0
+				except: _play_n = 0
+				if _play_n > 1:
+					self.autoplay_nextep, self.autoscrape_nextep = True, False
+				elif self.num_episodes not in (None, '') and _play_n <= 1:
+					self.autoplay_nextep, self.autoscrape_nextep = False, False
 				if self.autoplay_nextep or self.autoscrape_nextep:
-					self._log_nextep('Next episode monitor active: autoplay=%s autoscrape=%s' % (self.autoplay_nextep, self.autoscrape_nextep))
+					self._log_nextep('Next episode monitor active: autoplay=%s autoscrape=%s play_n=%s' % (
+						self.autoplay_nextep, self.autoscrape_nextep, self.num_episodes or ''))
 				elif st.autoscrape_next_episode() or st.autoplay_next_episode():
-					self._log_nextep('Next episode disabled this play (random=%s random_continual=%s custom_values=%s)' % (play_random, play_random_continual, disable_autoplay_next_episode))
+					self._log_nextep('Next episode disabled this play (random=%s random_continual=%s custom_values=%s play_n=%s)' % (
+						play_random, play_random_continual, disable_autoplay_next_episode, self.num_episodes or ''))
 			else:
+				self.num_episodes = None
 				show_stinger, stinger_alert_timing, stingers_percentage_fallback = st.stingers_show(), st.stingers_alert_timing(), st.stingers_percentage()
 				play_random_continual, self.autoplay_nextep, self.autoscrape_nextep = False, False, False
 			while total_check_time <= 30 and not ku.get_visibility('Window.IsActive(fullscreenvideo)'):
@@ -329,7 +340,10 @@ class RedLightPlayer(xbmc.Player):
 					if nextep_autoplay_cancelled() or nextep_end_play_superseded():
 						clear_nextep_autoplay_stash()
 						clear_orphan_nextep_play_stash()
-						self._log_nextep('Autoplay next episode: skipped at episode end (superseded by user playback)')
+						if nextep_autoplay_cancelled():
+							self._log_nextep('Autoplay next episode: skipped at episode end (cancelled)')
+						else:
+							self._log_nextep('Autoplay next episode: skipped at episode end (superseded by user playback)')
 					elif getattr(self, '_nextep_stash_play_scheduled', False):
 						autoplay_stash_scheduled = True
 					elif getattr(self, '_nextep_alert_shown', False):
@@ -918,6 +932,11 @@ class RedLightPlayer(xbmc.Player):
 		stash = peek_nextep_autoplay_stash()
 		if not stash: return
 		settings = self.nextep_settings
+		# Play # Episodes: silent chain — wait for natural end, then play stashed next.
+		if settings.get('play_n_episodes'):
+			self._nextep_close_wait = True
+			self._log_nextep('Play # Episodes: silent continue (remaining after this=%s)' % settings.get('num_episodes'))
+			return
 		use_window = settings.get('use_window')
 		default_action = settings.get('default_action')
 		dialog_meta = stash['meta']
@@ -1025,10 +1044,25 @@ class RedLightPlayer(xbmc.Player):
 		credits_entry = self._subtitle_credits_entry_remaining(fetch=False) if nextep_settings.get('alert_timing') == 'subtitles' else None
 		use_window = nextep_settings['alert_method'] == 0
 		default_action = nextep_settings['default_action']
-		self.start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type)
-		pipeline = st.nextep_pipeline_headroom(play_type, nextep_settings['scraper_time'], self._still_watching_due(nextep_settings))
+		# Play # Episodes: no Still Watching budget; headroom without that dialog.
+		play_n_active = False
+		try: play_n_remaining = int(self.num_episodes) if getattr(self, 'num_episodes', None) not in (None, '') else 0
+		except: play_n_remaining = 0
+		if play_n_remaining > 1:
+			play_n_active = True
+			use_window = False
+			default_action = 'close'
+		still_watching_due = False if play_n_active else self._still_watching_due(nextep_settings)
+		self.start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching=not play_n_active)
+		pipeline = st.nextep_pipeline_headroom(play_type, nextep_settings['scraper_time'], still_watching_due)
 		self.nextep_settings = {'use_window': use_window, 'window_time': pop_at, 'default_action': default_action, 'play_type': play_type,
-			'alert_timing': nextep_settings.get('alert_timing'), 'watching_check': nextep_settings['watching_check'], 'pipeline_headroom': pipeline, 'credits_entry': credits_entry}
+			'alert_timing': nextep_settings.get('alert_timing'),
+			'watching_check': 0 if play_n_active else nextep_settings['watching_check'],
+			'pipeline_headroom': pipeline, 'credits_entry': credits_entry}
+		if play_n_active:
+			# Count for the *next* episode includes that episode; stop when it reaches 1.
+			self.nextep_settings['num_episodes'] = str(play_n_remaining - 1)
+			self.nextep_settings['play_n_episodes'] = True
 		if nextep_settings.get('alert_timing') == 'introdb':
 			outro_start = self._outro_credits_start(fetch=True)
 			if outro_start is not None:
@@ -1036,8 +1070,9 @@ class RedLightPlayer(xbmc.Player):
 		credits_log = ' credits_entry=%ss' % credits_entry if credits_entry is not None else ''
 		outro_start = self.nextep_settings.get('outro_start')
 		outro_log = ' outro_start=%.1fs' % outro_start if outro_start is not None else ''
-		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s' % (
-			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log))
+		play_n_log = ' play_n=%s' % play_n_remaining if play_n_remaining else ''
+		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s%s' % (
+			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log, play_n_log))
 
 	def final_chapter(self, threshhold):
 		try:

@@ -211,8 +211,19 @@ def byteify(data, ignore_dicts=False):
 	return data
 
 def normalize(txt):
-	txt = re.sub(r'[^\x00-\x7f]',r'', txt)
-	return txt
+	"""Accent-fold then drop leftover non-ASCII (Pokémon→Pokemon, not Pokmon).
+
+	Cloud scrapers use this for folder/title gates. Stripping non-ASCII first
+	deleted base letters with accents; fold combining marks away first.
+	"""
+	try:
+		if txt is None: return txt
+		txt = str(txt)
+		txt = ''.join(c for c in unicodedata.normalize('NFKD', txt) if unicodedata.category(c) != 'Mn')
+		return re.sub(r'[^\x00-\x7f]', '', txt)
+	except Exception:
+		try: return re.sub(r'[^\x00-\x7f]', '', str(txt))
+		except Exception: return txt
 
 def safe_string(obj):
 	try:

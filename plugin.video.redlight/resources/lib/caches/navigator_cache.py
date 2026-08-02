@@ -220,6 +220,20 @@ class NavigatorCache:
 			{'mode': 'random.build_personal_lists', 'name': 'Random Personal Lists (Single)', 'iconImage': 'lists', 'random': 'true'}
 				]
 
+	def random_mdblist_lists(self):
+		return [
+			{'mode': 'random.build_movie_list', 'action': 'mdblist_watchlist', 'name': 'Random MDBList Movie Watchlist', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'mdblist_watchlist', 'name': 'Random MDBList TV Show Watchlist', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'mdblist_collection', 'name': 'Random MDBList Movie Library', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'mdblist_collection', 'name': 'Random MDBList TV Show Library', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'mdblist.get_mdbl_lists', 'name': 'Random Shuffled MDBList My Lists (All)', 'iconImage': 'mdblist', 'random': 'true', 'shuffle': 'true'},
+			{'mode': 'random.build_mdblist_lists', 'list_type': 'my_lists', 'name': 'Random MDBList My Lists (Single)', 'iconImage': 'mdblist', 'random': 'true'},
+			{'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Random Shuffled MDBList Liked Lists (All)', 'iconImage': 'mdblist', 'random': 'true', 'shuffle': 'true'},
+			{'mode': 'random.build_mdblist_lists', 'list_type': 'liked_lists', 'name': 'Random MDBList Liked Lists (Single)', 'iconImage': 'mdblist', 'random': 'true'},
+			{'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Random Shuffled Popular MDBLists (All)', 'iconImage': 'mdblist', 'random': 'true', 'shuffle': 'true'},
+			{'mode': 'random.build_mdblist_lists', 'list_type': 'user_lists', 'name': 'Random Popular MDBLists (Single)', 'iconImage': 'mdblist', 'random': 'true'},
+				]
+
 	def random_trakt_lists_personal(self):
 		return [
 			{'mode': 'random.build_movie_list', 'action': 'trakt_collection_lists', 'name': 'Random Trakt Movie Library', 'iconImage': 'movies', 'random': 'true'},

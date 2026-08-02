@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import re
 import time
 import requests
 from caches import mdblist_cache
@@ -7,6 +8,11 @@ from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils, settings, list_sort
 from modules.http_defaults import META_API_TIMEOUT, meta_status_retry
 from modules.utils import paginate_list, get_datetime, TaskPool, make_thread_list, copy2clip, make_qrcode, make_tinyurl
+
+_EPISODE_SE_RE = re.compile(
+	r'(?:^|[\s·|\-–—/])S(\d{1,2})\s*[:.]?\s*E(\d{1,3})(?:\b|:)|(?:^|[\s·|\-–—/])(\d{1,2})x(\d{1,3})\b',
+	re.I
+)
 
 BASE_URL = 'https://api.mdblist.com/%s'
 _OAUTH_DEVICE_URL = 'https://api.mdblist.com/oauth/device-authorization/'
@@ -52,7 +58,7 @@ def call_mdblist(path, params=None, json_data=None, method=None):
 
 def _get_mdbl_paginated_list(url):
 	params = {'limit': 1000}
-	items = {'movies': [], 'shows': [], 'episodes': [], 'items': []}
+	items = {'movies': [], 'shows': [], 'seasons': [], 'episodes': [], 'items': []}
 	try:
 		for _ in range(MAX_LIST_ITEMS // params['limit']):
 			result = call_mdblist(url, params=params)
@@ -146,12 +152,174 @@ def _normalize_mdbl_personal_item(item, media_kind):
 	return {'id': tmdb_id, 'title': title, 'year': year, 'imdb_id': imdb_id or '', 'tvdb_id': tvdb_id or '',
 		'watchlist_at': item.get('watchlist_at', ''), 'collected_at': item.get('collected_at', ''), 'release_date': item.get('release_date', '')}
 
+def _mdbl_first_int(*values):
+	for value in values:
+		if value in (None, '', 'None'): continue
+		try: return int(value)
+		except: pass
+	return None
+
+def _mdbl_parse_se_from_text(text):
+	if not text: return None, None
+	match = _EPISODE_SE_RE.search(str(text))
+	if not match: return None, None
+	if match.group(1) is not None:
+		return int(match.group(1)), int(match.group(2))
+	return int(match.group(3)), int(match.group(4))
+
+def _mdbl_show_title_from_episode_title(title):
+	if not title: return ''
+	text = str(title)
+	for sep in (' · ', ' • ', ' - ', ' – ', ' — '):
+		if sep in text:
+			head = text.split(sep, 1)[0].strip()
+			if head: return re.sub(r'\s*\(\d{4}\)\s*$', '', head).strip() or head
+	match = _EPISODE_SE_RE.search(text)
+	if match:
+		head = text[:match.start()].strip(' -–—·|/')
+		if head: return re.sub(r'\s*\(\d{4}\)\s*$', '', head).strip() or head
+	return text
+
 def _mdbl_item_media_kind(item):
+	if not isinstance(item, dict): return 'movie'
 	mediatype = (item.get('mediatype') or item.get('type') or item.get('media_type') or '').lower()
+	if mediatype in ('episode', 'episodes'): return 'episode'
 	if mediatype in ('movie', 'movies'): return 'movie'
 	if mediatype in ('show', 'shows', 'tvshow', 'tv', 'series'): return 'show'
+	if isinstance(item.get('episode'), dict) and (
+		isinstance(item.get('show'), dict)
+		or item.get('season') is not None
+		or item.get('season_number') is not None
+		or item['episode'].get('season') is not None
+		or item['episode'].get('season_number') is not None
+	):
+		return 'episode'
+	if item.get('season_number') is not None and item.get('episode_number') is not None:
+		return 'episode'
+	if item.get('show_tmdb') is not None and (
+		item.get('season') is not None or item.get('season_number') is not None
+	) and (
+		item.get('episode') is not None or item.get('episode_number') is not None or item.get('number') is not None
+	):
+		return 'episode'
 	if item.get('tvdb_id'): return 'show'
 	return 'movie'
+
+def mdbl_episode_list_entry(item, order=0):
+	"""Normalize an MDBList episode list row for build_single_episode (Trakt-shaped)."""
+	if not isinstance(item, dict): return None
+	show = item.get('show') if isinstance(item.get('show'), dict) else {}
+	ep = item.get('episode') if isinstance(item.get('episode'), dict) else {}
+	show_ids = show.get('ids') if isinstance(show.get('ids'), dict) else {}
+	item_ids = item.get('ids') if isinstance(item.get('ids'), dict) else {}
+
+	season = _mdbl_first_int(
+		item.get('season'), item.get('season_number'),
+		ep.get('season'), ep.get('season_number')
+	)
+	episode = None
+	if not isinstance(item.get('episode'), dict):
+		episode = _mdbl_first_int(item.get('episode_number'), item.get('episode'), item.get('number'))
+	if episode is None:
+		episode = _mdbl_first_int(ep.get('episode'), ep.get('episode_number'), ep.get('number'), item.get('episode_number'))
+	if season is None or episode is None:
+		parsed_season, parsed_episode = _mdbl_parse_se_from_text(item.get('title') or ep.get('title') or '')
+		if season is None: season = parsed_season
+		if episode is None: episode = parsed_episode
+	if season is None or episode is None or season < 1 or episode < 0:
+		return None
+
+	# Prefer show-level ids. Flat item id/tmdb/ids.tmdb on episode rows is the episode TMDb id.
+	# Unified episode items expose the parent show as show_id (TMDb).
+	media_ids = {}
+	show_tmdb = _mdbl_first_int(
+		item.get('show_tmdb'), item.get('show_id'),
+		show.get('tmdb'), show_ids.get('tmdb')
+	)
+	if show_tmdb: media_ids['tmdb'] = show_tmdb
+	imdb = (
+		item.get('show_imdb') or show.get('imdb_id') or show_ids.get('imdb')
+		or item.get('imdb_id') or item_ids.get('imdb') or ''
+	)
+	if imdb and imdb not in ('None', '0', None): media_ids['imdb'] = imdb
+	tvdb = (
+		item.get('show_tvdb') or show.get('tvdb_id') or show_ids.get('tvdb')
+		or item.get('tvdb_id') or item_ids.get('tvdb') or ''
+	)
+	if tvdb and tvdb not in ('None', '0', None): media_ids['tvdb'] = tvdb
+	if not media_ids: return None
+
+	title = (
+		show.get('title') or item.get('parent_title') or item.get('show_title')
+		or item.get('show_name') or _mdbl_show_title_from_episode_title(item.get('title') or '')
+	)
+	return {
+		'media_ids': media_ids,
+		'title': title or '',
+		'type': 'episode',
+		'season': int(season),
+		'episode': int(episode),
+		'custom_order': order
+	}
+
+def mdbl_collect_list_media(payload):
+	"""Split list contents into movie/show/episode raw items (unified + typed buckets)."""
+	movies, shows, episodes = [], [], []
+	if not isinstance(payload, dict): return movies, shows, episodes
+	movies.extend(i for i in (payload.get('movies') or []) if isinstance(i, dict))
+	shows.extend(i for i in (payload.get('shows') or []) if isinstance(i, dict))
+	episodes.extend(i for i in (payload.get('episodes') or []) if isinstance(i, dict))
+	for item in payload.get('items') or []:
+		if not isinstance(item, dict): continue
+		kind = _mdbl_item_media_kind(item)
+		if kind == 'episode': episodes.append(item)
+		elif kind == 'show': shows.append(item)
+		else: movies.append(item)
+	return movies, shows, episodes
+
+def _mdbl_movie_show_row(item, media_type, order):
+	tmdb_id = mdbl_unified_item_tmdb_id(item)
+	if not tmdb_id: return None
+	return {'type': media_type, 'media_ids': {'tmdb': tmdb_id}, 'order': order, 'custom_order': order}
+
+def mdbl_ordered_list_rows(payload):
+	"""Ordered typed rows for mixed list open (movie | show | episode), preserving unified order."""
+	rows = []
+	if not isinstance(payload, dict): return rows
+	items = [i for i in (payload.get('items') or []) if isinstance(i, dict)]
+	if items:
+		for order, item in enumerate(items):
+			kind = _mdbl_item_media_kind(item)
+			if kind == 'episode':
+				row = mdbl_episode_list_entry(item, order)
+				if row:
+					row['order'] = order
+					rows.append(row)
+			else:
+				row = _mdbl_movie_show_row(item, 'movie' if kind == 'movie' else 'show', order)
+				if row: rows.append(row)
+		return rows
+	order = 0
+	for item in payload.get('movies') or []:
+		if not isinstance(item, dict): continue
+		row = _mdbl_movie_show_row(item, 'movie', order)
+		if row:
+			rows.append(row)
+			order += 1
+	for item in payload.get('shows') or []:
+		if not isinstance(item, dict): continue
+		row = _mdbl_movie_show_row(item, 'show', order)
+		if row:
+			rows.append(row)
+			order += 1
+	for item in payload.get('episodes') or []:
+		if not isinstance(item, dict): continue
+		row = mdbl_episode_list_entry(item, order)
+		if row:
+			row['order'] = order
+			rows.append(row)
+			order += 1
+	return rows
 
 def _mdbl_item_to_list_entry(item, media_kind):
 	if not isinstance(item, dict): return None
@@ -179,20 +347,27 @@ def _mdbl_item_to_list_entry(item, media_kind):
 	return None
 
 def mdbl_list_media_type(list_item, fallback='movie'):
-	"""Route param for build_mdbl_list: movie | tvshow from MDBList list metadata."""
+	"""Route param for build_mdbl_list: movie | tvshow | episode from MDBList list metadata."""
 	if not isinstance(list_item, dict):
+		if fallback in ('episode', 'episodes'): return 'episode'
 		return 'tvshow' if fallback in ('tv', 'tvshow', 'show', 'shows', 'series') else 'movie'
 	mediatype = (list_item.get('mediatype') or list_item.get('media_type') or '').lower()
+	if mediatype in ('episode', 'episodes'):
+		return 'episode'
 	if mediatype in ('show', 'shows', 'tvshow', 'tv', 'series'):
 		return 'tvshow'
 	if mediatype in ('movie', 'movies'):
 		return 'movie'
+	if fallback in ('episode', 'episodes'):
+		return 'episode'
 	if fallback in ('tv', 'tvshow', 'show', 'shows', 'series'):
 		return 'tvshow'
 	return 'movie'
 
 def mdbl_unified_item_tmdb_id(item):
 	"""Resolve TMDb id from unified list item payloads (nested show/movie blocks)."""
+	if _mdbl_item_media_kind(item) == 'episode':
+		return None
 	entry = _mdbl_item_to_list_entry(item, _mdbl_item_media_kind(item))
 	if not entry or not entry.get('id'):
 		return None
@@ -701,12 +876,27 @@ def mdbl_top_lists():
 		lists = result.get('items') or []
 	return _mdbl_expand_list_entries(lists)
 
-def get_mdbl_list_contents(list_type, list_id):
+def get_mdbl_list_payload(list_type, list_id):
 	string = 'mdblist_list_contents_%s_%s' % (list_type, list_id)
 	if list_type == 'external': url = 'external/lists/%s/items?unified=true' % list_id
 	else: url = 'lists/%s/items?unified=true' % list_id
 	result = mdblist_cache.cache_mdblist_object(_get_mdbl_paginated_list, string, url)
-	return result.get('items', []) if isinstance(result, dict) else []
+	return result if isinstance(result, dict) else {}
+
+def get_mdbl_list_contents(list_type, list_id):
+	result = get_mdbl_list_payload(list_type, list_id)
+	items = result.get('items') or []
+	if items: return items
+	# Non-unified responses: membership/browse for movies/shows only (episodes use payload).
+	return list(result.get('movies') or []) + list(result.get('shows') or [])
+
+def get_mdbl_list_episode_rows(list_type, list_id):
+	_, _, episode_items = mdbl_collect_list_media(get_mdbl_list_payload(list_type, list_id))
+	rows = []
+	for order, item in enumerate(episode_items):
+		row = mdbl_episode_list_entry(item, order)
+		if row: rows.append(row)
+	return rows
 
 def mdbl_get_static_lists(media_type=None, refresh=False):
 	"""User-owned static lists (editable). Dynamic/AI/external lists are excluded."""
@@ -922,8 +1112,8 @@ def mdblist_manager_choice(params):
 		'open_watchlist': {'mode': watchlist_mode, 'action': 'mdblist_watchlist', 'category_name': watchlist_label},
 		'open_library': {'mode': library_mode, 'action': 'mdblist_collection', 'category_name': library_label},
 		'open_dropped': {'mode': 'build_tvshow_list', 'action': 'mdblist_droplist', 'category_name': 'Dropped TV Shows'},
-		'open_liked_lists': {'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Liked Lists', 'media_type': media_type},
-		'open_my_lists': {'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists', 'media_type': media_type},
+		'open_liked_lists': {'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Liked Lists'},
+		'open_my_lists': {'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists'},
 	}
 	if choice in open_modes:
 		return kodi_utils.container_update(open_modes[choice])
@@ -1047,6 +1237,10 @@ def get_mdbl_top_lists(params):
 def build_mdbl_list(params):
 	from indexers import mdblist_lists
 	return mdblist_lists.build_mdbl_list(params)
+
+def search_mdbl_my_lists(params):
+	from indexers import mdblist_lists
+	return mdblist_lists.search_mdbl_my_lists(params)
 
 def build_mdbl_watchlist(params):
 	from indexers import mdblist_lists

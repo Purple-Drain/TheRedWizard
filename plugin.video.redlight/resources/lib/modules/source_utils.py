@@ -10,7 +10,7 @@ from caches.settings_cache import get_setting
 from modules.metadata import episodes_meta
 from modules.settings import date_offset
 from modules.kodi_utils import supported_media, get_property, set_property, notification
-from modules.utils import adjust_premiered_date, get_datetime, jsondate_to_datetime, subtract_dates, chunks
+from modules.utils import adjust_premiered_date, get_datetime, jsondate_to_datetime, subtract_dates, chunks, normalize as _utils_normalize
 # from modules.kodi_utils import logger
 
 def extras():
@@ -152,11 +152,8 @@ def internal_results(provider, sources):
 	set_property('redlight.internal_results.%s' % provider, json.dumps(sources))
 
 def normalize(title):
-	import unicodedata
-	try:
-		title = ''.join(c for c in unicodedata.normalize('NFKD', title) if unicodedata.category(c) != 'Mn')
-		return str(title)
-	except: return title
+	"""Same accent-fold as modules.utils.normalize (single implementation)."""
+	return _utils_normalize(title)
 
 def pack_enable_check(meta, season, episode):
 	try:
@@ -413,7 +410,9 @@ def check_title(title, release_title, aliases, year, season, episode):
 	except: return True
 
 def strip_non_ascii_and_unprintable(text):
+	"""Accent-fold first so Filter-by-Name keeps Pokémon→Pokemon / Léon→Leon."""
 	try:
+		text = _utils_normalize(text)
 		result = ''.join(char for char in text if char in printable)
 		return result.encode('ascii', errors='ignore').decode('ascii', errors='ignore')
 	except: pass
