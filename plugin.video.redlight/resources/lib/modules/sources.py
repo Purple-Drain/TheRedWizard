@@ -612,7 +612,8 @@ class Sources():
 		results = self.sort_results(results)
 		min_seeders = settings.uncached_min_seeders()
 		all_uncached_results = [i for i in results if 'Uncached' in i.get('cache_provider', '')]
-		self.uncached_results = [i for i in all_uncached_results if int(i.get('seeders', '0')) >= min_seeders]
+		# seeders can be present but None (external scrapers); .get default only covers missing keys
+		self.uncached_results = [i for i in all_uncached_results if int(i.get('seeders') or 0) >= min_seeders]
 		uncached_in_main = []
 		if settings.include_uncached_torbox():
 			uncached_in_main.extend([i for i in self.uncached_results if 'TorBox' in i.get('cache_provider', '')])

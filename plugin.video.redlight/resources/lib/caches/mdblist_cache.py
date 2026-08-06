@@ -93,6 +93,13 @@ def clear_mdblist_list_contents_data(list_type):
 def clear_mdblist_list_data(list_type):
 	mdblist_cache.delete('mdblist_%s' % list_type)
 
+def clear_mdblist_calendar_data():
+	try:
+		dbcon = connect_database('mdblist_db')
+		dbcon.execute('DELETE FROM mdblist_data WHERE id LIKE ?', ('mdblist_calendar_airings%',))
+		dbcon.execute('DELETE FROM mdblist_data WHERE id = ?', ('mdblist_calendar_events',))
+	except: pass
+
 def clear_all_mdblist_cache_data(silent=False, refresh=True):
 	try:
 		if not silent and not kodi_utils.confirm_dialog(): return False

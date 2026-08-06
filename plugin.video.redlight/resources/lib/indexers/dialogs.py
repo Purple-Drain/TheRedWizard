@@ -743,14 +743,14 @@ def trakt_manager_choice(params):
 		choices.append(('Add to [B]Favorites[/B]', 'add_favorites'))
 	if media_type != 'movie':
 		if trakt_api.trakt_item_is_dropped(tmdb_id):
-			choices.append(('Undrop [B]Show[/B]', 'undrop'))
+			choices.append(('Undrop [B]TV Show[/B]', 'undrop'))
 		else:
-			choices.append(('Drop [B]Show[/B]', 'drop'))
+			choices.append(('Drop [B]TV Show[/B]', 'drop'))
 	if episode_mode:
 		if show_out_lists:
-			choices.append(('Add Show To [B]Personal List[/B]...', 'add_show'))
+			choices.append(('Add TV Show To [B]Personal List[/B]...', 'add_show'))
 		if show_in_lists:
-			choices.append(('Remove Show from [B]Personal List[/B]...', 'remove_show'))
+			choices.append(('Remove TV Show from [B]Personal List[/B]...', 'remove_show'))
 		if episode_tmdb:
 			if ep_out_lists:
 				choices.append(('Add Episode To [B]Personal List[/B]...', 'add_episode'))

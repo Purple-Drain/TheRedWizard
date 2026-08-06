@@ -505,6 +505,10 @@ def exclude_specials_from_progress():
 def single_ep_unwatched_episodes():
 	return get_setting('redlight.single_ep_unwatched_episodes', 'false') == 'true'
 
+def single_ep_unwatched_in_title():
+	# Nested under Provide Unwatched Episodes Info — both must be on.
+	return single_ep_unwatched_episodes() and get_setting('redlight.single_ep_unwatched_in_title', 'false') == 'true'
+
 def single_ep_display_format(is_external):
 	if is_external: setting, default = 'redlight.single_ep_display_widget', '1'
 	else: setting, default = 'redlight.single_ep_display', ''
@@ -1012,7 +1016,7 @@ def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
 
 def calendar_day_window():
-	'''Inclusive start/end dates for Trakt, MDBList, and PunchPlay calendars (Show Previous/Future Days).'''
+	'''Inclusive start/end dates for MDBList, PunchPlay, Simkl, and Trakt calendars (Show Previous/Future Days).'''
 	from datetime import timedelta
 	from modules.utils import get_datetime
 	try: previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '7'))

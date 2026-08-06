@@ -308,6 +308,15 @@ def build_single_episode(list_type, params={}):
 						use_words=calendar_use_words, include_date=calendar_include_date)
 				display = display_title = '[%s] %s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
 			else: display = display_title = '%s%s%s' % (title_str, seas_ep, ep_name)
+			progress_aired_eps, total_unwatched = None, None
+			if unwatched_info:
+				try:
+					progress_aired_eps = ws.progress_aired_eps(meta)
+					total_unwatched = ws.get_watched_status_tvshow(ws.watched_info_tvshow(watched_db).get(str(tmdb_id), None), progress_aired_eps)[2]
+				except: progress_aired_eps, total_unwatched = None, None
+				if unwatched_in_title and total_unwatched:
+					suffix = ' (%s)' % total_unwatched
+					display, display_title = display + suffix, display_title + suffix
 			if no_spoilers and not playcount: thumb, plot = show_landscape or show_fanart, tvshow_plot or '* Hidden to Prevent Spoilers *'
 			else: thumb, plot = item_get('thumb', None) or show_landscape or show_fanart, item_get('plot') or tvshow_plot
 			duration = item_get('duration')
@@ -370,10 +379,8 @@ def build_single_episode(list_type, params={}):
 					cm_append(['mark_watched', ('[B]Clear Progress[/B]', 'RunPlugin(%s)' % \
 								build_url({'mode': 'watched_status.erase_bookmark', 'media_type': 'episode', 'tmdb_id': tmdb_id,
 											'season': season, 'episode': episode, 'refresh': 'true'}))])
-				if unwatched_info:
-					progress_aired_eps = ws.progress_aired_eps(meta)
-					total_unwatched = ws.get_watched_status_tvshow(ws.watched_info_tvshow(watched_db).get(str(tmdb_id), None), progress_aired_eps)[2]
-					if progress_aired_eps != total_unwatched: set_properties({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
+				if unwatched_info and total_unwatched is not None and progress_aired_eps != total_unwatched:
+					set_properties({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
 			if list_type_starts_with('next_') and (season, episode) != (1, 1):
 				cm_append(['unmark_previous_episode', ('[B]Unmark Previous Watched[/B]', 'RunPlugin(%s)' % \
 								build_url({'mode': 'watched_status.unmark_previous_episode', 'action': 'mark_as_unwatched', 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id,
@@ -450,6 +457,7 @@ def build_single_episode(list_type, params={}):
 		calendar_date_format = None
 	current_date, current_time, adjust_hours = get_datetime(), get_current_timestamp(), settings.date_offset()
 	unwatched_info = settings.single_ep_unwatched_episodes()
+	unwatched_in_title = settings.single_ep_unwatched_in_title()
 	hide_watched = is_external and settings.widget_hide_watched() and list_type != 'episode.recently_watched'
 	api_key, mpaa_region_value = settings.tmdb_api_key(), settings.mpaa_region()
 	cm_sort_order, ignore_articles = settings.cm_sort_order(), settings.ignore_articles()

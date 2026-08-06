@@ -775,9 +775,7 @@ def mdblist_sync_activities(params=None, force_update=False, progress=None):
 	if force_update or _changed('watchlisted_at'):
 		success = 'success'
 		mdblist_cache.clear_mdblist_collection_watchlist_data('watchlist')
-		mdblist_cache.mdblist_cache.delete('mdblist_calendar_airings')
-		mdblist_cache.mdblist_cache.delete('mdblist_calendar_airings_v3')
-		mdblist_cache.mdblist_cache.delete('mdblist_calendar_events')
+		mdblist_cache.clear_mdblist_calendar_data()
 	if _sync_canceled(): return 'canceled'
 	if force_update or _changed('dropped_at'):
 		success = 'success'
@@ -794,9 +792,7 @@ def mdblist_sync_activities(params=None, force_update=False, progress=None):
 	refresh_movie_pause = force_update or _changed('paused_at')
 	refresh_episode_pause = force_update or _changed('episode_paused_at')
 	if refresh_episodes:
-		mdblist_cache.mdblist_cache.delete('mdblist_calendar_airings')
-		mdblist_cache.mdblist_cache.delete('mdblist_calendar_airings_v3')
-		mdblist_cache.mdblist_cache.delete('mdblist_calendar_events')
+		mdblist_cache.clear_mdblist_calendar_data()
 	if refresh_movies or refresh_episodes:
 		if _sync_canceled(): return 'canceled'
 		success = 'success'
@@ -1317,11 +1313,14 @@ def mdblist_manager_choice(params):
 def mdblist_get_my_calendar(dummy=None):
 	"""Episode airings for the authenticated user (undocumented /calendar/events).
 
-	Cached payload is unfiltered; Show Previous/Future Days is applied on read so
-	calendar settings match Trakt Calendar without waiting for cache expiry.
+	MDBList only returns past airings when start/end are on the request (same as POV).
+	Fetch the max Calendars day span (14 previous + 14 future); Show Previous/Future
+	Days still filters on read so settings apply without waiting for cache expiry.
 	"""
-	def _process(_url):
-		result = call_mdblist(_url)
+	from datetime import timedelta
+	from modules.utils import get_datetime
+	def _process(_url, params=None):
+		result = call_mdblist(_url, params=params)
 		if not result: return []
 		# call_mdblist wraps bare JSON arrays as {'items': [...]}. Calendar may also
 		# return {'events': [...]} — accept either (MDBList has flipped shapes before).
@@ -1340,7 +1339,7 @@ def mdblist_get_my_calendar(dummy=None):
 				# MDBList tags upcoming airings of in-progress shows that way too.
 				item_type = item.get('type')
 				if item_type and item_type != 'episode': continue
-				show_tmdb = item.get('show_tmdb')
+				show_tmdb = item.get('show_tmdb') or item.get('show_id')
 				season, episode = item.get('season_number'), item.get('episode_number')
 				start = item.get('start')
 				if not show_tmdb or season is None or episode is None or not start: continue
@@ -1358,16 +1357,22 @@ def mdblist_get_my_calendar(dummy=None):
 		# Prefer latest occurrence when the API repeats the same show/day.
 		data = [i for n, i in enumerate(data) if i not in data[n + 1:]]
 		return data
-	# v3: keep release_type=watched episode airings (see _process).
+	# v4: request start/end so past airings are included (unscoped calendar/events is future-only).
 	# Empty list is not a valid cache hit — refetch (failed API used to poison the cache).
-	cached = mdblist_cache.mdblist_cache.get('mdblist_calendar_airings_v3')
+	current = get_datetime()
+	api_start = (current - timedelta(days=14)).strftime('%Y-%m-%d')
+	api_end = (current + timedelta(days=14)).strftime('%Y-%m-%d')
+	cache_key = 'mdblist_calendar_airings_v4_%s_%s' % (api_start, api_end)
+	cached = mdblist_cache.mdblist_cache.get(cache_key)
 	if cached:
 		data = cached
 	else:
-		data = _process('calendar/events') or []
-		if data: mdblist_cache.mdblist_cache.set('mdblist_calendar_airings_v3', data)
+		data = _process('calendar/events', {
+			'limit': 1000, 'start': api_start, 'end': api_end
+		}) or []
+		if data: mdblist_cache.mdblist_cache.set(cache_key, data)
 		elif cached is not None:
-			mdblist_cache.mdblist_cache.delete('mdblist_calendar_airings_v3')
+			mdblist_cache.mdblist_cache.delete(cache_key)
 	filtered = _filter_mdblist_calendar_day_window(data)
 	try:
 		start_date, end_date = settings.calendar_day_window()

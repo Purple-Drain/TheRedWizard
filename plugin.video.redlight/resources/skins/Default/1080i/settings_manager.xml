@@ -1346,6 +1346,15 @@
                           <property name="setting_description">Enable this to share with Kodi the number of unwatched episodes for the TV Show of each episode in single episode lists</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=single_ep_unwatched_episodes)</onclick>
                       </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(40)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.single_ep_unwatched_episodes),true)</visible>
+                          <property name="setting_label">    - Show Unwatched Count in Title</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.single_ep_unwatched_in_title)]</property>
+                          <property name="setting_description">When Provide Unwatched Episodes Info is on, append the remaining aired unwatched count to the episode Label and Title (e.g. Show 1x10. Name (5)). Helps widgets that only bind Label/Title</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=single_ep_unwatched_in_title)</onclick>
+                      </item>
         <!-- Next Episodes -->
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
@@ -1479,7 +1488,7 @@
                           <property name="setting_label">Show Previous Days</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.trakt.calendar_previous_days)]</property>
-                          <property name="setting_description">Choose how many previous days will be shown in PunchPlay Calendar, Simkl Calendar, and Trakt Calendar. The MDBList Calendar API does not expose past airings, so this setting has no effect there. Simkl's public calendar feed is a rolling window (~yesterday + ~33 days), so previous days only apply within that feed.</property>
+                          <property name="setting_description">Choose how many previous days will be shown in MDBList Calendar, PunchPlay Calendar, Simkl Calendar, and Trakt Calendar. Simkl Calendar uses Simkl's public TV/Anime airing feeds (joined to your Watching / Plan to Watch shows), not a personal date-range calendar — those feeds only go back about one day, so a higher previous-days value will not show older Simkl airings.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=trakt.calendar_previous_days)</onclick>
                       </item>
                       <item>
