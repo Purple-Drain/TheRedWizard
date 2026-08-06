@@ -398,6 +398,7 @@ _browse_action_exit_params = {
 	'mdblist_watchlist': {'mode': 'navigator.mdblist_watchlists'},
 	'mdblist_collection': {'mode': 'navigator.mdblist_library'},
 	'mdblist_droplist': {'mode': 'navigator.mdblist_lists'},
+	'trakt_droplist': {'mode': 'navigator.trakt_lists_personal'},
 	'trakt_collection': {'mode': 'navigator.trakt_collections'},
 	'trakt_collection_lists': {'mode': 'navigator.trakt_collections'},
 	'trakt_watchlist': {'mode': 'navigator.trakt_watchlists'},
@@ -1145,12 +1146,16 @@ def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
 		confirm = confirm_dialog(text='Show Log Errors Only?', ok_label='Yes', cancel_label='No')
 		if confirm == None: return
 		if confirm: text = [i for i in text if any(x in i.lower() for x in ('exception', 'error', '[test]'))]
-	if isinstance(text, str): text = text.splitlines()
+	if isinstance(text, str):
+		# Callers often use Kodi [CR] as a line break (e.g. Clean Databases). Treat like \n
+		# before wrap — otherwise one giant line hard-splits mid-[COLOR]/[B] and shows orphan tags.
+		text = text.replace('[CR]', '\n').splitlines()
 	# List labels do not wrap; overflow becomes "...". Wrap by estimated pixel width for
 	# Estuary NotoSans (font14/33 large, font12/25 small). Label is 1214px; keep a small
 	# margin so dense/proportional lines are not truncated mid-word.
 	bbcode_re = re.compile(r'\[/?[^\[\]]+\]')
 	# Keep spaces inside [B]/[I]/[COLOR] spans so wrap cannot split e.g. [I]Original Air Date[/I].
+	# COLOR tags may be "[COLOR green]" or "[COLOR=green]" / "[COLOR ff00ff00]".
 	bbcode_span_re = re.compile(
 		r'\[(B|I|LIGHT|UPPERCASE|LOWERCASE|CAPITALIZE)\](?:(?!\[/\1\]).)*\[/\1\]'
 		r'|\[COLOR(?:\s|=)[^\]]+\].*?\[/COLOR\]',
@@ -1222,10 +1227,20 @@ def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
 				current = word
 				while _text_width(current) > width:
 					# Hard-split oversized tokens (URLs, long unbroken strings).
+					# Never cut inside a [...] BBCode tag — that yields orphan "[COLOR green]" lines.
 					cut, idx = current, 1
 					while idx < len(cut) and _text_width(cut[:idx]) <= width:
 						idx += 1
 					idx = max(1, idx - 1)
+					open_bracket = cut.rfind('[', 0, idx)
+					close_bracket = cut.rfind(']', 0, idx)
+					if open_bracket > close_bracket:
+						# Mid-tag: finish the tag if present, else back up before '['.
+						tag_end = cut.find(']', open_bracket)
+						if tag_end != -1 and _text_width(cut[:tag_end + 1]) <= width:
+							idx = tag_end + 1
+						elif open_bracket > 0:
+							idx = open_bracket
 					parts.append(cut[:idx])
 					current = cut[idx:]
 			else:

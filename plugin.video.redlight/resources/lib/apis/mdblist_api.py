@@ -583,18 +583,46 @@ def mdblist_reset_scrobble(params):
 
 _MDBL_DROPPED_CACHE_KEY = 'mdblist_hidden_items_dropped'
 
+def _mdbl_dropped_show_tmdb(item):
+	"""Resolve show TMDb from nested Trakt-shaped or flat MDBList dropped rows."""
+	if not isinstance(item, dict): return None
+	show = item.get('show') if isinstance(item.get('show'), dict) else item
+	ids = show.get('ids') if isinstance(show.get('ids'), dict) else {}
+	merged = dict(ids)
+	for src_key, dst_key in (
+		('tmdb', 'tmdb'), ('tmdb_id', 'tmdb'), ('tmdbid', 'tmdb'),
+		('imdb', 'imdb'), ('imdb_id', 'imdb'), ('imdbid', 'imdb'),
+		('tvdb', 'tvdb'), ('tvdb_id', 'tvdb'), ('tvdbid', 'tvdb'),
+	):
+		if show.get(src_key) not in (None, '', 'None', 0, '0') and dst_key not in merged:
+			merged[dst_key] = show.get(src_key)
+	# Some flat payloads use bare id as TMDb when mediatype is explicitly show.
+	if 'tmdb' not in merged and (show.get('mediatype') or '').lower() in ('show', 'shows', 'tvshow') and show.get('id') not in (None, '', 'None'):
+		try: merged['tmdb'] = int(show['id'])
+		except: pass
+	tmdb_id = _resolve_tvshow_id(merged)
+	if not tmdb_id: return None
+	try: return int(tmdb_id)
+	except: return None
+
 def mdblist_get_dropped_items():
 	cached = mdblist_cache.mdblist_cache.get(_MDBL_DROPPED_CACHE_KEY)
 	if cached is not None: return cached
-	items = []
-	result = call_mdblist('sync/dropped')
-	if isinstance(result, dict):
-		for item in result.get('shows', []):
-			try:
-				show = item.get('show', item)
-				tmdb_id = _resolve_tvshow_id(show.get('ids', {}))
-				if tmdb_id: items.append(int(tmdb_id))
-			except: pass
+	# Same cursor pagination as watched/watchlist — a single GET misses large Dropped sets
+	# and list-shaped responses land under items (not shows).
+	result = _get_mdbl_paginated_list('sync/dropped')
+	# Failed fetch must not cache [] — that would clear Next Up's drop filter until expiry.
+	if not isinstance(result, dict): return []
+	rows = list(result.get('shows') or [])
+	rows.extend(result.get('items') or [])
+	items, seen = [], set()
+	for item in rows:
+		try:
+			tmdb_id = _mdbl_dropped_show_tmdb(item)
+			if tmdb_id and tmdb_id not in seen:
+				seen.add(tmdb_id)
+				items.append(tmdb_id)
+		except: pass
 	mdblist_cache.mdblist_cache.set(_MDBL_DROPPED_CACHE_KEY, items)
 	return items
 
@@ -615,6 +643,31 @@ def _mdblist_resolve_show_imdb(tmdb_id, imdb_id=None):
 	except: pass
 	return None
 
+def _mdbl_dropped_count(block, bucket):
+	if not isinstance(block, dict): return 0
+	try: return int(block.get(bucket) or 0)
+	except: return 0
+
+def _mdbl_dropped_post_ok(result, action, mediatype):
+	"""True/False from counts; None = unknown shape, check membership."""
+	if not isinstance(result, dict) or result.get('error'): return False
+	bucket = 'movies' if mediatype == 'movies' else 'shows'
+	# MDBList Drop uses updated/existing (not Trakt-style added).
+	has_counts = any(k in result for k in ('added', 'updated', 'existing', 'deleted', 'removed'))
+	if not has_counts: return None
+	if action == 'hide':
+		# Newly dropped (updated/added), or already on Dropped (existing).
+		return (
+			_mdbl_dropped_count(result.get('updated'), bucket) > 0
+			or _mdbl_dropped_count(result.get('added'), bucket) > 0
+			or _mdbl_dropped_count(result.get('existing'), bucket) > 0
+		)
+	removed = _mdbl_dropped_count(result.get('deleted'), bucket) + _mdbl_dropped_count(result.get('removed'), bucket)
+	# Some remove responses mirror Drop and use updated for the change count.
+	if removed == 0:
+		removed = _mdbl_dropped_count(result.get('updated'), bucket)
+	return removed > 0
+
 def mdblist_hide_unhide_progress_items(params):
 	action, media_id = params['action'], params.get('media_id')
 	imdb_id = params.get('imdb_id')
@@ -629,8 +682,20 @@ def mdblist_hide_unhide_progress_items(params):
 		json_data = {'movies': [{'ids': {'tmdb': int(media_id)}}]}
 	else:
 		json_data = _mdblist_dropped_payload(media_id, _mdblist_resolve_show_imdb(media_id, imdb_id))
-	call_mdblist(url, json_data=json_data, method='post')
+	result = call_mdblist(url, json_data=json_data, method='post')
 	mdblist_cache.mdblist_cache.delete(_MDBL_DROPPED_CACHE_KEY)
+	if result is None:
+		return kodi_utils.notification('Error', 3000)
+	ok = _mdbl_dropped_post_ok(result, action, mediatype)
+	# Membership fallback only for Drop — Undrop must see a real removed/updated count.
+	# (A partial Dropped fetch missing the show would otherwise false-succeed Undrop.)
+	if ok is None and action == 'hide':
+		try: mid = int(media_id)
+		except: mid = None
+		dropped = mdblist_get_dropped_items()
+		ok = mid in dropped if mid is not None else False
+	if not ok:
+		return kodi_utils.notification('Error', 3000)
 	mdblist_sync_activities()
 	kodi_utils.kodi_refresh()
 	if action == 'hide': kodi_utils.notification('Dropped from MDBList Progress', 3000)
@@ -850,6 +915,7 @@ def _mdbl_list_matches_media_type(item, media_type):
 	mediatype = (item.get('mediatype') or item.get('media_type') or '').lower()
 	if not mediatype: return True
 	if media_type in ('movie', 'movies'): return mediatype in ('movie', 'movies')
+	if media_type in ('episode', 'episodes'): return mediatype in ('episode', 'episodes')
 	return mediatype in ('show', 'shows', 'tvshow', 'tv', 'series')
 
 def mdbl_get_lists(list_type, refresh=False):
@@ -914,13 +980,51 @@ def _mdblist_list_payload(media_type, tmdb_id, imdb_id=None):
 		if imdb_id and imdb_id not in ('None', '', '0'): payload['shows'][0]['ids']['imdb'] = imdb_id
 	return payload
 
-def _mdblist_static_list_payload(media_type, tmdb_id, imdb_id=None):
+def _mdbl_episode_context(params):
+	"""Return (season, episode) ints when manager was opened from an episode row."""
+	season, episode = params.get('season'), params.get('episode')
+	try:
+		season, episode = int(season), int(episode)
+	except: return None, None
+	if season < 0 or episode < 0: return None, None
+	return season, episode
+
+def _mdbl_resolve_episode_tmdb(show_tmdb, season, episode, episode_id=None):
+	if episode_id not in (None, '', 'None', '0', 0):
+		try: return int(episode_id)
+		except: pass
+	try:
+		from modules import metadata
+		from modules.utils import get_datetime
+		meta = metadata.tvshow_meta('tmdb_id', show_tmdb, settings.tmdb_api_key(), settings.mpaa_region(), get_datetime())
+		for ep in metadata.episodes_meta(int(season), meta) or []:
+			if int(ep.get('episode') or 0) != int(episode): continue
+			eid = ep.get('episode_id')
+			if eid not in (None, '', 'None', '0', 0): return int(eid)
+	except: pass
+	return None
+
+def _mdblist_static_list_payload(media_type, tmdb_id, imdb_id=None, season=None, episode=None, episode_tmdb=None):
 	# Static list modify uses flat tmdb/imdb keys (not the watchlist ids wrapper).
+	# Episodes need the episode TMDb id (not the show); season/episode help MDBList match.
+	if media_type in ('episode', 'episodes') and season is not None and episode is not None:
+		entry = {'season': int(season), 'episode': int(episode)}
+		if episode_tmdb not in (None, '', 'None', '0', 0):
+			entry['tmdb'] = int(episode_tmdb)
+		elif tmdb_id not in (None, '', 'None', '0', 0):
+			# Fallback: some callers already pass episode TMDb as tmdb_id.
+			entry['tmdb'] = int(tmdb_id)
+		return {'episodes': [entry]}
 	entry = {'tmdb': int(tmdb_id)}
 	if imdb_id and imdb_id not in ('None', '', '0'): entry['imdb'] = imdb_id
 	if media_type == 'movie':
 		return {'movies': [entry]}
 	return {'shows': [entry]}
+
+def _mdbl_static_result_count(result, key):
+	block = (result or {}).get(key) or {}
+	if not isinstance(block, dict): return 0
+	return int(block.get('movies') or 0) + int(block.get('shows') or 0) + int(block.get('seasons') or 0) + int(block.get('episodes') or 0)
 
 def _mdbl_clear_static_list_cache(list_id):
 	mdblist_cache.mdblist_cache.delete('mdblist_list_contents_my_lists_%s' % list_id)
@@ -935,9 +1039,31 @@ def mdblist_item_in_static_list(list_id, tmdb_id):
 		except: pass
 	return False
 
-def mdblist_static_lists_split_by_membership(media_type, tmdb_id, refresh=True):
+def mdblist_episode_in_static_list(list_id, show_tmdb, season, episode, episode_tmdb=None):
+	try:
+		show_tmdb, season, episode = int(show_tmdb), int(season), int(episode)
+	except: return False
+	try: episode_tmdb = int(episode_tmdb) if episode_tmdb not in (None, '', 'None', '0', 0) else None
+	except: episode_tmdb = None
+	for item in get_mdbl_list_contents('my_lists', list_id) or []:
+		if _mdbl_item_media_kind(item) != 'episode': continue
+		item_season = _mdbl_first_int(item.get('season'), item.get('season_number'))
+		item_episode = _mdbl_first_int(item.get('episode_number'), item.get('episode'), item.get('number'))
+		if item_season is None or item_episode is None: continue
+		if int(item_season) != season or int(item_episode) != episode: continue
+		show_block = item.get('show') if isinstance(item.get('show'), dict) else {}
+		ids_block = item.get('ids') if isinstance(item.get('ids'), dict) else {}
+		item_show = _mdbl_first_int(item.get('show_tmdb'), item.get('show_id'), show_block.get('tmdb'))
+		if item_show is not None and int(item_show) == show_tmdb: return True
+		# Unified episode rows expose episode TMDb as flat id.
+		item_ep_tmdb = _mdbl_first_int(item.get('tmdb'), item.get('id'), ids_block.get('tmdb'))
+		if episode_tmdb is not None and item_ep_tmdb is not None and int(item_ep_tmdb) == episode_tmdb: return True
+	return False
+
+def mdblist_static_lists_split_by_membership(media_type, tmdb_id, refresh=True, season=None, episode=None, episode_tmdb=None):
 	results = []
 	results_append = results.append
+	episode_mode = media_type in ('episode', 'episodes') and season is not None and episode is not None
 	def _check(item):
 		list_id = item.get('id')
 		if list_id in (None, '', 0, '0'): return
@@ -949,7 +1075,11 @@ def mdblist_static_lists_split_by_membership(media_type, tmdb_id, refresh=True):
 			'item_count': item.get('items') or 0,
 			'dynamic': False,
 		}
-		results_append((entry, mdblist_item_in_static_list(list_id, tmdb_id)))
+		if episode_mode:
+			is_in = mdblist_episode_in_static_list(list_id, tmdb_id, season, episode, episode_tmdb)
+		else:
+			is_in = mdblist_item_in_static_list(list_id, tmdb_id)
+		results_append((entry, is_in))
 	static_lists = mdbl_get_static_lists(media_type, refresh=refresh)
 	if not static_lists: return [], []
 	threads = TaskPool().tasks(_check, static_lists, min(len(static_lists), settings.max_threads()) or 1)
@@ -967,13 +1097,14 @@ def select_mdblist_static_lists(lists):
 	kwargs = {'items': json.dumps(list_items), 'heading': 'Select MDBList', 'narrow_window': 'true'}
 	return kodi_utils.select_dialog(lists, **kwargs)
 
-def mdblist_add_to_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None):
-	result = call_mdblist('lists/%s/items/add' % list_id, json_data=_mdblist_static_list_payload(media_type, tmdb_id, imdb_id), method='post')
+def mdblist_add_to_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None, season=None, episode=None, episode_tmdb=None):
+	payload = _mdblist_static_list_payload(media_type, tmdb_id, imdb_id, season=season, episode=episode, episode_tmdb=episode_tmdb)
+	result = call_mdblist('lists/%s/items/add' % list_id, json_data=payload, method='post')
 	_mdbl_clear_static_list_cache(list_id)
 	label = list_name or 'MDBList'
 	if isinstance(result, dict):
-		added = (result.get('added') or {}).get('movies', 0) + (result.get('added') or {}).get('shows', 0)
-		existing = (result.get('existing') or {}).get('movies', 0) + (result.get('existing') or {}).get('shows', 0)
+		added = _mdbl_static_result_count(result, 'added')
+		existing = _mdbl_static_result_count(result, 'existing')
 		if added > 0:
 			kodi_utils.notification('Added to %s' % label, 3000)
 			return result
@@ -981,15 +1112,18 @@ def mdblist_add_to_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_
 			return kodi_utils.notification('Already In List', 3000)
 	return kodi_utils.notification('Error', 3000)
 
-def mdblist_remove_from_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None):
-	result = call_mdblist('lists/%s/items/remove' % list_id, json_data=_mdblist_static_list_payload(media_type, tmdb_id, imdb_id), method='post')
+def mdblist_remove_from_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None, season=None, episode=None, episode_tmdb=None):
+	payload = _mdblist_static_list_payload(media_type, tmdb_id, imdb_id, season=season, episode=episode, episode_tmdb=episode_tmdb)
+	result = call_mdblist('lists/%s/items/remove' % list_id, json_data=payload, method='post')
 	_mdbl_clear_static_list_cache(list_id)
 	label = list_name or 'MDBList'
-	removed = 0
-	if isinstance(result, dict):
-		removed = (result.get('removed') or {}).get('movies', 0) + (result.get('removed') or {}).get('shows', 0)
+	removed = _mdbl_static_result_count(result, 'removed') if isinstance(result, dict) else 0
 	# Some MDBList responses omit removed counts; confirm via fresh membership check.
-	if removed > 0 or (result is not None and 'error' not in (result or {}) and not mdblist_item_in_static_list(list_id, tmdb_id)):
+	if media_type in ('episode', 'episodes') and season is not None and episode is not None:
+		still_in = mdblist_episode_in_static_list(list_id, tmdb_id, season, episode, episode_tmdb)
+	else:
+		still_in = mdblist_item_in_static_list(list_id, tmdb_id)
+	if removed > 0 or (result is not None and 'error' not in (result or {}) and not still_in):
 		kodi_utils.notification('Removed from %s' % label, 3000)
 		if kodi_utils.path_check('build_mdbl_list') or kodi_utils.external(): kodi_utils.kodi_refresh()
 		return result
@@ -1065,7 +1199,18 @@ def mdblist_manager_choice(params):
 	list_media = 'movie' if media_type == 'movie' else 'tvshow'
 	icon = params.get('icon') or kodi_utils.get_icon('mdblist')
 	tmdb_id, imdb_id, tvdb_id = params.get('tmdb_id'), params.get('imdb_id'), params.get('tvdb_id')
-	in_lists, out_lists = mdblist_static_lists_split_by_membership(list_media, tmdb_id, refresh=True)
+	season, episode = _mdbl_episode_context(params)
+	episode_mode = list_media != 'movie' and season is not None and episode is not None
+	episode_tmdb = None
+	if episode_mode:
+		episode_tmdb = _mdbl_resolve_episode_tmdb(tmdb_id, season, episode, params.get('episode_id'))
+	# Show-scoped static lists always (restore add-show from episode rows).
+	show_in_lists, show_out_lists = mdblist_static_lists_split_by_membership(list_media, tmdb_id, refresh=True)
+	ep_in_lists, ep_out_lists = [], []
+	if episode_mode and episode_tmdb:
+		ep_in_lists, ep_out_lists = mdblist_static_lists_split_by_membership(
+			'episode', tmdb_id, refresh=False, season=season, episode=episode, episode_tmdb=episode_tmdb
+		)
 	choices = []
 	if _mdbl_item_in_watchlist(list_media, tmdb_id):
 		choices.append(('Remove from [B]MDBList Watchlist[/B]', 'remove_watchlist'))
@@ -1075,10 +1220,21 @@ def mdblist_manager_choice(params):
 		choices.append(('Remove from [B]MDBList Library[/B]', 'remove_library'))
 	else:
 		choices.append(('Add to [B]MDBList Library[/B]', 'add_library'))
-	if out_lists:
-		choices.append(('Add To [B]Static List[/B]...', 'add_static'))
-	if in_lists:
-		choices.append(('Remove from [B]Static List[/B]...', 'remove_static'))
+	if episode_mode:
+		if show_out_lists:
+			choices.append(('Add TV Show To [B]Static List[/B]...', 'add_static_show'))
+		if show_in_lists:
+			choices.append(('Remove TV Show from [B]Static List[/B]...', 'remove_static_show'))
+		if episode_tmdb:
+			if ep_out_lists:
+				choices.append(('Add Episode To [B]Static List[/B]...', 'add_static_episode'))
+			if ep_in_lists:
+				choices.append(('Remove Episode from [B]Static List[/B]...', 'remove_static_episode'))
+	else:
+		if show_out_lists:
+			choices.append(('Add To [B]Static List[/B]...', 'add_static_show'))
+		if show_in_lists:
+			choices.append(('Remove from [B]Static List[/B]...', 'remove_static_show'))
 	if list_media != 'movie':
 		if _mdbl_item_in_dropped(tmdb_id):
 			choices.append(('Undrop [B]TV Show[/B]', 'undrop'))
@@ -1137,12 +1293,26 @@ def mdblist_manager_choice(params):
 		return mdblist_hide_unhide_progress_items({'action': 'drop', 'media_type': 'shows', 'media_id': tmdb_id, 'imdb_id': imdb_id})
 	if choice == 'undrop':
 		return mdblist_hide_unhide_progress_items({'action': 'undrop', 'media_type': 'shows', 'media_id': tmdb_id, 'imdb_id': imdb_id})
-	if choice in ('add_static', 'remove_static'):
-		selected = select_mdblist_static_lists(out_lists if choice == 'add_static' else in_lists)
+	if choice in ('add_static_show', 'remove_static_show'):
+		selected = select_mdblist_static_lists(show_out_lists if choice == 'add_static_show' else show_in_lists)
 		if selected is None: return
-		if choice == 'add_static':
+		if choice == 'add_static_show':
 			return mdblist_add_to_static_list(selected['list_id'], tmdb_id, list_media, imdb_id, selected.get('name'))
 		return mdblist_remove_from_static_list(selected['list_id'], tmdb_id, list_media, imdb_id, selected.get('name'))
+	if choice in ('add_static_episode', 'remove_static_episode'):
+		if not episode_tmdb:
+			return kodi_utils.notification('Unable to resolve episode for MDBList', 3500)
+		selected = select_mdblist_static_lists(ep_out_lists if choice == 'add_static_episode' else ep_in_lists)
+		if selected is None: return
+		if choice == 'add_static_episode':
+			return mdblist_add_to_static_list(
+				selected['list_id'], tmdb_id, 'episode', imdb_id, selected.get('name'),
+				season=season, episode=episode, episode_tmdb=episode_tmdb
+			)
+		return mdblist_remove_from_static_list(
+			selected['list_id'], tmdb_id, 'episode', imdb_id, selected.get('name'),
+			season=season, episode=episode, episode_tmdb=episode_tmdb
+		)
 
 def mdblist_get_my_calendar(dummy=None):
 	"""Episode airings for the authenticated user (undocumented /calendar/events).

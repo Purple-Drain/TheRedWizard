@@ -865,6 +865,10 @@ def punchplay_manager_choice(params):
 		('Open [B]PunchPlay Lists[/B]', 'open_lists'),
 		('Refresh Widgets', 'refresh'),
 	])
+	if list_media == 'movie':
+		choices.insert(-1, ('Open [B]Dropped Movies[/B]', 'open_dropped'))
+	else:
+		choices.insert(-1, ('Open [B]Dropped TV Shows[/B]', 'open_dropped'))
 	list_items = [{'line1': item[0], 'icon': icon} for item in choices]
 	choice = kodi_utils.select_dialog([i[1] for i in choices], **{'items': json.dumps(list_items), 'heading': 'PunchPlay Manager'})
 	if choice is None: return
@@ -873,6 +877,14 @@ def punchplay_manager_choice(params):
 		return kodi_utils.notification('Widgets Refreshed', 2500)
 	if choice == 'open_lists':
 		return kodi_utils.container_update({'mode': 'navigator.punchplay_lists'})
+	if choice == 'open_dropped':
+		if list_media == 'movie':
+			return kodi_utils.container_update({
+				'mode': 'build_movie_list', 'action': 'punchplay_dropped', 'category_name': 'Movies Dropped'
+			})
+		return kodi_utils.container_update({
+			'mode': 'build_tvshow_list', 'action': 'punchplay_dropped', 'category_name': 'TV Shows Dropped'
+		})
 	if choice == 'mark_watched':
 		from indexers.dialogs import _trakt_manager_mark
 		return _trakt_manager_mark(params, 'mark_as_watched')

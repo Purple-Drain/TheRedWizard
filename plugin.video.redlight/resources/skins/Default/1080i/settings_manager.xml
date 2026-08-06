@@ -3583,6 +3583,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
+                          <property name="setting_label">Quality Sort Order</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.results.quality_sort_order)]</property>
+                          <property name="setting_description">When Results Sorting uses Quality, choose which resolutions appear first (e.g. 720p then 1080p then SD then 4K). Default is 4K, 1080p, 720p, SD. Applies to all providers (EasyNews, debrid, torrents). Include Results Quality still controls which qualities are shown</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=quality_sort_order_choice)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(70)</visible>
                           <property name="setting_label">Size Filter Method</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.results.filter_size_method_name)]</property>

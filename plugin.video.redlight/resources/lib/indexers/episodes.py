@@ -88,7 +88,8 @@ def build_episode_list(params):
 					item['title'] = display
 				else: display, unaired = '%s%s' % (seas_ep, ep_name), False
 				extras_params = build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'episode', 'is_external': is_external})
-				options_params = build_url({'mode': 'options_menu_choice', 'content': 'episode', 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external})
+				options_params = build_url({'mode': 'options_menu_choice', 'content': 'episode', 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external,
+											'season': season, 'episode': episode, 'episode_id': episode_id})
 				playback_options_params = build_url({'mode': 'playback_choice', 'media_type': 'episode', 'meta': tmdb_id, 'season': season, 'playcount': playcount,
 												'episode': episode, 'episode_id': episode_id})
 				play_params = build_url({'mode': play_mode, 'media_type': 'episode', 'tmdb_id': tmdb_id, 'season': season, 'episode': episode, 'playcount': playcount,
@@ -318,7 +319,8 @@ def build_single_episode(list_type, params={}):
 			play_params = build_url({'mode': play_mode, 'media_type': 'episode', 'tmdb_id': tmdb_id, 'season': season, 'episode': episode, 'playcount': playcount,
 									'episode_id': episode_id, playback_key: playback_key})
 			extras_params = build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'episode', 'is_external': is_external})
-			options_params = build_url({'mode': 'options_menu_choice', 'content': list_type, 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external})
+			options_params = build_url({'mode': 'options_menu_choice', 'content': list_type, 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external,
+										'season': season, 'episode': episode, 'episode_id': episode_id})
 			playback_options_params = build_url({'mode': 'playback_choice', 'media_type': 'episode', 'meta': tmdb_id, 'season': season, 'playcount': playcount,
 											'episode': episode, 'episode_id': episode_id})
 			cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
@@ -329,11 +331,11 @@ def build_single_episode(list_type, params={}):
 			settings.append_external_scraper_settings_cm(cm_append, build_url)
 			cm_append(['browse_seasons', ('[B]Browse Seasons[/B]', window_command % build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id}))])
 			cm_append(['browse_episodes', ('[B]Browse Episodes[/B]', window_command % build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season}))])
-			# Parent-show list managers (same as Progress / TV show rows) — item is an episode play row but lists are show-scoped.
+			# List managers stay show-scoped (watchlist/library/etc). MDBList static add/remove uses season/episode when present.
 			trakt_manager_params, simkl_manager_params, punchplay_manager_params, mdblist_manager_params, tmdb_manager_params = '', '', '', '', ''
 			if settings.trakt_user_active():
 				trakt_manager_params = build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
-												'title': title, 'icon': show_poster})
+												'title': title, 'icon': show_poster, 'season': season, 'episode': episode, 'episode_id': episode_id})
 			if settings.simkl_user_active():
 				simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
 								'title': title, 'icon': show_poster}
@@ -344,7 +346,7 @@ def build_single_episode(list_type, params={}):
 													'title': title, 'icon': show_poster})
 			if settings.mdblist_user_active():
 				mdblist_manager_params = build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
-													'title': title, 'icon': show_poster})
+													'title': title, 'icon': show_poster, 'season': season, 'episode': episode, 'episode_id': episode_id})
 			if settings.tmdblist_user_active():
 				tmdb_manager_params = build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': show_poster})
 			personal_manager_params = build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
@@ -477,8 +479,9 @@ def build_single_episode(list_type, params={}):
 			except: pass
 		data = ws.get_next_episodes(nextep_content, watched_indicators)
 		if settings.nextep_limit_history(): data = data[:settings.nextep_limit()]
-		hidden_list = ws.get_hidden_progress_items(watched_indicators)
-		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
+		hidden_list = set(ws.get_hidden_progress_items(watched_indicators) or [])
+		if hidden_list:
+			data = [i for i in data if int(i['media_ids']['tmdb']) not in hidden_list]
 		if watched_indicators in (1, 2, 3, 4):
 			resformat, resinsert = '%Y-%m-%dT%H:%M:%S.%fZ', '2000-01-01T00:00:00.000Z'
 			list_type = {1: 'episode.next_trakt', 2: 'episode.next_simkl', 3: 'episode.next_mdblist', 4: 'episode.next_punchplay'}[watched_indicators]

@@ -199,6 +199,14 @@ def page_limit(is_home):
 def quality_filter(setting):
 	return get_setting('redlight.%s' % setting).split(', ')
 
+def quality_sort_order():
+	'''User order for Results Sorting when Quality is a key. Lower index = higher in list.'''
+	default = ['4K', '1080p', '720p', 'SD']
+	raw = get_setting('redlight.results.quality_sort_order', '4K, 1080p, 720p, SD')
+	parts = [i.strip() for i in (raw or '').split(',') if i.strip()]
+	if sorted(parts) != sorted(default): return default[:]
+	return parts
+
 def sort_to_top_filter(autoplay):
 	return {0: False, 1: False if autoplay else True, 2: True if autoplay else False, 3: True}[int(get_setting('redlight.filter.sort_to_top', '0'))]
 

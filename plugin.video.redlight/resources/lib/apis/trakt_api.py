@@ -522,6 +522,17 @@ def trakt_watchlist(media_type, dummy_arg):
 		data = [i for i in data if i.get('released', None) and js2date(i.get('released'), str_format, remove_time=True) <= current_date]
 	return list_sort.sort_source(data, 'trakt.watchlist', media_type, 'trakt_sync')
 
+def trakt_droplist(media_type, dummy_arg):
+	"""TV shows in Trakt Dropped (users/hidden/dropped). Movies not supported."""
+	if media_type in ('movie', 'movies'): return []
+	ids = trakt_get_hidden_items('dropped') or []
+	data = []
+	for item in ids:
+		try: tmdb_id = int(item)
+		except: continue
+		data.append({'media_ids': {'tmdb': tmdb_id, 'imdb': '', 'tvdb': ''}})
+	return data
+
 def trakt_fetch_collection_watchlist(list_type, media_type):
 	def _process(params):
 		data = get_trakt(params) or []
@@ -538,17 +549,23 @@ def trakt_fetch_collection_watchlist(list_type, media_type):
 	params = {'path': path, 'path_insert': (list_type, url_type), 'params': {'extended': 'full'}, 'with_auth': True, 'fetch_all': True}
 	return trakt_cache.cache_trakt_object(_process, string, params)
 
+def _trakt_list_result_count(result, key):
+	block = (result or {}).get(key) or {}
+	if not isinstance(block, dict): return 0
+	return sum(int(block.get(k) or 0) for k in ('movies', 'shows', 'seasons', 'episodes'))
+
 def add_to_list(user, slug, data):
 	result = call_trakt('/users/%s/lists/%s/items' % (user, slug), data=data)
-	if result['existing']['movies'] + result['existing']['shows'] > 0: return kodi_utils.notification('Already In List', 3000)
-	if result['added']['movies'] + result['added']['shows'] == 0: return kodi_utils.notification('Error', 3000)
+	if not isinstance(result, dict): return kodi_utils.notification('Error', 3000)
+	if _trakt_list_result_count(result, 'existing') > 0: return kodi_utils.notification('Already In List', 3000)
+	if _trakt_list_result_count(result, 'added') == 0: return kodi_utils.notification('Error', 3000)
 	kodi_utils.notification('Success', 3000)
 	trakt_sync_activities()
 	return result
 
 def remove_from_list(user, slug, data):
 	result = call_trakt('/users/%s/lists/%s/items/remove' % (user, slug), data=data)
-	if not result or result.get('deleted', {}).get('movies', 0) + result.get('deleted', {}).get('shows', 0) == 0:
+	if not result or _trakt_list_result_count(result, 'deleted') == 0:
 		return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
 	kodi_utils.notification('Success', 3000)
 	trakt_sync_activities()
@@ -591,10 +608,22 @@ def trakt_item_is_dropped(tmdb_id):
 	except:
 		return False
 
-def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, imdb_id=None, tvdb_id=None, season=None, episode=None):
 	try:
 		contents = get_trakt_list_contents('my_lists', user, slug, True, list_id=list_id) or []
 	except:
+		return False
+	want_episode = media_type in ('episode', 'episodes') and season is not None and episode is not None
+	if want_episode:
+		try: season, episode = int(season), int(episode)
+		except: return False
+		for item in contents:
+			if (item.get('type') or item.get('media_type')) != 'episode': continue
+			try:
+				if int(item.get('season')) != season or int(item.get('episode')) != episode: continue
+			except: continue
+			if _trakt_media_ids_match(item.get('media_ids'), tmdb_id, imdb_id, tvdb_id):
+				return True
 		return False
 	want_movie = media_type in ('movie', 'movies')
 	for item in contents:
@@ -615,7 +644,7 @@ def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, i
 			except: pass
 	return False
 
-def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=None, tvdb_id=None, season=None, episode=None):
 	results = []
 	results_append = results.append
 	def _check(item):
@@ -631,7 +660,7 @@ def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=N
 			'list_id': list_id,
 			'item_count': item.get('item_count', 0)
 		}
-		is_in = trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id, imdb_id, tvdb_id)
+		is_in = trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id, imdb_id, tvdb_id, season, episode)
 		results_append((entry, is_in))
 	try:
 		trakt_my_lists = trakt_get_lists('my_lists') or []
@@ -710,11 +739,31 @@ def remove_from_favorites(data):
 def hide_unhide_progress_items(params):
 	action, media_type, media_id, list_type = params['action'], params['media_type'], params['media_id'], params['section']
 	media_type = 'movies' if media_type in ('movie', 'movies') else 'shows'
-	url = 'users/hidden/%s' % list_type if action == 'drop' else 'users/hidden/%s/remove' % list_type
+	is_drop = action == 'drop'
+	url = 'users/hidden/%s' % list_type if is_drop else 'users/hidden/%s/remove' % list_type
 	data = {media_type: [{'ids': {'tmdb': media_id}}]}
-	call_trakt(url, data=data)
+	result = call_trakt(url, data=data)
+	if not isinstance(result, dict):
+		return kodi_utils.notification('Error', 3000)
+	added = int((result.get('added') or {}).get(media_type, 0) or 0)
+	existing = int((result.get('existing') or {}).get(media_type, 0) or 0)
+	deleted = int((result.get('deleted') or {}).get(media_type, 0) or 0)
+	ok = (added > 0 or existing > 0) if is_drop else deleted > 0
+	if not ok:
+		# Count shape unknown / already in desired state — confirm via fresh Dropped membership.
+		trakt_cache.clear_trakt_hidden_data(list_type)
+		try:
+			mid = int(media_id)
+			hidden = set(trakt_get_hidden_items(list_type) or [])
+			ok = mid in hidden if is_drop else mid not in hidden
+		except:
+			ok = False
+	if not ok:
+		return kodi_utils.notification('Error', 3000)
 	trakt_sync_activities()
 	kodi_utils.kodi_refresh()
+	if is_drop: kodi_utils.notification('Dropped from Trakt Progress', 3000)
+	else: kodi_utils.notification('Removed from Trakt Dropped', 3000)
 
 def trakt_search_lists(search_title, page_no):
 	def _process(dummy_arg):

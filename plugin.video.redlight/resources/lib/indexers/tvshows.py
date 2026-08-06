@@ -21,7 +21,7 @@ class TVShows:
 	trakt_main = ('trakt_tv_trending', 'trakt_tv_trending_recent', 'trakt_tv_most_favorited',
 	'trakt_anime_trending', 'trakt_anime_trending_recent', 'trakt_anime_most_favorited')
 	trakt_special = ('trakt_tv_certifications', 'trakt_anime_certifications')
-	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites')
+	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites', 'trakt_droplist')
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
 	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
 		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')

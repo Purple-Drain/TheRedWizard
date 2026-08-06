@@ -223,9 +223,9 @@ def clean_databases():
 			continue
 		end_bytes = get_size(location)
 		saved_bytes = start_bytes - end_bytes
-		append('[B]%s: [COLOR green]SUCCESS[/COLOR][/B][CR]    [B]Saved Size: %sMB[/B][CR]    Start Size/End Size: %sMB/%sMB' \
+		append('[B]%s: [COLOR green]SUCCESS[/COLOR][/B]\n    [B]Saved Size: %sMB[/B]\n    Start Size/End Size: %sMB/%sMB' \
 		% (name, round(float(saved_bytes)/1024/1024, 2), round(float(start_bytes)/1024/1024, 2), round(float(end_bytes)/1024/1024, 2)))
-	return kodi_utils.show_text('Cache Clean Results', text='[CR]----------------------------------[CR]'.join(results), font_size='large')
+	return kodi_utils.show_text('Cache Clean Results', text='\n----------------------------------\n'.join(results), font_size='large')
 
 def clear_cache(cache_type, silent=False):
 	def _confirm(): return silent or kodi_utils.confirm_dialog()
@@ -311,7 +311,16 @@ def clear_cache(cache_type, silent=False):
 		if not _confirm(): return
 		from caches.main_cache import main_cache
 		success = main_cache.delete_all()
-	if not silent and success and cache_type not in ('trakt', 'simkl', 'mdblist', 'punchplay'): kodi_utils.notification('Success')
+	# Trakt/Simkl/MDBList/PunchPlay already toast a named "… Cache Cleared" in their clear helpers.
+	if not silent and success and cache_type not in ('trakt', 'simkl', 'mdblist', 'punchplay'):
+		clear_names = {
+			'meta': 'Meta Cache', 'internal_scrapers': 'Internal Scrapers Cache', 'easynews_scrape': 'EasyNews Scrape Cache',
+			'external_scrapers': 'External Scrapers Cache', 'imdb': 'IMDb Cache', 'subtitles': 'Subtitles Cache',
+			'pm_cloud': 'Premiumize Cloud Cache', 'rd_cloud': 'Real Debrid Cloud Cache', 'ad_cloud': 'All Debrid Cloud Cache',
+			'oc_cloud': 'Offcloud Cloud Cache', 'tb_cloud': 'TorBox Cloud Cache', 'folders': 'Folders Cache',
+			'list': 'Lists Cache', 'ai_functions': 'AI Data Cache', 'tmdb_list': 'TMDb Lists Cache', 'main': 'Main Cache'}
+		name = clear_names.get(cache_type)
+		kodi_utils.notification('%s Cleared' % name if name else 'Success', 3000)
 	return success
 
 def clear_all_cache():

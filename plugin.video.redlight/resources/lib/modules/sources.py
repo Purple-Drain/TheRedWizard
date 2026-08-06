@@ -395,6 +395,7 @@ class Sources():
 		self.limit_resolve = settings.limit_resolve()
 		self.weight_size = settings.size_sort_weighted()
 		self.sort_function, self.quality_filter = settings.results_sort_order(), self._quality_filter()
+		self.quality_sort_order = settings.quality_sort_order()
 		self.include_unknown_size = get_setting('redlight.results.size_unknown', 'false') == 'true'
 		self.make_search_info()
 		if self.background and self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
@@ -735,8 +736,10 @@ class Sources():
 	def special_filter(self, results, file_type):
 		enable_setting, key = settings.filter_status(file_type), self.filter_keys[file_type]
 		if key == 'HEVC' and enable_setting == 0:
-			hevc_max_quality = self._get_quality_rank(get_setting('redlight.filter.hevc.%s' % ('max_autoplay_quality' if self.autoplay else 'max_quality'), '4K'))
-			results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key) or i['quality_rank'] >= hevc_max_quality]
+			# Absolute resolution order (not user Quality Sort Order) — "max" means exclude higher res HEVC
+			hevc_max_quality = self._get_absolute_quality_rank(get_setting('redlight.filter.hevc.%s' % ('max_autoplay_quality' if self.autoplay else 'max_quality'), '4K'))
+			results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key)
+				or self._get_absolute_quality_rank(i.get('quality', 'SD')) >= hevc_max_quality]
 		if enable_setting == 1:
 			if key in ('D/VISION', 'HDR'):
 				if not settings.filter_status({'D/VISION': 'hdr', 'HDR': 'dv'}[key]) == 0: results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key)]
@@ -1591,8 +1594,15 @@ class Sources():
 		if self.weight_size: return item['size'] * 2 if 'HEVC' in item['extraInfo'] else item['size']
 		else: return item['size']
 
+	def _get_absolute_quality_rank(self, quality):
+		return {'4K': 1, '1080p': 2, '720p': 3, 'SD': 4, 'SCR': 5, 'CAM': 5, 'TELE': 5}.get(quality, 5)
+
 	def _get_quality_rank(self, quality):
-		return {'4K': 1, '1080p': 2, '720p': 3, 'SD': 4, 'SCR': 5, 'CAM': 5, 'TELE': 5}[quality]
+		'''Sort key from Quality Sort Order (1 = first). Prerelease always after SD/configured qualities.'''
+		order = getattr(self, 'quality_sort_order', None) or settings.quality_sort_order()
+		if quality in ('SCR', 'CAM', 'TELE'): return len(order) + 1
+		try: return order.index(quality) + 1
+		except ValueError: return len(order) + 1
 
 	def _get_provider_rank(self, account_type):
 		rank = self.provider_sort_ranks.get(account_type)

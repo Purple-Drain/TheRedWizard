@@ -584,6 +584,10 @@ def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=Non
 			return True
 		# Already clear on Simkl.
 		if action == 'mark_as_unwatched' and isinstance(result, dict): return True
+		# Add with 0 added = already watched (e.g. finished after mid-play pause, or marked in Simkl app).
+		# Same idea as Trakt — not a failure unless Simkl reports not_found.
+		if action == 'mark_as_watched' and isinstance(result, dict) and not _simkl_history_not_found(result):
+			return True
 		kodi_utils.logger('Simkl', 'history %s failed for movie tmdb=%s: %s' % (action, tmdb_id, result))
 		return False
 	# TV / episode / season — Simkl stores many titles under anime[], not shows[].
@@ -629,6 +633,9 @@ def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=Non
 	# that was hiding silent no-ops when remove used the wrong envelope.
 	if action == 'mark_as_unwatched' and saw_not_found:
 		kodi_utils.logger('Simkl', 'history mark_as_unwatched already clear for %s tmdb=%s tvdb=%s' % (item_type, tmdb_id, tvdb_id))
+		return True
+	# Add with 0 added across buckets = already watched — not a failure unless not_found.
+	if action == 'mark_as_watched' and isinstance(last_result, dict) and not _simkl_history_not_found(last_result):
 		return True
 	kodi_utils.logger('Simkl', 'history %s failed for %s tmdb=%s tvdb=%s: %s' % (action, item_type, tmdb_id, tvdb_id, last_result))
 	return False

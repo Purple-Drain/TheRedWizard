@@ -194,10 +194,11 @@ class Navigator:
 		self.end_directory()
 
 	def trakt_lists_personal(self):
-		# Shared meta-list order: Watchlist → Library → Favorites → My Lists → Liked → Recommended → Calendar → Search.
+		# Shared meta-list order: Watchlist → Library → Favorites → Dropped → My Lists → Liked → Recommended → Calendar → Search.
 		self.add({'mode': 'navigator.trakt_watchlists'}, 'Watchlist', 'lists')
 		self.add({'mode': 'navigator.trakt_collections'}, 'Library', 'folder')
 		self.add({'mode': 'navigator.trakt_favorites', 'category_name': 'Favorites'}, 'Favorites', 'favorites')
+		self.add({'mode': 'build_tvshow_list', 'action': 'trakt_droplist', 'category_name': 'Dropped TV Shows'}, 'Dropped', 'lists')
 		self.add({'mode': 'trakt.list.get_trakt_lists', 'list_type': 'my_lists', 'category_name': 'My Lists'}, 'My Lists', 'lists')
 		self.add({'mode': 'trakt.list.get_trakt_lists', 'list_type': 'liked_lists', 'category_name': 'Liked Lists'}, 'Liked Lists', 'favorites')
 		self.add({'mode': 'navigator.trakt_recommendations', 'category_name': 'Recommended'}, 'Recommended', 'because_you_watched')
