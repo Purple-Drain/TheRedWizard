@@ -20,9 +20,15 @@ _SUBS_FINAL_TAIL_SCAN_SEC = 65
 _SUB_EXTS = ('.srt', '.ass', '.ssa', '.sub', '.vtt')
 _ACTIVE_SUB_PROP = 'redlight.active_subtitle_path'
 _SUBMAKER_SKIP_LANGS = frozenset(('sub toolbox',))
+# Phrases seen in tiny provider error bodies wrapped as fake .srt downloads.
+# Do NOT match bare "429" — that is a normal SRT cue index on long episodes.
 _SUBMAKER_ERROR_RE = re.compile(
-	r'scs:\s*an error occurred|provider error|api error|rate limit exceeded|invalid api key|unauthorized',
+	r'scs:\s*an error occurred|provider error|api error|rate limit(?:ed| exceeded)?'
+	r'|too many requests|try again later|invalid api key|unauthorized|http\s*429|\bstatus\s*429\b',
 	re.I)
+# Real episode subs are long; rate-limit stubs are a few lines / one cue.
+_SUB_ERROR_PAYLOAD_MAX_CHARS = 800
+_SUB_ERROR_PAYLOAD_MAX_CUES = 1
 _VTT_TIMESTAMP_RE = re.compile(r'(\d{2}:\d{2}:\d{2})\.(\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2})\.(\d{3})')
 _RELEASE_SOURCE_PATTERNS = (
 	('BLURAY', ('bluray', 'blu.ray', 'blu-ray', 'bdrip', 'bd.rip', 'bdr')),
@@ -362,7 +368,6 @@ def _subtitle_text(content):
 def _is_submaker_error_content(content):
 	text = _subtitle_text(content).strip()
 	if not text: return True
-	if _SUBMAKER_ERROR_RE.search(text): return True
 	sample = text.lstrip()[:256].lower()
 	if sample.startswith('<!doctype') or sample.startswith('<html'): return True
 	if sample.startswith('{'):
@@ -370,6 +375,11 @@ def _is_submaker_error_content(content):
 			data = json.loads(text)
 			if isinstance(data, dict) and (data.get('error') or data.get('message')): return True
 		except: pass
+	# Multi-cue / long files are real subs (dialogue can contain "try again later",
+	# and cue index 429 must never be treated as HTTP 429).
+	if len(text) > _SUB_ERROR_PAYLOAD_MAX_CHARS or _count_subtitle_cues(text) > _SUB_ERROR_PAYLOAD_MAX_CUES:
+		return False
+	if _SUBMAKER_ERROR_RE.search(text): return True
 	return False
 
 def _count_subtitle_cues(content):
@@ -717,19 +727,34 @@ def _subtitle_is_prior_playback_cache(path, player=None):
 	except:
 		return True
 
-def _existing_release_tagged_subtitle_cache(imdb_id, season, episode, playing_filename=None, playing_item=None):
+def _existing_submaker_subtitle_cache(imdb_id, season, episode, playing_filename=None, playing_item=None):
+	if not st.submaker_manifest_configured(): return None
 	release_context = playback_release_context(playing_filename, playing_item, season, episode) if (playing_filename or playing_item) else None
-	if st.submaker_manifest_configured():
-		for name in _subtitle_cache_lookup_names(imdb_id, season, episode, release_context):
-			path = '%s%s' % ('special://temp/', name)
-			if _subtitle_cache_file_usable(path):
-				return path
-	if st.opensubs_configured():
-		for name in _opensubs_cache_lookup_names(imdb_id, season, episode, release_context):
-			path = '%s%s' % ('special://temp/', name)
-			if _subtitle_cache_file_usable(path):
-				return path
+	for name in _subtitle_cache_lookup_names(imdb_id, season, episode, release_context):
+		path = '%s%s' % ('special://temp/', name)
+		if _subtitle_cache_file_usable(path):
+			return path
 	return None
+
+def _existing_opensubs_subtitle_cache(imdb_id, season, episode, playing_filename=None, playing_item=None):
+	if not st.opensubs_configured(): return None
+	release_context = playback_release_context(playing_filename, playing_item, season, episode) if (playing_filename or playing_item) else None
+	for name in _opensubs_cache_lookup_names(imdb_id, season, episode, release_context):
+		path = '%s%s' % ('special://temp/', name)
+		if _subtitle_cache_file_usable(path):
+			return path
+	return None
+
+def _existing_release_tagged_subtitle_cache(imdb_id, season, episode, playing_filename=None, playing_item=None):
+	# Prefer the selected Auto Enable source; do not cross-apply SubMaker files when OpenSubtitles is selected (and vice versa).
+	if st.opensubs_enabled():
+		return _existing_opensubs_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+	if st.submaker_enabled():
+		return _existing_submaker_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+	return (
+		_existing_submaker_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+		or _existing_opensubs_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+	)
 
 def _alert_temp_paths(imdb_id, season, episode, playing_filename=None, playing_item=None):
 	if not imdb_id: return []
@@ -953,11 +978,14 @@ def fetch_subtitle_for_alert_timing(imdb_id, season=None, episode=None, year=Non
 	return None
 
 def _subs_alert_fetch_order():
+	# Match Auto Enable Subtitle Source when set; otherwise SubMaker then OpenSubtitles.
+	if st.opensubs_enabled():
+		return [_fetch_opensubs_alert_subtitle, _fetch_submaker_alert_subtitle]
 	return [_fetch_submaker_alert_subtitle, _fetch_opensubs_alert_subtitle]
 
 def _fetch_submaker_alert_subtitle(imdb_id, season, episode, year=None, playing_filename=None, playing_item=None):
 	if not st.submaker_manifest_configured(): return None
-	cached = _existing_release_tagged_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+	cached = _existing_submaker_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
 	if cached:
 		remember_active_subtitle_path(cached)
 		return cached
@@ -1138,7 +1166,7 @@ class OpenSubtitlesSubs(xbmc.Player):
 			if self._video_file_subs(): return
 		if not st.opensubs_configured():
 			return _subtitle_user_notify('OpenSubtitles username and password required', poster=poster, settle_ms=500 if self.is_episode else 200, player=self._player)
-		cached = _existing_release_tagged_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+		cached = _existing_opensubs_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
 		if cached:
 			remember_active_subtitle_path(cached)
 			return _apply_external_subtitle(self._player, cached, poster=poster, is_episode=self.is_episode, cached=True)

@@ -3,7 +3,7 @@ import json
 import os
 import pickle
 import time
-from threading import Thread, current_thread, Lock
+from threading import Thread, current_thread
 from windows.base_window import open_window, create_window
 from caches.episode_groups_cache import episode_groups_cache
 from caches.settings_cache import get_setting
@@ -20,10 +20,6 @@ PROP_SOURCES_BUSY_AT = 'redlight.sources_busy_at'
 # Live scrapes refresh the heartbeat every loop pass; anything older than this with no
 # playback means the owning scrape died (e.g. Browse flow killed mid-wait) — clear it.
 SOURCES_BUSY_STALE_SECONDS = 120
-# How long the scraper progress dialog keeps waiting on live threads before it gives up. In
-# waterfall (sequential) prescrape this is the budget for the whole run, shared across every
-# priority tier — not a fresh allowance each tier.
-SCRAPER_DIALOG_BUDGET_SECONDS = 25
 PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
 PROP_RESOLVE_OWNER = 'redlight.resolve_busy_owner'
 PROP_RESOLVE_CANCEL = 'redlight.resolve_cancelled'
@@ -41,9 +37,6 @@ _NEXTEP_NATURAL_END_SEC = 15
 _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
 _NEXTEP_STASH_PLAY_IN_FLIGHT = False
-# Guards check-then-claim on the sources/resolve busy properties — two threads in the same
-# reused invoker can otherwise both see "free" and both start a scrape/resolve.
-_BUSY_CLAIM_LOCK = Lock()
 
 def _nextep_stash_play_in_flight():
 	return _NEXTEP_STASH_PLAY_IN_FLIGHT
@@ -264,14 +257,13 @@ class Sources():
 							('sources_sd', '', self._quality_length_sd), ('sources_total', '', self._quality_length_final))
 		self.filter_keys = include_exclude_filters()
 		self.filter_keys.pop('hybrid')
-		self.default_internal_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud', 'folders')
+		self.default_internal_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'folders')
 		self.debrids = {'Real-Debrid': ('apis.real_debrid_api', 'RealDebridAPI'), 'rd_cloud': ('apis.real_debrid_api', 'RealDebridAPI'),
 		'rd_browse': ('apis.real_debrid_api', 'RealDebridAPI'), 'Premiumize.me': ('apis.premiumize_api', 'PremiumizeAPI'), 'pm_cloud': ('apis.premiumize_api', 'PremiumizeAPI'),
 		'pm_browse': ('apis.premiumize_api', 'PremiumizeAPI'), 'AllDebrid': ('apis.alldebrid_api', 'AllDebridAPI'), 'ad_cloud': ('apis.alldebrid_api', 'AllDebridAPI'),
 		'ad_browse': ('apis.alldebrid_api', 'AllDebridAPI'), 'Offcloud': ('apis.offcloud_api', 'OffcloudAPI'), 'oc_cloud': ('apis.offcloud_api', 'OffcloudAPI'),
 		'oc_browse': ('apis.offcloud_api', 'OffcloudAPI'), 'TorBox': ('apis.torbox_api', 'TorBoxAPI'), 'tb_cloud': ('apis.torbox_api', 'TorBoxAPI'),
-		'tb_browse': ('apis.torbox_api', 'TorBoxAPI'), 'DebridLink': ('apis.debridlink_api', 'DebridLinkAPI'), 'dl_cloud': ('apis.debridlink_api', 'DebridLinkAPI'),
-		'dl_browse': ('apis.debridlink_api', 'DebridLinkAPI')}
+		'tb_browse': ('apis.torbox_api', 'TorBoxAPI')}
 		self.retry_actions = settings.rescrape_settings()
 
 	def _playback_already_active(self):
@@ -362,6 +354,19 @@ class Sources():
 		self.nextep_settings, self.disable_autoplay_next_episode = params_get('nextep_settings', {}), params_get('disable_autoplay_next_episode', 'false') == 'true'
 		if getattr(self, '_nextep_stash_settings', None):
 			self.nextep_settings = self._nextep_stash_settings
+		self.num_episodes = params_get('num_episodes', None)
+		if not self.num_episodes and isinstance(self.nextep_settings, dict):
+			self.num_episodes = self.nextep_settings.get('num_episodes')
+		# Play # Episodes: force Autoplay Next for the remaining chain; stop after the last.
+		try: _play_n = int(self.num_episodes) if self.num_episodes not in (None, '') else 0
+		except: _play_n = 0
+		if _play_n > 1:
+			self.autoplay_nextep, self.autoscrape_nextep = True, False
+			self.autoscrape = False
+			if not self.play_type: self.play_type = 'autoplay_nextep'
+		elif self.num_episodes not in (None, '') and _play_n <= 1:
+			self.autoplay_nextep, self.autoscrape_nextep = False, False
+			self.autoscrape = False
 		self.disabled_ext_ignored = params_get('disabled_ext_ignored', self.disabled_ext_ignored) == 'true'
 		self.folders_ignore_filters = get_setting('redlight.results.folders_ignore_filters', 'false') == 'true'
 		self.filter_size_method = int(get_setting('redlight.results.filter_size_method', '0'))
@@ -390,12 +395,21 @@ class Sources():
 		self.limit_resolve = settings.limit_resolve()
 		self.weight_size = settings.size_sort_weighted()
 		self.sort_function, self.quality_filter = settings.results_sort_order(), self._quality_filter()
+		self.quality_sort_order = settings.quality_sort_order()
 		self.include_unknown_size = get_setting('redlight.results.size_unknown', 'false') == 'true'
 		self.make_search_info()
 		if self.background and self.play_type in ('autoplay_nextep', 'autoscrape_nextep', 'random_continual'):
 			self._log_nextep_scrape_started()
 			self._prefetch_nextep_segment_data()
-		if self.background and self.autoplay_nextep and self.nextep_settings and not getattr(self, '_nextep_alert_handled', False):
+		if self.background and self.play_type == 'random_continual' and not self.nextep_settings:
+			# Continual Random reuses Autoplay Next Episode's "Check Still Watching After X".
+			self.nextep_settings = {'watching_check': settings.auto_nextep_settings('autoplay_nextep')['watching_check']}
+		# Continual Random no-results skips must not run Still Watching — unsuccessful scrapes
+		# must not burn the binge budget (Dateline / #62).
+		continual_skip = self.play_type == 'random_continual' and params_get('continual_skip', 'false') == 'true'
+		play_n_episodes = bool(self.num_episodes) or bool(isinstance(self.nextep_settings, dict) and self.nextep_settings.get('play_n_episodes'))
+		if self.background and (self.autoplay_nextep or self.play_type == 'random_continual') and self.nextep_settings \
+				and not getattr(self, '_nextep_alert_handled', False) and not continual_skip and not play_n_episodes:
 			if not self.still_watching_check():
 				self._decline_nextep_prep('still watching')
 				kodi_utils.notification('Cancel Autoplay', icon=self.meta.get('poster'))
@@ -414,6 +428,12 @@ class Sources():
 		try:
 			if any([self.custom_season, self.custom_episode]) or 'skip_episode_group_check' in self.params: return
 			group_info = episode_groups_cache.get(self.tmdb_id)
+			# Opt-in: anime with no assigned group — prefer TMDb "Seasons", else Original Air Date.
+			# Does not write to episode_groups_cache — only an explicit Assign Episode Group persists.
+			if not group_info and settings.anime_seasons_episode_group_fallback() and metadata.is_anime_check(tmdb_id=self.tmdb_id):
+				groups = metadata.episode_groups(self.tmdb_id)
+				if groups:
+					group_info = metadata.preferred_episode_group(groups, prefer_name='seasons')
 			if not group_info: return
 			group_details = metadata.group_episode_data(metadata.group_details(group_info['id']), self.episode_id, self.season, self.episode)
 			if group_details:
@@ -462,20 +482,19 @@ class Sources():
 			self._clear_stale_sources_busy()
 			# Stale cancel from a prior resolve/nextep must not poison Download File / a new scrape.
 			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
-			with _BUSY_CLAIM_LOCK:
-				if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
-					if not self.background:
-						kodi_utils.notification('Resolve or playback in progress.', 2500)
-					return
-				if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not allow_concurrent:
-					if not self.background:
-						kodi_utils.notification('Source search already running.', 2500)
-					return
-				self._scrape_user_cancelled = False
-				self._sources_busy_owner = str(id(self))
-				kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
-				kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
-				self._touch_sources_busy()
+			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
+				if not self.background:
+					kodi_utils.notification('Resolve or playback in progress.', 2500)
+				return
+			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not allow_concurrent:
+				if not self.background:
+					kodi_utils.notification('Source search already running.', 2500)
+				return
+			self._scrape_user_cancelled = False
+			self._sources_busy_owner = str(id(self))
+			kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
+			kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
+			self._touch_sources_busy()
 		self._get_sources_depth = depth + 1
 		try:
 			if depth == 0:
@@ -566,6 +585,7 @@ class Sources():
 		return self.sources
 
 	def collect_prescrape_results(self):
+		threads_append = self.prescrape_threads.append
 		folder_prescrape = False
 		if self.active_folders:
 			if settings.check_prescrape_sources('folders', self.media_type):
@@ -573,9 +593,6 @@ class Sources():
 				folder_prescrape = True
 		self.prescrape_scrapers.extend(self.internal_sources(True))
 		if not self.prescrape_scrapers and not folder_prescrape: return []
-		if settings.prescrape_sequential():
-			return self._collect_prescrape_results_sequential(folder_prescrape)
-		threads_append = self.prescrape_threads.append
 		for i in self.prescrape_scrapers: threads_append(Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]))
 		[i.start() for i in self.prescrape_threads]
 		if self.background: [i.join() for i in self.prescrape_threads]
@@ -589,54 +606,14 @@ class Sources():
 		self.prescrape_ran_scrapers = {i[2] for i in self.prescrape_scrapers}
 		return self.prescrape_sources
 
-	def _prescrape_priority_key(self, scraper_tuple):
-		module_type, scraper_name = scraper_tuple[0], scraper_tuple[2]
-		provider_key = 'folders' if module_type == 'folders' else scraper_name
-		return self.provider_sort_ranks.get(provider_key, 99)
-
-	def _collect_prescrape_results_sequential(self, folder_prescrape):
-		"""Waterfall prescrape: run providers in priority tiers (lowest number first, per
-		redlight.<provider>.priority) and stop starting the next tier once a tier finds a hit."""
-		tiers = {}
-		for i in self.prescrape_scrapers:
-			tiers.setdefault(self._prescrape_priority_key(i), []).append(i)
-		ran_scrapers = []
-		waterfall_start = time.time()
-		for priority in sorted(tiers):
-			# One budget for the whole waterfall, shared by every tier. scrapers_dialog() used to
-			# re-arm a fresh SCRAPER_DIALOG_BUDGET_SECONDS on each call, so a hung provider cost
-			# that much again per tier. Never START a tier the budget can no longer cover: an
-			# unstarted scraper stays out of remove_scrapers and so still runs in the full scrape,
-			# whereas starting it and timing out burns the grace period and then drops it silently.
-			if ran_scrapers and (time.time() - waterfall_start) >= SCRAPER_DIALOG_BUDGET_SECONDS:
-				break
-			tier = tiers[priority]
-			tier_threads = [Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]) for i in tier]
-			[t.start() for t in tier_threads]
-			if self.background:
-				[t.join() for t in tier_threads]
-			else:
-				self.prescrape_threads = tier_threads
-				self.scrapers_dialog(shared_start=waterfall_start)
-			ran_scrapers.extend(tier)
-			if self._user_cancelled_scrape() or self.prescrape_sources:
-				break
-		for i in ran_scrapers:
-			scraper_name = i[2]
-			if scraper_name not in self.remove_scrapers:
-				self.remove_scrapers.append(scraper_name)
-		if folder_prescrape and any(i[0] == 'folders' for i in ran_scrapers) and 'folders' not in self.remove_scrapers:
-			self.remove_scrapers.append('folders')
-		self.prescrape_ran_scrapers = {i[2] for i in ran_scrapers}
-		return self.prescrape_sources
-
 	def process_results(self, results):
 		if not results: return results
 		self._touch_sources_busy()
 		results = self.sort_results(results)
 		min_seeders = settings.uncached_min_seeders()
 		all_uncached_results = [i for i in results if 'Uncached' in i.get('cache_provider', '')]
-		self.uncached_results = [i for i in all_uncached_results if int(i.get('seeders', '0')) >= min_seeders]
+		# seeders can be present but None (external scrapers); .get default only covers missing keys
+		self.uncached_results = [i for i in all_uncached_results if int(i.get('seeders') or 0) >= min_seeders]
 		uncached_in_main = []
 		if settings.include_uncached_torbox():
 			uncached_in_main.extend([i for i in self.uncached_results if 'TorBox' in i.get('cache_provider', '')])
@@ -650,7 +627,7 @@ class Sources():
 		else:
 			strip_uncached = all_uncached_results
 		results = [i for i in results if i not in strip_uncached]
-		cloud_scrapers = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud')
+		cloud_scrapers = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
 		cloud_results = [i for i in results if i.get('scrape_provider') in cloud_scrapers]
 		aio_preserve_results = []
 		if self._aiostreams_preserve_order():
@@ -671,11 +648,11 @@ class Sources():
 				results = self._merge_aiostreams_at_provider_rank(non_aio, aio_block)
 		if self.prescrape:
 			self.all_scrapers = self.active_internal_scrapers
-			autoplay_results = self._prescrape_autoplay_candidates(results)
-			if autoplay_results:
-				self.autoplay = True
-				self.cloud_prescrape_autoplay = True
-				results = autoplay_results
+			if self.autoplay:
+				autoplay_results = self._prescrape_autoplay_candidates(results)
+				if autoplay_results:
+					self.cloud_prescrape_autoplay = True
+					results = autoplay_results
 		else:
 			self.all_scrapers = list(set(self.active_internal_scrapers + self.remove_scrapers))
 			kodi_utils.clear_property('fs_filterless_search')
@@ -697,7 +674,7 @@ class Sources():
 	def _log_prescrape_settings(self):
 		try:
 			active = self.active_internal_scrapers or []
-			check_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud', 'folders', 'external')
+			check_scrapers = ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'folders', 'external')
 			check = {s: settings.check_prescrape_sources(s, self.media_type) for s in active if s in check_scrapers}
 			label = '%s tmdb=%s' % (self.media_type, self.tmdb_id)
 			if self.media_type == 'episode':
@@ -743,12 +720,12 @@ class Sources():
 				max_size = ((0.125 * (0.90 * string_to_float(get_setting('results.line_speed', '25'), '25'))) * duration)/1000
 			elif self.filter_size_method == 2:
 				max_size = string_to_float(get_setting('redlight.results.%s_size_max' % self.media_type, '10000'), '10000') / 1000
-			results = [i for i in results if i['scrape_provider'] == 'folders' or i['scrape_provider'] in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud') or min_size <= i['size'] <= max_size]
+			results = [i for i in results if i['scrape_provider'] == 'folders' or i['scrape_provider'] in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') or min_size <= i['size'] <= max_size]
 		if self.autoplay:
 			autoplay_max_mb = string_to_float(get_setting('redlight.autoplay.%s_size_max' % self.media_type, '0'), '0')
 			if autoplay_max_mb > 0:
 				autoplay_max_size = autoplay_max_mb / 1000
-				_size_exempt = ('folders', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud')
+				_size_exempt = ('folders', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
 				results = [i for i in results if i['scrape_provider'] in _size_exempt or not i.get('size') or i['size'] <= autoplay_max_size]
 		results += folder_results
 		return results
@@ -760,8 +737,10 @@ class Sources():
 	def special_filter(self, results, file_type):
 		enable_setting, key = settings.filter_status(file_type), self.filter_keys[file_type]
 		if key == 'HEVC' and enable_setting == 0:
-			hevc_max_quality = self._get_quality_rank(get_setting('redlight.filter.hevc.%s' % ('max_autoplay_quality' if self.autoplay else 'max_quality'), '4K'))
-			results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key) or i['quality_rank'] >= hevc_max_quality]
+			# Absolute resolution order (not user Quality Sort Order) — "max" means exclude higher res HEVC
+			hevc_max_quality = self._get_absolute_quality_rank(get_setting('redlight.filter.hevc.%s' % ('max_autoplay_quality' if self.autoplay else 'max_quality'), '4K'))
+			results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key)
+				or self._get_absolute_quality_rank(i.get('quality', 'SD')) >= hevc_max_quality]
 		if enable_setting == 1:
 			if key in ('D/VISION', 'HDR'):
 				if not settings.filter_status({'D/VISION': 'hdr', 'HDR': 'dv'}[key]) == 0: results = [i for i in results if not self._extra_info_has_tag(i['extraInfo'], key)]
@@ -895,13 +874,13 @@ class Sources():
 
 	def _pin_scrapers_to_top_enabled(self):
 		if 'folders' in self.all_scrapers and settings.sort_to_top('folders'): return True
-		return any(settings.sort_to_top(p) for p in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud') if p in self.all_scrapers)
+		return any(settings.sort_to_top(p) for p in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') if p in self.all_scrapers)
 
 	def sort_first(self, results):
 		try:
 			sort_first_scrapers = []
 			if 'folders' in self.all_scrapers and settings.sort_to_top('folders'): sort_first_scrapers.append('folders')
-			sort_first_scrapers.extend([i for i in self.all_scrapers if i in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud') and settings.sort_to_top(i)])
+			sort_first_scrapers.extend([i for i in self.all_scrapers if i in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') and settings.sort_to_top(i)])
 			if not sort_first_scrapers: return results
 			sort_first = [i for i in results if i['scrape_provider'] in sort_first_scrapers]
 			sort_first.sort(key=lambda k: (self._sort_folder_to_top(k['scrape_provider']), k['quality_rank']))
@@ -986,7 +965,7 @@ class Sources():
 		self.active_external, self.external_providers = False, []
 
 	def internal_sources(self, prescrape=False, cloud_early=False):
-		active_sources = [i for i in self.active_internal_scrapers if i in ['easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud'] and i not in self.remove_scrapers]
+		active_sources = [i for i in self.active_internal_scrapers if i in ['easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'] and i not in self.remove_scrapers]
 		if not prescrape:
 			prescrape_ran = getattr(self, 'prescrape_ran_scrapers', set()) or set()
 			if prescrape_ran:
@@ -1057,7 +1036,7 @@ class Sources():
 		return sourceDict
 
 	def _cloud_scrapers(self):
-		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud')
+		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
 
 	def _prescrape_autoplay_candidates(self, results):
 		autoplay_scrapers = self._cloud_scrapers() + ('easynews', 'aiostreams', 'nzb', 'folders')
@@ -1106,7 +1085,7 @@ class Sources():
 			if self.autoplay_nextep and not self.autoscrape_nextep:
 				return self._stash_nextep_autoplay_play(autoplay_queue)
 			return self.play_file(autoplay_queue)
-		prescrape_autoplay = self._prescrape_autoplay_candidates(results)
+		prescrape_autoplay = self._prescrape_autoplay_candidates(results) if self.autoplay else []
 		if prescrape_autoplay:
 			self.cloud_prescrape_autoplay = True
 			self._last_cloud_autoplay_results = list(prescrape_autoplay)
@@ -1135,10 +1114,10 @@ class Sources():
 	def _get_active_scraper_names(self, scraper_list):
 		return [i[2] for i in scraper_list]
 
-	def scrapers_dialog(self, shared_start=None):
+	def scrapers_dialog(self):
 		def _scraperDialog():
 			monitor = kodi_utils.kodi_monitor()
-			start_time = time.time() if shared_start is None else shared_start
+			start_time = time.time()
 			while not self.progress_dialog.iscanceled() and not monitor.abortRequested():
 				try:
 					self._touch_sources_busy()
@@ -1146,7 +1125,7 @@ class Sources():
 					self._process_internal_results()
 					current_progress = max((time.time() - start_time), 0)
 					line1 = ', '.join(remaining_providers).upper()
-					percent = int((current_progress/float(SCRAPER_DIALOG_BUDGET_SECONDS))*100)
+					percent = int((current_progress/float(25))*100)
 					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
 					kodi_utils.sleep(self.sleep_time)
 					if len(remaining_providers) == 0: break
@@ -1186,14 +1165,13 @@ class Sources():
 
 	def _reclaim_sources_busy(self):
 		'''Re-take scrape lock after releasing it during browse playback wait.'''
-		with _BUSY_CLAIM_LOCK:
-			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true':
-				return False
-			self._sources_busy_owner = str(id(self))
-			kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
-			kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
-			self._touch_sources_busy()
-			return True
+		if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true':
+			return False
+		self._sources_busy_owner = str(id(self))
+		kodi_utils.set_property(PROP_SOURCES_BUSY, 'true')
+		kodi_utils.set_property(PROP_SOURCES_OWNER, self._sources_busy_owner)
+		self._touch_sources_busy()
+		return True
 
 	def display_results(self, results):
 		while True:
@@ -1359,7 +1337,9 @@ class Sources():
 						try: group_id = episode_groups_choice({'meta': self.meta, 'poster': self.meta['poster']})
 						except: group_id = None
 					else:
-						try: group_id = metadata.episode_groups(self.tmdb_id)[0]['id']
+						try:
+							group = metadata.preferred_episode_group(metadata.episode_groups(self.tmdb_id))
+							group_id = group['id'] if group else None
 						except: group_id = None
 					if group_id:
 						try: group_details = metadata.group_episode_data(metadata.group_details(group_id), None, self.season, self.episode)
@@ -1440,7 +1420,7 @@ class Sources():
 		return self._show_modal_message(heading, 'No results found.', '[B]Next Up:[/B] No Results')
 
 	def _random_continual_skip(self):
-		"""Continual random: no links for this episode — try another (capped)."""
+		"""Continual random: no links — try another (capped). Unsuccessful scrapes do not advance Still Watching."""
 		from modules.episode_tools import EpisodeTools
 		attempts = int(kodi_utils.get_property(PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS) or 0)
 		self._close_progress_before_modal()
@@ -1451,7 +1431,14 @@ class Sources():
 		kodi_utils.logger('Red Light', 'Continual random play: no results for %s S%02dE%02d, skipping to another episode' % (
 			self.meta.get('title', ''), self.meta.get('season', 0), self.meta.get('episode', 0)))
 		meta = metadata.tvshow_meta('tmdb_id', self.tmdb_id, settings.tmdb_api_key(), settings.mpaa_region(), get_datetime())
-		return EpisodeTools(meta).play_random_continual(first_run=False)
+		# Undo Still Watching increment from this failed prep so only played episodes count.
+		try:
+			watch_count = int(self.meta.get('watch_count', self.watch_count or 1))
+		except (TypeError, ValueError):
+			watch_count = 1
+		if watch_count > 1: watch_count -= 1
+		meta['watch_count'] = watch_count
+		return EpisodeTools(meta).play_random_continual(first_run=False, from_skip=True)
 
 	def get_search_title(self):
 		search_title = self.meta.get('custom_title', None) or self.meta.get('english_title') or self.meta.get('title')
@@ -1521,7 +1508,7 @@ class Sources():
 		names.update(i for i in self.remove_scrapers if i not in ('external',))
 		for thread in self.threads:
 			name = thread.getName()
-			if name in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud', 'dl_cloud'):
+			if name in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'):
 				names.add(name)
 		return names
 
@@ -1608,8 +1595,15 @@ class Sources():
 		if self.weight_size: return item['size'] * 2 if 'HEVC' in item['extraInfo'] else item['size']
 		else: return item['size']
 
+	def _get_absolute_quality_rank(self, quality):
+		return {'4K': 1, '1080p': 2, '720p': 3, 'SD': 4, 'SCR': 5, 'CAM': 5, 'TELE': 5}.get(quality, 5)
+
 	def _get_quality_rank(self, quality):
-		return {'4K': 1, '1080p': 2, '720p': 3, 'SD': 4, 'SCR': 5, 'CAM': 5, 'TELE': 5}[quality]
+		'''Sort key from Quality Sort Order (1 = first). Prerelease always after SD/configured qualities.'''
+		order = getattr(self, 'quality_sort_order', None) or settings.quality_sort_order()
+		if quality in ('SCR', 'CAM', 'TELE'): return len(order) + 1
+		try: return order.index(quality) + 1
+		except ValueError: return len(order) + 1
 
 	def _get_provider_rank(self, account_type):
 		rank = self.provider_sort_ranks.get(account_type)
@@ -1695,9 +1689,14 @@ class Sources():
 		title, year, ep_name = self.get_search_title(), self.get_search_year(), self.get_ep_name()
 		aliases = make_alias_dict(self.meta, title)
 		expiry_times = get_cache_expiry(self.media_type, self.meta, self.season)
+		season, episode = self.get_season(), self.get_episode()
+		absolute_episode = None
+		if self.media_type == 'episode':
+			from modules.source_utils import absolute_episode_from_season_data
+			absolute_episode = absolute_episode_from_season_data(self.meta.get('season_data'), season, episode)
 		self.search_info = {'media_type': self.media_type, 'title': title, 'year': year, 'tmdb_id': self.tmdb_id, 'imdb_id': self.meta.get('imdb_id'), 'aliases': aliases,
-							'season': self.get_season(), 'episode': self.get_episode(), 'tvdb_id': self.meta.get('tvdb_id'), 'ep_name': ep_name, 'expiry_times': expiry_times,
-							'total_seasons': self.meta.get('total_seasons', 1)}
+							'season': season, 'episode': episode, 'tvdb_id': self.meta.get('tvdb_id'), 'ep_name': ep_name, 'expiry_times': expiry_times,
+							'total_seasons': self.meta.get('total_seasons', 1), 'absolute_episode': absolute_episode}
 
 	def _get_module(self, module_type, function):
 		if module_type == 'external': module = function.source(*self.external_args)
@@ -1771,15 +1770,9 @@ class Sources():
 		return False
 
 	def _claim_resolve_busy(self):
-		'''Atomic check-and-claim: two concurrent play_file() calls (e.g. a stale nextep
-		autoplay landing alongside a manual Play) must not both win the resolve slot.'''
-		with _BUSY_CLAIM_LOCK:
-			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true':
-				return False
-			self._resolve_busy_owner = str(id(self))
-			kodi_utils.set_property(PROP_RESOLVE_BUSY, 'true')
-			kodi_utils.set_property(PROP_RESOLVE_OWNER, self._resolve_busy_owner)
-			return True
+		self._resolve_busy_owner = str(id(self))
+		kodi_utils.set_property(PROP_RESOLVE_BUSY, 'true')
+		kodi_utils.set_property(PROP_RESOLVE_OWNER, self._resolve_busy_owner)
 
 	def _on_scrape_dialog_cancel(self):
 		# Keep sources_busy until get_sources finishes cancel cleanup — releasing early
@@ -2072,7 +2065,7 @@ class Sources():
 
 	def _cleanup_browse_transfer(self, debrid_provider, debrid_files, is_pack):
 		'''Remove temporary browse transfers when Store Resolved to Cloud does not apply.'''
-		if debrid_provider not in ('TorBox', 'Offcloud', 'DebridLink'):
+		if debrid_provider not in ('TorBox', 'Offcloud'):
 			return
 		if settings.store_resolved_to_cloud(debrid_provider, is_pack):
 			return
@@ -2100,8 +2093,11 @@ class Sources():
 			return
 		try:
 			from apis.offcloud_api import OffcloudAPI
-			request_id = OffcloudAPI.request_id_from_download_url(url)
+			request_id = item.pop('_offcloud_cleanup_request_id', None)
 			if not request_id:
+				return
+			url_request_id = OffcloudAPI.request_id_from_download_url(url)
+			if url_request_id and url_request_id != request_id:
 				return
 			api = OffcloudAPI()
 			Thread(target=api.cleanup_resolved_request, args=(request_id,), daemon=True).start()
@@ -2182,7 +2178,7 @@ class Sources():
 				return None
 			# browse_packs() already notified; do not fall back to full magnet resolve/play.
 			return None
-		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse', 'DebridLink': 'dl_browse'}.get(debrid_provider)
+		debrid_info = {'Real-Debrid': 'rd_browse', 'Premiumize.me': 'pm_browse', 'AllDebrid': 'ad_browse', 'Offcloud': 'oc_browse', 'TorBox': 'tb_browse'}.get(debrid_provider)
 		if download:
 			debrid_files, _pack_api = pack_result
 			return debrid_files, self.debrid_importer(debrid_info)
@@ -2251,7 +2247,8 @@ class Sources():
 			processed_items_append = processed_items.append
 			for count, item in enumerate(items, 1):
 				resolve_item = dict(item)
-				provider = item['scrape_provider']
+				scrape_provider = item['scrape_provider']
+				provider = scrape_provider
 				if provider == 'external': provider = item['debrid'].replace('.me', '')
 				elif provider == 'folders': provider = item['source']
 				elif provider == 'aiostreams': provider = item.get('aio_source_label') or provider
@@ -2261,15 +2258,19 @@ class Sources():
 				display_name = item['display_name'].upper()
 				resolve_item['resolve_display'] = '%02d. [B]%s[/B][CR]%s[CR]%s' % (count, provider_text, extra_info, display_name)
 				processed_items_append(resolve_item)
-				if provider == 'easynews' and retry_easynews:
+				# Native EN + AIOStreams EN badge rows share EasyNews Playback Method (Retry).
+				en_retry = scrape_provider == 'easynews'
+				if not en_retry and scrape_provider == 'aiostreams':
+					try:
+						from apis.aiostreams_api import is_direct_easynews_item
+						en_retry = is_direct_easynews_item(item)
+					except Exception:
+						en_retry = False
+				if en_retry and retry_easynews:
 					for retry in range(1, retry_easynews_limit):
 						resolve_item = dict(item)
 						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
 						processed_items_append(resolve_item)
-				elif item['scrape_provider'] == 'folders':
-					resolve_item = dict(item)
-					resolve_item['resolve_display'] = '%02d. [B]%s (RETRY)[/B][CR]%s[CR]%s' % (count, provider_text, extra_info, display_name)
-					processed_items_append(resolve_item)
 			items = list(processed_items)
 			if not self.continue_resolve_check():
 				self._kill_progress_dialog()
@@ -2365,11 +2366,6 @@ class Sources():
 								self._stop_active_playback()
 							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
-							try:
-								show_key = str(self.tmdb_id) if self.media_type == 'episode' and self.tmdb_id else None
-								player.display_lock_generation = kodi_utils.begin_display_lock(show_key)
-							except Exception:
-								pass
 							player.run(url, self)
 						else: continue
 						if self.cancel_all_playback or self._resolve_user_cancelled:
@@ -2661,7 +2657,7 @@ class Sources():
 		watching_check = self.nextep_settings.get('watching_check', 0)
 		if watching_check == 0: return True
 		player = kodi_utils.kodi_player()
-		# Autoplay next-episode idle edge case: don't prompt/count when nothing is playing.
+		# Don't prompt/count when nothing is playing (Autoplay idle + Continual Random cold-start skips).
 		if not player.isPlayingVideo():
 			return bool(self.background)
 		watch_count = self.meta.get('watch_count')
@@ -2841,8 +2837,8 @@ class Sources():
 					title, season, episode = self._resolve_episode_labels()
 					pack = 'package' in item
 				else: title, season, episode, pack = self.get_search_title(), None, None, False
-				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox', 'DebridLink'):
-					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack)
+				if cache_provider in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox'):
+					url = self.resolve_cached(cache_provider, item['url'], item['hash'], title, season, episode, pack, item)
 					try:
 						self._log_nextep_resolve_diag(item, phase='resolved', url=url, resolve_se=(season, episode))
 					except Exception:
@@ -2853,27 +2849,25 @@ class Sources():
 			return None
 		return url
 
-	def resolve_cached(self, debrid_provider, item_url, _hash, title, season, episode, pack):
+	def resolve_cached(self, debrid_provider, item_url, _hash, title, season, episode, pack, source_item=None):
 		debrid_function = self.debrid_importer(debrid_provider)
 		store_to_cloud = settings.store_resolved_to_cloud(debrid_provider, pack)
-		try: url = debrid_function().resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
+		try:
+			api = debrid_function()
+			if debrid_provider == 'Offcloud' and hasattr(api, 'resolve_magnet_with_cleanup'):
+				url, cleanup_request_id = api.resolve_magnet_with_cleanup(item_url, _hash, store_to_cloud, title, season, episode)
+				if source_item is not None:
+					if cleanup_request_id: source_item['_offcloud_cleanup_request_id'] = cleanup_request_id
+					else: source_item.pop('_offcloud_cleanup_request_id', None)
+			else:
+				url = api.resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
 		except: url = None
 		return url
 
 	def resolve_internal(self, scrape_provider, item_id, url_dl, direct_debrid_link=False, cloud_media_type=None):
 		url = None
 		try:
-			if direct_debrid_link or scrape_provider == 'folders':
-				url = url_dl
-				if scrape_provider == 'folders' and isinstance(url, str) and url.lower().endswith('.strm'):
-					import xbmcvfs
-					try:
-						with xbmcvfs.File(url) as _f: _data = _f.read()
-						for _ln in _data.splitlines():
-							_ln = _ln.strip()
-							if _ln and not _ln.startswith('#'):
-								url = _ln; break
-					except Exception: pass
+			if direct_debrid_link or scrape_provider == 'folders': url = url_dl
 			elif scrape_provider == 'easynews':
 				from indexers.easynews import resolve_easynews
 				url = resolve_easynews({'url_dl': url_dl, 'play': 'false'})
@@ -2889,7 +2883,7 @@ class Sources():
 					else:
 						url = tb.unrestrict_link(item_id)
 					url = tb.coerce_play_url(url) or url
-				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_', 'dl_')):
+				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_')):
 					url = debrid_function().unrestrict_link(item_id)
 				else:
 					if '_cloud' in scrape_provider: item_id = debrid_function().get_item_details(item_id)['link']

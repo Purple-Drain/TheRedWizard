@@ -13,6 +13,7 @@ def _trakt_setting(setting_id, fallback=''):
 from caches.main_cache import cache_object
 from caches.lists_cache import lists_cache_object
 from modules import kodi_utils, settings, list_sort
+from modules.http_defaults import META_API_TIMEOUT
 from modules.metadata import movie_meta_external_id, tvshow_meta_external_id
 from modules.utils import get_datetime, timedelta, replace_html_codes, copy2clip, make_qrcode, make_tinyurl, \
 							TaskPool, jsondate_to_datetime as js2date
@@ -75,8 +76,7 @@ def get_trakt_all(params):
 		return {'sort_by': sort_by, 'sort_how': sort_how, 'data': all_items}
 	return all_items
 
-def call_trakt(path, params=None, data=None, is_delete=False, with_auth=True, method=None, pagination=False, page_no=1):
-	params = {} if params is None else params
+def call_trakt(path, params={}, data=None, is_delete=False, with_auth=True, method=None, pagination=False, page_no=1):
 	def send_query():
 		resp = None
 		if with_auth:
@@ -90,14 +90,14 @@ def call_trakt(path, params=None, data=None, is_delete=False, with_auth=True, me
 			if token: headers['Authorization'] = 'Bearer ' + token
 		try:
 			if method:
-				if method == 'post': resp = requests.post(API_ENDPOINT % path, headers=headers, timeout=10)
-				elif method == 'delete': resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=10)
-				else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=10)
+				if method == 'post': resp = requests.post(API_ENDPOINT % path, headers=headers, timeout=META_API_TIMEOUT)
+				elif method == 'delete': resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=META_API_TIMEOUT)
+				else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=META_API_TIMEOUT)
 			elif data is not None:
 				assert not params
-				resp = requests.post(API_ENDPOINT % path, json=data, headers=headers, timeout=10)
-			elif is_delete: resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=10)
-			else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=10)
+				resp = requests.post(API_ENDPOINT % path, json=data, headers=headers, timeout=META_API_TIMEOUT)
+			elif is_delete: resp = requests.delete(API_ENDPOINT % path, headers=headers, timeout=META_API_TIMEOUT)
+			else: resp = requests.get(API_ENDPOINT % path, params=params, headers=headers, timeout=META_API_TIMEOUT)
 			resp.raise_for_status()
 		except Exception as e: kodi_utils.logger('Trakt Error', str(e))
 		return resp
@@ -112,23 +112,12 @@ def call_trakt(path, params=None, data=None, is_delete=False, with_auth=True, me
 	headers = response.headers
 	if status_code == 401:
 		if with_auth:
-			if settings.trakt_user_active():
-				old_token = _trakt_setting('trakt.token')
-				trakt_refresh_token()
-				new_token = _trakt_setting('trakt.token')
-				if not new_token or new_token == old_token: return None
-				response = send_query()
-				try: status_code = response.status_code
-				except: return None
-				headers = response.headers
-				if status_code == 401: return None
+			if settings.trakt_user_active(): trakt_refresh_token()
 			else: return None
 		else: return None
 	elif status_code == 429:
 		if 'Retry-After' in headers:
-			try: retry_after = int(headers['Retry-After'])
-			except: retry_after = 1
-			kodi_utils.sleep(1000 * retry_after)
+			kodi_utils.sleep(1000 * headers['Retry-After'])
 			response = send_query()
 	response.encoding = 'utf-8'
 	result = response.json() if 'json' in headers.get('Content-Type', '') else response.text
@@ -141,14 +130,36 @@ def call_trakt(path, params=None, data=None, is_delete=False, with_auth=True, me
 		return (result, page_count)
 	else: return result
 
+def _trakt_using_custom_keys():
+	from caches.settings_cache import default_setting_values
+	try:
+		default_client = default_setting_values('trakt.client')['setting_default']
+		default_secret = default_setting_values('trakt.secret')['setting_default']
+	except Exception:
+		return True
+	return settings.trakt_client() != default_client or settings.trakt_secret() != default_secret
+
 def trakt_get_device_code():
 	CLIENT_ID = settings.trakt_client()
 	if CLIENT_ID in (None, 'empty_setting', ''): return no_client_key()
 	data = {'client_id': CLIENT_ID}
 	result = call_trakt('oauth/device/code', data=data, with_auth=False)
 	if result: return result
-	_, message = trakt_test_credentials()
-	kodi_utils.ok_dialog(heading='Trakt Authorise', text=message)
+	ok, message = trakt_test_credentials()
+	if not ok and _trakt_using_custom_keys():
+		restore = kodi_utils.confirm_dialog(
+			heading='Trakt Authorise',
+			text='%s[CR][CR]Restore Red Light default Client ID and Secret now?' % message,
+			ok_label='Restore Defaults', cancel_label='Cancel'
+		)
+		if restore:
+			from caches.settings_cache import restore_setting_default
+			restore_setting_default({'setting_id': 'trakt.client', 'silent': 'true'})
+			restore_setting_default({'setting_id': 'trakt.secret', 'silent': 'true'})
+			kodi_utils.notification('Trakt default keys restored — try Authorise again', 4000)
+			return None
+	else:
+		kodi_utils.ok_dialog(heading='Trakt Authorise', text=message)
 	return None
 
 def trakt_test_credentials():
@@ -160,7 +171,7 @@ def trakt_test_credentials():
 		return False, 'Trakt Client Secret Key is not set.'
 	try:
 		headers = {'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': CLIENT_ID}
-		response = requests.post('https://api.trakt.tv/oauth/device/code', json={'client_id': CLIENT_ID}, headers=headers, timeout=15)
+		response = requests.post('https://api.trakt.tv/oauth/device/code', json={'client_id': CLIENT_ID}, headers=headers, timeout=META_API_TIMEOUT)
 		if response.status_code == 200:
 			return True, 'Trakt client keys are valid.'
 		try:
@@ -168,7 +179,7 @@ def trakt_test_credentials():
 			detail = payload.get('error_description') or payload.get('error') or ''
 		except: detail = ''
 		if not detail: detail = (response.text or '').strip() or 'No details returned.'
-		return False, 'Trakt client keys failed.[CR]Trakt rejected the client ID (HTTP %s).[CR]%s' % (response.status_code, detail)
+		return False, 'Trakt client keys failed.[CR]Trakt rejected the client ID (HTTP %s).[CR]%s[CR][CR]In Meta Accounts > Trakt, use [B]Restore Default Client ID Key[/B] and [B]Restore Default Client Secret Key[/B], then Authorise again.' % (response.status_code, detail)
 	except Exception as e:
 		return False, 'Trakt client keys failed.[CR]Could not reach Trakt: %s' % str(e)
 
@@ -200,7 +211,7 @@ def trakt_get_device_token(device_codes):
 			time_passed = 0
 			while not progressDialog.iscanceled() and time_passed < expires_in:
 				kodi_utils.sleep(max(sleep_interval, 1)*1000)
-				response = requests.post(API_ENDPOINT % 'oauth/device/token', data=json.dumps(data), headers=headers, timeout=20)
+				response = requests.post(API_ENDPOINT % 'oauth/device/token', data=json.dumps(data), headers=headers, timeout=META_API_TIMEOUT)
 				status_code = response.status_code
 				if status_code == 200:
 					result = response.json()
@@ -417,21 +428,47 @@ def trakt_watched_status_mark(action, media, media_id, tvdb_id=0, season=None, e
 		elif media =='shows': data = {'shows': [{'ids': {key: media_id}}]}
 		else: data = {'shows': [{'ids': {key: media_id}, 'seasons': [{'number': int(season)}]}]}#season
 	result = call_trakt(url, data=data)
-	if not isinstance(result, dict): return False
-	success = (result.get(result_key) or {}).get(success_key, 0) > 0
+	try: success = result[result_key][success_key] > 0
+	except: success = False
 	if not success:
 		if media != 'movies' and tvdb_id != 0 and key != 'tvdb': return trakt_watched_status_mark(action, media, tvdb_id, 0, season, episode, 'tvdb')
+		# Remove with 0 deleted = already unwatched on Trakt — not a failure.
+		if action != 'mark_as_watched': return True
+		# Add with 0 added = already watched (common after scrobble/stop at 90%) — not a failure
+		# unless Trakt reports the ids as not_found.
+		try:
+			not_found = result.get('not_found') or {}
+			if not any(not_found.get(k) for k in ('movies', 'shows', 'seasons', 'episodes')):
+				return True
+		except:
+			pass
 	return success
+
+def _trakt_scrobble_payload(media_type, tmdb_id, percent, season=None, episode=None):
+	progress = float(percent or 0)
+	if media_type in ('movie', 'movies'):
+		return {'movie': {'ids': {'tmdb': int(tmdb_id)}}, 'progress': progress}
+	return {
+		'show': {'ids': {'tmdb': int(tmdb_id)}},
+		'episode': {'season': int(season), 'number': int(episode)},
+		'progress': progress
+	}
+
+def trakt_scrobble(action, media_type, tmdb_id, percent=0, season=None, episode=None):
+	"""Live Trakt scrobble (Playing now). Caller must honour trakt_official_status."""
+	if not settings.trakt_user_active(): return
+	path = {'start': 'scrobble/start', 'pause': 'scrobble/pause', 'stop': 'scrobble/stop'}.get(action)
+	if not path: return
+	try:
+		call_trakt(path, data=_trakt_scrobble_payload(media_type, tmdb_id, percent, season, episode))
+	except: pass
 
 def trakt_progress(action, media, media_id, percent, season=None, episode=None, resume_id=None, refresh_trakt=False):
 	if action == 'clear_progress':
 		url = 'sync/playback/%s' % resume_id
 		result = call_trakt(url, is_delete=True)
 	else:
-		url = 'scrobble/pause'
-		if media in ('movie', 'movies'): data = {'movie': {'ids': {'tmdb': media_id}}, 'progress': float(percent)}
-		else: data = {'show': {'ids': {'tmdb': media_id}}, 'episode': {'season': int(season), 'number': int(episode)}, 'progress': float(percent)}
-		call_trakt(url, data=data)
+		trakt_scrobble('pause', media, media_id, percent, season, episode)
 	if refresh_trakt: trakt_sync_activities()
 
 def trakt_reset_scrobble(params):
@@ -442,10 +479,12 @@ def trakt_reset_scrobble(params):
 	try:
 		watched_db = get_database(1)
 		if media_type == 'movie':
+			trakt_scrobble('stop', 'movie', tmdb_id, 0)
 			resume_id = get_bookmarks_movie(watched_db).get(str(tmdb_id), {}).get('resume_id')
 			if resume_id: trakt_progress('clear_progress', 'movie', tmdb_id, 0, resume_id=resume_id)
 			erase_bookmark('movie', tmdb_id, '', '', 'true', 1)
 		elif season not in (None, '', 'None') and episode not in (None, '', 'None'):
+			trakt_scrobble('stop', 'episode', tmdb_id, 0, season, episode)
 			bookmarks = get_bookmarks_episode(str(tmdb_id), season, watched_db) or {}
 			resume_id = bookmarks.get(int(episode), {}).get('resume_id')
 			if resume_id: trakt_progress('clear_progress', 'episode', tmdb_id, 0, season, episode, resume_id)
@@ -483,6 +522,17 @@ def trakt_watchlist(media_type, dummy_arg):
 		data = [i for i in data if i.get('released', None) and js2date(i.get('released'), str_format, remove_time=True) <= current_date]
 	return list_sort.sort_source(data, 'trakt.watchlist', media_type, 'trakt_sync')
 
+def trakt_droplist(media_type, dummy_arg):
+	"""TV shows in Trakt Dropped (users/hidden/dropped). Movies not supported."""
+	if media_type in ('movie', 'movies'): return []
+	ids = trakt_get_hidden_items('dropped') or []
+	data = []
+	for item in ids:
+		try: tmdb_id = int(item)
+		except: continue
+		data.append({'media_ids': {'tmdb': tmdb_id, 'imdb': '', 'tvdb': ''}})
+	return data
+
 def trakt_fetch_collection_watchlist(list_type, media_type):
 	def _process(params):
 		data = get_trakt(params) or []
@@ -499,17 +549,23 @@ def trakt_fetch_collection_watchlist(list_type, media_type):
 	params = {'path': path, 'path_insert': (list_type, url_type), 'params': {'extended': 'full'}, 'with_auth': True, 'fetch_all': True}
 	return trakt_cache.cache_trakt_object(_process, string, params)
 
+def _trakt_list_result_count(result, key):
+	block = (result or {}).get(key) or {}
+	if not isinstance(block, dict): return 0
+	return sum(int(block.get(k) or 0) for k in ('movies', 'shows', 'seasons', 'episodes'))
+
 def add_to_list(user, slug, data):
 	result = call_trakt('/users/%s/lists/%s/items' % (user, slug), data=data)
-	if result['existing']['movies'] + result['existing']['shows'] > 0: return kodi_utils.notification('Already In List', 3000)
-	if result['added']['movies'] + result['added']['shows'] == 0: return kodi_utils.notification('Error', 3000)
+	if not isinstance(result, dict): return kodi_utils.notification('Error', 3000)
+	if _trakt_list_result_count(result, 'existing') > 0: return kodi_utils.notification('Already In List', 3000)
+	if _trakt_list_result_count(result, 'added') == 0: return kodi_utils.notification('Error', 3000)
 	kodi_utils.notification('Success', 3000)
 	trakt_sync_activities()
 	return result
 
 def remove_from_list(user, slug, data):
 	result = call_trakt('/users/%s/lists/%s/items/remove' % (user, slug), data=data)
-	if not result or result.get('deleted', {}).get('movies', 0) + result.get('deleted', {}).get('shows', 0) == 0:
+	if not result or _trakt_list_result_count(result, 'deleted') == 0:
 		return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
 	kodi_utils.notification('Success', 3000)
 	trakt_sync_activities()
@@ -552,10 +608,22 @@ def trakt_item_is_dropped(tmdb_id):
 	except:
 		return False
 
-def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, imdb_id=None, tvdb_id=None, season=None, episode=None):
 	try:
 		contents = get_trakt_list_contents('my_lists', user, slug, True, list_id=list_id) or []
 	except:
+		return False
+	want_episode = media_type in ('episode', 'episodes') and season is not None and episode is not None
+	if want_episode:
+		try: season, episode = int(season), int(episode)
+		except: return False
+		for item in contents:
+			if (item.get('type') or item.get('media_type')) != 'episode': continue
+			try:
+				if int(item.get('season')) != season or int(item.get('episode')) != episode: continue
+			except: continue
+			if _trakt_media_ids_match(item.get('media_ids'), tmdb_id, imdb_id, tvdb_id):
+				return True
 		return False
 	want_movie = media_type in ('movie', 'movies')
 	for item in contents:
@@ -576,7 +644,7 @@ def trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id=None, i
 			except: pass
 	return False
 
-def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=None, tvdb_id=None):
+def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=None, tvdb_id=None, season=None, episode=None):
 	results = []
 	results_append = results.append
 	def _check(item):
@@ -592,7 +660,7 @@ def trakt_personal_lists_split_by_membership(media_type, tmdb_id=None, imdb_id=N
 			'list_id': list_id,
 			'item_count': item.get('item_count', 0)
 		}
-		is_in = trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id, imdb_id, tvdb_id)
+		is_in = trakt_item_in_personal_list(user, slug, list_id, media_type, tmdb_id, imdb_id, tvdb_id, season, episode)
 		results_append((entry, is_in))
 	try:
 		trakt_my_lists = trakt_get_lists('my_lists') or []
@@ -671,11 +739,31 @@ def remove_from_favorites(data):
 def hide_unhide_progress_items(params):
 	action, media_type, media_id, list_type = params['action'], params['media_type'], params['media_id'], params['section']
 	media_type = 'movies' if media_type in ('movie', 'movies') else 'shows'
-	url = 'users/hidden/%s' % list_type if action == 'drop' else 'users/hidden/%s/remove' % list_type
+	is_drop = action == 'drop'
+	url = 'users/hidden/%s' % list_type if is_drop else 'users/hidden/%s/remove' % list_type
 	data = {media_type: [{'ids': {'tmdb': media_id}}]}
-	call_trakt(url, data=data)
+	result = call_trakt(url, data=data)
+	if not isinstance(result, dict):
+		return kodi_utils.notification('Error', 3000)
+	added = int((result.get('added') or {}).get(media_type, 0) or 0)
+	existing = int((result.get('existing') or {}).get(media_type, 0) or 0)
+	deleted = int((result.get('deleted') or {}).get(media_type, 0) or 0)
+	ok = (added > 0 or existing > 0) if is_drop else deleted > 0
+	if not ok:
+		# Count shape unknown / already in desired state — confirm via fresh Dropped membership.
+		trakt_cache.clear_trakt_hidden_data(list_type)
+		try:
+			mid = int(media_id)
+			hidden = set(trakt_get_hidden_items(list_type) or [])
+			ok = mid in hidden if is_drop else mid not in hidden
+		except:
+			ok = False
+	if not ok:
+		return kodi_utils.notification('Error', 3000)
 	trakt_sync_activities()
 	kodi_utils.kodi_refresh()
+	if is_drop: kodi_utils.notification('Dropped from Trakt Progress', 3000)
+	else: kodi_utils.notification('Removed from Trakt Dropped', 3000)
 
 def trakt_search_lists(search_title, page_no):
 	def _process(dummy_arg):

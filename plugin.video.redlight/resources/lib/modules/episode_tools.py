@@ -118,9 +118,11 @@ class EpisodeTools:
 		if url_params == 'error': return kodi_utils.notification('Single Random Play Error', 3000)
 		return Sources().playback_prep(url_params)
 
-	def play_random_continual(self, first_run=True):
+	def play_random_continual(self, first_run=True, from_skip=False):
 		url_params = self.get_random_episode(continual=True, first_run=first_run)
 		if url_params == 'error': return kodi_utils.notification('Continual Random Play Error', 3000)
+		if from_skip and isinstance(url_params, dict):
+			url_params['continual_skip'] = 'true'
 		return Sources().playback_prep(url_params)
 
 	def auto_nextep(self):

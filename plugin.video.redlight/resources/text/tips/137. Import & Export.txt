@@ -7,15 +7,15 @@ Set a default backup folder under Settings > General > Import & Export. File bro
 1) Red Light Settings (.zip)
   - Export Red Light Settings / Import Red Light Settings
   - Backs up settings, menus, personal/discover lists, episode groups, and custom list images.
-  - Does NOT include Red Light Favorites, local watch history, or Kodi Favorites — use the options below for those.
+  - Does NOT include Red Light Favorites, watch history stored on this device, or Kodi Favorites — use the options below for those.
   - The zip can contain API keys and account logins. Keep it private.
   - After import, check folder paths if you changed device or OS, and that your scraper package is still installed.
-  - Meta Accounts that use authorisation (MDBList, Simkl, TMDb Lists, Trakt, WeTrakr) may need re-authorising if sync or scrobble fails. API-key metas (Google, Groq, OMDb, RPDb, etc.) usually travel with the settings and just work.
+  - Meta Accounts that use authorisation (MDBList, PunchPlay, Simkl, TMDb Lists, Trakt, WeTrakr) may need re-authorising if sync or scrobble fails. API-key metas (Google, Groq, OMDb, RPDb, etc.) usually travel with the settings and just work.
 
 2) Red Light Favorites & History (.json)
   - Export / Import Red Light Favorites & History
   - Favorites: Red Light's own Favorites lists (Movies / TV / Anime / People).
-  - History: local watched ticks and in-progress resume points — only when Watched Status Provider is Red Light (local). If Indicators are Trakt, Simkl, or MDBList, watch history is not included in this backup (that data lives on the service).
+  - History: watched ticks and in-progress resume points stored on this device — only when Watched Status Provider is Red Light. If Watched Status Provider is Trakt, Simkl, MDBList, or PunchPlay, watch history is not included in this backup (that data lives on the service).
   - Import mode when this device already has data:
       - Merge — add from the backup; keep what is already here.
       - Replace — clear local favorites/history first, then import the backup.
@@ -28,4 +28,4 @@ Set a default backup folder under Settings > General > Import & Export. File bro
   - Restart Kodi if the Favorites menu does not update after import.
 
 Typical full move
-Export Settings, then Favorites & History (if you use local indicators), then Kodi Favorites if you use them. On the new device, import in the same order. Re-authorise Meta Accounts if needed, and fix any download/media paths.
+Export Settings, then Favorites & History (if Watched Status Provider is Red Light), then Kodi Favorites if you use them. On the new device, import in the same order. Re-authorise Meta Accounts if needed, and fix any download/media paths.

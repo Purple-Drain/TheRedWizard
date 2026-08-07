@@ -20,10 +20,12 @@ class source:
 			self.filter_title = filter_by_name(self.scrape_provider)
 			self.media_type, title = info.get('media_type'), info.get('title')
 			self.year, self.season, self.episode = int(info.get('year')), info.get('season'), info.get('episode')
+			self.absolute_episode = info.get('absolute_episode')
 			self.tmdb_id = info.get('tmdb_id')
 			self.title = title
-			self.folder_query = source_utils.clean_title(normalize(title))
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
+			self.folder_query = source_utils.clean_title(normalize(title))
+			self.folder_queries = source_utils.folder_title_queries(title, self.aliases)
 			self._scrape_history()
 			self._scrape_links()
 			self._scrape_cloud()
@@ -61,14 +63,18 @@ class source:
 		self.scrape_results.append(item)
 
 	def _folder_matches(self, folder_name):
+		# Substring gate like RD/Fen — primary title or aliases (e.g. JP romaji).
 		if not folder_name: return True
 		if not self.filter_title: return True
-		return source_utils.check_title(self.title, folder_name, self.aliases, self.year, self.season, self.episode)
+		cleaned = source_utils.clean_title(normalize(folder_name))
+		if not cleaned: return True
+		queries = getattr(self, 'folder_queries', None) or [self.folder_query]
+		return any(q and q in cleaned for q in queries)
 
 	def _file_matches(self, filename):
 		if self.media_type == 'movie':
 			if not any(x in normalize(filename) for x in self._year_query_list()): return False
-		elif self.media_type == 'episode' and not source_utils.seas_ep_filter(self.season, self.episode, filename):
+		elif self.media_type == 'episode' and not source_utils.cloud_episode_matches(self.season, self.episode, filename, self.absolute_episode):
 			return False
 		if not self.filter_title: return True
 		return source_utils.check_title(self.title, filename, self.aliases, self.year, self.season, self.episode)
@@ -132,7 +138,7 @@ class source:
 			links = self.AllDebrid.cloud_file_links(folder_id)
 			links = [i for i in links if i.get('n', '').lower().endswith(tuple(self.extensions)) and i.get('l')]
 			for item in links:
-				if self.media_type == 'episode' and not source_utils.seas_ep_filter(self.season, self.episode, item['n']): continue
+				if self.media_type == 'episode' and not source_utils.cloud_episode_matches(self.season, self.episode, item['n'], self.absolute_episode): continue
 				if self.filter_title and not source_utils.check_title(self.title, item['n'], self.aliases, self.year, self.season, self.episode): continue
 				self._append_scrape_result(item)
 		except: return

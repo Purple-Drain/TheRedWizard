@@ -16,6 +16,8 @@ class Movies:
 	trakt_main = ('trakt_movies_trending', 'trakt_movies_trending_recent', 'trakt_movies_most_favorited', 'trakt_movies_top10_boxoffice')
 	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites')
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
+	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
+		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
 	mdblist_personal = ('mdblist_watchlist', 'mdblist_collection')
 
 	def __init__(self, params):
@@ -103,6 +105,24 @@ class Movies:
 				data, total_pages = self.paginate_list(data, page_no)
 				self.list = [i['media_ids'] for i in data]
 				if total_pages > 2: self.total_pages = total_pages
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
+			elif self.action in self.punchplay_personal:
+				self.id_type = 'trakt_dict'
+				data = function('movies', page_no)
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
+				if total_pages > 2: self.total_pages = total_pages
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
+			elif self.action == 'punchplay_user_list':
+				self.id_type = 'trakt_dict'
+				from apis.punchplay_api import punchplay_list_items
+				data = punchplay_list_items(self.params_get('list_id'), 'movies')
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
 				try:
 					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 				except: pass
@@ -228,6 +248,10 @@ class Movies:
 			if settings.simkl_user_active():
 				simkl_manager_params = self.build_url({'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
 														'title': title, 'icon': poster})
+			punchplay_manager_params = ''
+			if settings.punchplay_user_active():
+				punchplay_manager_params = self.build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
+														'title': title, 'icon': poster})
 			mdblist_manager_params = ''
 			if settings.mdblist_user_active():
 				mdblist_manager_params = self.build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
@@ -268,6 +292,7 @@ class Movies:
 			if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
 			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
 			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
 			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
 			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
 			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
@@ -320,6 +345,7 @@ class Movies:
 				'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
 				'redlight.trakt_manager_params': trakt_manager_params,
 				'redlight.simkl_manager_params': simkl_manager_params,
+				'redlight.punchplay_manager_params': punchplay_manager_params,
 				'redlight.mdblist_manager_params': mdblist_manager_params,
 				'redlight.personal_manager_params': personal_manager_params,
 				'redlight.tmdb_manager_params': tmdb_manager_params,

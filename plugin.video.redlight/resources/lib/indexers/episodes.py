@@ -9,7 +9,7 @@ from datetime import timedelta
 def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	"""Use Trakt/MDBList air date for calendar label + sort (not TMDb premiered).
 
-	Do not apply the TMDb 20:00 + (UTC+5) fudge here — that pushes service calendar
+	Do not invent TMDb 20:00 / apply date_offset() here — that can push service calendar
 	days one day ahead. Date-only events keep their calendar day; ISO timestamps
 	use the user UTC (+/-) setting only.
 	"""
@@ -32,7 +32,7 @@ def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	return adjust_premiered_date(tmdb_premiered, adjust_hours)
 
 def _nextep_indicator_watchlist(indicators=None):
-	"""Never-started shows from a Watched Indicators service watchlist (empty for Red Light)."""
+	"""Never-started shows from a Watched Status Provider service watchlist (empty for Red Light)."""
 	if indicators is None: indicators = settings.watched_indicators()
 	try:
 		if indicators == 1:
@@ -41,11 +41,15 @@ def _nextep_indicator_watchlist(indicators=None):
 			return [{'media_ids': i['media_ids'], 'title': i.get('title', '')} for i in data if i.get('media_ids')]
 		if indicators == 2:
 			from apis.simkl_api import simkl_plantowatch
-			data = simkl_plantowatch('shows') or []
+			data = (simkl_plantowatch('shows') or []) + (simkl_plantowatch('anime') or [])
 			return [{'media_ids': i['media_ids'], 'title': i.get('title', '')} for i in data if i.get('media_ids')]
 		if indicators == 3:
 			from apis.mdblist_api import mdblist_watchlist_media_ids
 			return mdblist_watchlist_media_ids('shows')
+		if indicators == 4:
+			from apis.punchplay_api import punchplay_watchlist
+			data = (punchplay_watchlist('shows') or []) + (punchplay_watchlist('anime') or [])
+			return [{'media_ids': i['media_ids'], 'title': i.get('title', '')} for i in data if i.get('media_ids')]
 	except: pass
 	return []
 
@@ -77,12 +81,15 @@ def build_episode_list(params):
 				if not duration:
 					duration = show_duration
 					item['duration'] = duration
+				str_episode_zfill2 = str(episode).zfill(2)
+				seas_ep = '%sx%s. ' % (season, str_episode_zfill2)
 				if not episode_date or current_date < episode_date:
-					display, unaired = '[COLOR red][I]%s[/I][/COLOR]' % ep_name, True
+					display, unaired = '[COLOR red][I]%s%s[/I][/COLOR]' % (seas_ep, ep_name), True
 					item['title'] = display
-				else: display, unaired = ep_name, False
+				else: display, unaired = '%s%s' % (seas_ep, ep_name), False
 				extras_params = build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'episode', 'is_external': is_external})
-				options_params = build_url({'mode': 'options_menu_choice', 'content': 'episode', 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external})
+				options_params = build_url({'mode': 'options_menu_choice', 'content': 'episode', 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external,
+											'season': season, 'episode': episode, 'episode_id': episode_id})
 				playback_options_params = build_url({'mode': 'playback_choice', 'media_type': 'episode', 'meta': tmdb_id, 'season': season, 'playcount': playcount,
 												'episode': episode, 'episode_id': episode_id})
 				play_params = build_url({'mode': play_mode, 'media_type': 'episode', 'tmdb_id': tmdb_id, 'season': season, 'episode': episode, 'playcount': playcount,
@@ -110,7 +117,7 @@ def build_episode_list(params):
 				cm = [i[1] for i in cm]
 				studios = list(studio) if isinstance(studio, tuple) else (studio or [])
 				info_tag = listitem.getVideoInfoTag(True)
-				info_tag.setMediaType('episode'), info_tag.setTitle(display), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setGenres(genre)
+				info_tag.setMediaType('episode'), info_tag.setTitle(ep_name), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setGenres(genre)
 				info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot)
 				info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 				info_tag.setFirstAired(premiered), info_tag.setTvShowStatus(show_status)
@@ -181,7 +188,7 @@ def build_episode_list(params):
 		except: season_poster = show_poster
 		category_name = 'Season %s' % season
 	kodi_utils.add_items(handle, list(_process()))
-	kodi_utils.set_sort_method(handle, 'episodes')
+	kodi_utils.set_sort_method(handle, 'episodes', labelMask='%L')
 	kodi_utils.set_content(handle, 'episodes')
 	kodi_utils.set_category(handle, category_name)
 	kodi_utils.end_directory(handle, cacheToDisc=False if is_external else True)
@@ -195,9 +202,12 @@ def build_single_episode(list_type, params={}):
 			cat_name = {'episode.progress': 'In Progress Episodes',
 						'episode.recently_watched': 'Recently Watched Episodes',
 						'episode.next_trakt': 'Next Episodes', 'episode.next_redlight': 'Next Episodes',
-						'episode.next_simkl': 'Next Episodes', 'episode.next_mdblist': 'Next Episodes',
+						'episode.next_simkl': 'Next Episodes', 'episode.next_mdblist': 'Next Episodes', 'episode.next_punchplay': 'Next Episodes',
 						'episode.trakt': {'true': 'Recently Aired Episodes', None: 'Trakt Calendar'},
-						'episode.mdblist': 'MDBList Calendar', 'episode.mdblist_next': 'MDBList Next Up'}[list_type]
+						'episode.mdblist': 'MDBList Calendar', 'episode.mdblist_calendar': 'MDBList Calendar',
+						'episode.mdblist_next': 'MDBList Next Up',
+						'episode.punchplay': 'PunchPlay Calendar', 'episode.punchplay_calendar': 'PunchPlay Calendar',
+						'episode.simkl': 'Simkl Calendar', 'episode.simkl_calendar': 'Simkl Calendar'}[list_type]
 			if isinstance(cat_name, dict): cat_name = cat_name[params.get('recently_aired')]
 		except: cat_name = 'Episodes'
 		return cat_name
@@ -218,7 +228,20 @@ def build_single_episode(list_type, params={}):
 			season_data = meta_get('season_data')
 			watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
 			if list_type_starts_with('next'):
+				last_watched_season, last_watched_episode = orig_season, orig_episode
 				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta)
+				# Weekly anime: stale season/show cache often stops at the last watched ep until expiry.
+				if (not orig_season or not orig_episode) and meta_get('status') not in ('Ended', 'Canceled'):
+					try:
+						from modules.metadata import refresh_airing_show_meta
+						refresh_airing_show_meta(meta_get('tmdb_id'), last_watched_season)
+						meta = tvshow_meta('tmdb_id', meta_get('tmdb_id'), api_key, mpaa_region_value, current_date, current_time, is_anime_list=is_anime_list)
+						if not meta: return
+						meta_get = meta.get
+						season_data = meta_get('season_data')
+						watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
+						orig_season, orig_episode = ws.get_next(last_watched_season, last_watched_episode, watched_info, season_data, nextep_content, meta)
+					except: pass
 				if not orig_season or not orig_episode: return
 				if ws.get_watched_status_episode(watched_info, (orig_season, orig_episode)): return
 			episodes_data = episodes_meta(orig_season, meta)
@@ -227,7 +250,7 @@ def build_single_episode(list_type, params={}):
 			if not item: return
 			item_get = item.get
 			season, episode, ep_name = item_get('season'), item_get('episode'), item_get('title')
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'trakt_recently_aired'):
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'trakt_recently_aired'):
 				episode_date, premiered = _calendar_episode_date(ep_data_get('first_aired'), item_get('premiered'), adjust_hours)
 			else:
 				episode_date, premiered = adjust_premiered_date(item_get('premiered'), adjust_hours)
@@ -256,10 +279,10 @@ def build_single_episode(list_type, params={}):
 				poster_path = next((i['poster_path'] for i in season_data if i['season_number'] == int(season)), None)
 				season_poster = 'https://image.tmdb.org/t/p/w780%s' % poster_path if poster_path is not None else show_poster
 			except: season_poster = show_poster
-			str_season_zfill2, str_episode_zfill2 = str(season).zfill(2), str(episode).zfill(2)
-			if display_format == 0: title_str = '%s: ' % title
+			str_episode_zfill2 = str(episode).zfill(2)
+			if display_format == 0: title_str = '%s - ' % title
 			else: title_str = ''
-			if display_format in (0, 1): seas_ep = '%sx%s - ' % (str_season_zfill2, str_episode_zfill2)
+			if display_format in (0, 1): seas_ep = '%sx%s. ' % (str(season), str_episode_zfill2)
 			else: seas_ep = ''
 			if not list_type_starts_with('next_'):
 				playcount = ws.get_watched_status_episode(watched_info, (season, episode))
@@ -273,16 +296,27 @@ def build_single_episode(list_type, params={}):
 				if unwatched: highlight_start, highlight_end = '[COLOR darkgoldenrod]', '[/COLOR]'
 				elif unaired: highlight_start, highlight_end = '[COLOR red]', '[/COLOR]'
 				else: highlight_start, highlight_end = '', ''
+				# Title mirrors settings format without BBCode (widgets/skins that bind Title).
+				display_title = '%s%s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
 				display = '%s%s%s%s%s%s' % (display_premiered, title_str, highlight_start, seas_ep, ep_name, highlight_end)
-			elif list_type_compare in ('trakt_calendar', 'mdblist_calendar'):
+			elif list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar'):
 				if not episode_date:
 					display_premiered = 'UNKNOWN'
 				else:
 					display_premiered = make_day(
 						current_date, episode_date, calendar_date_strftime,
 						use_words=calendar_use_words, include_date=calendar_include_date)
-				display = '[%s] %s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
-			else: display = '%s%s%s' % (title_str, seas_ep, ep_name)
+				display = display_title = '[%s] %s%s%s' % (display_premiered, title_str, seas_ep, ep_name)
+			else: display = display_title = '%s%s%s' % (title_str, seas_ep, ep_name)
+			progress_aired_eps, total_unwatched = None, None
+			if unwatched_info:
+				try:
+					progress_aired_eps = ws.progress_aired_eps(meta)
+					total_unwatched = ws.get_watched_status_tvshow(ws.watched_info_tvshow(watched_db).get(str(tmdb_id), None), progress_aired_eps)[2]
+				except: progress_aired_eps, total_unwatched = None, None
+				if unwatched_in_title and total_unwatched:
+					suffix = ' (%s)' % total_unwatched
+					display, display_title = display + suffix, display_title + suffix
 			if no_spoilers and not playcount: thumb, plot = show_landscape or show_fanart, tvshow_plot or '* Hidden to Prevent Spoilers *'
 			else: thumb, plot = item_get('thumb', None) or show_landscape or show_fanart, item_get('plot') or tvshow_plot
 			duration = item_get('duration')
@@ -294,7 +328,8 @@ def build_single_episode(list_type, params={}):
 			play_params = build_url({'mode': play_mode, 'media_type': 'episode', 'tmdb_id': tmdb_id, 'season': season, 'episode': episode, 'playcount': playcount,
 									'episode_id': episode_id, playback_key: playback_key})
 			extras_params = build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'episode', 'is_external': is_external})
-			options_params = build_url({'mode': 'options_menu_choice', 'content': list_type, 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external})
+			options_params = build_url({'mode': 'options_menu_choice', 'content': list_type, 'tmdb_id': tmdb_id, 'poster': show_poster, 'is_external': is_external,
+										'season': season, 'episode': episode, 'episode_id': episode_id})
 			playback_options_params = build_url({'mode': 'playback_choice', 'media_type': 'episode', 'meta': tmdb_id, 'season': season, 'playcount': playcount,
 											'episode': episode, 'episode_id': episode_id})
 			cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
@@ -305,6 +340,35 @@ def build_single_episode(list_type, params={}):
 			settings.append_external_scraper_settings_cm(cm_append, build_url)
 			cm_append(['browse_seasons', ('[B]Browse Seasons[/B]', window_command % build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id}))])
 			cm_append(['browse_episodes', ('[B]Browse Episodes[/B]', window_command % build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season}))])
+			# List managers stay show-scoped (watchlist/library/etc). MDBList static add/remove uses season/episode when present.
+			trakt_manager_params, simkl_manager_params, punchplay_manager_params, mdblist_manager_params, tmdb_manager_params = '', '', '', '', ''
+			if settings.trakt_user_active():
+				trakt_manager_params = build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+												'title': title, 'icon': show_poster, 'season': season, 'episode': episode, 'episode_id': episode_id})
+			if settings.simkl_user_active():
+				simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+								'title': title, 'icon': show_poster}
+				if is_anime_list is True: simkl_params['simkl_media_kind'] = 'anime'
+				simkl_manager_params = build_url(simkl_params)
+			if settings.punchplay_user_active():
+				punchplay_manager_params = build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': show_poster})
+			if settings.mdblist_user_active():
+				mdblist_manager_params = build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': show_poster, 'season': season, 'episode': episode, 'episode_id': episode_id})
+			if settings.tmdblist_user_active():
+				tmdb_manager_params = build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': show_poster})
+			personal_manager_params = build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
+												'premiered': meta_get('premiered'), 'current_time': current_time, 'icon': show_poster})
+			favorites_manager_params = build_url({'mode': 'favorites_manager_choice', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
+			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
+			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
+			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
+			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
+			settings.append_list_shortcut_context_menus(cm_append, build_url, cm_sort_order, 'tvshow', tmdb_id, imdb_id, tvdb_id, title, show_poster)
+			cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
+			cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
 			if not unaired:
 				if playcount:
 					cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_episode', 'action': 'mark_as_unwatched',
@@ -315,10 +379,8 @@ def build_single_episode(list_type, params={}):
 					cm_append(['mark_watched', ('[B]Clear Progress[/B]', 'RunPlugin(%s)' % \
 								build_url({'mode': 'watched_status.erase_bookmark', 'media_type': 'episode', 'tmdb_id': tmdb_id,
 											'season': season, 'episode': episode, 'refresh': 'true'}))])
-				if unwatched_info:
-					progress_aired_eps = ws.progress_aired_eps(meta)
-					total_unwatched = ws.get_watched_status_tvshow(watched_info_tvshow.get(str(tmdb_id), None), progress_aired_eps)[2]
-					if progress_aired_eps != total_unwatched: set_properties({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
+				if unwatched_info and total_unwatched is not None and progress_aired_eps != total_unwatched:
+					set_properties({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
 			if list_type_starts_with('next_') and (season, episode) != (1, 1):
 				cm_append(['unmark_previous_episode', ('[B]Unmark Previous Watched[/B]', 'RunPlugin(%s)' % \
 								build_url({'mode': 'watched_status.unmark_previous_episode', 'action': 'mark_as_unwatched', 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id,
@@ -334,7 +396,7 @@ def build_single_episode(list_type, params={}):
 			if isinstance(studio, tuple): studio = list(studio)
 			elif not studio: studio = []
 			info_tag = listitem.getVideoInfoTag(True)
-			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display), info_tag.setGenres(genre)
+			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display_title), info_tag.setGenres(genre)
 			info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
 			info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 			info_tag.setCountries(meta_get('country', [])), info_tag.setTrailer(trailer), info_tag.setTvShowStatus(show_status)
@@ -353,9 +415,16 @@ def build_single_episode(list_type, params={}):
 							'season.poster': season_poster, 'tvshow.poster': show_poster, 'tvshow.clearlogo': show_clearlogo})
 			set_properties({
 				'episode_type': episode_type, 'redlight.extras_params': extras_params, 'redlight.options_params': options_params,
-				'redlight.playback_options_params': playback_options_params
+				'redlight.playback_options_params': playback_options_params,
+				'redlight.trakt_manager_params': trakt_manager_params,
+				'redlight.simkl_manager_params': simkl_manager_params,
+				'redlight.punchplay_manager_params': punchplay_manager_params,
+				'redlight.mdblist_manager_params': mdblist_manager_params,
+				'redlight.personal_manager_params': personal_manager_params,
+				'redlight.tmdb_manager_params': tmdb_manager_params,
+				'redlight.favorites_manager_params': favorites_manager_params
 				})
-			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str_season_zfill2, str_episode_zfill2),
+			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(season), str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
 		except Exception as e:
 			# Silent drops blank calendars/next-ep lists; log so meta/InfoTag failures are visible.
@@ -366,7 +435,7 @@ def build_single_episode(list_type, params={}):
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
 	is_anime_list = 'is_anime_list' in params
 	# Calendars / Next Up are not anime-filtered shelves — never pass False into meta_valid_check.
-	if list_type in ('episode.trakt', 'episode.mdblist', 'episode.mdblist_next'):
+	if list_type in ('episode.trakt', 'episode.mdblist', 'episode.mdblist_next', 'episode.punchplay'):
 		is_anime_list = None
 	elif not is_anime_list and settings.include_anime_tvshow():
 		is_anime_list = None
@@ -376,9 +445,9 @@ def build_single_episode(list_type, params={}):
 	window_command = 'ActivateWindow(Videos,%s,return)' if is_external else 'Container.Update(%s)'
 	no_spoilers = settings.avoid_episode_spoilers()
 	watched_indicators = settings.watched_indicators()
-	# MDBList Lists → Next Up always uses MDBList watched history (not global Watched Indicators).
+	# MDBList Lists → Next Up always uses MDBList watched history (not global Watched Status Provider).
 	if list_type == 'episode.mdblist_next': watched_indicators = 3
-	if list_type in ('episode.trakt', 'episode.mdblist'):
+	if list_type in ('episode.trakt', 'episode.mdblist', 'episode.punchplay'):
 		display_format = settings.calendar_display_format(is_external)
 		calendar_date_strftime, calendar_use_words, calendar_include_date = settings.calendar_date_label_options()
 		calendar_date_format = None if calendar_use_words else calendar_date_strftime
@@ -388,6 +457,7 @@ def build_single_episode(list_type, params={}):
 		calendar_date_format = None
 	current_date, current_time, adjust_hours = get_datetime(), get_current_timestamp(), settings.date_offset()
 	unwatched_info = settings.single_ep_unwatched_episodes()
+	unwatched_in_title = settings.single_ep_unwatched_in_title()
 	hide_watched = is_external and settings.widget_hide_watched() and list_type != 'episode.recently_watched'
 	api_key, mpaa_region_value = settings.tmdb_api_key(), settings.mpaa_region()
 	cm_sort_order, ignore_articles = settings.cm_sort_order(), settings.ignore_articles()
@@ -397,19 +467,32 @@ def build_single_episode(list_type, params={}):
 	playback_key = settings.playback_key()
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
-	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
 	if list_type in ('episode.next', 'episode.mdblist_next'):
 		mdblist_menu_next = list_type == 'episode.mdblist_next'
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
 		sort_key, sort_direction = settings.nextep_sort_key(), settings.nextep_sort_direction()
 		include_airdate = settings.nextep_include_airdate()
+		# Keep external watched DBs fresh before building Next (In Progress already refreshes).
+		if watched_indicators == 3 and settings.mdblist_user_active():
+			try: ws._refresh_mdblist_tvshow_watched()
+			except: pass
+		elif watched_indicators == 1 and settings.trakt_user_active():
+			try: ws._refresh_trakt_tvshow_watched()
+			except: pass
+		elif watched_indicators == 2 and settings.simkl_user_active():
+			try: ws._refresh_simkl_tvshow_watched()
+			except: pass
+		elif watched_indicators == 4 and settings.punchplay_user_active():
+			try: ws._refresh_punchplay_tvshow_watched()
+			except: pass
 		data = ws.get_next_episodes(nextep_content, watched_indicators)
 		if settings.nextep_limit_history(): data = data[:settings.nextep_limit()]
-		hidden_list = ws.get_hidden_progress_items(watched_indicators)
-		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
-		if watched_indicators in (1, 2, 3):
+		hidden_list = set(ws.get_hidden_progress_items(watched_indicators) or [])
+		if hidden_list:
+			data = [i for i in data if int(i['media_ids']['tmdb']) not in hidden_list]
+		if watched_indicators in (1, 2, 3, 4):
 			resformat, resinsert = '%Y-%m-%dT%H:%M:%S.%fZ', '2000-01-01T00:00:00.000Z'
-			list_type = {1: 'episode.next_trakt', 2: 'episode.next_simkl', 3: 'episode.next_mdblist'}[watched_indicators]
+			list_type = {1: 'episode.next_trakt', 2: 'episode.next_simkl', 3: 'episode.next_mdblist', 4: 'episode.next_punchplay'}[watched_indicators]
 		else: resformat, resinsert, list_type = '%Y-%m-%d %H:%M:%S', '2000-01-01 00:00:00', 'episode.next_redlight'
 		if mdblist_menu_next: category_override = 'MDBList Next Up'
 		if include_unwatched != 0:
@@ -461,6 +544,38 @@ def build_single_episode(list_type, params={}):
 		else:
 			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
 			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
+	elif list_type == 'episode.punchplay':
+		from apis.punchplay_api import punchplay_get_my_calendar
+		data = punchplay_get_my_calendar()
+		hidden_list = ws.get_hidden_progress_items(watched_indicators)
+		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
+		list_type = 'episode.punchplay_calendar'
+		if settings.flatten_episodes():
+			try:
+				duplicates = set()
+				data.sort(key=lambda i: i['sort_title'])
+				data = [i for i in data if not ((i['media_ids']['tmdb'], i['first_aired'].split('T')[0]) in duplicates
+						or duplicates.add((i['media_ids']['tmdb'], i['first_aired'].split('T')[0])))]
+			except: pass
+		else:
+			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
+			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
+	elif list_type == 'episode.simkl':
+		from apis.simkl_api import simkl_get_my_calendar
+		data = simkl_get_my_calendar()
+		hidden_list = ws.get_hidden_progress_items(watched_indicators)
+		if hidden_list: data = [i for i in data if not i['media_ids']['tmdb'] in hidden_list]
+		list_type = 'episode.simkl_calendar'
+		if settings.flatten_episodes():
+			try:
+				duplicates = set()
+				data.sort(key=lambda i: i['sort_title'])
+				data = [i for i in data if not ((i['media_ids']['tmdb'], i['first_aired'].split('T')[0]) in duplicates
+						or duplicates.add((i['media_ids']['tmdb'], i['first_aired'].split('T')[0])))]
+			except: pass
+		else:
+			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
+			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
 	list_type_compare = list_type.split('episode.')[1]
 	list_type_starts_with = list_type_compare.startswith
@@ -484,14 +599,14 @@ def build_single_episode(list_type, params={}):
 		item_list = airing_today + item_list
 	else:
 		item_list.sort(key=lambda i: i['sort_order'])
-		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar'):
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar'): reverse = settings.calendar_sort_order() == 0
+		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar'):
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar'): reverse = settings.calendar_sort_order() == 0
 			else: reverse = True
 			try: item_list = sorted(item_list, key=lambda i: i.get('first_aired', '2100-12-31'), reverse=reverse)
 			except:
 				item_list = [i for i in item_list if i.get('first_aired') not in (None, 'None', '')]
 				item_list = sorted(item_list, key=lambda i: i.get('first_aired'), reverse=reverse)
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar') and not calendar_date_format:
+			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar') and not calendar_date_format:
 				airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
 										key=lambda i: i['first_aired'])
 				item_list = [i for i in item_list if not i in airing_today]
@@ -500,7 +615,7 @@ def build_single_episode(list_type, params={}):
 	kodi_utils.set_content(handle, 'episodes')
 	kodi_utils.set_category(handle, _get_category_name())
 	# Keep plugin order for calendars — Kodi "Sort by Date" was reordering vs day labels.
-	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'trakt_recently_aired'):
-		kodi_utils.set_sort_method(handle, 'none')
+	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'trakt_recently_aired'):
+		kodi_utils.set_sort_method(handle, 'none', labelMask='%L')
 	kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))

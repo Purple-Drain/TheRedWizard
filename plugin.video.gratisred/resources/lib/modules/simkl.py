@@ -236,6 +236,22 @@ def call_simkl(path, data=None, method=None):
     return None
 
 
+def _fetch_user_settings(access_token):
+    """POST /users/settings — Simkl's documented profile call (GET is not the contract)."""
+    _throttle()
+    url = _url('/users/settings')
+    headers = _headers()
+    headers['Authorization'] = 'Bearer %s' % access_token
+    try:
+        resp = requests.post(url, data=json.dumps({}), headers=headers, timeout=20)
+        if resp.status_code in (200, 201) and resp.text:
+            return resp.json()
+        log_utils.log('Simkl HTTP %s %s' % (resp.status_code, url), 1)
+    except Exception as e:
+        log_utils.log('Simkl Error: %s' % e, 1)
+    return None
+
+
 def _pin_url(user_code=None):
     url = '%s/%s' % (OAUTH_PIN_URL, user_code) if user_code else OAUTH_PIN_URL
     sep = '&' if '?' in url else '?'
@@ -291,10 +307,13 @@ def authSimkl(reopen_settings=False):
             control.infoDialog('Simkl Authorisation Canceled.' if canceled else 'Simkl Authorisation Failed.', sound=True)
             return
         control.setSetting('simkl.token', token)
-        info = call_simkl('/users/settings', method='get')
+        # Profile is POST /users/settings (docs). Pass the new token explicitly so we do not
+        # race Addon.setSetting before Bearer auth is readable for the follow-up call.
+        info = _fetch_user_settings(token)
         user = 'Simkl User'
         if info and isinstance(info, dict) and info.get('user'):
-            user = str(info['user'].get('name') or info['user'].get('login') or user)
+            u = info['user']
+            user = str(u.get('name') or u.get('login') or u.get('username') or user)
         control.setSetting('simkl.user', user)
         control.setSetting('simkl.authed', 'yes')
         if control.yesnoDialog('Set Simkl as your Watched Indicators provider?', heading='Watched Status Provider'):
@@ -1095,7 +1114,7 @@ def refreshSimklCache(silent=False):
         if not silent:
             control.infoDialog('Simkl Cache Refresh Failed.', sound=True)
     try:
-        control.refresh()
+        control.refresh_list()
     except Exception:
         pass
 
@@ -1108,7 +1127,7 @@ def manager(name, imdb, tmdb, content):
         media_kind = 'movies' if is_movie else 'shows'
         ids = _list_ids(tmdb=tmdb, imdb=imdb)
         if not ids:
-            return control.infoDialog('Missing IDs for Simkl Manager.', sound=True, icon='ERROR')
+            return control.infoDialog('Missing IDs for Simkl Lists Manager.', sound=True, icon='ERROR')
         choices = []
         for status in _STATUSES:
             if is_movie and status in ('watching', 'hold'):
@@ -1118,7 +1137,7 @@ def manager(name, imdb, tmdb, content):
                 choices.append(('Remove from [B]%s[/B]' % label, 'remove', status))
             else:
                 choices.append(('Add to [B]%s[/B]' % label, 'add', status))
-        select = control.selectDialog([c[0] for c in choices], 'Simkl Manager')
+        select = control.selectDialog([c[0] for c in choices], 'Simkl Lists Manager')
         if select < 0:
             return
         _, action, status = choices[select]
@@ -1148,4 +1167,4 @@ def manager(name, imdb, tmdb, content):
         except Exception:
             pass
     except Exception:
-        control.infoDialog('Simkl Manager failed.', heading=str(name), sound=True, icon='ERROR')
+        control.infoDialog('Simkl Lists Manager failed.', heading=str(name), sound=True, icon='ERROR')

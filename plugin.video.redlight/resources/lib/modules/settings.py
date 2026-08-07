@@ -12,6 +12,10 @@ def tmdb_lists_read_token():
 def trakt_client():
 	return get_setting('redlight.trakt.client', '')
 
+def simkl_client():
+	"""Simkl Client ID from Meta Accounts; empty falls back to the shipped default in simkl_api."""
+	return (get_setting('redlight.simkl.client', '') or '').strip()
+
 def mdblist_client():
 	return get_setting('redlight.mdblist.client', '')
 
@@ -34,6 +38,20 @@ def mdblist_user_active():
 	user = settings_cache.read_db_value('mdblist.user')
 	token = settings_cache.read_db_value('mdblist.token')
 	return user not in (None, 'empty_setting', '') and token not in (None, '0', '', 'empty_setting')
+
+def punchplay_user_active():
+	"""Authorised when a usable access token exists (username is display-only)."""
+	from caches.settings_cache import settings_cache, get_setting
+	token = settings_cache.read_db_value('punchplay.token')
+	if token in (None, '0', '', 'empty_setting'):
+		token = get_setting('redlight.punchplay.token', '0')
+	return token not in (None, '0', '', 'empty_setting')
+
+def punchplay_sync_interval():
+	setting = get_setting('redlight.punchplay.sync_interval', '60')
+	try: interval = max(5, int(setting))
+	except: interval = 60
+	return interval, interval * 60
 
 def wetrakr_user_active():
 	from caches.settings_cache import settings_cache
@@ -180,6 +198,14 @@ def page_limit(is_home):
 
 def quality_filter(setting):
 	return get_setting('redlight.%s' % setting).split(', ')
+
+def quality_sort_order():
+	'''User order for Results Sorting when Quality is a key. Lower index = higher in list.'''
+	default = ['4K', '1080p', '720p', 'SD']
+	raw = get_setting('redlight.results.quality_sort_order', '4K, 1080p, 720p, SD')
+	parts = [i.strip() for i in (raw or '').split(',') if i.strip()]
+	if sorted(parts) != sorted(default): return default[:]
+	return parts
 
 def sort_to_top_filter(autoplay):
 	return {0: False, 1: False if autoplay else True, 2: True if autoplay else False, 3: True}[int(get_setting('redlight.filter.sort_to_top', '0'))]
@@ -348,6 +374,9 @@ def stingers_percentage():
 def include_anime_tvshow():
 	return get_setting('redlight.include_anime_tvshow', 'false') == 'true'
 
+def anime_seasons_episode_group_fallback():
+	return get_setting('redlight.anime.seasons_episode_group_fallback', 'false') == 'true'
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 
@@ -419,7 +448,7 @@ NEXTEP_STOP_NOTIFY_REMAINING_SEC = 90
 def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
 	# Scrape budget (results.timeout + NEXTEP_SCRAPE_MARGIN_SEC) plus time for still-watching / autoscrape confirm dialogs.
 	headroom = int(scraper_time)
-	if 'autoplay' in play_type and still_watching_due:
+	if still_watching_due:
 		headroom += NEXTEP_COMMAND_HEADROOM_SEC
 	if 'autoscrape' in play_type and autoscrape_confirm():
 		headroom += NEXTEP_COMMAND_HEADROOM_SEC
@@ -475,6 +504,10 @@ def exclude_specials_from_progress():
 
 def single_ep_unwatched_episodes():
 	return get_setting('redlight.single_ep_unwatched_episodes', 'false') == 'true'
+
+def single_ep_unwatched_in_title():
+	# Nested under Provide Unwatched Episodes Info — both must be on.
+	return single_ep_unwatched_episodes() and get_setting('redlight.single_ep_unwatched_in_title', 'false') == 'true'
 
 def single_ep_display_format(is_external):
 	if is_external: setting, default = 'redlight.single_ep_display_widget', '1'
@@ -603,9 +636,6 @@ def prescrape_enabled(media_type, active_scrapers=None):
 	if active_scrapers is None:
 		active_scrapers = active_internal_scrapers()
 	return any(check_prescrape_sources(scraper, media_type) for scraper in active_scrapers)
-
-def prescrape_sequential():
-	return get_setting('redlight.prescrape.sequential', 'false') == 'true'
 
 def cloud_scrape_before_external(scraper):
 	"""Run debrid cloud scrapers before external torrent scrapers when the provider is enabled."""
@@ -899,7 +929,7 @@ def results_sort_order():
 def active_internal_scrapers():
 	settings = ['provider.external', 'provider.easynews', 'provider.folders']
 	settings_append = settings.append
-	for item in [('rd', 'provider.rd_cloud'), ('pm', 'provider.pm_cloud'), ('ad', 'provider.ad_cloud'), ('oc', 'provider.oc_cloud'), ('tb', 'provider.tb_cloud'), ('dl', 'provider.dl_cloud')]:
+	for item in [('rd', 'provider.rd_cloud'), ('pm', 'provider.pm_cloud'), ('ad', 'provider.ad_cloud'), ('oc', 'provider.oc_cloud'), ('tb', 'provider.tb_cloud')]:
 		if enabled_debrids_check(item[0]): settings_append(item[1])
 	active = [i.split('.')[1] for i in settings if get_setting('redlight.%s' % i) == 'true']
 	if aiostreams_active(): active.append('aiostreams')
@@ -916,15 +946,13 @@ def provider_sort_ranks():
 	pm_priority = int(get_setting('redlight.pm.priority', '10'))
 	oc_priority = int(get_setting('redlight.oc.priority', '10'))
 	tb_priority = int(get_setting('redlight.tb.priority', '10'))
-	dl_priority = int(get_setting('redlight.dl.priority', '10'))
 	return {'easynews': en_priority, 'aiostreams': aio_priority, 'nzb': nzb_priority, 'real-debrid': rd_priority, 'premiumize.me': pm_priority, 'alldebrid': ad_priority,
 	'offcloud': oc_priority, 'torbox': tb_priority, 'rd_cloud': rd_priority, 'pm_cloud': pm_priority, 'ad_cloud': ad_priority, 'oc_cloud': oc_priority,
-	'tb_cloud': tb_priority, 'folders': fo_priority, 'debridlink': dl_priority, 'dl_cloud': dl_priority}
+	'tb_cloud': tb_priority, 'folders': fo_priority}
 
 def sort_to_top(provider):
 	sort_to_top_dict = {'folders': 'redlight.results.sort_folders_first', 'rd_cloud': 'redlight.results.sort_rdcloud_first', 'pm_cloud': 'redlight.results.sort_pmcloud_first',
-						'ad_cloud': 'redlight.results.sort_adcloud_first', 'oc_cloud': 'redlight.results.sort_occloud_first', 'tb_cloud': 'redlight.results.sort_tbcloud_first',
-						'dl_cloud': 'redlight.results.sort_dlcloud_first'}
+						'ad_cloud': 'redlight.results.sort_adcloud_first', 'oc_cloud': 'redlight.results.sort_occloud_first', 'tb_cloud': 'redlight.results.sort_tbcloud_first'}
 	return get_setting(sort_to_top_dict[provider]) == 'true'
 
 def auto_resume(media_type, autoplay_status):
@@ -936,7 +964,7 @@ def scraping_settings():
 		highlight = get_setting('redlight.scraper_single_highlight', 'FF008EB2')
 		return {'highlight_type': 1, '4k': highlight, '1080p': highlight, '720p': highlight, 'sd': highlight}
 	easynews_highlight, aiostreams_highlight, nzb_highlight, debrid_cloud_highlight, folders_highlight = '', '', '', '', ''
-	rd_highlight, pm_highlight, ad_highlight, oc_highlight, tb_highlight, dl_highlight = '', '', '', '', '', ''
+	rd_highlight, pm_highlight, ad_highlight, oc_highlight, tb_highlight = '', '', '', '', ''
 	highlight_4K, highlight_1080P, highlight_720P, highlight_SD = '', '', '', ''
 	if highlight_type == 0:
 		easynews_highlight = get_setting('redlight.provider.easynews_highlight', 'FF00B3B2')
@@ -949,15 +977,14 @@ def scraping_settings():
 		ad_highlight = get_setting('redlight.provider.ad_highlight', 'FFE6B800')
 		oc_highlight = get_setting('redlight.provider.oc_highlight', 'FF5C6BC0')
 		tb_highlight = get_setting('redlight.provider.tb_highlight', 'FF01662A')
-		dl_highlight = get_setting('redlight.provider.dl_highlight', 'FF0072CE')
 	else:
 		highlight_4K = get_setting('redlight.scraper_4k_highlight', 'FFFF00FE')
 		highlight_1080P = get_setting('redlight.scraper_1080p_highlight', 'FFE6B800')
 		highlight_720P = get_setting('redlight.scraper_720p_highlight', 'FF3C9900')
 		highlight_SD = get_setting('redlight.scraper_SD_highlight', 'FF0166FF')
 	return {'highlight_type': highlight_type, 'real-debrid': rd_highlight, 'premiumize': pm_highlight, 'alldebrid': ad_highlight,
-			'offcloud': oc_highlight, 'torbox': tb_highlight, 'debridlink': dl_highlight, 'rd_cloud': debrid_cloud_highlight, 'pm_cloud': debrid_cloud_highlight, 'ad_cloud': debrid_cloud_highlight,
-			'oc_cloud': debrid_cloud_highlight, 'tb_cloud': debrid_cloud_highlight, 'dl_cloud': debrid_cloud_highlight, 'easynews': easynews_highlight, 'aiostreams': aiostreams_highlight, 'nzb': nzb_highlight, 'folders': folders_highlight,
+			'offcloud': oc_highlight, 'torbox': tb_highlight, 'rd_cloud': debrid_cloud_highlight, 'pm_cloud': debrid_cloud_highlight, 'ad_cloud': debrid_cloud_highlight,
+			'oc_cloud': debrid_cloud_highlight, 'tb_cloud': debrid_cloud_highlight, 'easynews': easynews_highlight, 'aiostreams': aiostreams_highlight, 'nzb': nzb_highlight, 'folders': folders_highlight,
 			'4k': highlight_4K, '1080p': highlight_1080P, '720p': highlight_720P, 'sd': highlight_SD}
 
 def external_cache_check():
@@ -989,7 +1016,7 @@ def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
 
 def calendar_day_window():
-	'''Inclusive start/end dates for Trakt and MDBList calendars (Show Previous/Future Days).'''
+	'''Inclusive start/end dates for MDBList, PunchPlay, Simkl, and Trakt calendars (Show Previous/Future Days).'''
 	from datetime import timedelta
 	from modules.utils import get_datetime
 	try: previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '7'))
@@ -1027,13 +1054,13 @@ def jump_to_enabled():
 	return get_setting('redlight.paginate.jump_to', 'true') == 'true'
 
 def datetime_utc_offset():
-	'''User UTC (+/-) setting only — no TMDb air-date fudge.'''
+	'''User UTC (+/-) setting only — genuine timezone hours from UTC.'''
 	try: return int(get_setting('redlight.datetime.offset', '0'))
 	except (TypeError, ValueError): return 0
 
 def date_offset():
-	# +5 matches Fen-style TMDb premiered handling (assume ~20:00 air + region fudge).
-	return datetime_utc_offset() + 5
+	# TMDb dates are still assumed at 20:00 locally in adjust_premiered_date; offset is real UTC (+/-) only.
+	return datetime_utc_offset()
 
 def media_open_action(media_type):
 	return int(get_setting('redlight.media_open_action_%s' % media_type, '0'))
@@ -1049,11 +1076,13 @@ def _resolve_watched_provider():
 	if ind == 1 and not trakt_user_active(): return 0
 	if ind == 2 and not simkl_user_active(): return 0
 	if ind == 3 and not mdblist_user_active(): return 0
+	if ind == 4 and not punchplay_user_active(): return 0
 	return ind
 
 def watched_provider_options():
 	options = {}
 	if mdblist_user_active(): options['3'] = 'MDBList'
+	if punchplay_user_active(): options['4'] = 'PunchPlay'
 	options['0'] = 'Red Light'
 	if simkl_user_active(): options['2'] = 'Simkl'
 	if trakt_user_active(): options['1'] = 'Trakt'
@@ -1070,12 +1099,18 @@ def offer_watched_provider(provider_index, name):
 def fallback_watched_provider_on_revoke(revoked_index):
 	current = int(get_setting('redlight.watched_indicators', '0'))
 	if current != revoked_index: return
+	def _next(*candidates):
+		for idx, active in candidates:
+			if active: return str(idx)
+		return '0'
 	if revoked_index == 1:
-		set_setting('watched_indicators', '2' if simkl_user_active() else ('3' if mdblist_user_active() else '0'))
+		set_setting('watched_indicators', _next((2, simkl_user_active()), (4, punchplay_user_active()), (3, mdblist_user_active())))
 	elif revoked_index == 2:
-		set_setting('watched_indicators', '1' if trakt_user_active() else ('3' if mdblist_user_active() else '0'))
+		set_setting('watched_indicators', _next((1, trakt_user_active()), (4, punchplay_user_active()), (3, mdblist_user_active())))
 	elif revoked_index == 3:
-		set_setting('watched_indicators', '2' if simkl_user_active() else ('1' if trakt_user_active() else '0'))
+		set_setting('watched_indicators', _next((4, punchplay_user_active()), (2, simkl_user_active()), (1, trakt_user_active())))
+	elif revoked_index == 4:
+		set_setting('watched_indicators', _next((3, mdblist_user_active()), (2, simkl_user_active()), (1, trakt_user_active())))
 
 def watched_indicators():
 	return _resolve_watched_provider()
@@ -1084,7 +1119,7 @@ def provider_sync_refresh_widgets(provider_index):
 	"""Refresh home widgets after a provider sync only when that provider owns watched/progress indicators."""
 	if watched_indicators() != provider_index:
 		return False
-	keys = {1: 'trakt.refresh_widgets', 2: 'simkl.refresh_widgets', 3: 'mdblist.refresh_widgets'}
+	keys = {1: 'trakt.refresh_widgets', 2: 'simkl.refresh_widgets', 3: 'mdblist.refresh_widgets', 4: 'punchplay.refresh_widgets'}
 	key = keys.get(provider_index)
 	if not key:
 		return False
@@ -1138,16 +1173,17 @@ def rescrape_action_value(action, default='0'):
 
 def cm_enabled():
 	default = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+				'mdblist_manager,punchplay_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
 	setting = get_setting('redlight.context_menu.enabled', default)
 	if setting in ('', None, 'noop', '[]'): return default.split(',')
 	return setting.split(',')
 
 def _merge_cm_order_with_enabled(order, enabled):
 	order = [i for i in order if i]
-	# Insert missing managers before the next A–Z peer (MDBList → Simkl → TMDb → Trakt).
+	# Insert missing managers before the next A–Z peer (MDBList → PunchPlay → Simkl → TMDb → Trakt).
 	manager_insert = {
-		'mdblist_manager': ('simkl_manager', 'tmdb_manager', 'trakt_manager'),
+		'mdblist_manager': ('punchplay_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager'),
+		'punchplay_manager': ('simkl_manager', 'tmdb_manager', 'trakt_manager'),
 		'simkl_manager': ('tmdb_manager', 'trakt_manager'),
 		'tmdb_manager': ('trakt_manager', 'personal_manager'),
 		'trakt_manager': ('personal_manager',),
@@ -1165,7 +1201,7 @@ def _merge_cm_order_with_enabled(order, enabled):
 
 def _normalize_cm_list_order(order):
 	order = list(order)
-	managers = ('mdblist_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager')
+	managers = ('mdblist_manager', 'punchplay_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager')
 	present = [m for m in managers if m in order]
 	if present:
 		insert_at = min(order.index(m) for m in present)
@@ -1231,6 +1267,31 @@ def migrate_mdblist_context_menu_for_upgrade(had_existing_settings):
 			changed = True
 	return changed
 
+def migrate_punchplay_context_menu_for_upgrade(had_existing_settings):
+	if get_setting('redlight.punchplay.cm_menu_migrated', 'false') == 'true': return False
+	set_setting('punchplay.cm_menu_migrated', 'true')
+	if not had_existing_settings: return False
+	item, changed = 'punchplay_manager', False
+	raw = get_setting('redlight.context_menu.enabled', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = [p for p in raw.split(',') if p]
+		if item not in parts:
+			if 'mdblist_manager' in parts:
+				parts.insert(parts.index('mdblist_manager') + 1, item)
+			elif 'simkl_manager' in parts:
+				parts.insert(parts.index('simkl_manager'), item)
+			else:
+				parts.append(item)
+			set_setting('context_menu.enabled', ','.join(parts))
+			changed = True
+	raw = get_setting('redlight.context_menu.order', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = _normalize_cm_list_order(_merge_cm_order_with_enabled([p for p in raw.split(',') if p], cm_enabled()))
+		if item not in raw.split(','):
+			set_setting('context_menu.order', ','.join(parts))
+			changed = True
+	return changed
+
 def migrate_cm_manager_order_for_upgrade():
 	if get_setting('redlight.cm_manager_order_migrated_v3', 'false') == 'true': return False
 	set_setting('cm_manager_order_migrated_v3', 'true')
@@ -1249,7 +1310,7 @@ def migrate_cm_manager_order_for_upgrade():
 
 def cm_current_order():
 	default = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'mdblist_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+				'mdblist_manager,punchplay_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
 	setting = get_setting('redlight.context_menu.order', default)
 	if setting in ('', None, 'noop', '[]'): order = default.split(',')
 	else: order = setting.split(',')

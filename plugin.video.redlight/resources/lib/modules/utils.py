@@ -211,8 +211,19 @@ def byteify(data, ignore_dicts=False):
 	return data
 
 def normalize(txt):
-	txt = re.sub(r'[^\x00-\x7f]',r'', txt)
-	return txt
+	"""Accent-fold then drop leftover non-ASCII (Pokémon→Pokemon, not Pokmon).
+
+	Cloud scrapers use this for folder/title gates. Stripping non-ASCII first
+	deleted base letters with accents; fold combining marks away first.
+	"""
+	try:
+		if txt is None: return txt
+		txt = str(txt)
+		txt = ''.join(c for c in unicodedata.normalize('NFKD', txt) if unicodedata.category(c) != 'Mn')
+		return re.sub(r'[^\x00-\x7f]', '', txt)
+	except Exception:
+		try: return re.sub(r'[^\x00-\x7f]', '', str(txt))
+		except Exception: return txt
 
 def safe_string(obj):
 	try:
@@ -408,7 +419,6 @@ def image_from_db(image_url, delete=True):
 	import os
 	import sqlite3 as database
 	from modules.kodi_utils import translate_path
-	dbcon = None
 	try:
 		thumbs_folder = translate_path('special://thumbnails')
 		dbfile = translate_path(os.path.join('special://database', 'Textures13.db'))
@@ -429,8 +439,6 @@ def image_from_db(image_url, delete=True):
 		dbcon.commit()
 		return True
 	except: return False
-	finally:
-		if dbcon is not None: dbcon.close()
 
 def make_image(list_type, image_type, list_name, images, current_image):
 	import os

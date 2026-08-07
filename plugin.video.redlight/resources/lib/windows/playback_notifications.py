@@ -32,12 +32,20 @@ class NextEpisode(BaseDialog):
 		BaseDialog.__init__(self, *args)
 		self.closed = False
 		self.meta = kwargs.get('meta')
-		self.selected = kwargs.get('default_action', 'cancel')
+		self.default_action = kwargs.get('default_action', 'cancel')
+		self.selected = self.default_action
 		self.set_properties()
 
 	def onInit(self):
+		# Buttons: 10 Close | 11 Play | 12 Cancel
 		focus_map = {'play': 11, 'cancel': 12, 'pause': 10, 'close': 10}
 		self.setFocusId(focus_map.get(self.selected, 12))
+		try:
+			from modules.kodi_utils import logger
+			logger('Red Light', 'Next episode alert open: default=%s focus=%s (back=cancel)' % (
+				self.default_action, focus_map.get(self.selected, 12)))
+		except:
+			pass
 		Thread(target=self.monitor, daemon=True).start()
 
 	def run(self):
@@ -50,12 +58,28 @@ class NextEpisode(BaseDialog):
 
 	def onAction(self, action):
 		if action in self.closing_actions:
-			self.selected = 'close'
+			# Same rule as Close: abort only when default is Cancel; else Close (play at end).
+			self.selected = 'cancel' if self.default_action == 'cancel' else 'close'
+			try:
+				from modules.kodi_utils import logger
+				logger('Red Light', 'Next episode alert dismiss: action=%s -> %s (default=%s)' % (
+					action, self.selected, self.default_action))
+			except:
+				pass
 			self.closed = True
 			self.close()
 
 	def onClick(self, controlID):
 		self.selected = {10: 'close', 11: 'play', 12: 'cancel'}[controlID]
+		# When "When No Interaction" is Cancel, Close must also abort (same as Cancel).
+		if self.selected == 'close' and self.default_action == 'cancel':
+			self.selected = 'cancel'
+		try:
+			from modules.kodi_utils import logger
+			logger('Red Light', 'Next episode alert button: id=%s -> %s (default=%s)' % (
+				controlID, self.selected, self.default_action))
+		except:
+			pass
 		self.closed = True
 		self.close()
 

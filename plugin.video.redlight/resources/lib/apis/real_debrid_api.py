@@ -238,12 +238,24 @@ class RealDebridAPI:
 		result = self._post(url, post_data)
 		return result
 
+	def _add_magnet_ok(self, magnet_url):
+		'''Return addMagnet dict with id, or None. Back off briefly on RD rate limit (error_code 34).'''
+		torrent = self.add_magnet(magnet_url)
+		if not torrent or not isinstance(torrent, dict):
+			return None
+		if 'error' in torrent or 'id' not in torrent:
+			# 34 = too_many_requests — pause so the next result in the resolve loop can succeed
+			if torrent.get('error_code') == 34:
+				sleep(3000)
+			return None
+		return torrent
+
 	def create_transfer(self, magnet_url):
 		with _rd_magnet_semaphore:
 			torrent_id = None
 			try:
-				torrent = self.add_magnet(magnet_url)
-				if not torrent or 'error' in torrent:
+				torrent = self._add_magnet_ok(magnet_url)
+				if not torrent:
 					return 'no_url'
 				torrent_id = torrent['id']
 				info = self.torrent_info(torrent_id)
@@ -286,8 +298,8 @@ class RealDebridAPI:
 		extensions = supported_video_extensions()
 		torrent_id = None
 		try:
-			torrent = self.add_magnet(magnet_url)
-			if 'error' in torrent: return None
+			torrent = self._add_magnet_ok(magnet_url)
+			if not torrent: return None
 			torrent_id = torrent['id']
 			self.add_torrent_select(torrent_id, 'all')
 			sleep(1000)
@@ -357,8 +369,8 @@ class RealDebridAPI:
 	def _display_magnet_pack(self, magnet_url, info_hash):
 		try:
 			torrent_id = None
-			torrent = self.add_magnet(magnet_url)
-			if not torrent or 'error' in torrent:
+			torrent = self._add_magnet_ok(magnet_url)
+			if not torrent:
 				return None
 			torrent_id = torrent['id']
 			self.add_torrent_select(torrent_id, 'all')
@@ -411,7 +423,7 @@ class RealDebridAPI:
 		if '?' not in url: url += '?auth_token=%s' % self.token
 		else: url += '&auth_token=%s' % self.token
 		response = requests.get(url, timeout=20)
-		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
+		if any(value in response.text for value in ('bad_token', 'Bad Request')):
 			if self.refresh_token(): response = self._get(original_url)
 			else: return None
 		try: return response.json()
@@ -424,7 +436,7 @@ class RealDebridAPI:
 		if '?' not in url: url += '?auth_token=%s' % self.token
 		else: url += '&auth_token=%s' % self.token
 		response = requests.post(url, data=post_data, timeout=20)
-		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
+		if any(value in response.text for value in ('bad_token', 'Bad Request')):
 			if self.refresh_token(): response = self._post(original_url, post_data)
 			else: return None
 		try: return response.json()
