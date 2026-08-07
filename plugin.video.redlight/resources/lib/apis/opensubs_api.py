@@ -281,9 +281,11 @@ def _download_subtitle_content(file_id):
 
 def fetch_alert_subtitle(imdb_id, season=None, episode=None, year=None, playing_filename=None, playing_item=None, log_pick=False):
 	if not st.opensubs_configured(): return None
-	from indexers.subtitles import _looks_like_subtitle_content, _opensubs_alert_path, playback_release_context, _subtitle_cache_release_tag
-	from indexers.subtitles import _existing_release_tagged_subtitle_cache, remember_active_subtitle_path
-	cached = _existing_release_tagged_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
+	from indexers.subtitles import (
+		_existing_opensubs_subtitle_cache, _opensubs_alert_path, _prepare_subtitle_file_content,
+		_subtitle_cache_release_tag, playback_release_context, remember_active_subtitle_path,
+	)
+	cached = _existing_opensubs_subtitle_cache(imdb_id, season, episode, playing_filename, playing_item)
 	if cached:
 		remember_active_subtitle_path(cached)
 		return cached
@@ -300,10 +302,11 @@ def fetch_alert_subtitle(imdb_id, season=None, episode=None, year=None, playing_
 			ku.logger('Red Light', 'OpenSubtitles pick (%s%s): %s' % (play_tag, sync_tag, label))
 		except: pass
 	content = _download_subtitle_content(match.get('file_id'))
-	if not _looks_like_subtitle_content(content): return None
+	prepared = _prepare_subtitle_file_content(content, log_reject=log_pick, reject_label='OpenSubtitles')
+	if not prepared: return None
 	final_path = _opensubs_alert_path(imdb_id, season, episode, release_context)
 	try:
-		with ku.open_file(final_path, 'w') as file: file.write(content)
+		with ku.open_file(final_path, 'w') as file: file.write(prepared)
 		ku.set_property('redlight.active_subtitle_path', final_path)
 	except: return None
 	return final_path

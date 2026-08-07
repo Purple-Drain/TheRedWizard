@@ -3,7 +3,7 @@ import sys
 from modules import kodi_utils, settings
 from modules.metadata import tvshow_meta
 from modules.utils import get_datetime, adjust_premiered_date, TaskPool
-from modules.watched_status import get_database, watched_info_season, get_watched_status_season, get_progress_status_season
+from modules.watched_status import get_database, watched_info_season, get_watched_status_season, get_progress_status_season, count_aired_episodes
 # logger = kodi_utils.logger
 
 def build_season_list(params):
@@ -31,13 +31,15 @@ def build_season_list(params):
 				except: premiered = ''
 				unaired = aired_eps == 0
 				if unaired or season_special:
-					progress, playcount, watched, unwatched = 0, 0, 0, aired_eps
+					progress, playcount, total_watched, total_unwatched = 0, 0, 0, aired_eps
 					if unaired: title = '[COLOR red][I]%s[/I][/COLOR]' % title
 					else: title = 'Specials'
 				else:
 					if season_number < total_seasons:
 						episode_count += aired_eps
-					else: aired_eps = total_aired_eps - episode_count
+					else:
+						# Current/latest season: count by premiered date (same as episode unaired colour).
+						aired_eps = count_aired_episodes(meta, season=season_number, current_date=current_date, adjust_hours=adjust_hours)
 					playcount, watched, unwatched = get_watched_status_season(watched_info.get(season_number, None), aired_eps)
 					progress = get_progress_status_season(watched, aired_eps)
 				visible_progress = 0 if progress == 100 else progress

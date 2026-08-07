@@ -39,49 +39,55 @@ def routing(sys):
 		except Exception as e: kodi_utils.logger('routing', 'bootstrap: %s' % e)
 	if 'navigator.' in mode:
 		from indexers.navigator import Navigator
-		return getattr(Navigator(params), mode.split('.')[1])()
+		return exec('Navigator(params).%s()' % mode.split('.')[1])
 	elif 'menu_editor.' in mode:
 		from modules.menu_editor import MenuEditor
-		return getattr(MenuEditor(params), mode.split('.')[1])()
+		return exec('MenuEditor(params).%s()' % mode.split('.')[1])
 	elif 'personal_lists.' in mode:
 		from indexers import personal_lists
-		return getattr(personal_lists, mode.split('.')[1])(params)
+		return exec('personal_lists.%s(params)' % mode.split('.')[1])
 	elif 'tmdblist.' in mode:
 		from indexers import tmdb_lists
-		return getattr(tmdb_lists, mode.split('.')[1])(params)
+		return exec('tmdb_lists.%s(params)' % mode.split('.')[1])
 	elif 'easynews.' in mode:
 		from indexers import easynews
-		return getattr(easynews, mode.split('.')[1])(params)
+		return exec('easynews.%s(params)' % mode.split('.')[1])
 	elif mode.startswith('nzb.'):
 		from indexers import nzb
-		return getattr(nzb, mode.split('.')[1])(params)
+		return exec('nzb.%s(params)' % mode.split('.')[1])
 	elif 'playback.' in mode:
 		from modules.kodi_utils import player_check
 		return player_check(mode, params)
 	elif 'choice' in mode:
 		from indexers import dialogs
-		return getattr(dialogs, mode)(params)
+		return exec('dialogs.%s(params)' % mode)
 	elif 'custom_key.' in mode:
 		from modules import custom_keys
-		return getattr(custom_keys, mode.split('custom_key.')[1])()
+		return exec('custom_keys.%s()' % mode.split('custom_key.')[1])
 	elif 'simkl.' in mode:
 		if '.list.' in mode:
 			from indexers import simkl_lists
-			return getattr(simkl_lists, mode.split('.')[2])(params)
+			return exec('simkl_lists.%s(params)' % mode.split('.')[2])
 		from apis import simkl_api
-		return getattr(simkl_api, mode.split('.')[1])(params)
+		return exec('simkl_api.%s(params)' % mode.split('.')[1])
 	elif 'mdblist.' in mode:
 		from apis import mdblist_api
-		return getattr(mdblist_api, mode.split('.')[1])(params)
+		return exec('mdblist_api.%s(params)' % mode.split('.')[1])
+	elif 'punchplay.' in mode:
+		if '.list.' in mode:
+			from indexers import punchplay_lists
+			return exec('punchplay_lists.%s(params)' % mode.split('.')[2])
+		from apis import punchplay_api
+		return exec('punchplay_api.%s(params)' % mode.split('.')[1])
 	elif 'wetrakr.' in mode:
 		from apis import wetrakr_api
-		return getattr(wetrakr_api, mode.split('.')[1])(params)
+		return exec('wetrakr_api.%s(params)' % mode.split('.')[1])
 	elif 'trakt.' in mode:
 		if '.list' in mode:
 			from indexers import trakt_lists
-			return getattr(trakt_lists, mode.split('.')[2])(params)
+			return exec('trakt_lists.%s(params)' % mode.split('.')[2])
 		from apis import trakt_api
-		return getattr(trakt_api, mode.split('.')[1])(params)
+		return exec('trakt_api.%s(params)' % mode.split('.')[1])
 	elif 'build' in mode:
 		if mode == 'build_movie_list':
 			from indexers.movies import Movies
@@ -110,6 +116,12 @@ def routing(sys):
 		elif mode == 'build_mdbl_calendar':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist', params)
+		elif mode == 'build_punchplay_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.punchplay', params)
+		elif mode == 'build_simkl_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.simkl', params)
 		elif mode == 'build_mdbl_next_up':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist_next', params)
@@ -288,28 +300,6 @@ def routing(sys):
 		elif mode == 'torbox.send_webdl':
 			from indexers.torbox import tb_send_webdl
 			tb_send_webdl()
-	elif 'debridlink' in mode:
-		if mode == 'debridlink.dl_cloud':
-			from indexers.debridlink import dl_cloud
-			return dl_cloud()
-		elif mode == 'debridlink.browse_dl_cloud':
-			from indexers.debridlink import browse_dl_cloud
-			return browse_dl_cloud(params.get('id'))
-		elif mode == 'debridlink.resolve_dl':
-			from indexers.debridlink import resolve_dl
-			return resolve_dl(params)
-		elif mode == 'debridlink.dl_account_info':
-			from indexers.debridlink import dl_account_info
-			return dl_account_info()
-		elif mode == 'debridlink.authenticate':
-			from apis.debridlink_api import DebridLinkAPI
-			return DebridLinkAPI().auth()
-		elif mode == 'debridlink.revoke_authentication':
-			from apis.debridlink_api import DebridLinkAPI
-			return DebridLinkAPI().revoke()
-		elif mode == 'debridlink.delete':
-			from indexers.debridlink import dl_delete
-			return dl_delete(params.get('id'))
 	elif 'tmdblist_api' in mode:
 		if mode == 'tmdblist_api.authenticate':
 			from apis.tmdblist_api import TMDbListAPI
@@ -340,10 +330,10 @@ def routing(sys):
 			return show_text(params.get('heading'), params.get('text', None), params.get('file', None), params.get('meta'), {})
 	elif 'settings_manager.' in mode:
 		from caches import settings_cache
-		return getattr(settings_cache, mode.split('.')[1])(params)
+		return exec('settings_cache.%s(params)' % mode.split('.')[1])
 	elif 'downloader.' in mode:
 		from modules import downloader
-		return getattr(downloader, mode.split('.')[1])(params)
+		return exec('downloader.%s(params)' % mode.split('.')[1])
 	elif 'local_backup.' in mode:
 		from modules import local_backup
 		return getattr(local_backup, mode.split('.', 1)[1])(params)
@@ -409,9 +399,7 @@ def routing(sys):
 		return hide_unhide_progress_items(params)
 	elif mode in ('external_scraper_clear_slot', 'external_scraper_move_slot'):
 		from indexers import dialogs
-		return getattr(dialogs, mode)(params)
+		return exec('dialogs.%s(params)' % mode)
 	elif mode == 'open_external_scraper_settings':
 		from modules.kodi_utils import external_scraper_settings
 		return external_scraper_settings(params)
-	else:
-		kodi_utils.logger('routing', 'unrecognized mode: %s' % mode)

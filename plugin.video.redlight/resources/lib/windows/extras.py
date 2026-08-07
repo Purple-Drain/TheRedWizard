@@ -722,6 +722,7 @@ class Extras(BaseDialog):
 		self.close()
 
 	def show_more_like_this(self):
+		return self.show_network()
 		self.close_all()
 		mode = 'build_movie_list' if self.media_type == 'movie' else 'build_tvshow_list'
 		self.selected = self.folder_runner({'mode': mode, 'action': 'imdb_more_like_this', 'key_id': self.imdb_id, 'name': 'More Like This based on %s' % self.title})
@@ -795,6 +796,10 @@ class Extras(BaseDialog):
 
 	def show_mdblist_manager(self):
 		return dialogs.mdblist_manager_choice({'tmdb_id': self.tmdb_id, 'imdb_id': self.imdb_id, 'tvdb_id': self.meta_get('tvdb_id', 'None'),
+											'media_type': self.media_type, 'title': self.title, 'icon': self.poster})
+
+	def show_punchplay_manager(self):
+		return dialogs.punchplay_manager_choice({'tmdb_id': self.tmdb_id, 'imdb_id': self.imdb_id, 'tvdb_id': self.meta_get('tvdb_id', 'None'),
 											'media_type': self.media_type, 'title': self.title, 'icon': self.poster})
 
 	def show_personallists_manager(self):

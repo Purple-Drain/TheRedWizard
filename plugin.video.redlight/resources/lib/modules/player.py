@@ -3,7 +3,6 @@ import os
 import xbmc
 import json
 import time
-import traceback
 from threading import Thread
 from apis.trakt_api import make_trakt_slug
 from caches.settings_cache import get_setting
@@ -20,8 +19,6 @@ PROP_NEXTEP_AUTOPLAY_CANCELLED = 'redlight.nextep_autoplay_cancelled'
 PROP_NEXTEP_NATURAL_END = 'redlight.nextep_natural_end'
 PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS = 'redlight.random_continual_skip_attempts'
 PROP_ACTIVE_PLAYBACK_KEY = 'redlight.active_playback_key'
-PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
-PROP_SOURCES_BUSY = 'redlight.sources_busy'
 _NEXTEP_NATURAL_END_SEC = 15
 # Movies-only: fire stingers alert ~3 min before other alert sources would (typical 90% vs 95% gap on ~1 hr).
 _STINGER_EARLY_OFFSET_SEC = 180
@@ -34,6 +31,9 @@ _INTRO_SKIP_EARLY_START_SEC = 120
 _INTRO_SKIP_SETTLE_SEC = 4
 _INTRO_SKIP_SETTLE_MAX_WAIT_SEC = 12
 _INTRO_SKIP_SETTLE_JUMP_SEC = 20
+_INTRO_CHAPTER_MIN_START_SEC = 5
+_INTRO_CHAPTER_MIN_SEGMENT_SEC = 10
+_INTRO_CHAPTER_MIN_END_SEC = 15
 _INTRO_SKIP_POST_END_GRACE_SEC = 20
 
 class RedLightPlayer(xbmc.Player):
@@ -215,14 +215,25 @@ class RedLightPlayer(xbmc.Player):
 				play_random_continual = self.sources_object.random_continual
 				play_random = self.sources_object.random
 				disable_autoplay_next_episode = self.sources_object.disable_autoplay_next_episode
+				self.num_episodes = getattr(self.sources_object, 'num_episodes', None)
 				if disable_autoplay_next_episode: ku.notification('Scrape with Custom Values - Autoplay Next Episode Cancelled', 4500)
 				if any((play_random_continual, play_random, disable_autoplay_next_episode)): self.autoplay_nextep, self.autoscrape_nextep = False, False
 				else: self.autoplay_nextep, self.autoscrape_nextep = self.sources_object.autoplay_nextep, self.sources_object.autoscrape_nextep
+				# Play # Episodes: remaining count includes the current episode.
+				try: _play_n = int(self.num_episodes) if self.num_episodes not in (None, '') else 0
+				except: _play_n = 0
+				if _play_n > 1:
+					self.autoplay_nextep, self.autoscrape_nextep = True, False
+				elif self.num_episodes not in (None, '') and _play_n <= 1:
+					self.autoplay_nextep, self.autoscrape_nextep = False, False
 				if self.autoplay_nextep or self.autoscrape_nextep:
-					self._log_nextep('Next episode monitor active: autoplay=%s autoscrape=%s' % (self.autoplay_nextep, self.autoscrape_nextep))
+					self._log_nextep('Next episode monitor active: autoplay=%s autoscrape=%s play_n=%s' % (
+						self.autoplay_nextep, self.autoscrape_nextep, self.num_episodes or ''))
 				elif st.autoscrape_next_episode() or st.autoplay_next_episode():
-					self._log_nextep('Next episode disabled this play (random=%s random_continual=%s custom_values=%s)' % (play_random, play_random_continual, disable_autoplay_next_episode))
+					self._log_nextep('Next episode disabled this play (random=%s random_continual=%s custom_values=%s play_n=%s)' % (
+						play_random, play_random_continual, disable_autoplay_next_episode, self.num_episodes or ''))
 			else:
+				self.num_episodes = None
 				show_stinger, stinger_alert_timing, stingers_percentage_fallback = st.stingers_show(), st.stingers_alert_timing(), st.stingers_percentage()
 				play_random_continual, self.autoplay_nextep, self.autoscrape_nextep = False, False, False
 			while total_check_time <= 30 and not ku.get_visibility('Window.IsActive(fullscreenvideo)'):
@@ -230,7 +241,9 @@ class RedLightPlayer(xbmc.Player):
 				total_check_time += 0.10
 			ku.hide_busy_dialog()
 			ku.sleep(1000)
+			self._trakt_scrobble_start()
 			self._simkl_scrobble_start()
+			self._punchplay_scrobble_start()
 			self._wetrakr_scrobble_start()
 			self._maybe_start_subtitle_alert_fetch()
 			self._maybe_start_introdb_alert_fetch()
@@ -270,6 +283,7 @@ class RedLightPlayer(xbmc.Player):
 					self._maybe_apply_intro_skip()
 					self.current_point = round(float(self.curr_time/self.total_time * 100), 1)
 					self._wetrakr_progress_tick()
+					self._punchplay_scrobble_progress()
 					if play_random_continual:
 						if self._should_prep_random_continual():
 							self.random_continual_triggered = True
@@ -294,11 +308,10 @@ class RedLightPlayer(xbmc.Player):
 							self._try_autoplay_early_stash_play()
 							self._try_autoscrape_nextep_ready_notify()
 							self._maybe_log_nextep_alert_pending()
-					elif show_stinger and not self.movie_stingers_run:
+					elif show_stinger and not self.movie_stingers_run: 
 						final_chapter = self._stinger_trigger_point(stinger_alert_timing, stingers_percentage_fallback)
 						if self.current_point >= final_chapter: self.run_movie_stingers()
-				except Exception:
-					ku.logger('Red Light', 'monitor() tick failed: %s' % traceback.format_exc())
+				except: pass
 				if not self.subs_searched: self.run_subtitles()
 			try:
 				_remaining = None
@@ -327,7 +340,10 @@ class RedLightPlayer(xbmc.Player):
 					if nextep_autoplay_cancelled() or nextep_end_play_superseded():
 						clear_nextep_autoplay_stash()
 						clear_orphan_nextep_play_stash()
-						self._log_nextep('Autoplay next episode: skipped at episode end (superseded by user playback)')
+						if nextep_autoplay_cancelled():
+							self._log_nextep('Autoplay next episode: skipped at episode end (cancelled)')
+						else:
+							self._log_nextep('Autoplay next episode: skipped at episode end (superseded by user playback)')
 					elif getattr(self, '_nextep_stash_play_scheduled', False):
 						autoplay_stash_scheduled = True
 					elif getattr(self, '_nextep_alert_shown', False):
@@ -338,18 +354,6 @@ class RedLightPlayer(xbmc.Player):
 								autoplay_stash_scheduled = schedule_nextep_stashed_play(stash)
 					else:
 						clear_nextep_autoplay_stash()
-				except: pass
-			autoscrape_handoff_pending = self.media_type == 'episode' and self.autoscrape_nextep and ku.get_property(PROP_NEXTEP_PENDING) == 'true'
-			nextep_resolve_in_flight = False
-			if not playback_superseded and self.media_type == 'episode' and self.autoplay_nextep:
-				try:
-					from modules.sources import nextep_autoplay_cancelled
-					if not nextep_autoplay_cancelled() and (ku.get_property(PROP_RESOLVE_BUSY) == 'true' or ku.get_property(PROP_SOURCES_BUSY) == 'true'):
-						nextep_resolve_in_flight = True
-				except: pass
-			if not autoplay_stash_scheduled and not autoscrape_handoff_pending and not nextep_resolve_in_flight and not playback_superseded and self.media_type == 'episode' and self.tmdb_id:
-				try:
-					ku.end_display_lock(str(self.tmdb_id), getattr(self, 'display_lock_generation', None))
 				except: pass
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
@@ -441,6 +445,24 @@ class RedLightPlayer(xbmc.Player):
 			self.set_playback_properties()
 		return listitem
 
+	def _trakt_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 1 or not st.trakt_user_active(): return
+		from apis.trakt_api import trakt_scrobble, trakt_official_status
+		if not trakt_official_status(self.media_type): return
+		percent = self.playback_percent if self.playback_percent else 0
+		Thread(target=trakt_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+
+	def _trakt_scrobble_stop(self, percent):
+		# Synchronous: ending playback tears down the player; a background thread often never finishes, leaving Trakt Playing now stuck.
+		if self.is_generic or st.watched_indicators() != 1 or not st.trakt_user_active(): return
+		from apis.trakt_api import trakt_scrobble, trakt_official_status
+		if not trakt_official_status(self.media_type): return
+		try: pct = float(percent or 0)
+		except: pct = 0
+		# Trakt returns 422 for stop below 1% and leaves watching active — clamp so Playing now still clears.
+		if pct < 1: pct = 1
+		trakt_scrobble('stop', self.media_type, self.tmdb_id, pct, self.season, self.episode)
+
 	def _simkl_scrobble_start(self):
 		if self.is_generic or st.watched_indicators() != 2 or not st.simkl_user_active(): return
 		from apis.simkl_api import simkl_scrobble, simkl_official_status
@@ -453,6 +475,40 @@ class RedLightPlayer(xbmc.Player):
 		from apis.simkl_api import simkl_scrobble, simkl_official_status
 		if not simkl_official_status(self.media_type): return
 		Thread(target=simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+
+	def _punchplay_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
+		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
+		if not punchplay_official_status(self.media_type): return
+		import uuid
+		self._punchplay_session_id = str(uuid.uuid4())
+		self._punchplay_last_progress_send = 0
+		percent = self.playback_percent if self.playback_percent else 0
+		Thread(target=punchplay_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
+				'session_id': self._punchplay_session_id}).start()
+
+	def _punchplay_scrobble_progress(self):
+		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
+		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
+		if not punchplay_official_status(self.media_type): return
+		now = time.time()
+		last = getattr(self, '_punchplay_last_progress_send', 0) or 0
+		if now - last < 30: return
+		self._punchplay_last_progress_send = now
+		session_id = getattr(self, '_punchplay_session_id', None)
+		Thread(target=punchplay_scrobble, args=('progress', self.media_type, self.tmdb_id, self.current_point, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
+				'session_id': session_id}).start()
+
+	def _punchplay_scrobble_stop(self, percent):
+		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
+		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
+		if not punchplay_official_status(self.media_type): return
+		session_id = getattr(self, '_punchplay_session_id', None)
+		Thread(target=punchplay_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
+				'session_id': session_id}).start()
 
 	def _wetrakr_meta_kwargs(self, percent):
 		ep_title = ''
@@ -517,17 +573,24 @@ class RedLightPlayer(xbmc.Player):
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
 		try:
-			if self.current_point >= 90 or force_watched:
+			current_point = getattr(self, 'current_point', 0) or 0
+			if current_point >= 90 or force_watched:
+				self._trakt_scrobble_stop(100)
 				self._simkl_scrobble_stop(100)
+				self._punchplay_scrobble_stop(100)
 				self._wetrakr_on_stop(100, force_scrobble=True)
 				watched_function = ws.mark_movie if self.media_type == 'movie' else ws.mark_episode
 				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
 				Thread(target=self.run_media_progress, args=(watched_function, watched_params)).start()
 			else:
-				self._wetrakr_on_stop(self.current_point)
+				# Always stop Trakt live scrobble so Playing now clears. Below ~80% Trakt treats stop as pause + resume.
+				self._trakt_scrobble_stop(current_point)
+				self._simkl_scrobble_stop(current_point)
+				self._punchplay_scrobble_stop(current_point)
+				self._wetrakr_on_stop(current_point)
 				ku.clear_property('redlight.random_episode_history')
-				if self.current_point >= 5:
+				if current_point >= 5:
 					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
 									'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
 					Thread(target=self.run_media_progress, args=(ws.set_bookmark, progress_params)).start()
@@ -714,7 +777,9 @@ class RedLightPlayer(xbmc.Player):
 		else: play_type = 'autoscrape_nextep'
 		nextep_settings = st.auto_nextep_settings(play_type)
 		pop_at, _timing_source = self._pop_window_seconds(nextep_settings, self.total_time)
-		self.random_continual_start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching=False)
+		# Headroom for Still Watching when Check Still Watching After X is enabled (Continual Random).
+		include_still_watching = bool(nextep_settings.get('watching_check', 0))
+		self.random_continual_start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching)
 
 	def _should_prep_random_continual(self):
 		if getattr(self, 'random_continual_triggered', False): return False
@@ -867,6 +932,11 @@ class RedLightPlayer(xbmc.Player):
 		stash = peek_nextep_autoplay_stash()
 		if not stash: return
 		settings = self.nextep_settings
+		# Play # Episodes: silent chain — wait for natural end, then play stashed next.
+		if settings.get('play_n_episodes'):
+			self._nextep_close_wait = True
+			self._log_nextep('Play # Episodes: silent continue (remaining after this=%s)' % settings.get('num_episodes'))
+			return
 		use_window = settings.get('use_window')
 		default_action = settings.get('default_action')
 		dialog_meta = stash['meta']
@@ -974,10 +1044,25 @@ class RedLightPlayer(xbmc.Player):
 		credits_entry = self._subtitle_credits_entry_remaining(fetch=False) if nextep_settings.get('alert_timing') == 'subtitles' else None
 		use_window = nextep_settings['alert_method'] == 0
 		default_action = nextep_settings['default_action']
-		self.start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type)
-		pipeline = st.nextep_pipeline_headroom(play_type, nextep_settings['scraper_time'], self._still_watching_due(nextep_settings))
+		# Play # Episodes: no Still Watching budget; headroom without that dialog.
+		play_n_active = False
+		try: play_n_remaining = int(self.num_episodes) if getattr(self, 'num_episodes', None) not in (None, '') else 0
+		except: play_n_remaining = 0
+		if play_n_remaining > 1:
+			play_n_active = True
+			use_window = False
+			default_action = 'close'
+		still_watching_due = False if play_n_active else self._still_watching_due(nextep_settings)
+		self.start_prep = self._start_prep_seconds(nextep_settings, pop_at, play_type, include_still_watching=not play_n_active)
+		pipeline = st.nextep_pipeline_headroom(play_type, nextep_settings['scraper_time'], still_watching_due)
 		self.nextep_settings = {'use_window': use_window, 'window_time': pop_at, 'default_action': default_action, 'play_type': play_type,
-			'alert_timing': nextep_settings.get('alert_timing'), 'watching_check': nextep_settings['watching_check'], 'pipeline_headroom': pipeline, 'credits_entry': credits_entry}
+			'alert_timing': nextep_settings.get('alert_timing'),
+			'watching_check': 0 if play_n_active else nextep_settings['watching_check'],
+			'pipeline_headroom': pipeline, 'credits_entry': credits_entry}
+		if play_n_active:
+			# Count for the *next* episode includes that episode; stop when it reaches 1.
+			self.nextep_settings['num_episodes'] = str(play_n_remaining - 1)
+			self.nextep_settings['play_n_episodes'] = True
 		if nextep_settings.get('alert_timing') == 'introdb':
 			outro_start = self._outro_credits_start(fetch=True)
 			if outro_start is not None:
@@ -985,22 +1070,13 @@ class RedLightPlayer(xbmc.Player):
 		credits_log = ' credits_entry=%ss' % credits_entry if credits_entry is not None else ''
 		outro_start = self.nextep_settings.get('outro_start')
 		outro_log = ' outro_start=%.1fs' % outro_start if outro_start is not None else ''
-		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s' % (
-			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log))
-
-	def _log_chapter_timing_unavailable(self):
-		if getattr(self, '_chapter_timing_warned', False):
-			return
-		self._chapter_timing_warned = True
-		ku.logger('Red Light', 'Chapter-based alert timing unavailable: Kodi exposes no infolabel for chapter percentage marks (Player.Chapters is not a real infolabel); falling back to percentage-based timing')
+		play_n_log = ' play_n=%s' % play_n_remaining if play_n_remaining else ''
+		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s%s' % (
+			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log, play_n_log))
 
 	def final_chapter(self, threshhold):
 		try:
-			raw = ku.get_infolabel('Player.Chapters')
-			if not raw:
-				self._log_chapter_timing_unavailable()
-				return None
-			final_chapter = float(raw.split(',')[-1])
+			final_chapter = float(ku.get_infolabel('Player.Chapters').split(',')[-1])
 			if final_chapter >= threshhold: return final_chapter
 		except: pass
 		return None
@@ -1228,6 +1304,7 @@ class RedLightPlayer(xbmc.Player):
 			self.meta_get, self.playback_percent = self.meta.get, self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
+			self.current_point = 0
 			self.subs_searched = False
 			self._subtitle_end_remaining_cached = '__unset__'
 			self._subtitle_alert_fetch_started = False
@@ -1254,7 +1331,6 @@ class RedLightPlayer(xbmc.Player):
 			self._intro_skip_last_curr = None
 			self._intro_skip_settle_ready = False
 			self._outro_credits_start_cached = '__unset__'
-			self._chapter_timing_warned = False
 
 	def _start_intro_skip_fetch(self):
 		play_type = getattr(self.sources_object, 'play_type', '')
@@ -1291,6 +1367,33 @@ class RedLightPlayer(xbmc.Player):
 				self._intro_skip_fetch_done = True
 		Thread(target=_work, daemon=True).start()
 
+	def _try_intro_skip_chapters(self):
+		if getattr(self, '_intro_skip_segment', None):
+			return
+		if not getattr(self, '_intro_skip_fetch_done', False):
+			return
+		try:
+			total = float(self.total_time)
+			if total < 60:
+				return
+			raw = ku.get_infolabel('Player.Chapters')
+			if not raw:
+				return
+			marks = [float(x) for x in raw.split(',') if x.strip()]
+			if len(marks) < 2:
+				return
+			start_pct, end_pct = marks[0], marks[1]
+			if start_pct > 5 or end_pct > 30 or end_pct <= start_pct:
+				return
+			start_sec = total * start_pct / 100.0
+			end_sec = total * end_pct / 100.0
+			if start_sec < _INTRO_CHAPTER_MIN_START_SEC:
+				return
+			if end_sec - start_sec < _INTRO_CHAPTER_MIN_SEGMENT_SEC or end_sec < _INTRO_CHAPTER_MIN_END_SEC:
+				return
+			self._intro_skip_segment = {'start_sec': start_sec, 'end_sec': end_sec, 'source': 'chapters'}
+		except: pass
+
 	def _maybe_log_intro_skip_no_timing(self):
 		if getattr(self, '_intro_skip_no_timing_logged', False):
 			return
@@ -1298,9 +1401,12 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if getattr(self, '_intro_skip_segment', None):
 			return
+		self._try_intro_skip_chapters()
+		if getattr(self, '_intro_skip_segment', None):
+			return
 		self._intro_skip_no_timing_logged = True
 		self._intro_skip_done = True
-		self._log_intro_skip('Intro skip: no timing (api miss)')
+		self._log_intro_skip('Intro skip: no timing (api miss, chapters rejected)')
 
 	def _intro_resume_sec(self):
 		if self.playback_percent and float(self.playback_percent) > 0:
@@ -1393,6 +1499,7 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if not self._player_is_active():
 			return
+		self._try_intro_skip_chapters()
 		segment = getattr(self, '_intro_skip_segment', None)
 		if not segment:
 			self._maybe_log_intro_skip_no_timing()

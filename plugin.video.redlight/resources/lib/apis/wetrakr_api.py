@@ -2,7 +2,7 @@
 """WeTrakr scrobble-only integration (device OAuth + Kodi webhook).
 
 Does not sync watched ticks, resume, or lists into Red Light. Prefer
-Watched Indicators = Red Light (or another provider) for UI state.
+Watched Status Provider = Red Light (or another provider) for UI state.
 """
 import json
 import time
@@ -14,6 +14,8 @@ from modules.utils import copy2clip, make_qrcode
 BASE_URL = 'https://api.wetrakr.com'
 APP_UA = 'RedLight-WeTrakr/%s' % kodi_utils.addon_version()
 
+WETRAKR_TRAKT_IMPORT_URL = 'https://wetrakr.com/profile/settings/data'
+
 WETRAKR_SCROBBLE_ONLY_TEXT = (
 	'[B]WeTrakr is scrobble-only in Red Light.[/B][CR][CR]'
 	'Authorise under Meta Accounts, then use [B]Enable Scrobbling[/B] to turn sending '
@@ -22,7 +24,9 @@ WETRAKR_SCROBBLE_ONLY_TEXT = (
 	'so titles can show in WeTrakr (Now Playing / history).[CR][CR]'
 	'It does [B]not[/B] bring watched ticks, resume points, Next Episodes, or lists '
 	'back into Red Light.[CR][CR]'
-	'Keep [B]Watched Status Provider[/B] on [B]Red Light[/B] (or MDBList / Simkl / Trakt) '
+	'Use [B]Import Trakt to WeTrakr[/B] to open WeTrakr\'s official import page (QR or link) '
+	'if you want history on WeTrakr itself — that still does not change ticks in Red Light.[CR][CR]'
+	'Keep [B]Watched Status Provider[/B] on [B]Red Light[/B] (or MDBList / PunchPlay / Simkl / Trakt) '
 	'for ticks and lists in the addon.'
 )
 
@@ -224,3 +228,11 @@ def wetrakr_revoke_authentication(dummy=''):
 def wetrakr_about(dummy=''):
 	kodi_utils.ok_dialog(heading='WeTrakr (Scrobble Only)', text=WETRAKR_SCROBBLE_ONLY_TEXT, scroll=True)
 	return True
+
+def wetrakr_import_trakt(params=None):
+	from modules.trakt_import_help import open_official_trakt_import_page
+	return open_official_trakt_import_page(
+		'WeTrakr', WETRAKR_TRAKT_IMPORT_URL,
+		icon=_wetrakr_icon(),
+		close_hint='. This does not change watched ticks in Red Light',
+		fallback_hint='When finished, watched ticks in Red Light still follow Watched Status Provider — not WeTrakr.')

@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 from caches import simkl_cache
 from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils, settings, list_sort
+from modules.http_defaults import META_API_TIMEOUT
 from modules.utils import copy2clip, make_qrcode
 
 BASE_URL = 'https://api.simkl.com'
@@ -26,7 +27,9 @@ def _throttle():
 		_last_request_time = time.time()
 
 def _client_id():
-	return SIMKL_CLIENT_ID
+	"""Prefer Meta Accounts Simkl Client ID; fall back to the shipped default."""
+	try: return settings.simkl_client() or SIMKL_CLIENT_ID
+	except Exception: return SIMKL_CLIENT_ID
 
 def _simkl_token():
 	from caches.settings_cache import settings_cache
@@ -68,12 +71,12 @@ def call_simkl(path, data=None, method=None, is_delete=False):
 	headers = _headers()
 	try:
 		if is_delete:
-			resp = requests.delete(url, headers=headers, timeout=20)
+			resp = requests.delete(url, headers=headers, timeout=META_API_TIMEOUT)
 		elif method == 'get' or (data is None and not method):
-			resp = requests.get(url, headers=headers, timeout=20)
+			resp = requests.get(url, headers=headers, timeout=META_API_TIMEOUT)
 		else:
 			payload = json.dumps(data) if isinstance(data, (dict, list)) else data
-			resp = requests.post(url, data=payload, headers=headers, timeout=20)
+			resp = requests.post(url, data=payload, headers=headers, timeout=META_API_TIMEOUT)
 		if resp.status_code in (200, 201): return resp.json() if resp.text else True
 		if resp.status_code == 204: return True
 		kodi_utils.logger('Simkl', 'HTTP %s %s' % (resp.status_code, url))
@@ -81,7 +84,7 @@ def call_simkl(path, data=None, method=None, is_delete=False):
 	return None
 
 def simkl_get_pin():
-	try: return requests.get(_pin_url(), headers=_pin_headers(), timeout=20).json()
+	try: return requests.get(_pin_url(), headers=_pin_headers(), timeout=META_API_TIMEOUT).json()
 	except: return None
 
 def simkl_poll_pin(pin):
@@ -102,7 +105,7 @@ def simkl_poll_pin(pin):
 			return None
 		_throttle()
 		try:
-			resp = requests.get(_pin_url(user_code), headers=_pin_headers(), timeout=20).json()
+			resp = requests.get(_pin_url(user_code), headers=_pin_headers(), timeout=META_API_TIMEOUT).json()
 			if resp.get('access_token'):
 				progress.close()
 				return resp['access_token']
@@ -120,9 +123,11 @@ def simkl_authenticate(dummy=''):
 	set_setting('simkl.token', token)
 	from caches.settings_cache import settings_cache
 	settings_cache.clear_db_cache()
-	info = call_simkl('/users/settings')
+	# Simkl requires POST /users/settings (no body) — GET fails and falls back to "Simkl User".
+	info = call_simkl('/users/settings', data={})
 	if info and info.get('user'):
-		set_setting('simkl.user', str(info['user'].get('name') or info['user'].get('login') or 'Simkl User'))
+		u = info['user']
+		set_setting('simkl.user', str(u.get('name') or u.get('login') or u.get('username') or 'Simkl User'))
 	else: set_setting('simkl.user', 'Simkl User')
 	settings.offer_watched_provider(2, 'Simkl')
 	kodi_utils.notification('Simkl Account Authorised', 3000)
@@ -131,88 +136,18 @@ def simkl_authenticate(dummy=''):
 	except: pass
 	return True
 
-def simkl_migrate_trakt_history(dummy=''):
-	"""Bulk-push Trakt watched history into Simkl via the sync/history API, bypassing Simkl's own (paywalled) hosted import wizard."""
-	from apis import trakt_api
-	if not settings.trakt_user_active(): return kodi_utils.notification('No Active Trakt Account', 3500)
-	if not settings.simkl_user_active(): return kodi_utils.notification('No Active Simkl Account', 3500)
-	progress = kodi_utils.progress_dialog('Import Trakt History to Simkl', kodi_utils.get_icon('simkl') or kodi_utils.addon_icon())
-	progress.update('Reading Trakt watched history...', 0)
-	movies_result = trakt_api.get_trakt({'path': 'sync/watched/movies%s', 'with_auth': True, 'fetch_all': True})
-	shows_result = trakt_api.get_trakt({'path': 'sync/watched/shows%s', 'params': {'extended': 'progress'}, 'with_auth': True, 'fetch_all': True})
-	if movies_result is None and shows_result is None:
-		progress.close()
-		return kodi_utils.notification('Could Not Read Trakt History', 3500)
-	movies_payload = []
-	for item in (movies_result or []):
-		try:
-			movie = item['movie']
-			tmdb_id = trakt_api.get_trakt_movie_id(movie['ids'])
-			if not tmdb_id: continue
-			entry = {'ids': {'tmdb': int(tmdb_id)}}
-			if item.get('last_watched_at'): entry['watched_at'] = item['last_watched_at']
-			movies_payload.append(entry)
-		except Exception: continue
-	shows_payload = []
-	for item in (shows_result or []):
-		try:
-			show = item['show']
-			tmdb_id = trakt_api.get_trakt_tvshow_id(show['ids'])
-			if not tmdb_id: continue
-			seasons_payload = []
-			for s in item.get('seasons') or []:
-				episodes_payload = []
-				for e in s.get('episodes') or []:
-					ep = {'number': int(e['number'])}
-					if e.get('last_watched_at'): ep['watched_at'] = e['last_watched_at']
-					episodes_payload.append(ep)
-				if episodes_payload: seasons_payload.append({'number': int(s['number']), 'episodes': episodes_payload})
-			if seasons_payload: shows_payload.append({'ids': {'tmdb': int(tmdb_id)}, 'seasons': seasons_payload})
-		except Exception: continue
-	kodi_utils.logger('Simkl Migrate', 'trakt fetch: %s movies, %s shows-with-watched-seasons' % (len(movies_payload), len(shows_payload)))
-	if not movies_payload and not shows_payload:
-		progress.close()
-		return kodi_utils.notification('No Trakt History Found', 3500)
-	progress.update('Sending history to Simkl...', 40)
+SIMKL_TRAKT_IMPORT_URL = 'https://simkl.com/apps/import/trakt/'
 
-	def _tally(result):
-		if not isinstance(result, dict): return 0, 0
-		statuses = (result.get('added') or {}).get('statuses') or []
-		ok = sum(1 for s in statuses if isinstance(s, dict) and s.get('response'))
-		not_found = result.get('not_found') or {}
-		missed = sum(len(v) for v in not_found.values() if isinstance(v, list))
-		return ok, missed
+def simkl_import_trakt(params=None):
+	from threading import Thread
+	from modules.trakt_import_help import open_official_trakt_import_page
+	def _after():
+		Thread(target=simkl_sync_activities, kwargs={'force_update': True}, daemon=True).start()
+	return open_official_trakt_import_page(
+		'Simkl', SIMKL_TRAKT_IMPORT_URL,
+		icon=kodi_utils.get_icon('simkl') or kodi_utils.addon_icon(),
+		after_close=_after)
 
-	ok_movies = ok_shows = missed_total = 0
-	CHUNK = 200
-	total_chunks = max(1, -(-len(movies_payload) // CHUNK) + -(-len(shows_payload) // CHUNK))
-	done_chunks = 0
-	for i in range(0, len(movies_payload), CHUNK):
-		if progress.iscanceled(): break
-		result = call_simkl('/sync/history', data={'movies': movies_payload[i:i + CHUNK]})
-		kodi_utils.logger('Simkl Migrate', 'movies chunk result: %s' % result)
-		ok, missed = _tally(result)
-		ok_movies += ok
-		missed_total += missed
-		done_chunks += 1
-		progress.update('Sending history to Simkl...', 40 + int(50 * done_chunks / total_chunks))
-	for i in range(0, len(shows_payload), CHUNK):
-		if progress.iscanceled(): break
-		result = call_simkl('/sync/history', data={'shows': shows_payload[i:i + CHUNK]})
-		kodi_utils.logger('Simkl Migrate', 'shows chunk result: %s' % result)
-		ok, missed = _tally(result)
-		ok_shows += ok
-		missed_total += missed
-		done_chunks += 1
-		progress.update('Sending history to Simkl...', 40 + int(50 * done_chunks / total_chunks))
-	progress.close()
-	msg = 'Synced %s Movies, %s Shows to Simkl' % (ok_movies, ok_shows)
-	if missed_total: msg += ' (%s not matched)' % missed_total
-	kodi_utils.notification(msg, 4000)
-	simkl_sync_activities(force_update=True)
-	try: kodi_utils.container_refresh()
-	except Exception: pass
-	return True
 
 def simkl_revoke_authentication(dummy=''):
 	set_setting('simkl.user', 'empty_setting')
@@ -227,6 +162,45 @@ def _tmdb_id(ids):
 	except: pass
 	return None
 
+# Defined early — anime id enrich helpers use this before the sync-cache block below.
+_SIMKL_ID_EMPTY = ('None', None, '', 'empty_setting', 0, '0')
+
+def _simkl_ids_from_dict(ids):
+	media_ids = {}
+	if not isinstance(ids, dict): return media_ids
+	for key in ('tmdb', 'imdb', 'tvdb', 'simkl'):
+		value = ids.get(key)
+		if value in _SIMKL_ID_EMPTY: continue
+		if key in ('tmdb', 'tvdb', 'simkl'):
+			try: value = int(value)
+			except: pass
+		media_ids[key] = value
+	return media_ids
+
+def _simkl_enrich_anime_ids(simkl_id, media_ids):
+	"""Sync all-items often omits TVDb / ships movie TMDb ids for season-split anime."""
+	try:
+		sid = int(simkl_id)
+	except: return media_ids
+	cache_key = 'anime_ids_%s' % sid
+	try:
+		cached = simkl_cache.simkl_cache.get(cache_key)
+		if isinstance(cached, dict):
+			merged = dict(media_ids or {})
+			for key, value in cached.items():
+				if key not in merged and value not in _SIMKL_ID_EMPTY: merged[key] = value
+			return merged
+	except: pass
+	detail = call_simkl('/anime/%s' % sid, method='get')
+	if not isinstance(detail, dict): return media_ids
+	detail_ids = _simkl_ids_from_dict(detail.get('ids') or {})
+	try: simkl_cache.simkl_cache.set(cache_key, detail_ids)
+	except: pass
+	merged = dict(media_ids or {})
+	for key, value in detail_ids.items():
+		if key not in merged and value not in _SIMKL_ID_EMPTY: merged[key] = value
+	return merged
+
 def _simkl_media_ids(item, media_kind):
 	try:
 		if media_kind == 'movies': obj = item.get('movie')
@@ -234,14 +208,12 @@ def _simkl_media_ids(item, media_kind):
 		if not isinstance(obj, dict): obj = item
 		ids = obj.get('ids') or item.get('ids') or {}
 		if not isinstance(ids, dict): ids = {}
-		media_ids = {}
-		for key in ('tmdb', 'imdb', 'tvdb'):
-			value = ids.get(key)
-			if value in (None, '', 'None', 'empty_setting', 0, '0'): continue
-			if key in ('tmdb', 'tvdb'):
-				try: value = int(value)
-				except: pass
-			media_ids[key] = value
+		media_ids = _simkl_ids_from_dict(ids)
+		if media_kind == 'anime':
+			simkl_id = ids.get('simkl')
+			# Incomplete sync ids (e.g. Re:Zero S4 = episode IMDb only; Steel Ball Run = dead TMDb only).
+			if simkl_id and not (media_ids.get('tvdb') and media_ids.get('imdb') and media_ids.get('tmdb')):
+				media_ids = _simkl_enrich_anime_ids(simkl_id, media_ids)
 		return media_ids
 	except: return {}
 
@@ -284,7 +256,6 @@ def _simkl_release_key(item, media_kind):
 _SIMKL_STATUS_CACHE_PREFIX = 'simkl_all_items'
 _SIMKL_LIST_ACTIVITY_KEYS = ('plantowatch', 'watching', 'completed', 'hold', 'dropped', 'removed_from_list', 'all')
 _SIMKL_STATUS_LABELS = {'plantowatch': 'Plan to Watch', 'watching': 'Watching', 'completed': 'Completed', 'hold': 'On Hold', 'dropped': 'Dropped'}
-_SIMKL_ID_EMPTY = ('None', None, '', 'empty_setting', 0, '0')
 
 def _simkl_list_cache_key(media_kind, status):
 	return '%s_%s_%s' % (_SIMKL_STATUS_CACHE_PREFIX, media_kind, status)
@@ -326,12 +297,9 @@ def _simkl_fetch_status_live(media_kind, status):
 			'released': _simkl_release_key(item, media_kind)})
 	if skipped and not result:
 		kodi_utils.logger('Simkl', 'list %s/%s: %s items had no tmdb/imdb/tvdb ids' % (media_kind, status, skipped))
-	# 'anime' is only ever fetched by _simkl_fetch_tv_status, which merges it with the shows list and
-	# sorts the merged result under an explicit 'shows'. Sorting anime here would resolve to
-	# DEFAULT_SPEC ('anime' does not normalize to a mediatype) and break the final sort's ties.
-	# Shows are left unsorted here so the merge below is the single TV sort pass.
-	if media_kind != 'movies': return result
-	try: return list_sort.sort_source(result, 'simkl.%s' % status, 'movies', 'simkl')
+	# Anime shelves use the shows sort default (same episode content type in Red Light).
+	sort_media = 'movies' if media_kind == 'movies' else 'shows'
+	try: return list_sort.sort_source(result, 'simkl.%s' % status, sort_media, 'simkl')
 	except Exception as e:
 		kodi_utils.logger('Simkl', 'sort %s/%s failed: %s' % (media_kind, status, e))
 		return result
@@ -342,30 +310,25 @@ def _simkl_fetch_status(media_kind, status):
 	return [] if result is None else result
 
 def _simkl_fetch_tv_status(status):
+	"""Shows + anime combined (Next Episodes watchlist, manager membership, dropped IDs)."""
 	shows = _simkl_fetch_status('shows', status)
 	anime = _simkl_fetch_status('anime', status)
 	if not shows and not anime: return []
-	# sort_source never raises, so no guard here: a bare except would only swallow KeyboardInterrupt.
 	return list_sort.sort_source(shows + anime, 'simkl.%s' % status, 'shows', 'simkl')
 
 def simkl_plantowatch(media_kind, page_no=None):
-	if media_kind == 'shows': return _simkl_fetch_tv_status('plantowatch')
 	return _simkl_fetch_status(media_kind, 'plantowatch')
 
 def simkl_completed(media_kind, page_no=None):
-	if media_kind == 'shows': return _simkl_fetch_tv_status('completed')
 	return _simkl_fetch_status(media_kind, 'completed')
 
 def simkl_watching(media_kind, page_no=None):
-	if media_kind == 'shows': return _simkl_fetch_tv_status('watching')
 	return _simkl_fetch_status(media_kind, 'watching')
 
 def simkl_hold(media_kind, page_no=None):
-	if media_kind == 'shows': return _simkl_fetch_tv_status('hold')
 	return _simkl_fetch_status(media_kind, 'hold')
 
 def simkl_dropped(media_kind, page_no=None):
-	if media_kind == 'shows': return _simkl_fetch_tv_status('dropped')
 	return _simkl_fetch_status(media_kind, 'dropped')
 
 _SIMKL_DROPPED_CACHE_KEY = 'simkl_hidden_items_dropped'
@@ -377,7 +340,7 @@ def simkl_get_dropped_items():
 	cached = simkl_cache.simkl_cache.get(_SIMKL_DROPPED_CACHE_KEY)
 	if cached is not None: return cached
 	items = []
-	for item in simkl_dropped('shows'):
+	for item in _simkl_fetch_tv_status('dropped'):
 		try:
 			tmdb_id = item.get('media_ids', {}).get('tmdb')
 			if tmdb_id: items.append(int(tmdb_id))
@@ -385,7 +348,11 @@ def simkl_get_dropped_items():
 	simkl_cache.simkl_cache.set(_SIMKL_DROPPED_CACHE_KEY, items)
 	return items
 
-def _simkl_list_ids(tmdb_id, imdb_id=None, tvdb_id=None):
+def _simkl_list_ids(tmdb_id, imdb_id=None, tvdb_id=None, simkl_id=None):
+	# Prefer Simkl's own id for season-split anime — parent TMDb/IMDb/TVDb often miss the library row.
+	if simkl_id not in _SIMKL_ID_EMPTY:
+		try: return {'simkl': int(simkl_id)}
+		except: return {'simkl': simkl_id}
 	ids = {'tmdb': int(tmdb_id)}
 	if imdb_id and imdb_id not in ('None', None, ''): ids['imdb'] = imdb_id
 	if tvdb_id and str(tvdb_id) not in ('None', '0', ''):
@@ -393,47 +360,61 @@ def _simkl_list_ids(tmdb_id, imdb_id=None, tvdb_id=None):
 		except: ids['tvdb'] = tvdb_id
 	return ids
 
-def _simkl_list_add_ok(result, media_type):
+def _simkl_list_bucket(media_type, media_kind=None):
+	if media_type == 'movie': return 'movies'
+	if media_kind == 'anime': return 'anime'
+	return 'shows'
+
+def _simkl_list_add_ok(result, media_type, media_kind=None):
 	if not isinstance(result, dict): return False
-	key = 'movies' if media_type == 'movie' else 'shows'
-	if (result.get('added') or {}).get(key): return True
-	not_found = (result.get('not_found') or {}).get(key)
-	if not_found: kodi_utils.logger('Simkl', 'add-to-list not_found: %s' % not_found)
+	keys = ('movies',) if media_type == 'movie' else ('shows', 'anime')
+	added = result.get('added') or {}
+	for key in keys:
+		if added.get(key): return True
+	not_found = result.get('not_found') or {}
+	for key in keys:
+		if not_found.get(key):
+			kodi_utils.logger('Simkl', 'add-to-list not_found: %s' % not_found.get(key))
+			break
 	return False
 
-def _simkl_list_remove_ok(result, media_type):
-	if result is True: return True
+def _simkl_list_remove_ok(result, media_type, media_kind=None):
+	# Bare True/empty body used to toast Success while deleting nothing (season-split anime miss).
 	if not isinstance(result, dict): return False
-	key = 'movies' if media_type == 'movie' else 'shows'
+	keys = ('movies',) if media_type == 'movie' else ('shows', 'anime')
 	deleted = result.get('deleted') or {}
-	if isinstance(deleted, dict) and deleted.get(key): return True
-	if deleted is True: return True
+	if not isinstance(deleted, dict): return False
+	for key in keys:
+		val = deleted.get(key)
+		if val: return True
 	return False
 
-def _simkl_refresh_after_list_change(listname=None, media_type='movie'):
+def _simkl_refresh_after_list_change(listname=None, media_type='movie', media_kind=None):
 	clear_simkl_dropped_cache()
-	media_kind = 'movies' if media_type == 'movie' else 'shows'
-	clear_simkl_list_status_cache(media_kind)
+	if media_type == 'movie': clear_simkl_list_status_cache('movies')
+	elif media_kind == 'anime': clear_simkl_list_status_cache('anime')
+	else: clear_simkl_list_status_cache('shows')
 	if settings.watched_indicators() == 2:
 		simkl_sync_activities()
 	if kodi_utils.path_check('simkl') or kodi_utils.external():
 		kodi_utils.kodi_refresh()
 
-def _simkl_id_match(item_ids, imdb_id=None, tvdb_id=None, tmdb_id=None):
+def _simkl_id_match(item_ids, imdb_id=None, tvdb_id=None, tmdb_id=None, simkl_id=None):
 	if not isinstance(item_ids, dict): return False
+	if simkl_id not in _SIMKL_ID_EMPTY and str(item_ids.get('simkl')) == str(simkl_id): return True
 	if imdb_id and imdb_id not in _SIMKL_ID_EMPTY and str(item_ids.get('imdb')) == str(imdb_id): return True
 	if tvdb_id and tvdb_id not in _SIMKL_ID_EMPTY and str(item_ids.get('tvdb')) == str(tvdb_id): return True
 	if tmdb_id and tmdb_id not in _SIMKL_ID_EMPTY and str(item_ids.get('tmdb')) == str(tmdb_id): return True
 	return False
 
-def _simkl_item_in_status(media_type, status, imdb_id=None, tvdb_id=None, tmdb_id=None):
+def _simkl_item_in_status(media_type, status, imdb_id=None, tvdb_id=None, tmdb_id=None, simkl_id=None):
 	try:
 		if media_type == 'movie':
 			items = _simkl_fetch_status('movies', status)
 		else:
 			items = _simkl_fetch_tv_status(status)
 		for item in items:
-			if _simkl_id_match(item.get('media_ids'), imdb_id, tvdb_id, tmdb_id): return True
+			if _simkl_id_match(item.get('media_ids'), imdb_id, tvdb_id, tmdb_id, simkl_id): return True
 	except: pass
 	return False
 
@@ -453,22 +434,25 @@ def simkl_search_my_lists(query):
 			entry['media_kind'] = 'movies'
 			results.append(entry)
 	for status in statuses:
-		for item in _simkl_fetch_tv_status(status):
-			title = (item.get('title') or '').strip()
-			if query not in title.lower(): continue
-			entry = dict(item)
-			entry['status'] = status
-			entry['status_label'] = _SIMKL_STATUS_LABELS.get(status, status)
-			entry['media_kind'] = 'shows'
-			results.append(entry)
+		for media_kind in ('shows', 'anime'):
+			for item in _simkl_fetch_status(media_kind, status):
+				title = (item.get('title') or '').strip()
+				if query not in title.lower(): continue
+				entry = dict(item)
+				entry['status'] = status
+				entry['status_label'] = _SIMKL_STATUS_LABELS.get(status, status)
+				entry['media_kind'] = media_kind
+				results.append(entry)
 	return results
 
 def simkl_manager_choice(params):
 	if not settings.simkl_user_active(): return kodi_utils.notification('No Active Simkl Account', 3500)
 	media_type = params.get('media_type') or params.get('content') or 'movie'
 	list_media = 'movie' if media_type == 'movie' else 'tvshow'
+	media_kind = params.get('simkl_media_kind') or None
 	icon = params.get('icon') or kodi_utils.get_icon('simkl')
 	imdb_id, tvdb_id, tmdb_id = params.get('imdb_id'), params.get('tvdb_id'), params.get('tmdb_id')
+	simkl_id = params.get('simkl_id')
 	status_map = [
 		('plantowatch', 'Add to [B]Plan to Watch[/B]', 'Remove from [B]Plan to Watch[/B]'),
 		('completed', 'Add to [B]Completed[/B]', 'Remove from [B]Completed[/B]'),
@@ -479,7 +463,7 @@ def simkl_manager_choice(params):
 		status_map.insert(3, ('hold', 'Add to [B]On Hold[/B]', 'Remove from [B]On Hold[/B]'))
 	choices = []
 	for status, add_label, remove_label in status_map:
-		if _simkl_item_in_status(list_media, status, imdb_id, tvdb_id, tmdb_id):
+		if _simkl_item_in_status(list_media, status, imdb_id, tvdb_id, tmdb_id, simkl_id):
 			choices.append((remove_label, 'remove_%s' % status))
 		else:
 			choices.append((add_label, status))
@@ -498,15 +482,12 @@ def simkl_manager_choice(params):
 		('Open [B]Simkl Lists[/B]', 'open_lists'),
 		('Refresh Widgets', 'refresh'),
 	])
-	if settings.trakt_user_active(): choices.append(('Import Trakt History (Direct)', 'import_trakt_history'))
 	list_items = [{'line1': item[0], 'icon': icon} for item in choices]
 	choice = kodi_utils.select_dialog([i[1] for i in choices], **{'items': json.dumps(list_items), 'heading': 'Simkl Lists Manager'})
 	if choice == None: return
 	if choice == 'refresh':
 		kodi_utils.kodi_refresh()
 		return kodi_utils.notification('Widgets Refreshed', 2500)
-	if choice == 'import_trakt_history':
-		return simkl_migrate_trakt_history()
 	open_modes = {
 		'open_plantowatch': 'navigator.simkl_watchlists',
 		'open_completed': 'navigator.simkl_completed',
@@ -526,9 +507,9 @@ def simkl_manager_choice(params):
 	if choice == 'reset_scrobble':
 		return simkl_reset_scrobble(params)
 	if choice in ('plantowatch', 'watching', 'completed', 'hold', 'dropped'):
-		return simkl_add_to_list(choice, tmdb_id, list_media, imdb_id, tvdb_id)
+		return simkl_add_to_list(choice, tmdb_id, list_media, imdb_id, tvdb_id, simkl_id, media_kind)
 	if choice.startswith('remove_'):
-		return simkl_remove_from_list(choice.replace('remove_', ''), tmdb_id, list_media, imdb_id, tvdb_id)
+		return simkl_remove_from_list(choice.replace('remove_', ''), tmdb_id, list_media, imdb_id, tvdb_id, simkl_id, media_kind)
 
 def simkl_hide_unhide_progress_items(params):
 	action, media_id = params['action'], params.get('media_id')
@@ -536,52 +517,127 @@ def simkl_hide_unhide_progress_items(params):
 	if action == 'drop': return simkl_add_to_list('dropped', media_id, 'tvshow', imdb_id, tvdb_id)
 	return simkl_remove_from_list('dropped', media_id, 'tvshow', imdb_id, tvdb_id)
 
-def _simkl_history_ok(result, action, media_type):
+def _simkl_history_counts_ok(result, action, media_type):
+	"""True when Simkl reports added/deleted counts > 0 (not a silent no-op)."""
 	if not isinstance(result, dict): return False
 	result_key = 'added' if action == 'mark_as_watched' else 'deleted'
-	item_key = 'movies' if media_type == 'movie' else 'shows'
 	bucket = result.get(result_key) or {}
+	if media_type == 'movie':
+		keys = ('movies',)
+	else:
+		keys = ('shows', 'anime', 'episodes')
 	if bucket.get('episodes', 0) > 0: return True
-	if bucket.get(item_key, 0) > 0: return True
-	if isinstance(bucket.get(item_key), list) and bucket[item_key]: return True
-	if action == 'mark_as_unwatched':
-		not_found = result.get('not_found') or {}
-		if not not_found.get(item_key) and not not_found.get('episodes'): return True
+	for item_key in keys:
+		val = bucket.get(item_key, 0)
+		if isinstance(val, list) and val: return True
+		try:
+			if int(val or 0) > 0: return True
+		except Exception:
+			pass
 	return False
+
+def _simkl_history_not_found(result):
+	if not isinstance(result, dict): return False
+	nf = result.get('not_found') or {}
+	for key in ('movies', 'shows', 'anime', 'episodes'):
+		val = nf.get(key)
+		if isinstance(val, list) and val: return True
+		try:
+			if int(val or 0) > 0: return True
+		except Exception:
+			pass
+	return False
+
+def _simkl_tmdb_is_anime(tmdb_id):
+	"""TMDb anime keyword — used to choose Simkl anime[] history vs shows[]."""
+	try:
+		from modules.metadata import is_anime_check
+		return bool(is_anime_check(tmdb_id=str(tmdb_id)))
+	except Exception:
+		return False
+
+def _simkl_history_tv_entry(tmdb_id, tvdb_id=0, season=None, episode=None, watched_at=None, use_tvdb_anime_seasons=False):
+	entry = {'ids': _simkl_list_ids(tmdb_id, tvdb_id=tvdb_id)}
+	# Kodi/TMDb season numbering for anime needs this flag or Simkl may only set watching status.
+	if use_tvdb_anime_seasons:
+		entry['use_tvdb_anime_seasons'] = True
+	if season is not None and episode is not None:
+		ep = {'number': int(episode)}
+		if watched_at: ep['watched_at'] = watched_at
+		entry['seasons'] = [{'number': int(season), 'episodes': [ep]}]
+	elif season is not None:
+		entry['seasons'] = [{'number': int(season)}]
+	return entry
 
 def simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=None, episode=None):
 	if action == 'mark_as_watched':
-		url, key = '/sync/history', 'added'
+		url = '/sync/history'
 		watched_at = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 	else:
-		url, key = '/sync/history/remove', 'deleted'
+		url = '/sync/history/remove'
 		watched_at = None
 	if media_type == 'movie':
 		item = {'ids': {'tmdb': int(tmdb_id)}}
 		if watched_at: item['watched_at'] = watched_at
-		data = {'movies': [item]}
-		item_type = 'movie'
-	elif media_type in ('episode',):
-		ep = {'number': int(episode)}
-		if watched_at: ep['watched_at'] = watched_at
-		data = {'shows': [{'ids': _simkl_list_ids(tmdb_id, tvdb_id=tvdb_id), 'seasons': [{'number': int(season), 'episodes': [ep]}]}]}
-		item_type = 'episode'
+		result = call_simkl(url, data={'movies': [item]})
+		if _simkl_history_counts_ok(result, action, 'movie'):
+			return True
+		# Already clear on Simkl.
+		if action == 'mark_as_unwatched' and isinstance(result, dict): return True
+		# Add with 0 added = already watched (e.g. finished after mid-play pause, or marked in Simkl app).
+		# Same idea as Trakt — not a failure unless Simkl reports not_found.
+		if action == 'mark_as_watched' and isinstance(result, dict) and not _simkl_history_not_found(result):
+			return True
+		kodi_utils.logger('Simkl', 'history %s failed for movie tmdb=%s: %s' % (action, tmdb_id, result))
+		return False
+	# TV / episode / season — Simkl stores many titles under anime[], not shows[].
+	if media_type in ('episode',):
+		item_type, s_num, e_num = 'episode', season, episode
 	elif media_type == 'season':
-		data = {'shows': [{'ids': _simkl_list_ids(tmdb_id, tvdb_id=tvdb_id), 'seasons': [{'number': int(season)}]}]}
-		item_type = 'season'
+		item_type, s_num, e_num = 'season', season, None
 	else:
-		data = {'shows': [{'ids': _simkl_list_ids(tmdb_id, tvdb_id=tvdb_id)}]}
-		item_type = 'tvshow'
-	result = call_simkl(url, data=data)
-	if _simkl_history_ok(result, action, 'movie' if media_type == 'movie' else 'shows'):
-		if action == 'mark_as_unwatched': simkl_sync_activities()
-		return True
+		item_type, s_num, e_num = 'tvshow', None, None
+	known_anime = _simkl_tmdb_is_anime(tmdb_id)
+	# history/remove: top-level anime[] is silently ignored — must use shows[].
+	# history add: anime[] is valid; prefer it for known anime then fall back to shows[].
+	if action == 'mark_as_unwatched':
+		attempts = (('shows', True), ('shows', False)) if known_anime else (('shows', False), ('shows', True))
+	elif known_anime:
+		attempts = (('anime', True), ('shows', True))
+	else:
+		attempts = (('shows', False), ('anime', True), ('shows', True))
+	last_result = None
+	saw_not_found = False
+	for bucket, use_tvdb in attempts:
+		entry = _simkl_history_tv_entry(tmdb_id, tvdb_id, s_num, e_num, watched_at, use_tvdb)
+		last_result = call_simkl(url, data={bucket: [entry]})
+		# Network/HTTP failure (None) — do not stack more long timeouts on other buckets.
+		if last_result is None:
+			kodi_utils.logger('Simkl', 'history %s network failure for %s tmdb=%s tvdb=%s' % (action, item_type, tmdb_id, tvdb_id))
+			return False
+		if _simkl_history_counts_ok(last_result, action, 'shows'):
+			# Same as Trakt / Mark Watched: local simkl_db + background activities cover cache refresh.
+			return True
+		if action == 'mark_as_unwatched' and _simkl_history_not_found(last_result):
+			saw_not_found = True
 	if action == 'mark_as_unwatched' and item_type == 'tvshow' and tvdb_id and int(tvdb_id) > 0:
 		fallback = call_simkl(url, data={'shows': [{'ids': {'tvdb': int(tvdb_id)}}]})
-		if _simkl_history_ok(fallback, action, 'shows'):
-			simkl_sync_activities()
+		if fallback is None:
+			kodi_utils.logger('Simkl', 'history %s network failure for %s tmdb=%s tvdb=%s' % (action, item_type, tmdb_id, tvdb_id))
+			return False
+		if _simkl_history_counts_ok(fallback, action, 'shows'):
 			return True
-	kodi_utils.logger('Simkl', 'history %s failed for %s tmdb=%s tvdb=%s: %s' % (action, item_type, tmdb_id, tvdb_id, result))
+		if _simkl_history_not_found(fallback): saw_not_found = True
+		last_result = fallback
+	# Unwatched already clear on Simkl (explicit not_found). Do not treat bare deleted:0 as success —
+	# that was hiding silent no-ops when remove used the wrong envelope.
+	if action == 'mark_as_unwatched' and saw_not_found:
+		kodi_utils.logger('Simkl', 'history mark_as_unwatched already clear for %s tmdb=%s tvdb=%s' % (item_type, tmdb_id, tvdb_id))
+		return True
+	# Add with 0 added across buckets = already watched — not a failure unless not_found.
+	if action == 'mark_as_watched' and isinstance(last_result, dict) and not _simkl_history_not_found(last_result):
+		return True
+	kodi_utils.logger('Simkl', 'history %s failed for %s tmdb=%s tvdb=%s: %s' % (action, item_type, tmdb_id, tvdb_id, last_result))
 	return False
 
 def _scrobble_payload(media_type, tmdb_id, percent, season=None, episode=None):
@@ -610,7 +666,7 @@ def simkl_progress(action, media_type, tmdb_id, percent, season=None, episode=No
 		_throttle()
 		url = _url('/sync/playback/%s' % resume_id)
 		if not url: return
-		try: requests.delete(url, headers=_headers(), timeout=20)
+		try: requests.delete(url, headers=_headers(), timeout=META_API_TIMEOUT)
 		except: pass
 	else:
 		simkl_scrobble('pause', media_type, tmdb_id, percent, season, episode)
@@ -638,28 +694,30 @@ def simkl_reset_scrobble(params):
 		kodi_utils.notification('Success', 3000)
 	except: kodi_utils.notification('Error', 3000)
 
-def simkl_add_to_list(listname, tmdb_id, media_type, imdb_id=None, tvdb_id=None):
-	if media_type == 'movie':
-		post = {'movies': [{'to': listname, 'ids': {'tmdb': int(tmdb_id)}}]}
-	else:
-		post = {'shows': [{'to': listname, 'ids': _simkl_list_ids(tmdb_id, imdb_id, tvdb_id)}]}
+def simkl_add_to_list(listname, tmdb_id, media_type, imdb_id=None, tvdb_id=None, simkl_id=None, media_kind=None):
+	bucket = _simkl_list_bucket(media_type, media_kind)
+	ids = _simkl_list_ids(tmdb_id, imdb_id, tvdb_id, simkl_id)
+	post = {bucket: [{'to': listname, 'ids': ids}]}
 	result = call_simkl('/sync/add-to-list', data=post)
-	success = _simkl_list_add_ok(result, media_type)
+	success = _simkl_list_add_ok(result, media_type, media_kind)
 	if success:
-		_simkl_refresh_after_list_change(listname, media_type)
+		_simkl_refresh_after_list_change(listname, media_type, media_kind)
 		kodi_utils.notification('Success', 3000)
 	else: kodi_utils.notification('Error', 3000)
 	return success
 
-def simkl_remove_from_list(listname, tmdb_id, media_type, imdb_id=None, tvdb_id=None):
-	if media_type == 'movie':
-		post = {'movies': [{'ids': {'tmdb': int(tmdb_id)}}]}
-	else:
-		post = {'shows': [{'ids': _simkl_list_ids(tmdb_id, imdb_id, tvdb_id)}]}
+def simkl_remove_from_list(listname, tmdb_id, media_type, imdb_id=None, tvdb_id=None, simkl_id=None, media_kind=None):
+	bucket = _simkl_list_bucket(media_type, media_kind)
+	ids = _simkl_list_ids(tmdb_id, imdb_id, tvdb_id, simkl_id)
+	post = {bucket: [{'ids': ids}]}
 	result = call_simkl('/sync/history/remove', data=post)
-	success = _simkl_list_remove_ok(result, media_type)
+	success = _simkl_list_remove_ok(result, media_type, media_kind)
+	# Season-split anime often only matches under anime[]; some removes only clear via shows[].
+	if not success and bucket == 'anime':
+		result = call_simkl('/sync/history/remove', data={'shows': [{'ids': ids}]})
+		success = _simkl_list_remove_ok(result, media_type, media_kind)
 	if success:
-		_simkl_refresh_after_list_change(listname, media_type)
+		_simkl_refresh_after_list_change(listname, media_type, media_kind)
 		kodi_utils.notification('Success', 3000)
 	else: kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
 	return success
@@ -667,6 +725,8 @@ def simkl_remove_from_list(listname, tmdb_id, media_type, imdb_id=None, tvdb_id=
 _SIMKL_SHOW_WATCHED_ACTIVITY_KEYS = ('watching', 'plantowatch', 'completed', 'hold', 'dropped', 'removed_from_list', 'all')
 _SIMKL_MOVIE_WATCHED_ACTIVITY_KEYS = ('plantowatch', 'completed', 'dropped', 'removed_from_list', 'all')
 _SIMKL_TV_SYNC_QUERY = 'extended=full&episode_watched_at=yes&include_all_episodes=yes'
+# full_anime_seasons adds tvdb {season,episode} so Kodi/TMDb SxE matches AniDB-backed library rows.
+_SIMKL_ANIME_SYNC_QUERY = 'extended=full_anime_seasons&episode_watched_at=yes&include_all_episodes=yes'
 
 def simkl_indicators_movies():
 	insert_list = []
@@ -682,13 +742,15 @@ def simkl_indicators_movies():
 		except: pass
 	simkl_cache.simkl_watched_cache.set_bulk_movie_watched(insert_list)
 
-def simkl_indicators_tv():
-	insert_list = []
-	insert_append = insert_list.append
-	data = call_simkl('/sync/all-items/shows?%s' % _SIMKL_TV_SYNC_QUERY, method='get') or {}
-	for item in data.get('shows', data if isinstance(data, list) else []):
+def _simkl_append_tv_watched(insert_append, data, item_key):
+	"""Flatten shows[] or anime[] all-items into local episode watched rows."""
+	items = data.get(item_key, data if isinstance(data, list) else [])
+	for item in items:
 		try:
-			show = item.get('show', item)
+			if item_key == 'anime':
+				show = item.get('anime') or item.get('show') or item
+			else:
+				show = item.get('show') or item
 			tmdb_id = _tmdb_id(show.get('ids', {}))
 			if not tmdb_id: continue
 			title = show.get('title', '')
@@ -698,10 +760,27 @@ def simkl_indicators_tv():
 				for ep in season.get('episodes', []):
 					watched_at = ep.get('watched_at') or ep.get('last_watched_at')
 					if not watched_at: continue
-					try: epnum = int(ep.get('number', ep.get('episode')))
-					except: continue
-					insert_append(('episode', tmdb_id, snum, epnum, watched_at, title))
+					# Prefer TVDB-mapped S/E for anime so Red Light matches TMDb season lists.
+					tvdb_map = ep.get('tvdb') if isinstance(ep.get('tvdb'), dict) else None
+					try:
+						if tvdb_map and tvdb_map.get('season') is not None and tvdb_map.get('episode') is not None:
+							ep_snum = int(tvdb_map['season'])
+							epnum = int(tvdb_map['episode'])
+						else:
+							ep_snum = snum
+							epnum = int(ep.get('number', ep.get('episode')))
+					except Exception:
+						continue
+					insert_append(('episode', tmdb_id, ep_snum, epnum, watched_at, title))
 		except: pass
+
+def simkl_indicators_tv():
+	insert_list = []
+	insert_append = insert_list.append
+	shows = call_simkl('/sync/all-items/shows?%s' % _SIMKL_TV_SYNC_QUERY, method='get') or {}
+	_simkl_append_tv_watched(insert_append, shows, 'shows')
+	anime = call_simkl('/sync/all-items/anime?%s' % _SIMKL_ANIME_SYNC_QUERY, method='get') or {}
+	_simkl_append_tv_watched(insert_append, anime, 'anime')
 	simkl_cache.simkl_watched_cache.set_bulk_tvshow_watched(insert_list)
 
 def simkl_sync_playback():
@@ -756,11 +835,15 @@ def simkl_sync_activities(params=None, force_update=False):
 		clear_simkl_list_status_cache('movies')
 	if force_update or _activity_block_changed(shows, cached_shows, _SIMKL_LIST_ACTIVITY_KEYS):
 		clear_simkl_list_status_cache('shows')
+		clear_simkl_calendar_cache()
 	if force_update or _activity_block_changed(anime, cached_anime, _SIMKL_LIST_ACTIVITY_KEYS):
 		clear_simkl_list_status_cache('anime')
+		clear_simkl_calendar_cache()
 	if force_update or _activity_block_changed(movies, cached_movies, watched_keys_movies):
 		simkl_indicators_movies()
-	if force_update or _activity_block_changed(shows, cached_shows, watched_keys_shows):
+	# Anime watched history lives under activities.anime — must refresh indicators too.
+	if force_update or _activity_block_changed(shows, cached_shows, watched_keys_shows) \
+			or _activity_block_changed(anime, cached_anime, watched_keys_shows):
 		simkl_indicators_tv()
 		clear_simkl_dropped_cache()
 	if force_update or _activity_block_changed(movies, cached_movies, playback_keys) or _activity_block_changed(shows, cached_shows, playback_keys):
@@ -785,14 +868,140 @@ def simkl_force_sync(params=None):
 	return status
 
 SIMKL_TRENDING_BASE = 'https://data.simkl.in/discover/trending'
+SIMKL_CALENDAR_CDN_BASE = 'https://data.simkl.in/calendar/v2'
+SIMKL_CALENDAR_CACHE_KEY = 'simkl_calendar_v2_joined'
 _SIMKL_TRENDING_TRAKT_KEYS = {'movies': 'movie', 'tv': 'show', 'anime': 'show'}
 
 def _simkl_trending_url(media_kind):
 	return '%s/%s/today_100.json' % (SIMKL_TRENDING_BASE, media_kind)
 
-def _simkl_trending_query_url(url):
+def _simkl_cdn_query_url(url):
 	sep = '&' if '?' in url else '?'
 	return '%s%sclient_id=%s&app-name=%s&app-version=%s' % (url, sep, _client_id(), SIMKL_APP_NAME, kodi_utils.addon_version())
+
+def _simkl_trending_query_url(url):
+	return _simkl_cdn_query_url(url)
+
+def clear_simkl_calendar_cache():
+	try: simkl_cache.simkl_cache.delete(SIMKL_CALENDAR_CACHE_KEY)
+	except: pass
+
+def _simkl_calendar_library_by_simkl():
+	"""Watching + Plan to Watch (shows + anime), keyed by Simkl id."""
+	shows_by_simkl = {}
+	for status in ('watching', 'plantowatch'):
+		for media_kind in ('shows', 'anime'):
+			for row in _simkl_fetch_status(media_kind, status) or []:
+				try:
+					sid = str((row.get('media_ids') or {}).get('simkl') or '')
+					if sid: shows_by_simkl[sid] = row
+				except Exception:
+					continue
+	return shows_by_simkl
+
+def _simkl_fetch_calendar_feed(feed):
+	url = _simkl_cdn_query_url('%s/%s.json' % (SIMKL_CALENDAR_CDN_BASE, feed))
+	_throttle()
+	try:
+		resp = requests.get(url, headers=_pin_headers(), timeout=META_API_TIMEOUT)
+		if resp.status_code != 200:
+			kodi_utils.logger('Simkl', 'Calendar CDN HTTP %s for %s' % (resp.status_code, feed))
+			return []
+		payload = resp.json()
+	except Exception as e:
+		kodi_utils.logger('Simkl', 'Calendar CDN error %s: %s' % (feed, e))
+		return []
+	if isinstance(payload, dict):
+		calendar_rows = payload.get('calendar', [])
+	else:
+		calendar_rows = payload or []
+	return calendar_rows if isinstance(calendar_rows, list) else []
+
+def _simkl_calendar_row(entry, library_row):
+	"""Normalize a CDN airing + library show into the shared calendar row shape."""
+	ep = entry.get('episode', {}) or {}
+	try:
+		ep_no = int(ep.get('episode'))
+	except Exception:
+		return None
+	try:
+		season_no = int(ep.get('season') or 0)
+	except Exception:
+		season_no = 0
+	mids = dict(library_row.get('media_ids') or {})
+	try:
+		tmdb = int(mids.get('tmdb'))
+	except Exception:
+		return None
+	# Anime v2 rows often omit season — include as S01 when TMDb exists (better than FenLight drop).
+	if season_no <= 0: season_no = 1
+	title = library_row.get('title') or ''
+	aired = str(entry.get('date') or '').split('T')[0]
+	if not aired: return None
+	media_ids = {'tmdb': tmdb}
+	for key in ('imdb', 'tvdb', 'simkl'):
+		val = mids.get(key)
+		if val not in _SIMKL_ID_EMPTY: media_ids[key] = val
+	return {
+		'sort_title': '%s s%s e%s' % (title, str(season_no).zfill(2), str(ep_no).zfill(2)),
+		'media_ids': media_ids,
+		'season': season_no,
+		'episode': ep_no,
+		'first_aired': aired
+	}
+
+def _simkl_build_calendar_joined():
+	shows_by_simkl = _simkl_calendar_library_by_simkl()
+	if not shows_by_simkl: return []
+	data = []
+	for feed in ('tv', 'anime'):
+		for entry in _simkl_fetch_calendar_feed(feed):
+			if not isinstance(entry, dict): continue
+			try:
+				row = shows_by_simkl.get(str(entry.get('simkl_id') or ''))
+				if not row: continue
+				normalized = _simkl_calendar_row(entry, row)
+				if normalized: data.append(normalized)
+			except Exception:
+				continue
+	return [i for n, i in enumerate(data) if i not in data[n + 1:]]
+
+def _filter_simkl_calendar_day_window(data):
+	from datetime import date
+	start_date, end_date = settings.calendar_day_window()
+	filtered = []
+	for item in data:
+		try:
+			aired = date.fromisoformat(str(item.get('first_aired', ''))[:10])
+		except Exception:
+			continue
+		if start_date <= aired <= end_date:
+			filtered.append(item)
+	return filtered
+
+def simkl_get_my_calendar(dummy=None):
+	"""Personal episode calendar: CDN calendar/v2 joined to Watching + Plan to Watch.
+
+	Cached joined payload is unfiltered; Show Previous/Future Days is applied on read
+	so shared Calendars settings match PunchPlay/MDBList without waiting for cache expiry.
+	"""
+	if not settings.simkl_user_active(): return []
+	cached = simkl_cache.simkl_cache.get(SIMKL_CALENDAR_CACHE_KEY)
+	if cached:
+		data = cached
+	else:
+		data = _simkl_build_calendar_joined() or []
+		if data: simkl_cache.simkl_cache.set(SIMKL_CALENDAR_CACHE_KEY, data)
+		elif cached is not None:
+			simkl_cache.simkl_cache.delete(SIMKL_CALENDAR_CACHE_KEY)
+	filtered = _filter_simkl_calendar_day_window(data)
+	try:
+		start_date, end_date = settings.calendar_day_window()
+		kodi_utils.logger('Red Light', 'Simkl calendar: %s cached/fetched, %s in day window (%s → %s)' % (
+			len(data), len(filtered), start_date, end_date))
+	except Exception:
+		pass
+	return filtered
 
 def _simkl_trending_ids(item):
 	ids = item.get('ids') or {}
@@ -816,7 +1025,7 @@ def _simkl_fetch_trending_today(media_kind):
 	def _fetch(dummy):
 		_throttle()
 		try:
-			resp = requests.get(_simkl_trending_query_url(_simkl_trending_url(media_kind)), headers=_pin_headers(), timeout=20)
+			resp = requests.get(_simkl_trending_query_url(_simkl_trending_url(media_kind)), headers=_pin_headers(), timeout=META_API_TIMEOUT)
 			if resp.status_code != 200:
 				kodi_utils.logger('Simkl Trending', 'HTTP %s for %s' % (resp.status_code, media_kind))
 				return None

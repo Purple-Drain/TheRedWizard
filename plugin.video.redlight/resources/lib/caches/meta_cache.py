@@ -66,7 +66,7 @@ class MetaCache:
 		try:
 			expires = get_timestamp(expiration)
 			with open_db('metacache_db') as dbcon:
-				dbcon.execute('INSERT INTO season_metadata VALUES (?, ?, ?)', (prop_string, json.dumps(meta), int(expires)))
+				dbcon.execute('INSERT OR REPLACE INTO season_metadata VALUES (?, ?, ?)', (prop_string, json.dumps(meta), int(expires)))
 		except: return None
 
 	def delete(self, media_type, id_type, media_id, meta=None, dbcon=None):

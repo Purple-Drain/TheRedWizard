@@ -21,8 +21,10 @@ class TVShows:
 	trakt_main = ('trakt_tv_trending', 'trakt_tv_trending_recent', 'trakt_tv_most_favorited',
 	'trakt_anime_trending', 'trakt_anime_trending_recent', 'trakt_anime_most_favorited')
 	trakt_special = ('trakt_tv_certifications', 'trakt_anime_certifications')
-	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites')
+	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites', 'trakt_droplist')
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
+	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
+		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
 	mdblist_personal = ('mdblist_watchlist', 'mdblist_collection', 'mdblist_droplist')
 	
 	def __init__(self, params):
@@ -125,10 +127,31 @@ class TVShows:
 				except: pass
 			elif self.action in self.simkl_personal:
 				self.id_type = 'trakt_dict'
-				data = function('shows', page_no)
+				media_kind = 'anime' if self.is_anime_list is True else 'shows'
+				data = function(media_kind, page_no)
 				data, total_pages = self.paginate_list(data, page_no)
 				self.list = [i['media_ids'] for i in data]
 				if total_pages > 2: self.total_pages = total_pages
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
+			elif self.action in self.punchplay_personal:
+				self.id_type = 'trakt_dict'
+				media_kind = 'anime' if self.is_anime_list is True else 'shows'
+				data = function(media_kind, page_no)
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
+				if total_pages > 2: self.total_pages = total_pages
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
+			elif self.action == 'punchplay_user_list':
+				self.id_type = 'trakt_dict'
+				from apis.punchplay_api import punchplay_list_items
+				media_kind = 'anime' if self.is_anime_list is True else 'shows'
+				data = punchplay_list_items(self.params_get('list_id'), media_kind)
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
 				try:
 					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 				except: pass
@@ -220,7 +243,7 @@ class TVShows:
 			tmdb_id, total_seasons, total_aired_eps = meta_get('tmdb_id'), meta_get('total_seasons'), meta_get('total_aired_eps')
 			progress_aired_eps = watched_status.progress_aired_eps(meta)
 			unaired = total_aired_eps == 0
-			if unaired: progress, playcount, total_watched, total_unwatched, visible_progress = 0, 0, 0, progress_aired_eps, 0
+			if unaired: progress, playcount, total_watched, total_unwatched = 0, 0, 0, progress_aired_eps
 			else:
 				playcount, total_watched, total_unwatched = watched_status.get_watched_status_tvshow(self.watched_info.get(str(tmdb_id), None), progress_aired_eps)
 				if total_watched: progress = watched_status.get_progress_status_tvshow(total_watched, progress_aired_eps)
@@ -245,7 +268,16 @@ class TVShows:
 													'title': title, 'icon': poster})
 			simkl_manager_params = ''
 			if settings.simkl_user_active():
-				simkl_manager_params = self.build_url({'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+				simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+														'title': title, 'icon': poster}
+				if isinstance(_id, dict) and _id.get('simkl') not in (None, '', 'None', 0, '0'):
+					simkl_params['simkl_id'] = _id.get('simkl')
+				if self.is_anime_list is True:
+					simkl_params['simkl_media_kind'] = 'anime'
+				simkl_manager_params = self.build_url(simkl_params)
+			punchplay_manager_params = ''
+			if settings.punchplay_user_active():
+				punchplay_manager_params = self.build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
 														'title': title, 'icon': poster})
 			mdblist_manager_params = ''
 			if settings.mdblist_user_active():
@@ -275,6 +307,7 @@ class TVShows:
 			if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
 			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
 			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
 			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
 			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
 			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
@@ -320,6 +353,7 @@ class TVShows:
 				'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
 				'redlight.trakt_manager_params': trakt_manager_params,
 				'redlight.simkl_manager_params': simkl_manager_params,
+				'redlight.punchplay_manager_params': punchplay_manager_params,
 				'redlight.mdblist_manager_params': mdblist_manager_params,
 				'redlight.personal_manager_params': personal_manager_params,
 				'redlight.tmdb_manager_params': tmdb_manager_params,
@@ -343,13 +377,18 @@ class TVShows:
 		self.skip_inprogress = settings.media_open_action_skip_inprogress_tvshow()
 		watched_db = watched_status.get_database(self.watched_indicators)
 		self.in_progress_show_ids = watched_status.get_in_progress_tvshow_ids(watched_db) if self.skip_inprogress else set()
-		browsing_external_lists = self.action in self.simkl_personal or self.action in self.mdblist_personal or self.action in self.trakt_personal
+		browsing_external_lists = (self.action in self.simkl_personal or self.action in self.punchplay_personal
+			or self.action in self.mdblist_personal or self.action in self.trakt_personal
+			or self.action == 'punchplay_user_list')
 		if self.watched_indicators == 2 and settings.simkl_user_active() and not browsing_external_lists:
 			from apis.simkl_api import simkl_sync_activities
 			simkl_sync_activities()
 		if self.watched_indicators == 3 and settings.mdblist_user_active() and not browsing_external_lists:
 			from apis.mdblist_api import mdblist_sync_activities
 			mdblist_sync_activities()
+		if self.watched_indicators == 4 and settings.punchplay_user_active() and not browsing_external_lists:
+			from apis.punchplay_api import punchplay_sync_activities
+			punchplay_sync_activities()
 		self.watched_info = watched_status.watched_info_tvshow(watched_db)
 		self.window_command = 'ActivateWindow(Videos,%s,return)' if self.is_external else 'Container.Update(%s)'
 		if self.custom_order:

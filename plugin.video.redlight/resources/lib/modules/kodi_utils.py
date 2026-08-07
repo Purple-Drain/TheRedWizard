@@ -16,14 +16,18 @@ def addon_themes_opacity():
 def random_valid_type_check():
 	return {'build_movie_list': 'movie', 'build_tvshow_list': 'tvshow', 'build_season_list': 'season', 'build_episode_list': 'episode',
 	'build_in_progress_episode': 'single_episode', 'build_recently_watched_episode': 'single_episode', 'build_next_episode': 'single_episode',
-	'build_my_calendar': 'single_episode', 'build_mdbl_calendar': 'single_episode', 'build_mdbl_next_up': 'single_episode', 'build_trakt_lists': 'trakt_list',
+	'build_my_calendar': 'single_episode', 'build_mdbl_calendar': 'single_episode', 'build_punchplay_calendar': 'single_episode',
+	'build_simkl_calendar': 'single_episode',
+	'build_mdbl_next_up': 'single_episode', 'build_trakt_lists': 'trakt_list',
 	'trakt.list.build_trakt_list': 'trakt_list', 'build_trakt_lists_contents': 'trakt_list', 'personal_lists.build_personal_list': 'personal_list',
-	'build_personal_lists_contents': 'personal_list', 'tmdblist.build_tmdb_list': 'tmdb_list', 'build_tmdb_lists_contents': 'tmdb_list'}
+	'build_personal_lists_contents': 'personal_list', 'tmdblist.build_tmdb_list': 'tmdb_list', 'build_tmdb_lists_contents': 'tmdb_list',
+	'mdblist.build_mdbl_list': 'mdblist_list', 'build_mdblist_lists_contents': 'mdblist_list'}
 
 def random_episodes_check():
 	return {'build_in_progress_episode': 'episode.progress', 'build_recently_watched_episode': 'episode.recently_watched',
 	'build_next_episode': 'episode.next', 'build_my_calendar': 'episode.trakt', 'build_mdbl_calendar': 'episode.mdblist',
-	'build_mdbl_next_up': 'episode.mdblist_next'}
+	'build_mdbl_next_up': 'episode.mdblist_next', 'build_punchplay_calendar': 'episode.punchplay',
+	'build_simkl_calendar': 'episode.simkl'}
 
 def extras_button_label_values():
 	return {'movie':
@@ -31,7 +35,7 @@ def extras_button_label_values():
 				'show_director': 'Director', 'show_options': 'Options', 'show_recommended': 'Recommended', 'show_related': 'Related', 'show_more_like_this': 'More Like This',
 				'show_similar': 'Similar', 'show_reviews': 'Reviews', 'show_comments': 'Comments', 'show_trivia': 'Trivia', 'show_blunders': 'Blunders',
 				'show_year': 'More Year', 'show_genre': 'More Genres', 'show_network': 'More Network',
-				'show_mdblist_manager': 'MDBList', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
+				'show_mdblist_manager': 'MDBList', 'show_punchplay_manager': 'PunchPlay', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
 				'show_favorites_manager': 'Favorites Lists', 'playback_choice': 'Play Options', 'show_plot': 'Plot', 'show_keywords': 'Keywords',
 				'show_in_trakt_lists': 'In Trakt Lists', 'close_all': 'Close'},
 			'tvshow':
@@ -39,7 +43,7 @@ def extras_button_label_values():
 				'play_nextep': 'Play Next', 'show_options': 'Options', 'show_recommended': 'Recommended', 'show_related': 'Related', 'show_more_like_this': 'More Like This',
 				'show_similar': 'Similar', 'show_reviews': 'Reviews', 'show_comments': 'Comments', 'show_trivia': 'Trivia', 'show_blunders': 'Blunders',
 				'show_year': 'More Year', 'show_genre': 'More Genres', 'show_network': 'More Network',
-				'show_mdblist_manager': 'MDBList', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
+				'show_mdblist_manager': 'MDBList', 'show_punchplay_manager': 'PunchPlay', 'show_simkl_manager': 'Simkl Lists', 'show_tmdb_manager': 'TMDb Lists', 'show_trakt_manager': 'Trakt Lists', 'show_personallists_manager': 'Personal Lists',
 				'show_favorites_manager': 'Favorites Lists', 'play_random_episode': 'Play Random', 'show_plot': 'Plot', 'show_keywords': 'Keywords',
 				'show_in_trakt_lists': 'In Trakt Lists', 'close_all': 'Close'}}
 
@@ -59,6 +63,7 @@ def context_menu_items():
 	{'name': 'Browse Season Episodes', 'value': 'browse_episodes'}, {'name': 'Browse Recommended', 'value': 'recommended'}, {'name': 'Browse Related', 'value': 'related'},
 	{'name': 'Browse More Like This', 'value': 'more_like_this'}, {'name': 'Browse Similar', 'value': 'similar'}, {'name': 'In Trakt Lists', 'value': 'in_trakt_list'},
 	{'name': 'MDBList Manager', 'value': 'mdblist_manager'}, {'name': 'MDBList Watchlist', 'value': 'mdblist_watchlist'}, {'name': 'MDBList Library', 'value': 'mdblist_library'},
+	{'name': 'PunchPlay Manager', 'value': 'punchplay_manager'},
 	{'name': 'Simkl Lists Manager', 'value': 'simkl_manager'}, {'name': 'Simkl Plan to Watch', 'value': 'simkl_plantowatch'},
 	{'name': 'TMDb Lists Manager', 'value': 'tmdb_manager'}, {'name': 'TMDb Watchlist', 'value': 'tmdb_watchlist'}, {'name': 'TMDb Favorites', 'value': 'tmdb_favorites'},
 	{'name': 'Trakt Lists Manager', 'value': 'trakt_manager'}, {'name': 'Trakt Watchlist', 'value': 'trakt_watchlist'}, {'name': 'Trakt Library', 'value': 'trakt_collection'},
@@ -147,18 +152,56 @@ def safe_browse_defaultt(path):
 		return ''
 	return path
 
+_ADDON_DATA_SPECIAL = 'special://profile/addon_data/plugin.video.redlight/'
+
+def portable_addon_data_path(path, as_folder=True):
+	'''Prefer special:// when a path is under Red Light addon_data; keep OS-wide paths absolute.'''
+	if not path or str(path).strip() in ('', 'None', 'empty_setting'):
+		return path
+	raw = str(path).strip()
+	slash_form = raw.replace('\\', '/')
+	special_prefix = 'special://profile/addon_data/plugin.video.redlight'
+	if slash_form.lower().startswith(special_prefix):
+		result = slash_form
+		if as_folder and not result.endswith('/'):
+			result += '/'
+		return result
+	try:
+		if slash_form.lower().startswith('special://'):
+			native = os.path.normpath(translate_path(slash_form))
+		else:
+			native = os.path.normpath(raw)
+		profile = os.path.normpath(translate_path(_ADDON_DATA_SPECIAL))
+		native_cmp = os.path.normcase(native)
+		profile_cmp = os.path.normcase(profile)
+		if native_cmp == profile_cmp:
+			return _ADDON_DATA_SPECIAL
+		if not native_cmp.startswith(profile_cmp + os.sep):
+			return raw
+		rel = os.path.relpath(native, profile).replace('\\', '/')
+		if rel in ('.', ''):
+			return _ADDON_DATA_SPECIAL
+		result = _ADDON_DATA_SPECIAL + rel
+		if as_folder and not result.endswith('/'):
+			result += '/'
+		return result
+	except Exception:
+		return raw
+
 def browse_start_path(path, force_defaultt=False):
-	'''Native folder path for Kodi browse defaultt (address bar shows the real location).'''
+	'''Real filesystem path for Kodi browse defaultt.
+
+	Never pass special:// into Dialog.browse — that opens a virtual tree where
+	parent navigation cannot reach storage roots (so users cannot pick an
+	OS-wide Import/Export or download folder). force_defaultt is kept for
+	callers but no longer feeds special:// to the dialog.
+	'''
 	if not path or str(path).strip() in ('', 'None', 'empty_setting'):
 		return None
 	native = translate_path(path)
 	if not native or not str(native).strip():
 		return None
-	if force_defaultt:
-		# Import/export defaults use special:// paths; Kodi browse accepts them on all platforms.
-		if str(path).strip().lower().startswith('special://'):
-			return path
-		return native
+	# Android: opening inside a non-empty folder can block leaving via parent.
 	start = safe_browse_defaultt(native)
 	if start == '':
 		return ''
@@ -311,7 +354,9 @@ def set_browse_exit_params(list_mode='tvshow', action=None):
 
 def browse_list_exit_params(list_mode='tvshow', action=None):
 	folder_path = get_infolabel('Container.FolderPath')
-	parent_tokens = ('navigator.', 'mdblist.', 'simkl.', 'trakt.list', 'tmdblist.', 'personal_lists.', 'build_tmdb_lists_contents')
+	parent_tokens = (
+		'navigator.', 'mdblist.', 'punchplay.', 'simkl.', 'trakt.list', 'tmdblist.', 'personal_lists.',
+		'build_tmdb_lists_contents', 'build_mdblist_lists_contents')
 	if any(token in folder_path for token in parent_tokens):
 		return sanitize_folder_url(folder_path)
 	if action:
@@ -329,7 +374,7 @@ def list_collection_exit_params(params=None):
 	folder_path = get_infolabel('Container.FolderPath')
 	parent_tokens = (
 		'trakt.list.get_trakt_lists', 'trakt.list.search_trakt', 'trakt.list.get_trakt_user_lists',
-		'tmdblist.get_tmdb_lists', 'personal_lists.get_personal_lists', 'navigator.', 'mdblist.', 'simkl.')
+		'tmdblist.get_tmdb_lists', 'personal_lists.get_personal_lists', 'navigator.', 'mdblist.', 'punchplay.', 'simkl.')
 	if any(token in folder_path for token in parent_tokens):
 		return sanitize_folder_url(folder_path)
 	params = params or {}
@@ -340,23 +385,39 @@ def list_collection_exit_params(params=None):
 		return build_folder_url({'mode': 'tmdblist.get_tmdb_lists'})
 	if mode in ('personal_lists.build_personal_list', 'random.build_personal_lists_contents'):
 		return build_folder_url({'mode': 'personal_lists.get_personal_lists'})
+	if mode in ('mdblist.build_mdbl_list', 'random.build_mdblist_lists_contents'):
+		list_type = params.get('list_type', 'my_lists')
+		if list_type == 'liked_lists':
+			return build_folder_url({'mode': 'mdblist.get_mdbl_liked_lists', 'name': 'Liked Lists'})
+		if list_type == 'user_lists':
+			return build_folder_url({'mode': 'mdblist.get_mdbl_top_lists', 'name': 'Popular MDBLists'})
+		return build_folder_url({'mode': 'mdblist.get_mdbl_lists', 'name': 'My Lists'})
 	return sanitize_folder_url(folder_path)
 
 _browse_action_exit_params = {
-	'mdblist_watchlist': {'mode': 'navigator.mdblist_lists'},
-	'mdblist_collection': {'mode': 'navigator.mdblist_lists'},
+	'mdblist_watchlist': {'mode': 'navigator.mdblist_watchlists'},
+	'mdblist_collection': {'mode': 'navigator.mdblist_library'},
 	'mdblist_droplist': {'mode': 'navigator.mdblist_lists'},
+	'trakt_droplist': {'mode': 'navigator.trakt_lists_personal'},
 	'trakt_collection': {'mode': 'navigator.trakt_collections'},
 	'trakt_collection_lists': {'mode': 'navigator.trakt_collections'},
 	'trakt_watchlist': {'mode': 'navigator.trakt_watchlists'},
 	'trakt_watchlist_lists': {'mode': 'navigator.trakt_watchlists'},
 	'trakt_favorites': {'mode': 'navigator.trakt_favorites', 'category_name': 'Favorites'},
 	'trakt_recommendations': {'mode': 'navigator.trakt_recommendations', 'category_name': 'Recommended'},
-	'simkl_plantowatch': {'mode': 'navigator.simkl_lists'},
-	'simkl_completed': {'mode': 'navigator.simkl_lists'},
-	'simkl_watching': {'mode': 'navigator.simkl_lists'},
-	'simkl_hold': {'mode': 'navigator.simkl_lists'},
-	'simkl_dropped': {'mode': 'navigator.simkl_lists'},
+	'simkl_plantowatch': {'mode': 'navigator.simkl_watchlists'},
+	'simkl_completed': {'mode': 'navigator.simkl_completed'},
+	'simkl_watching': {'mode': 'navigator.simkl_watching'},
+	'simkl_hold': {'mode': 'navigator.simkl_hold'},
+	'simkl_dropped': {'mode': 'navigator.simkl_dropped'},
+	'punchplay_watchlist': {'mode': 'navigator.punchplay_watchlists'},
+	'punchplay_collection': {'mode': 'navigator.punchplay_collections'},
+	'punchplay_favorites': {'mode': 'navigator.punchplay_favourites'},
+	'punchplay_plantowatch': {'mode': 'navigator.punchplay_planning'},
+	'punchplay_watching': {'mode': 'navigator.punchplay_watching_menu'},
+	'punchplay_hold': {'mode': 'navigator.punchplay_on_hold'},
+	'punchplay_completed': {'mode': 'navigator.punchplay_watched'},
+	'punchplay_dropped': {'mode': 'navigator.punchplay_dropped_menu'},
 	'favorites_movies': {'mode': 'navigator.favorites'},
 	'favorites_tvshows': {'mode': 'navigator.favorites'},
 	'favorites_anime': {'mode': 'navigator.favorites'},
@@ -560,8 +621,8 @@ def service_scrobbler_defer(addon_id, auth_keys=(), scrobble_enable_keys=()):
 def container_content():
 	return get_infolabel('Container.Content')
 
-def set_sort_method(handle, method):
-	xbmcplugin.addSortMethod(handle, {'episodes': 24, 'files': 5, 'label': 2, 'none': 0}[method])
+def set_sort_method(handle, method, labelMask=''):
+	xbmcplugin.addSortMethod(handle, {'episodes': 24, 'files': 5, 'label': 2, 'none': 0}[method], labelMask=labelMask)
 
 def make_session(url='https://'):
 	import requests
@@ -631,9 +692,7 @@ def kodi_version():
 	return int(get_infolabel('System.BuildVersion')[0:2])
 
 def get_video_database_path():
-	version_map = {19: '119', 20: '121', 21: '124'}
-	db_version = version_map.get(kodi_version()) or version_map[max(version_map)]
-	return translate_path('special://profile/Database/MyVideos%s.db' % db_version)
+	return translate_path('special://profile/Database/MyVideos%s.db' % {19: '119', 20: '121', 21: '124'}[kodi_version()])
 
 def show_busy_dialog():
 	return execute_builtin('ActivateWindow(busydialognocancel)')
@@ -1021,7 +1080,7 @@ def external_scraper_settings(params=None):
 def progress_dialog(heading='', icon=None):
 	from threading import Thread
 	from windows.base_window import create_window
-	progress_dialog = create_window(('windows.progress', 'Progress'), 'progress.xml', heading=heading, icon=icon or addon_icon())
+	progress_dialog = create_window(('windows.progress', 'Progress'), 'progress.xml', heading=heading, icon=icon or addon_icon_mini())
 	Thread(target=progress_dialog.run).start()
 	for _ in range(40):
 		try:
@@ -1061,7 +1120,8 @@ def confirm_dialog(heading='', text='Are you sure?', ok_label='OK', cancel_label
 	from windows.base_window import open_window
 	needs_scroll = scroll and _dialog_needs_scroll(text)
 	kwargs = {'heading': heading, 'text': text, 'ok_label': ok_label, 'cancel_label': cancel_label, 'default_control': default_control,
-				'third_label': third_label or '', 'scroll': 'true' if needs_scroll else 'false', 'scroll_focus': 'false'}
+				'third_label': third_label or '', 'scroll': 'true' if needs_scroll else 'false',
+				'scroll_focus': 'true' if needs_scroll else 'false'}
 	raw = open_window(('windows.default_dialogs', 'Confirm'), 'confirm.xml', **kwargs)
 	if third_label:
 		return raw
@@ -1077,6 +1137,7 @@ def ok_dialog(heading='', text='No Results', ok_label='OK', scroll=False):
 	return open_window(('windows.default_dialogs', 'OK'), 'ok.xml', **kwargs)
 
 def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
+	import re
 	from windows.base_window import open_window
 	heading = heading.replace('[B]', '').replace('[/B]', '')
 	if file:
@@ -1085,8 +1146,114 @@ def show_text(heading, text=None, file=None, font_size='small', kodi_log=False):
 		confirm = confirm_dialog(text='Show Log Errors Only?', ok_label='Yes', cancel_label='No')
 		if confirm == None: return
 		if confirm: text = [i for i in text if any(x in i.lower() for x in ('exception', 'error', '[test]'))]
-	text = ''.join(text)
-	return open_window(('windows.textviewer', 'TextViewer'), 'textviewer.xml', heading=heading, text=text, font_size=font_size)
+	if isinstance(text, str):
+		# Callers often use Kodi [CR] as a line break (e.g. Clean Databases). Treat like \n
+		# before wrap — otherwise one giant line hard-splits mid-[COLOR]/[B] and shows orphan tags.
+		text = text.replace('[CR]', '\n').splitlines()
+	# List labels do not wrap; overflow becomes "...". Wrap by estimated pixel width for
+	# Estuary NotoSans (font14/33 large, font12/25 small). Label is 1214px; keep a small
+	# margin so dense/proportional lines are not truncated mid-word.
+	bbcode_re = re.compile(r'\[/?[^\[\]]+\]')
+	# Keep spaces inside [B]/[I]/[COLOR] spans so wrap cannot split e.g. [I]Original Air Date[/I].
+	# COLOR tags may be "[COLOR green]" or "[COLOR=green]" / "[COLOR ff00ff00]".
+	bbcode_span_re = re.compile(
+		r'\[(B|I|LIGHT|UPPERCASE|LOWERCASE|CAPITALIZE)\](?:(?!\[/\1\]).)*\[/\1\]'
+		r'|\[COLOR(?:\s|=)[^\]]+\].*?\[/COLOR\]',
+		re.I | re.DOTALL
+	)
+	bbcode_tag_re = re.compile(r'\[(/?)([^\]]+)\]')
+	nbsp = '\u00a0'
+	# ASCII 32-126 advance widths (rounded) for NotoSans-Regular at the active size.
+	if str(font_size).lower() == 'large':
+		char_widths = (9, 9, 13, 21, 19, 27, 24, 7, 10, 10, 18, 19, 9, 11, 9, 12, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 9, 9, 19, 19, 19, 14, 30, 21, 21, 21, 24, 18, 17, 24, 24, 11, 9, 20, 17, 30, 25, 26, 20, 26, 21, 18, 18, 24, 20, 31, 19, 19, 19, 11, 12, 11, 19, 15, 9, 19, 20, 16, 20, 19, 11, 20, 20, 9, 9, 18, 9, 31, 20, 20, 20, 20, 14, 16, 12, 20, 17, 26, 17, 17, 16, 13, 18, 13, 19)
+		extra_widths = {'\u2014': 33, '\u2013': 17, '\u2026': 26, '\u2019': 6, '\u2018': 6, '\u201c': 12, '\u201d': 12, '\u00b7': 9, nbsp: 9}
+		default_width, max_px = 19, 1190
+	else:
+		char_widths = (7, 7, 10, 16, 14, 21, 18, 6, 8, 8, 14, 14, 7, 8, 7, 9, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 7, 7, 14, 14, 14, 11, 22, 16, 16, 16, 18, 14, 13, 18, 19, 8, 7, 15, 13, 23, 19, 20, 15, 20, 16, 14, 14, 18, 15, 23, 15, 14, 14, 8, 9, 8, 14, 11, 7, 14, 15, 12, 15, 14, 9, 15, 15, 6, 6, 13, 6, 23, 15, 15, 15, 15, 10, 12, 9, 15, 13, 20, 13, 13, 12, 10, 14, 10, 14)
+		extra_widths = {'\u2014': 25, '\u2013': 13, '\u2026': 20, '\u2019': 4, '\u2018': 4, '\u201c': 9, '\u201d': 9, '\u00b7': 7, nbsp: 7}
+		default_width, max_px = 14, 1190
+
+	def _text_width(value):
+		total = 0
+		for char in bbcode_re.sub('', value).replace(nbsp, ' '):
+			code = ord(char)
+			if 32 <= code <= 126:
+				total += char_widths[code - 32]
+			else:
+				total += extra_widths.get(char, default_width)
+		return total
+
+	def _protect_bbcode_spaces(value):
+		return bbcode_span_re.sub(lambda m: m.group(0).replace(' ', nbsp), value)
+
+	def _tag_stack_delta(stack, value):
+		for match in bbcode_tag_re.finditer(value):
+			closing, name = match.group(1), match.group(2)
+			base = name.split(' ', 1)[0].split('=', 1)[0].upper()
+			if closing:
+				for idx in range(len(stack) - 1, -1, -1):
+					open_base = stack[idx].split(' ', 1)[0].split('=', 1)[0].upper()
+					if open_base == base:
+						del stack[idx]
+						break
+			else:
+				stack.append(name)
+
+	def _open_tags(stack):
+		return ''.join('[%s]' % name for name in stack)
+
+	def _close_tags(stack):
+		return ''.join('[/%s]' % name.split(' ', 1)[0].split('=', 1)[0] for name in reversed(stack))
+
+	def _balance_bbcode(parts):
+		# Close open markup at each line end and reopen on the next so a wrap cannot leave
+		# orphan tags like [I]Original / Air Date[/I] (which Kodi then fails to italicise).
+		stack, balanced = [], []
+		for part in parts:
+			prefix = _open_tags(stack)
+			_tag_stack_delta(stack, part)
+			balanced.append((prefix + part + _close_tags(stack)).replace(nbsp, ' '))
+		return balanced
+
+	def _wrap_line(value, width):
+		value = _protect_bbcode_spaces(value)
+		if _text_width(value) <= width:
+			return [value.replace(nbsp, ' ')]
+		parts, current = [], ''
+		for word in value.split(' '):
+			candidate = word if not current else '%s %s' % (current, word)
+			if current and _text_width(candidate) > width:
+				parts.append(current)
+				current = word
+				while _text_width(current) > width:
+					# Hard-split oversized tokens (URLs, long unbroken strings).
+					# Never cut inside a [...] BBCode tag — that yields orphan "[COLOR green]" lines.
+					cut, idx = current, 1
+					while idx < len(cut) and _text_width(cut[:idx]) <= width:
+						idx += 1
+					idx = max(1, idx - 1)
+					open_bracket = cut.rfind('[', 0, idx)
+					close_bracket = cut.rfind(']', 0, idx)
+					if open_bracket > close_bracket:
+						# Mid-tag: finish the tag if present, else back up before '['.
+						tag_end = cut.find(']', open_bracket)
+						if tag_end != -1 and _text_width(cut[:tag_end + 1]) <= width:
+							idx = tag_end + 1
+						elif open_bracket > 0:
+							idx = open_bracket
+					parts.append(cut[:idx])
+					current = cut[idx:]
+			else:
+				current = candidate
+		if current:
+			parts.append(current)
+		return _balance_bbcode(parts or [value])
+
+	processed_lines = []
+	for line in text:
+		clean_line = line.rstrip('\r\n')
+		processed_lines.extend(_wrap_line(clean_line, max_px))
+	return open_window(('windows.textviewer', 'TextViewer'), 'textviewer.xml', heading=heading, text=processed_lines, font_size=font_size)
 
 LIST_ITEM_NOT_IN_LIST = 'Item not in list'
 
@@ -1094,7 +1261,7 @@ def notification(line1, time=5000, icon=None, settle_ms=0):
 	# Brief delay helps Kodi show the toast after select/confirm dialogs close (rapid calls can drop it otherwise).
 	# sound=False: silent toast — especially during playback (Next Episode Ready, Next Up).
 	if settle_ms: sleep(settle_ms)
-	kodi_dialog().notification('Red Light', line1, icon or addon_icon(), time, False)
+	kodi_dialog().notification('Red Light', line1, icon or addon_icon_mini(), time, False)
 
 def player_check(mode, params):
 	from modules.settings import playback_key
@@ -1209,102 +1376,10 @@ def upload_logfile(params):
 def fetch_kodi_imagecache(image):
 	import sqlite3 as database
 	result = None
-	dbcon = None
 	try:
 		dbcon = database.connect(translate_path('special://database/Textures13.db'), timeout=40.0)
 		dbcur = dbcon.cursor()
 		dbcur.execute("SELECT cachedurl FROM texture WHERE url = ?", (image,))
 		result = dbcur.fetchone()[0]
 	except: pass
-	finally:
-		if dbcon is not None: dbcon.close()
 	return result
-
-# Session-locked "Adjust display refresh rate" for TV show binges. Kodi's own
-# per-file refresh-rate matching (videoplayer.adjustrefreshrate) fires on every
-# single episode transition, which is the actual source of repeated blanking/
-# HDMI handshake risk during a binge. Rather than computing/forcing a specific
-# display mode ourselves (no JSON-RPC lever exists for that — confirmed live:
-# videoscreen.resolution only controls GUI rendering res, not refresh rate),
-# we instead disable adjustrefreshrate entirely for the duration of a binge
-# (after episode 1's own natural start-triggered match) and restore the
-# original value once the binge genuinely ends.
-ADJUSTREFRESHRATE_SETTING = 'videoplayer.adjustrefreshrate'
-ADJUSTREFRESHRATE_OFF = 0
-PROP_DISPLAYLOCK_SHOW_KEY = 'RL.DisplayLock.ShowKey'
-PROP_DISPLAYLOCK_ORIG_ARR = 'RL.DisplayLock.OrigAdjustRefreshRate'
-# Autoscrape's next-episode handoff runs on its own background thread, which can
-# finish (starting episode 2, bumping the generation below) before episode 1's
-# OWN monitor() tail gets around to its end-of-play check. Without a generation
-# token, that stale check would win the race and undo the lock episode 2 just
-# set up. Each begin_display_lock() call for an episode play bumps this; a
-# player only stops the lock for the generation it was actually started with.
-PROP_DISPLAYLOCK_GENERATION = 'RL.DisplayLock.Generation'
-
-def get_display_lock_generation():
-	try:
-		return int(get_property(PROP_DISPLAYLOCK_GENERATION) or 0)
-	except Exception:
-		return 0
-
-def _bump_display_lock_generation():
-	gen = get_display_lock_generation() + 1
-	set_property(PROP_DISPLAYLOCK_GENERATION, str(gen))
-	return gen
-
-def _display_lock_restore(heading):
-	orig = get_property(PROP_DISPLAYLOCK_ORIG_ARR)
-	clear_property(PROP_DISPLAYLOCK_SHOW_KEY)
-	clear_property(PROP_DISPLAYLOCK_ORIG_ARR)
-	clear_property(PROP_DISPLAYLOCK_GENERATION)
-	if orig == '': return
-	jsonrpc_set_system_setting(ADJUSTREFRESHRATE_SETTING, int(orig))
-	logger(heading, 'adjustrefreshrate restored to %s' % orig)
-
-def begin_display_lock(show_key):
-	heading = 'RL.DisplayLock'
-	try:
-		stored_key = get_property(PROP_DISPLAYLOCK_SHOW_KEY) or None
-		if show_key and show_key == stored_key:
-			# Second-or-later episode of this show's binge: this is the ONE place
-			# adjustrefreshrate gets turned off, so episode 1 keeps its own natural
-			# start-triggered match and every later episode just inherits it.
-			gen = _bump_display_lock_generation()
-			current = jsonrpc_get_system_setting(ADJUSTREFRESHRATE_SETTING)
-			if str(current) != str(ADJUSTREFRESHRATE_OFF):
-				jsonrpc_set_system_setting(ADJUSTREFRESHRATE_SETTING, ADJUSTREFRESHRATE_OFF)
-				logger(heading, 'show %s binge continuing (gen %s); adjustrefreshrate %s -> %s (off)' % (show_key, gen, current, ADJUSTREFRESHRATE_OFF))
-			else:
-				logger(heading, 'continuing show %s binge (gen %s); adjustrefreshrate already off' % (show_key, gen))
-			return gen
-		if stored_key:
-			logger(heading, 'session boundary (was show %s); restoring adjustrefreshrate before continuing' % stored_key)
-			_display_lock_restore(heading)
-		if not show_key:
-			return None
-		# Episode 1 of a new binge: capture the real setting and leave it untouched
-		# so Kodi's own native match runs for this first play.
-		gen = _bump_display_lock_generation()
-		current = jsonrpc_get_system_setting(ADJUSTREFRESHRATE_SETTING)
-		set_property(PROP_DISPLAYLOCK_ORIG_ARR, str(current))
-		set_property(PROP_DISPLAYLOCK_SHOW_KEY, show_key)
-		logger(heading, 'starting show %s binge (gen %s); captured adjustrefreshrate=%s (left as-is for episode 1)' % (show_key, gen, current))
-		return gen
-	except Exception as e:
-		logger(heading, 'begin_display_lock error: %s' % str(e))
-		return None
-
-def end_display_lock(show_key, generation):
-	heading = 'RL.DisplayLock'
-	try:
-		stored_key = get_property(PROP_DISPLAYLOCK_SHOW_KEY) or None
-		if not stored_key or stored_key != show_key:
-			return
-		current_gen = get_display_lock_generation()
-		if generation is None or current_gen != generation:
-			logger(heading, 'stale end-of-play check for show %s (gen %s, current gen %s); ignoring' % (show_key, generation, current_gen))
-			return
-		logger(heading, 'binge for show %s ended (gen %s)' % (show_key, generation))
-		_display_lock_restore(heading)
-	except Exception as e:
-		logger(heading, 'end_display_lock error: %s' % str(e))

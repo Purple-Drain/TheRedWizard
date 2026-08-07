@@ -32,7 +32,8 @@ def offer_save_export_directory(folder):
 	):
 		return
 	from caches.settings_cache import set_setting
-	set_setting('import_export_directory', folder)
+	# Under addon_data → special://; anywhere else stays an OS-wide absolute path.
+	set_setting('import_export_directory', kodi_utils.portable_addon_data_path(folder))
 	settings.ensure_import_export_directory()
 	kodi_utils.notification('Default backup folder updated', 3500)
 
@@ -52,6 +53,7 @@ def meta_account_names(accounts):
 	# A–Z; OAuth / session metas only.
 	names = []
 	if accounts.get('mdblist'): names.append('MDBList')
+	if accounts.get('punchplay'): names.append('PunchPlay')
 	if accounts.get('simkl'): names.append('Simkl')
 	if accounts.get('tmdb_lists'): names.append('TMDb Lists')
 	if accounts.get('trakt'): names.append('Trakt')

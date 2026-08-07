@@ -55,6 +55,8 @@ class movies:
         self.today_date = (self.datetime).strftime('%Y-%m-%d')
         self.addon_caching = control.setting('addon.caching') or 'true'
         self.addon_caching_timeout = int(control.setting('addon.caching_timeout')) or int('12')
+        # My Trakt shelves must not use Kodi disc cache or add/remove looks stuck.
+        self.cacheToDisc = True
         self.trakt_user = control.setting('trakt.user').strip()
         self.tmdb_key = control.setting('tmdb.api') or ''
         if self.tmdb_key == '' or self.tmdb_key == None:
@@ -1231,12 +1233,25 @@ class movies:
                         raise Exception()
                     if not '/users/me/' in url:
                         raise Exception()
+                    self.cacheToDisc = False
+                    # Watchlist / Library / Favorites / personal lists change via
+                    # Manager — always live-fetch so remove is visible on Refresh.
+                    if any(x in url for x in (
+                        '/watchlist/', '/collection/', '/favorites/', '/lists/'
+                    )):
+                        raise Exception()
                     if self.addon_caching != 'true':
                         raise Exception()
-                    self.list = cache.get(self.trakt_list, self.addon_caching_timeout, url, self.trakt_user)
+                    from resources.lib.modules import trakt_cache
+                    self.list = trakt_cache.get(
+                        self.trakt_list, trakt_cache.TTL_LISTS_SEC, url, self.trakt_user
+                    ) or []
                 except:
+                    if '/users/me/' in (url or ''):
+                        self.cacheToDisc = False
                     self.list = self.trakt_list(url, self.trakt_user)
                 self.list = trakt.apply_my_shelf_sort(self.list, url, 'movies')
+                self.list = trakt.filter_shelf_exclusions(self.list, url)
                 if idx == True:
                     self.worker()
             elif u in self.trakt_link and '/sync/playback/' in url:
@@ -1275,7 +1290,7 @@ class movies:
         if items == None or len(items) == 0:
             control.idle()
             control.content(syshandle, 'movies')
-            control.directory(syshandle, cacheToDisc=True)
+            control.directory(syshandle, cacheToDisc=self.cacheToDisc)
             return
         addonPoster, addonBanner = control.addonPoster(), control.addonBanner()
         addonFanart = control.addonFanart()
@@ -1338,12 +1353,12 @@ class movies:
                 cm.append(('Clear Providers', 'RunPlugin(%s?action=clear_sources)' % sysaddon))
                 cm.append(('Find Similar', 'Container.Update(%s?action=movies&url=%s)' % (sysaddon, self.trakt_related_link % imdb)))
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
-                if traktCredentials == True:
-                    cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
                 if simklCredentials == True:
-                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
+                    cm.append(('Simkl Lists Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
-                    cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, tmdb)))
+                    cm.append(('TMDb Lists Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, tmdb)))
+                if traktCredentials == True:
+                    cm.append(('Trakt Lists Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=movie)' % (sysaddon, sysname, imdb, tmdb)))
                 libtools.append_movie_library_cm(cm, sysaddon, movie_library, sysname, title, year, imdb, tmdb)
                 if action == 'movieFavorites':
                     cm.append(('Remove from MyFavorites', 'RunPlugin(%s?action=deleteFavorite&meta=%s&content=movie)' % (sysaddon, sysmeta)))
@@ -1440,7 +1455,7 @@ class movies:
         except:
             pass
         control.content(syshandle, 'movies')
-        control.directory(syshandle, cacheToDisc=True)
+        control.directory(syshandle, cacheToDisc=self.cacheToDisc)
         views.setView('movies')
 
 

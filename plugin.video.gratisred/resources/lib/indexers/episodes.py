@@ -411,12 +411,12 @@ class seasons:
                 cm.append(('Clean Tools Widget', 'RunPlugin(%s?action=cleantools_widget)' % sysaddon))
                 cm.append(('Clear Providers', 'RunPlugin(%s?action=clear_sources)' % sysaddon))
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
-                if traktCredentials == True:
-                    cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 if simklCredentials == True:
-                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
+                    cm.append(('Simkl Lists Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
-                    cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
+                    cm.append(('TMDb Lists Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
+                if traktCredentials == True:
+                    cm.append(('Trakt Lists Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 libtools.append_tvshow_library_cm(cm, sysaddon, tv_library, i['tvshowtitle'], year, imdb, tmdb)
                 if kodi_version < 17:
                     cm.append(('Information', 'Action(Info)'))
@@ -636,20 +636,20 @@ class episodes:
                     self.list = self.trakt_episodes_list(url, self.trakt_user, self.lang)
                 self.list = sorted(self.list, key=lambda k: k['premiered'], reverse=True)
             elif self.trakt_link in url and url == self.trakt_history_link:
-                # FIX (Trakt history only shows old stuff):
-                # This endpoint used to be wrapped in the generic
-                # ``cache.get(..., self.addon_caching_timeout, ...)`` which
-                # defaults to *12 hours*.  Anything the user scrobbled in
-                # those 12 hours was silently hidden until the cache
-                # expired.  History is a "live" view by definition - we
-                # always want to re-query Trakt so fresh watches show up
-                # immediately.  (Matches the bypass already in place for
-                # the Movies history path - see indexers/movies.py.)
-                self.blist = self.trakt_episodes_list(url, self.trakt_user, self.lang)
+                # Live fetch (no 12h cache). One enrichment pass only —
+                # calling trakt_episodes_list twice without clearing self.list
+                # appended every episode twice ("2 of everything").
+                self.blist = []
+                self.list = []
                 self.list = self.trakt_episodes_list(url, self.trakt_user, self.lang)
-                self.list = sorted(self.list, key=lambda k: int(k['watched_at']), reverse=True)
+                self.list = sorted(self.list, key=lambda k: int(k.get('watched_at') or 0), reverse=True)
             elif self.trakt_link in url and '/users/' in url:
-                if self.addon_caching == 'true':
+                if self.addon_caching == 'true' and '/users/me/' in url:
+                    from resources.lib.modules import trakt_cache
+                    self.list = trakt_cache.get(
+                        self.trakt_list, trakt_cache.TTL_LISTS_SEC, url, self.trakt_user
+                    ) or []
+                elif self.addon_caching == 'true':
                     self.list = cache.get(self.trakt_list, self.addon_caching_timeout, url, self.trakt_user)
                 else:
                     self.list = self.trakt_list(url, self.trakt_user)
@@ -1447,6 +1447,7 @@ class episodes:
 
     def trakt_episodes_list(self, url, user, lang):
         items = self.trakt_list(url, user)
+        self.list = []
         def items_list(i):
             tmdb, imdb, tvdb = i['tmdb'], i['imdb'], i['tvdb']
             if (not tmdb or tmdb == '0') and not imdb == '0':
@@ -2266,12 +2267,12 @@ class episodes:
                 if multi == True:
                     cm.append(('Browse Series', 'Container.Update(%s?action=seasons&tvshowtitle=%s&year=%s&imdb=%s&tmdb=%s&meta=%s,return)' % (sysaddon, systvshowtitle, year, imdb, tmdb, seas_meta)))
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
-                if traktCredentials == True:
-                    cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, imdb, tmdb)))
                 if simklCredentials == True:
-                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, imdb, tmdb)))
+                    cm.append(('Simkl Lists Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, imdb, tmdb)))
                 if tmdbCredentials == True:
-                    cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, tmdb)))
+                    cm.append(('TMDb Lists Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, tmdb)))
+                if traktCredentials == True:
+                    cm.append(('Trakt Lists Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, systvshowtitle, imdb, tmdb)))
                 libtools.append_tvshow_library_cm(cm, sysaddon, tv_library, i['tvshowtitle'], year, imdb, tmdb)
                 if kodi_version < 17:
                     cm.append(('Information', 'Action(Info)'))

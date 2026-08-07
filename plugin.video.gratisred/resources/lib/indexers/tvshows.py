@@ -87,6 +87,8 @@ class tvshows:
         self.tvmaze_updates_month_link = self.tvmaze_link + '/updates/shows?since=month'
         self.fanart_tv_art_link = 'http://webservice.fanart.tv/tv/%s'
         self.search_tvshows_source = control.setting('search.tvshows.source') or '0'
+        # My Trakt shelves must not use Kodi disc cache or add/remove looks stuck.
+        self.cacheToDisc = True
         self.info_tvshows_source = control.setting('info.tvshows.source') or '0'
         self.info_art_source = control.setting('info.art.source') or '0'
         self.original_artwork = control.setting('original.artwork') or 'false'
@@ -463,7 +465,14 @@ class tvshows:
             q.update({'extended': 'full'})
             q = (urllib_parse.urlencode(q)).replace('%2C', ',')
             u = url.replace('?' + urllib_parse.urlparse(url).query, '') + '?' + q
-            result = trakt.getTraktAsJson(u) or []
+            result = trakt.getTraktAsJson(u)
+            if result is None:
+                try:
+                    from kodi_six import xbmc as _xbmc
+                    _xbmc.log('[Gratis Red] trakt_list empty/failed for %s' % u, _xbmc.LOGINFO)
+                except Exception:
+                    pass
+                result = []
             items = []
             for i in result:
                 try:
@@ -489,6 +498,8 @@ class tvshows:
                 next = six.ensure_str(next)
             except:
                 next = ''
+            before = len(items)
+            start = len(self.list)
             for item in items:
                 try:
                     title = item['title']
@@ -526,6 +537,16 @@ class tvshows:
                     self.list.append({'title': title, 'originaltitle': title, 'year': year, 'imdb': imdb, 'tmdb': tmdb, 'tvdb': tvdb, 'next': next, 'paused_at': paused_at, 'collected_at': collected_at})
                 except:
                     #log_utils.log('trakt_list', 1)
+                    pass
+            appended = len(self.list) - start
+            if before and appended != before:
+                try:
+                    from kodi_six import xbmc as _xbmc
+                    _xbmc.log(
+                        '[Gratis Red] trakt_list dropped %s/%s items for %s' % (
+                            before - appended, before, u),
+                        _xbmc.LOGINFO)
+                except Exception:
                     pass
         except:
             #log_utils.log('trakt_list', 1)
@@ -1431,14 +1452,25 @@ class tvshows:
                         raise Exception()
                     if not '/users/me/' in url:
                         raise Exception()
-                    #if trakt.getActivity() > cache.timeout(self.trakt_list, url, self.trakt_user):
-                        #raise Exception()
+                    self.cacheToDisc = False
+                    # Watchlist / Library / Favorites / personal lists change via
+                    # Manager — always live-fetch so remove is visible on Refresh.
+                    if any(x in url for x in (
+                        '/watchlist/', '/collection/', '/favorites/', '/lists/'
+                    )):
+                        raise Exception()
                     if self.addon_caching != 'true':
                         raise Exception()
-                    self.list = cache.get(self.trakt_list, self.addon_caching_timeout, url, self.trakt_user)
+                    from resources.lib.modules import trakt_cache
+                    self.list = trakt_cache.get(
+                        self.trakt_list, trakt_cache.TTL_LISTS_SEC, url, self.trakt_user
+                    ) or []
                 except:
+                    if '/users/me/' in (url or ''):
+                        self.cacheToDisc = False
                     self.list = self.trakt_list(url, self.trakt_user)
                 self.list = trakt.apply_my_shelf_sort(self.list, url, 'tvshows')
+                self.list = trakt.filter_shelf_exclusions(self.list, url)
                 if idx == True:
                     self.worker()
             #elif u in self.trakt_link and self.trakt_search_link in url:
@@ -1476,7 +1508,7 @@ class tvshows:
         if items == None or len(items) == 0:
             control.idle()
             control.content(syshandle, 'tvshows')
-            control.directory(syshandle, cacheToDisc=True)
+            control.directory(syshandle, cacheToDisc=self.cacheToDisc)
             return
         addonPoster, addonBanner = control.addonPoster(), control.addonBanner()
         addonFanart, settingFanart = control.addonFanart(), control.setting('show.fanart')
@@ -1543,12 +1575,12 @@ class tvshows:
                 cm.append(('Clear Providers', 'RunPlugin(%s?action=clear_sources)' % sysaddon))
                 cm.append(('Find Similar', 'Container.Update(%s?action=tvshows&url=%s)' % (sysaddon, self.trakt_related_link % imdb)))
                 cm.append(('Queue Item', 'RunPlugin(%s?action=queue_item)' % sysaddon))
-                if traktCredentials == True:
-                    cm.append(('Trakt Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 if simklCredentials == True:
-                    cm.append(('Simkl Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
+                    cm.append(('Simkl Lists Manager', 'RunPlugin(%s?action=simkl_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 if tmdbCredentials == True:
-                    cm.append(('TMDb Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
+                    cm.append(('TMDb Lists Manager', 'RunPlugin(%s?action=tmdb_manager&name=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, tmdb)))
+                if traktCredentials == True:
+                    cm.append(('Trakt Lists Manager', 'RunPlugin(%s?action=trakt_manager&name=%s&imdb=%s&tmdb=%s&content=tvshow)' % (sysaddon, sysname, imdb, tmdb)))
                 libtools.append_tvshow_library_cm(cm, sysaddon, tv_library, i['title'], year, imdb, tmdb)
                 if action == 'tvFavorites':
                     cm.append(('Remove from MyFavorites', 'RunPlugin(%s?action=deleteFavorite&meta=%s&content=tvshow)' % (sysaddon, sysmeta)))
@@ -1626,7 +1658,7 @@ class tvshows:
         except:
             pass
         control.content(syshandle, 'tvshows')
-        control.directory(syshandle, cacheToDisc=True)
+        control.directory(syshandle, cacheToDisc=self.cacheToDisc)
         views.setView('tvshows')
 
 
