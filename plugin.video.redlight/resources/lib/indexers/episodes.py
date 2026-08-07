@@ -312,7 +312,7 @@ def build_single_episode(list_type, params={}):
 			if unwatched_info:
 				try:
 					progress_aired_eps = ws.progress_aired_eps(meta)
-					total_unwatched = ws.get_watched_status_tvshow(ws.watched_info_tvshow(watched_db).get(str(tmdb_id), None), progress_aired_eps)[2]
+					total_unwatched = ws.get_watched_status_tvshow(watched_info_tvshow.get(str(tmdb_id), None), progress_aired_eps)[2]
 				except: progress_aired_eps, total_unwatched = None, None
 				if unwatched_in_title and total_unwatched:
 					suffix = ' (%s)' % total_unwatched
@@ -467,6 +467,7 @@ def build_single_episode(list_type, params={}):
 	playback_key = settings.playback_key()
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
+	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
 	if list_type in ('episode.next', 'episode.mdblist_next'):
 		mdblist_menu_next = list_type == 'episode.mdblist_next'
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
