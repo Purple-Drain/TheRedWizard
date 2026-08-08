@@ -451,70 +451,72 @@ class Downloader:
 		f = kodi_utils.open_file(self.final_destination, 'w')
 		chunk  = None
 		chunks = []
-		while True:
-			downloaded = total
-			for c in chunks: downloaded += len(c)
-			if self.content_unknown:
-				percent = min(99, downloaded // (50 * 1024 * 1024)) if downloaded else 0
-			else:
-				percent = min(round(float(downloaded) * 100 / self.content), 100)
-			if monitor_progress:
-				status = self.check_status()
-				if status == 'paused':
-					while status == 'paused':
-						status = self.check_status()
-						kodi_utils.sleep(1000)
-				if status == 'cancelled': return self.finish_download(status)
-				if percent % 5 == 0: self.set_percent_property(percent)
-			chunk = None
-			error = False
-			try:        
-				chunk  = self.resp.read(self.size)
-				if not chunk:
-					if not self.content_unknown and percent < 99:
-						error = True
-					else:
-						while len(chunks) > 0:
-							c = chunks.pop(0)
-							f.write(c)
-							del c
-						f.close()
-						return self.finish_download('success')
-			except Exception as e:
-				error = True
-				sleep_time = 10
-				errno = 0
-				if hasattr(e, 'errno'):
-					errno = e.errno
-				if errno == 10035: # 'A non-blocking socket operation could not be completed immediately'
-					pass
-				if errno == 10054: #'An existing connection was forcibly closed by the remote host'
-					errors = 10 #force resume
-					sleep_time = 30
-				if errno == 11001: # 'getaddrinfo failed'
-					errors = 10 #force resume
-					sleep_time = 30
-			if chunk:
-				errors = 0
-				chunks.append(chunk)
-				if len(chunks) > 5:
-					c = chunks.pop(0)
-					f.write(c)
-					total += len(c)
-					del c
-			if error:
-				errors += 1
-				count  += 1
-				kodi_utils.sleep(sleep_time*1000)
-			if (self.resumable and errors > 0) or errors >= 10:
-				if (not self.resumable and resume >= 50) or resume >= 500:
-					return self.finish_download('failed')
-				resume += 1
-				errors  = 0
-				if self.resumable:
-					chunks  = []
-					self.resp = self.get_response(total)
-				else: pass
+		try:
+			while True:
+				downloaded = total
+				for c in chunks: downloaded += len(c)
+				if self.content_unknown:
+					percent = min(99, downloaded // (50 * 1024 * 1024)) if downloaded else 0
+				else:
+					percent = min(round(float(downloaded) * 100 / self.content), 100)
+				if monitor_progress:
+					status = self.check_status()
+					if status == 'paused':
+						while status == 'paused':
+							status = self.check_status()
+							kodi_utils.sleep(1000)
+					if status == 'cancelled': return self.finish_download(status)
+					if percent % 5 == 0: self.set_percent_property(percent)
+				chunk = None
+				error = False
+				try:
+					chunk  = self.resp.read(self.size)
+					if not chunk:
+						if not self.content_unknown and percent < 99:
+							error = True
+						else:
+							while len(chunks) > 0:
+								c = chunks.pop(0)
+								f.write(c)
+								del c
+							return self.finish_download('success')
+				except Exception as e:
+					error = True
+					sleep_time = 10
+					errno = 0
+					if hasattr(e, 'errno'):
+						errno = e.errno
+					if errno == 10035: # 'A non-blocking socket operation could not be completed immediately'
+						pass
+					if errno == 10054: #'An existing connection was forcibly closed by the remote host'
+						errors = 10 #force resume
+						sleep_time = 30
+					if errno == 11001: # 'getaddrinfo failed'
+						errors = 10 #force resume
+						sleep_time = 30
+				if chunk:
+					errors = 0
+					chunks.append(chunk)
+					if len(chunks) > 5:
+						c = chunks.pop(0)
+						f.write(c)
+						total += len(c)
+						del c
+				if error:
+					errors += 1
+					count  += 1
+					kodi_utils.sleep(sleep_time*1000)
+				if (self.resumable and errors > 0) or errors >= 10:
+					if (not self.resumable and resume >= 50) or resume >= 500:
+						return self.finish_download('failed')
+					resume += 1
+					errors  = 0
+					if self.resumable:
+						chunks  = []
+						self.resp = self.get_response(total)
+					else: pass
+		finally:
+			f.close()
 
 	def get_response(self, size=0):
 		try:

@@ -64,7 +64,6 @@ class TraktWatched():
 	def _delete(self, command, args):
 		dbcon = connect_database('trakt_db')
 		dbcon.execute(command, args)
-		dbcon.execute('VACUUM')
 
 trakt_watched_cache = TraktWatched()
 

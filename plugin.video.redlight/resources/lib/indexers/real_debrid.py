@@ -129,6 +129,9 @@ def rd_delete(file_id, cache_type):
 def resolve_rd(params):
 	url = params['url']
 	resolved_link = RealDebrid.unrestrict_link(url)
+	if not resolved_link:
+		kodi_utils.ok_dialog(heading='Real-Debrid', text='Unable to resolve this cloud link. It may be expired or no longer available.')
+		return None
 	if params.get('play', 'false') != 'true' : return resolved_link
 	from modules.player import RedLightPlayer
 	RedLightPlayer().run(resolved_link, 'video')

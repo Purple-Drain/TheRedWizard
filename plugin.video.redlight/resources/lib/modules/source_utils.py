@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import re
 import json
+from functools import lru_cache
 import base64
 import time
 import requests
@@ -176,20 +177,18 @@ def supported_video_extensions():
 	supported_video_extensions = supported_media().split('|')
 	return [i for i in supported_video_extensions if not i in ('','.zip','.rar','.iso')]
 
-def seas_ep_filter(season, episode, release_title, split=False, return_match=False):
+@lru_cache(maxsize=256)
+def _seas_ep_filter_pattern(season, episode):
+	"""Build and compile the S/E alternation once per (season, episode).
+
+	The alternation depends only on the numbers, never on the release title, but
+	seas_ep_filter() runs once per source across an entire scrape -- so without
+	this cache the same ~20-branch pattern is rebuilt and recompiled for every
+	single result.
+	"""
 	str_season, str_episode = str(season), str(episode)
 	season_fill, episode_fill = str_season.zfill(2), str_episode.zfill(2)
 	str_ep_plus_1, str_ep_minus_1 = str(episode+1), str(episode-1)
-	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
-	# If the name has an explicit Sxx / NxN season, it must match. Stops S12E01-E02
-	# matching S01E02 via episode-only patterns like -e02 (complete show packs).
-	season_tags = re.findall(r'(?:^|[.-])s(\d{1,2})[.-]?e', release_title)
-	season_tags += re.findall(r'(?:^|[.-])(\d{1,2})x\d', release_title)
-	if season_tags:
-		requested = {str(int(season)), str_season, season_fill}
-		if not any(str(int(tag)) in requested or tag in requested for tag in season_tags):
-			if return_match: raise AttributeError('seas_ep season mismatch')
-			return False
 	string1 = r'(s<<S>>[.-]?e[p]?[.-]?<<E>>[.-])'
 	string2 = r'(season[.-]?<<S>>[.-]?episode[.-]?<<E>>[.-])'#|([s]?<<S>>[x.]<<E>>[.-])'
 	string3 = r'(s<<S>>e<<E1>>[.-]?e?<<E2>>[.-])'
@@ -220,8 +219,22 @@ def seas_ep_filter(season, episode, release_title, split=False, return_match=Fal
 	string_list_append(string8.replace('<<S>>', str_season).replace('<<E>>', episode_fill))
 	string_list_append(string8.replace('<<S>>', season_fill).replace('<<E>>', str_episode))
 	string_list_append(string8.replace('<<S>>', str_season).replace('<<E>>', str_episode))
-	final_string = '|'.join(string_list)
-	match = re.search(final_string, release_title)
+	return re.compile('|'.join(string_list))
+
+def seas_ep_filter(season, episode, release_title, split=False, return_match=False):
+	str_season = str(season)
+	season_fill = str_season.zfill(2)
+	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
+	# If the name has an explicit Sxx / NxN season, it must match. Stops S12E01-E02
+	# matching S01E02 via episode-only patterns like -e02 (complete show packs).
+	season_tags = re.findall(r'(?:^|[.-])s(\d{1,2})[.-]?e', release_title)
+	season_tags += re.findall(r'(?:^|[.-])(\d{1,2})x\d', release_title)
+	if season_tags:
+		requested = {str(int(season)), str_season, season_fill}
+		if not any(str(int(tag)) in requested or tag in requested for tag in season_tags):
+			if return_match: raise AttributeError('seas_ep season mismatch')
+			return False
+	match = _seas_ep_filter_pattern(season, episode).search(release_title)
 	if split:
 		if not match: return release_title
 		return release_title.split(match.group(), 1)[1]

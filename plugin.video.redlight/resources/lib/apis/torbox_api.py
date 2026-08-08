@@ -20,6 +20,22 @@ def _to_int(value, default=0):
 	except Exception: return default
 
 
+_public_ip_cache = {'ip': '', 'expires': 0}
+
+
+def _cached_public_ip():
+	'''Public IP rarely changes mid-session; avoid a fresh ipify round-trip on every resolve.
+	Failed lookups are not cached so the next resolve retries rather than going 30 min without a user_ip.'''
+	if _public_ip_cache['ip'] and time.time() < _public_ip_cache['expires']:
+		return _public_ip_cache['ip']
+	try: ip = requests.get('https://api.ipify.org', timeout=2).text.strip()
+	except Exception: ip = ''
+	if ip:
+		_public_ip_cache['ip'] = ip
+		_public_ip_cache['expires'] = time.time() + 1800
+	return ip
+
+
 def _device_auth_url(app_name, user_code):
 	return 'https://torbox.app/oauth/device?%s' % urlencode({'app': app_name, 'code': user_code})
 
@@ -531,11 +547,7 @@ class TorBoxAPI:
 	def requestdl_redirect_url(self, file_id):
 		'''TorBox permalink: Kodi follows redirect to a fresh CDN link (recommended for play).'''
 		try:
-			user_ip = ''
-			try:
-				user_ip = requests.get('https://api.ipify.org', timeout=2).text.strip()
-			except Exception:
-				pass
+			user_ip = _cached_public_ip()
 			torrent_id, file_id = str(file_id).split(',', 1)
 			params = {
 				'token': self.token,
@@ -568,11 +580,7 @@ class TorBoxAPI:
 	def unrestrict_link(self, file_id, max_attempts=12):
 		'''Retries with user_ip for search/magnet resolve.'''
 		try:
-			user_ip = ''
-			try:
-				user_ip = requests.get('https://api.ipify.org', timeout=2).text.strip()
-			except Exception:
-				pass
+			user_ip = _cached_public_ip()
 			torrent_id, file_id = str(file_id).split(',', 1)
 			params = {'token': self.token, 'torrent_id': _to_int(torrent_id), 'file_id': _to_int(file_id)}
 			if user_ip:
