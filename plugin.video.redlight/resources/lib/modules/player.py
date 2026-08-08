@@ -3,6 +3,7 @@ import os
 import xbmc
 import json
 import time
+import traceback
 from threading import Thread
 from apis.trakt_api import make_trakt_slug
 from caches.settings_cache import get_setting
@@ -311,7 +312,8 @@ class RedLightPlayer(xbmc.Player):
 					elif show_stinger and not self.movie_stingers_run: 
 						final_chapter = self._stinger_trigger_point(stinger_alert_timing, stingers_percentage_fallback)
 						if self.current_point >= final_chapter: self.run_movie_stingers()
-				except: pass
+				except Exception:
+					self._log_monitor_tick_error()
 				if not self.subs_searched: self.run_subtitles()
 			try:
 				_remaining = None
@@ -1074,11 +1076,41 @@ class RedLightPlayer(xbmc.Player):
 		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s%s' % (
 			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log, play_n_log))
 
-	def final_chapter(self, threshhold):
+	def _log_monitor_tick_error(self):
+		# monitor() ticks once per second; a persistent fault would otherwise write a
+		# traceback every second for the whole playback, so log each distinct one once
 		try:
-			final_chapter = float(ku.get_infolabel('Player.Chapters').split(',')[-1])
+			trace = traceback.format_exc()
+			seen = getattr(self, '_monitor_tick_errors', None)
+			if seen is None:
+				seen = self._monitor_tick_errors = set()
+			if trace in seen: return
+			seen.add(trace)
+			ku.logger('Red Light', 'monitor() tick failed: %s' % trace)
+		except Exception: pass
+
+	def _log_chapter_timing(self, message):
+		# monitor() calls final_chapter() once per second, so log each distinct
+		# reason once per playback rather than on every tick
+		if getattr(self, '_chapter_timing_logged', None) == message: return
+		self._chapter_timing_logged = message
+		ku.logger('Red Light', 'Chapter timing: %s' % message)
+
+	def final_chapter(self, threshhold):
+		# Player.Chapters is 'start1,end1,start2,end2,...' as percentages, built from
+		# chapter start marks only, so the last token is the final chapter's start.
+		# Empty means the item carries no chapter marks, not that the label is missing.
+		raw = ''
+		try:
+			raw = ku.get_infolabel('Player.Chapters')
+			if not raw:
+				self._log_chapter_timing('no chapter marks on this item; using percentage-based timing')
+				return None
+			final_chapter = float(raw.split(',')[-1])
 			if final_chapter >= threshhold: return final_chapter
-		except: pass
+			self._log_chapter_timing('final chapter starts at %.1f%%, below the %s%% threshold; using percentage-based timing' % (final_chapter, threshhold))
+		except Exception:
+			self._log_chapter_timing('could not parse Player.Chapters %r; using percentage-based timing' % raw)
 		return None
 
 	def _clear_subtitle_end_cache(self):
@@ -1331,6 +1363,8 @@ class RedLightPlayer(xbmc.Player):
 			self._intro_skip_last_curr = None
 			self._intro_skip_settle_ready = False
 			self._outro_credits_start_cached = '__unset__'
+			self._chapter_timing_logged = None
+			self._monitor_tick_errors = None
 
 	def _start_intro_skip_fetch(self):
 		play_type = getattr(self.sources_object, 'play_type', '')
