@@ -81,6 +81,8 @@ class TorBoxAPI:
 			parsed = self._safe_json(response)
 			if parsed is not None:
 				return parsed
+			if not response.ok:
+				return None
 			text = (response.text or '').strip()
 			return text if text else None
 		except Exception: return None
@@ -504,7 +506,7 @@ class TorBoxAPI:
 		return TorBoxAPI.filter_browse_cloud_files(file_items, extensions)
 
 	def _requestdl_url(self, response):
-		if isinstance(response, str) and response.strip():
+		if isinstance(response, str) and response.strip().lower().startswith('http'):
 			return response.strip()
 		if isinstance(response, dict) and response.get('success'):
 			data = response.get('data')
@@ -592,7 +594,7 @@ class TorBoxAPI:
 				url = self._requestdl_url(r)
 				if url:
 					return url
-				if isinstance(r, str) and r.strip():
+				if isinstance(r, str) and r.strip().lower().startswith('http'):
 					return r.strip()
 				if not r or not isinstance(r, dict) or not r.get('success'):
 					continue

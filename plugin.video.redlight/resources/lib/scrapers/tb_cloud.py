@@ -66,7 +66,11 @@ class source:
 						size = round(size_bytes / 1073741824, 2) if size_bytes else 0.0
 						size_label = '%.2f GB' % size if size_bytes else 'N/A'
 						file_dl = '%d,%d' % (int(item['folder_id']), int(file_id))
-						video_quality, details = source_utils.get_file_info(name_info=source_utils.release_info_format(file_name_latin))
+						folder_name_latin = normalize(item.get('folder_name') or '') or (item.get('folder_name') or '')
+						video_quality, details = source_utils.get_file_info(
+							name_info=source_utils.release_info_format(file_name_latin),
+							fallback_name_info=source_utils.release_info_format(folder_name_latin) if folder_name_latin else None,
+						)
 						source_item = {
 							'name': file_name, 'display_name': display_name, 'quality': video_quality, 'size': size,
 							'size_label': size_label, 'debrid': self.scrape_provider, 'extraInfo': details,
@@ -212,6 +216,7 @@ class source:
 					file_entry['id'] = file_id
 					file_entry['folder_id'] = folder_id
 					file_entry['cloud_media_type'] = media_type
+					file_entry['folder_name'] = raw_folder
 					folder_hits.append(file_entry)
 				if not folder_hits:
 					continue
