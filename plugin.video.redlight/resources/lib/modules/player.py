@@ -585,6 +585,8 @@ class RedLightPlayer(xbmc.Player):
 				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
 				Thread(target=self.run_media_progress, args=(watched_function, watched_params)).start()
+				if self.media_type == 'episode':
+					self._mark_combined_release_siblings_watched(watched_params)
 			else:
 				# Always stop Trakt live scrobble so Playing now clears. Below ~80% Trakt treats stop as pause + resume.
 				self._trakt_scrobble_stop(current_point)
@@ -596,6 +598,22 @@ class RedLightPlayer(xbmc.Player):
 					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
 									'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
 					Thread(target=self.run_media_progress, args=(ws.set_bookmark, progress_params)).start()
+		except: pass
+
+	def _mark_combined_release_siblings_watched(self, primary_watched_params):
+		"""A combined-file release (e.g. a S03E17E18 double episode in one file) only reports
+		its primary episode to watched_status. Mark every other same-season episode named in
+		the release's own filename watched too, so 'next episode' logic doesn't re-surface the
+		other half as unwatched."""
+		try:
+			from modules.source_utils import iter_season_episode_tokens
+			release_name = getattr(self, 'playing_filename', '') or ku.get_property('subs.player_filename')
+			if not release_name: return
+			for season, episode in iter_season_episode_tokens(release_name):
+				if season != self.season or episode == self.episode: continue
+				sibling_params = dict(primary_watched_params)
+				sibling_params['season'], sibling_params['episode'] = season, episode
+				Thread(target=self.run_media_progress, args=(ws.mark_episode, sibling_params)).start()
 		except: pass
 
 	def run_media_progress(self, function, params):
