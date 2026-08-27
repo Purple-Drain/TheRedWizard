@@ -9,7 +9,8 @@ from caches.settings_cache import get_setting
 from scrapers import external, folders
 from modules import debrid, kodi_utils, settings, metadata, watched_status
 from modules.player import RedLightPlayer
-from modules.source_utils import get_cache_expiry, make_alias_dict, include_exclude_filters, get_file_info, release_info_format, audio_lang_choices, matches_english_or_untagged
+from modules.source_utils import get_cache_expiry, make_alias_dict, include_exclude_filters, get_file_info, release_info_format, audio_lang_choices, matches_english_or_untagged, \
+								_normalize_release_title
 from modules.utils import clean_file_name, string_to_float, safe_string, remove_accents, get_datetime, append_module_to_syspath, manual_function_import
 # logger = kodi_utils.logger
 
@@ -32,6 +33,9 @@ PROP_NEXTEP_NATURAL_END = 'redlight.nextep_natural_end'
 PROP_AUTOSCRAPE_NEXTEP_READY = 'redlight.autoscrape_nextep_ready'
 PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS = 'redlight.random_continual_skip_attempts'
 RANDOM_CONTINUAL_MAX_SKIPS = 25
+# Combined double/triple-episode releases (one file covering several episodes) top out at a
+# handful in practice; this only bounds a pathological metadata loop, not a real use case.
+NEXTEP_DUPLICATE_FILE_MAX_SKIPS = 5
 _NEXTEP_NATURAL_END_SEC = 15
 _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
@@ -2664,11 +2668,61 @@ class Sources():
 		self.meta['watch_count'] = watch_count
 		return still_watching
 
+	def _nextep_duplicate_of_playing(self, results):
+		"""Detect a combined-episode release: the "next" episode's top source is literally the
+		same file as what's currently playing (e.g. a "SxxEyyEzz" release covering two episodes'
+		worth of content). Compares release names rather than trusting TMDb episode-group data,
+		since a combined file can exist with no assigned group at all."""
+		try:
+			candidate_name = (results[0] or {}).get('name') or ''
+			playing_name = kodi_utils.get_property('subs.player_filename') or ''
+			if not candidate_name or not playing_name: return False
+			return _normalize_release_title(candidate_name) == _normalize_release_title(playing_name)
+		except Exception:
+			return False
+
+	def _advance_past_duplicate_nextep(self):
+		"""The stashed 'next' episode turned out to be the file already playing -- it has no
+		content of its own to autoplay. Mark it watched (its content was just watched, embedded
+		in the prior file) and re-run next-episode prep for the episode after it, in place on
+		this same Sources instance. Bounded: a real combined release tops out at a handful of
+		episodes; anything past that is a metadata loop, not a real case."""
+		skips = getattr(self, '_nextep_duplicate_skips', 0) + 1
+		self._nextep_duplicate_skips = skips
+		if skips > NEXTEP_DUPLICATE_FILE_MAX_SKIPS:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: %s consecutive duplicate-file skips for %s, giving up' % (
+				NEXTEP_DUPLICATE_FILE_MAX_SKIPS, self.meta.get('title')))
+			return False
+		try:
+			watched_status.mark_episode({'season': self.season, 'episode': self.episode, 'title': self.meta.get('title'),
+										'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'tvdb_id': self.meta.get('tvdb_id'),
+										'from_playback': 'true', 'refresh': 'false'})
+		except Exception:
+			pass
+		try:
+			from modules.episode_tools import EpisodeTools
+			meta = dict(self.meta)
+			meta['season'], meta['episode'] = self.season, self.episode
+			url_params = EpisodeTools(meta, self.nextep_settings).next_episode_info()
+			if url_params in ('error', 'no_next_episode'):
+				return False
+			kodi_utils.logger('Red Light', 'Autoplay next episode: %s S%02dE%02d was the same file as current playback; '
+				'marked watched, advancing' % (self.meta.get('title'), self.season, self.episode))
+			self.playback_prep(url_params)
+			return True
+		except Exception as exc:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: advance-past-duplicate failed: %s' % exc)
+			return False
+
 	def _stash_nextep_autoplay_play(self, results):
 		if not results:
 			kodi_utils.logger('Red Light', 'Autoplay next episode scrape ready: no results for %s S%02dE%02d' % (
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')))
 			self._decline_nextep_prep('no results')
+			return
+		if self._nextep_duplicate_of_playing(results):
+			if not self._advance_past_duplicate_nextep():
+				self._decline_nextep_prep('duplicate file, no further episode')
 			return
 		if stash_nextep_autoplay_results(results, self.meta, self.nextep_settings, self.params):
 			kodi_utils.logger('Red Light', 'Autoplay next episode scrape ready: %s S%02dE%02d (%s results)' % (
