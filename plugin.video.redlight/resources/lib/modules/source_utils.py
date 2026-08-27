@@ -274,6 +274,12 @@ _CLOUD_SE_TOKEN_RE = re.compile(
 	r'(\d{1,2})x(\d{1,3})(?!\d)'
 	r')'
 )
+# Combined double-episode releases (e.g. "S03E15E16", "S03E15.E16", "S03E15-E16") repeat a bare
+# eNN after the first SxxEyy token with no season digit of its own. _CLOUD_SE_TOKEN_RE's finditer
+# only ever anchors on a season digit, so it stops after the first eNN and never sees the rest —
+# a combined file then matches a search for its first episode but not its second/third.
+_CLOUD_MULTI_EP_RUN_RE = re.compile(r's(\d{1,2})((?:[.-]?e[p]?[.-]?\d{1,3}(?!\d))+)')
+_CLOUD_EP_IN_RUN_RE = re.compile(r'e[p]?[.-]?(\d{1,3})(?!\d)')
 # Anime-style bare episode only when no Sxx/NxN token exists: "Show - 001 - Title", "Show - 255.mkv".
 _CLOUD_BARE_EP_RE = re.compile(r'(?:^|[.-])(\d{1,3})(?=[.-]|$)')
 _BARE_EP_BLOCKLIST = frozenset((480, 720, 1080, 2160))
@@ -284,18 +290,29 @@ def _normalize_release_title(release_title):
 def iter_season_episode_tokens(release_title):
 	"""Yield (season, episode) pairs from a release/file name, left to right."""
 	release_title = _normalize_release_title(release_title)
+	seen = set()
+	for run_match in _CLOUD_MULTI_EP_RUN_RE.finditer(release_title):
+		season = int(run_match.group(1))
+		for ep_match in _CLOUD_EP_IN_RUN_RE.finditer(run_match.group(2)):
+			pair = (season, int(ep_match.group(1)))
+			if pair not in seen:
+				seen.add(pair)
+				yield pair
 	for match in _CLOUD_SE_TOKEN_RE.finditer(release_title):
 		try:
 			if match.group(1) is not None:
-				yield int(match.group(1)), int(match.group(2))
+				pair = (int(match.group(1)), int(match.group(2)))
 			elif match.group(3) is not None:
-				yield int(match.group(3)), int(match.group(4))
+				pair = (int(match.group(3)), int(match.group(4)))
 			elif match.group(5) is not None:
-				yield int(match.group(5)), int(match.group(6))
+				pair = (int(match.group(5)), int(match.group(6)))
 			else:
-				yield int(match.group(7)), int(match.group(8))
+				pair = (int(match.group(7)), int(match.group(8)))
 		except Exception:
 			continue
+		if pair not in seen:
+			seen.add(pair)
+			yield pair
 
 def absolute_episode_from_season_data(season_data, season, episode):
 	"""Aired-order absolute episode for season-relative numbering (e.g. DBZ S09E02 → 255).
