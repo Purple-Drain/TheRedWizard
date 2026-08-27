@@ -479,12 +479,19 @@ def url_strip(url):
 		return title
 	except: return None
 
-def get_file_info(name_info=None, url=None, default_quality='SD'):
+def get_file_info(name_info=None, url=None, default_quality='SD', fallback_name_info=None):
 	title = None
 	if name_info: title = name_info
 	elif url: title = url_strip(url)
 	if not title: return 'SD', ''
-	quality = get_release_quality(title) or default_quality
+	# Season-pack files are often named plainly (e.g. "S03E10.mkv") while the
+	# torrent/release name that produced them carries the real quality tags
+	# (e.g. "...2160p.Blu-ray.Remux..."). Fall back to that before defaulting
+	# to SD, so a genuinely 4K file with a blank per-file name isn't badged SD.
+	quality = get_release_quality(title)
+	if not quality and fallback_name_info:
+		quality = get_release_quality(fallback_name_info)
+	quality = quality or default_quality
 	info = get_info(title)
 	return quality, info
 
