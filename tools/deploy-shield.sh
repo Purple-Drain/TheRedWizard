@@ -105,13 +105,38 @@ snapshot_userdata() {
 snapshot_userdata
 
 # --- Read webserver creds straight off the device, so nothing secret lives in
-# this repo. Used both to check what's playing and for the graceful Quit. ---
+# this repo. Used both to check what's playing and for the graceful Quit.
+#
+# ONE retried read of the whole file, parsed locally -- not five separate adb
+# shell round-trips. Each one is independently vulnerable to this Shield's
+# adb-over-wifi link dropping mid-command (seen repeatedly this session); five
+# independent single-shot reads meant a blip on ANY of them silently left
+# WS_ENABLED empty, which downgrades kodi_stop() to a hard force-stop with NO
+# warning that it happened -- confirmed happening for real on this script's
+# second deploy run. One retried read either gets the real settings or the
+# script says so explicitly, out loud, before it matters. ---
 GS="$KODI_USERDATA/guisettings.xml"
-WS_ENABLED=$(adb -s "$ADB_TARGET" shell "grep -oE '<setting id=\"services.webserver\">[^<]*' $GS 2>/dev/null | sed 's/.*>//'" | tr -d '\r')
-WS_PORT=$(adb -s "$ADB_TARGET" shell "grep -oE '<setting id=\"services.webserverport\"[^>]*>[^<]*' $GS 2>/dev/null | sed 's/.*>//'" | tr -d '\r'); WS_PORT="${WS_PORT:-8080}"
-WS_USER=$(adb -s "$ADB_TARGET" shell "grep -oE '<setting id=\"services.webserverusername\"[^>]*>[^<]*' $GS 2>/dev/null | sed 's/.*>//'" | tr -d '\r'); WS_USER="${WS_USER:-kodi}"
-WS_PASS=$(adb -s "$ADB_TARGET" shell "grep -oE '<setting id=\"services.webserverpassword\">[^<]*' $GS 2>/dev/null | sed 's/.*>//'" | tr -d '\r')
-WS_SSL=$(adb -s "$ADB_TARGET" shell "grep -oE '<setting id=\"services.webserverssl\">[^<]*' $GS 2>/dev/null | sed 's/.*>//'" | tr -d '\r')
+GS_CONTENT=""
+for attempt in 1 2 3; do
+  GS_CONTENT=$(adb -s "$ADB_TARGET" shell "cat '$GS' 2>/dev/null")
+  [ -n "$GS_CONTENT" ] && break
+  adb disconnect "$ADB_TARGET" >/dev/null 2>&1 || true
+  sleep 2
+  adb connect "$ADB_TARGET" >/dev/null 2>&1 || true
+done
+gs_field() {  # gs_field <setting-id> -> value, or empty
+  printf '%s' "$GS_CONTENT" | grep -oE "<setting id=\"$1\"[^>]*>[^<]*" | sed 's/.*>//' | tr -d '\r'
+}
+if [ -z "$GS_CONTENT" ]; then
+  echo "  WARNING: could not read guisettings.xml after 3 attempts -- treating webserver as unavailable, will hard force-stop" >&2
+  WS_ENABLED="false"; WS_PORT="8080"; WS_USER="kodi"; WS_PASS=""; WS_SSL="false"
+else
+  WS_ENABLED=$(gs_field services.webserver)
+  WS_PORT=$(gs_field services.webserverport); WS_PORT="${WS_PORT:-8080}"
+  WS_USER=$(gs_field services.webserverusername); WS_USER="${WS_USER:-kodi}"
+  WS_PASS=$(gs_field services.webserverpassword)
+  WS_SSL=$(gs_field services.webserverssl)
+fi
 JSONRPC_URL="http://${SHIELD_IP}:${WS_PORT}/jsonrpc"
 [ "$WS_SSL" = "true" ] && JSONRPC_URL="https://${SHIELD_IP}:${WS_PORT}/jsonrpc"
 
@@ -192,7 +217,9 @@ echo "  pushed and verified ${VERSION}."
 # --- Shut Kodi down gracefully; force-stop only as a last resort. ---
 kodi_stop() {
   local code
-  if [ "$WS_ENABLED" = "true" ]; then
+  if [ "$WS_ENABLED" != "true" ]; then
+    echo "  webserver reports disabled/unreachable -- force-stopping (no graceful Quit possible)." >&2
+  else
     echo "==> Asking Kodi to quit gracefully (JSON-RPC Application.Quit)"
     code=$(curl -sk -o /dev/null -w '%{http_code}' -m 6 -u "${WS_USER}:${WS_PASS}" \
       -X POST "$JSONRPC_URL" -H 'Content-Type: application/json' \
