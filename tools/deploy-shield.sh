@@ -165,6 +165,11 @@ jsonrpc() {  # jsonrpc '<json body>' -> prints response body
 # rather than guessing. ---
 RESUME_FILE=""
 RESUME_POS="0"
+RESUME_MODE=""       # 'redlight' (preferred) or 'raw' (fallback); set unconditionally --
+RESUME_TMDB=""       # set -u would abort on an unbound-variable read below otherwise,
+RESUME_MEDIA_TYPE="" # e.g. when WS_ENABLED is genuinely "false" (webserver disabled in
+RESUME_SEASON=""     # settings, not just unreachable) and the whole capture block below
+RESUME_EPISODE=""    # never runs at all.
 if [ "$WS_ENABLED" = "true" ]; then
   ACTIVE=""
   for attempt in 1 2 3; do
@@ -210,8 +215,6 @@ try:
   d=json.load(sys.stdin)['result']
   print(d[0]['playerid'] if d else '')
 except Exception: print('')")
-  RESUME_MODE=""       # 'redlight' (preferred) or 'raw' (fallback)
-  RESUME_TMDB=""; RESUME_MEDIA_TYPE=""; RESUME_SEASON=""; RESUME_EPISODE=""
   if [ -n "$PLAYERID" ]; then
     # Ask for enough to reconstruct a Redlight plugin:// play call (tmdb id +
     # season/episode), not just the resolved stream URL -- see the comment
@@ -295,6 +298,19 @@ kodi_stop() {
   if [ "$WS_ENABLED" != "true" ]; then
     echo "  webserver reports disabled/unreachable -- force-stopping (no graceful Quit possible)." >&2
   else
+    # Application.Quit tears down the whole process; it does not guarantee
+    # Redlight's own onPlayBackStopped handling (which writes the resume
+    # bookmark, in a background thread, possibly a network call to
+    # Trakt/Simkl/MDBList/PunchPlay) finishes first. An explicit Player.Stop
+    # goes through Kodi's normal stop lifecycle and gives that thread time to
+    # actually land the write before anything gets torn down -- without this,
+    # "graceful" shutdown can still lose the resume point exactly like a hard
+    # force-stop does.
+    if [ -n "${PLAYERID:-}" ]; then
+      echo "==> Stopping playback first (Player.Stop) so the resume bookmark saves"
+      jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.Stop\",\"params\":{\"playerid\":${PLAYERID}}}" >/dev/null
+      sleep 3
+    fi
     echo "==> Asking Kodi to quit gracefully (JSON-RPC Application.Quit)"
     # The Quit POST itself has hit transient HTTP 000 on this Shield's flaky
     # link (not just a slow response) -- retry the POST a few times before
@@ -350,7 +366,57 @@ if [ "$INSTALLED_VERSION" != "$VERSION" ]; then
   echo "  WARNING: expected ${VERSION}, device reports ${INSTALLED_VERSION:-nothing}" >&2
 fi
 
-# --- Resume whatever was playing before the restart. Best-effort either way.
+# --- Nothing was captured live before the restart (webserver was down at
+# that point, or genuinely nothing was playing) -- fall back to Redlight's
+# OWN persisted lists instead of giving up. These are independent of
+# anything captured pre-restart: "In Progress" refreshes from whatever
+# watched-status provider is active (confirmed: this device's is MDBList,
+# and get_in_progress_episodes() pulls fresh from its API when active), so
+# as long as Player.Stop above actually landed the bookmark, this finds it
+# here even though the live capture never ran. Falls further to "what's
+# next" if nothing is even in progress. Bounded timeout each -- a plugin
+# directory listing does real work (TMDb fetches etc.), seen taking a while
+# elsewhere this session; this must not hang the whole deploy over a nice-to-have. ---
+fallback_resume_lookup() {  # fallback_resume_lookup <plugin-directory> -> "tmdb season episode resume_secs title", or nothing
+  local resp
+  resp=$(curl -sk -m 25 -u "${WS_USER}:${WS_PASS}" -X POST "$JSONRPC_URL" -H 'Content-Type: application/json' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Files.GetDirectory\",\"params\":{\"directory\":\"$1\",\"media\":\"video\",\"properties\":[\"title\",\"showtitle\",\"season\",\"episode\",\"uniqueid\",\"resume\"]}}" 2>/dev/null)
+  [ -z "$resp" ] && return 1
+  python3 -c "
+import json
+try:
+    files = json.loads('''$resp''')['result']['files']
+    if not files: raise SystemExit(1)
+    f = files[0]
+    tmdb = (f.get('uniqueid') or {}).get('tmdb') or ''
+    season, episode = f.get('season'), f.get('episode')
+    resume = int((f.get('resume') or {}).get('position') or 0)
+    title = (f.get('showtitle') or f.get('title') or 'item').replace(' ', '_')
+    if not (tmdb and season not in (None, -1) and episode not in (None, -1)): raise SystemExit(1)
+    print(tmdb, season, episode, resume, title)
+except Exception:
+    raise SystemExit(1)
+" 2>/dev/null
+}
+if [ -z "$RESUME_MODE" ] && [ "$WS_ENABLED" = "true" ]; then
+  echo "==> Nothing captured live before the restart -- checking Redlight's own lists"
+  FALLBACK=$(fallback_resume_lookup "plugin://plugin.video.redlight/?mode=build_in_progress_episode")
+  FALLBACK_SOURCE="the most recent in-progress episode"
+  if [ -z "$FALLBACK" ]; then
+    FALLBACK=$(fallback_resume_lookup "plugin://plugin.video.redlight/?mode=build_next_episode")
+    FALLBACK_SOURCE="the next episode up (nothing was in progress)"
+  fi
+  if [ -n "$FALLBACK" ]; then
+    read -r RESUME_TMDB RESUME_SEASON RESUME_EPISODE RESUME_POS RESUME_TITLE <<< "$FALLBACK"
+    RESUME_MODE="redlight"; RESUME_MEDIA_TYPE="episode"
+    echo "  found via Redlight: ${RESUME_TITLE//_/ } -- ${FALLBACK_SOURCE}"
+  else
+    echo "  nothing found in Redlight's in-progress or next-episode lists either -- nothing to resume."
+  fi
+fi
+
+# --- Resume whatever was playing before the restart, OR found via the
+# fallback lookup above. Best-effort either way.
 #
 # Preferred path ('redlight' mode): re-open through Redlight's own plugin://
 # playback route (mode=playback.media, playback_key() is hardcoded to 'media'
