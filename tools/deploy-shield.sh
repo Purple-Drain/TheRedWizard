@@ -151,11 +151,48 @@ jsonrpc() {  # jsonrpc '<json body>' -> prints response body
 # option, which works regardless of what resolved it. Caveat: a debrid-signed
 # URL can expire before the restart completes; that's a best-effort resume,
 # not a guarantee, and we say so if it fails rather than silently doing
-# nothing. ---
+# nothing.
+#
+# Confirmed happening for real: on a run where the webserver was unreachable
+# for this ENTIRE check (not just flaky -- genuinely down for the run), the
+# single-shot GetActivePlayers call came back empty and the script proceeded
+# as if nothing were playing. It force-stopped Kodi mid-episode with nothing
+# captured and nothing to resume. The script's own output gave no sign this
+# happened differently from "nothing was playing" -- both look identical
+# unless this is made loud on purpose. Retry like everything else touching
+# this Shield's link, and if it STILL can't tell, say so unmissably and (when
+# run at an interactive terminal) require an explicit yes before continuing
+# rather than guessing. ---
 RESUME_FILE=""
 RESUME_POS="0"
 if [ "$WS_ENABLED" = "true" ]; then
-  ACTIVE=$(jsonrpc '{"jsonrpc":"2.0","id":1,"method":"Player.GetActivePlayers"}')
+  ACTIVE=""
+  for attempt in 1 2 3; do
+    ACTIVE=$(jsonrpc '{"jsonrpc":"2.0","id":1,"method":"Player.GetActivePlayers"}')
+    [ -n "$ACTIVE" ] && break
+    adb disconnect "$ADB_TARGET" >/dev/null 2>&1 || true
+    sleep 2
+    adb connect "$ADB_TARGET" >/dev/null 2>&1 || true
+  done
+  if [ -z "$ACTIVE" ]; then
+    echo >&2
+    echo "  ############################################################" >&2
+    echo "  # WARNING: could not reach Kodi's webserver to check for   #" >&2
+    echo "  # active playback, after 3 attempts. If something IS       #" >&2
+    echo "  # playing right now, restarting Kodi WILL interrupt it and #" >&2
+    echo "  # it will NOT be captured or resumed.                      #" >&2
+    echo "  ############################################################" >&2
+    echo >&2
+    if [ -t 0 ]; then
+      read -r -p "  Continue anyway? [y/N] " CONFIRM
+      case "$CONFIRM" in
+        y|Y|yes|YES) ;;
+        *) echo "  Aborting. Nothing was touched." >&2; exit 1 ;;
+      esac
+    else
+      echo "  Not an interactive terminal -- proceeding, but this was your warning." >&2
+    fi
+  fi
   PLAYERID=$(printf '%s' "$ACTIVE" | python3 -c "import sys,json
 try:
   d=json.load(sys.stdin)['result']
