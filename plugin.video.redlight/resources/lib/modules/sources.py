@@ -2672,10 +2672,14 @@ class Sources():
 		"""Detect a combined-episode release: the "next" episode's top source is literally the
 		same file as what's currently playing (e.g. a "SxxEyyEzz" release covering two episodes'
 		worth of content). Compares release names rather than trusting TMDb episode-group data,
-		since a combined file can exist with no assigned group at all."""
+		since a combined file can exist with no assigned group at all.
+
+		Deliberately reads 'redlight.now_playing_release', not 'subs.player_filename' -- the
+		latter is run through a subtitle-matching heuristic that can substitute a different
+		candidate string and silently break this comparison (#56)."""
 		try:
 			candidate_name = (results[0] or {}).get('name') or ''
-			playing_name = kodi_utils.get_property('subs.player_filename') or ''
+			playing_name = kodi_utils.get_property('redlight.now_playing_release') or ''
 			if not candidate_name or not playing_name: return False
 			return _normalize_release_title(candidate_name) == _normalize_release_title(playing_name)
 		except Exception:
