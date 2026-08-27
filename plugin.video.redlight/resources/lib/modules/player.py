@@ -1644,6 +1644,14 @@ class RedLightPlayer(xbmc.Player):
 					if self.playing_filename: ku.set_property('subs.player_filename', self.playing_filename)
 			elif self.playing_filename:
 				ku.set_property('subs.player_filename', self.playing_filename)
+			# Deliberately separate from subs.player_filename above: that property runs through
+			# _best_play_filename()'s subtitle-matching heuristic, which scores candidates by
+			# season/episode text match and can pick a different string out of playing_item than
+			# the literal source release name -- fine for subtitle search, wrong for anything that
+			# needs to know what file is actually playing (see sources.py's next-episode
+			# duplicate-file check).
+			if self.playing_filename:
+				ku.set_property('redlight.now_playing_release', self.playing_filename)
 		except: pass
 
 	def safe_stop(self):
@@ -1669,6 +1677,7 @@ class RedLightPlayer(xbmc.Player):
 			ku.clear_property('redlight.window_stack')
 		ku.clear_property('script.trakt.ids')
 		ku.clear_property('subs.player_filename')
+		ku.clear_property('redlight.now_playing_release')
 		try:
 			from indexers.subtitles import clear_active_subtitle_path
 			clear_active_subtitle_path()
