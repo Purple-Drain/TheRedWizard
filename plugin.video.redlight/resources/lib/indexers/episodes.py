@@ -122,7 +122,7 @@ def build_episode_list(params):
 				studios = list(studio) if isinstance(studio, tuple) else (studio or [])
 				info_tag = listitem.getVideoInfoTag(True)
 				info_tag.setMediaType('episode'), info_tag.setTitle(ep_name), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setGenres(genre)
-				info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot)
+				info_tag.setPlaycount(playcount), info_tag.setSeason(display_season), info_tag.setEpisode(display_episode), info_tag.setPlot(plot)
 				info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 				info_tag.setFirstAired(premiered), info_tag.setTvShowStatus(show_status)
 				info_tag.setCountries(country), info_tag.setTrailer(trailer), info_tag.setDirectors(item_get('director'))
