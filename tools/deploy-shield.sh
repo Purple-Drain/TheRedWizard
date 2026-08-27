@@ -175,6 +175,17 @@ if [ "$WS_ENABLED" = "true" ]; then
     adb connect "$ADB_TARGET" >/dev/null 2>&1 || true
   done
   if [ -z "$ACTIVE" ]; then
+    # JSON-RPC is down, but plain adb (what got us this far) doesn't need it --
+    # a screenshot is a real, independent signal a human (or whoever's running
+    # this) can actually look at before deciding, rather than guessing blind.
+    SCREENSHOT_PATH="${TMPDIR:-/tmp}/deploy-shield-playback-check.png"
+    if adb -s "$ADB_TARGET" shell screencap -p /sdcard/deploy_check.png >/dev/null 2>&1 \
+       && adb -s "$ADB_TARGET" pull /sdcard/deploy_check.png "$SCREENSHOT_PATH" >/dev/null 2>&1; then
+      adb -s "$ADB_TARGET" shell rm /sdcard/deploy_check.png >/dev/null 2>&1 || true
+      SCREENSHOT_NOTE="  A screenshot was saved to: ${SCREENSHOT_PATH}"
+    else
+      SCREENSHOT_NOTE="  (screenshot capture also failed -- adb link may be down too)"
+    fi
     echo >&2
     echo "  ############################################################" >&2
     echo "  # WARNING: could not reach Kodi's webserver to check for   #" >&2
@@ -182,6 +193,7 @@ if [ "$WS_ENABLED" = "true" ]; then
     echo "  # playing right now, restarting Kodi WILL interrupt it and #" >&2
     echo "  # it will NOT be captured or resumed.                      #" >&2
     echo "  ############################################################" >&2
+    echo "$SCREENSHOT_NOTE" >&2
     echo >&2
     if [ -t 0 ]; then
       read -r -p "  Continue anyway? [y/N] " CONFIRM
@@ -198,21 +210,47 @@ try:
   d=json.load(sys.stdin)['result']
   print(d[0]['playerid'] if d else '')
 except Exception: print('')")
+  RESUME_MODE=""       # 'redlight' (preferred) or 'raw' (fallback)
+  RESUME_TMDB=""; RESUME_MEDIA_TYPE=""; RESUME_SEASON=""; RESUME_EPISODE=""
   if [ -n "$PLAYERID" ]; then
-    ITEM=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.GetItem\",\"params\":{\"playerid\":${PLAYERID},\"properties\":[\"file\",\"title\"]}}")
+    # Ask for enough to reconstruct a Redlight plugin:// play call (tmdb id +
+    # season/episode), not just the resolved stream URL -- see the comment
+    # above. Falls back to the raw file+seek approach only when an item isn't
+    # Redlight-tagged (no tmdb uniqueid), e.g. played from somewhere else.
+    ITEM=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.GetItem\",\"params\":{\"playerid\":${PLAYERID},\"properties\":[\"file\",\"title\",\"showtitle\",\"season\",\"episode\",\"uniqueid\"]}}")
     PROPS=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.GetProperties\",\"params\":{\"playerid\":${PLAYERID},\"properties\":[\"time\",\"percentage\"]}}")
-    read -r RESUME_FILE RESUME_POS RESUME_TITLE <<PYOUT
+    read -r RESUME_MODE RESUME_FILE RESUME_TMDB RESUME_MEDIA_TYPE RESUME_SEASON RESUME_EPISODE RESUME_POS RESUME_TITLE <<PYOUT
 $(python3 -c "
 import json
 item = json.loads('''$ITEM''')['result']['item']
 props = json.loads('''$PROPS''')['result']
 t = props['time']
 secs = t['hours']*3600 + t['minutes']*60 + t['seconds']
-print(item.get('file',''), secs, item.get('title','').replace(' ','_') or 'playing_item')
+title = (item.get('showtitle') or item.get('title') or 'playing_item').replace(' ', '_')
+tmdb = (item.get('uniqueid') or {}).get('tmdb') or ''
+season, episode = item.get('season'), item.get('episode')
+fileurl = item.get('file') or '-'
+# '-' placeholders for unused fields -- bash 'read' collapses runs of
+# whitespace, so a printed EMPTY field (vs. a present-but-blank one) does not
+# survive as its own token and silently shifts every field after it.
+if tmdb and season not in (None, -1) and episode not in (None, -1):
+    print('redlight', fileurl, tmdb, 'episode', season, episode, secs, title)
+elif tmdb:
+    print('redlight', fileurl, tmdb, 'movie', '-', '-', secs, title)
+else:
+    print('raw', fileurl, '-', '-', '-', '-', secs, title)
 " 2>/dev/null)
 PYOUT
-    if [ -n "$RESUME_FILE" ]; then
-      echo "==> Currently playing: ${RESUME_TITLE//_/ } (${RESUME_POS}s in) -- will resume after deploy"
+    [ "$RESUME_FILE" = "-" ] && RESUME_FILE=""
+    [ "$RESUME_TMDB" = "-" ] && RESUME_TMDB=""
+    [ "$RESUME_SEASON" = "-" ] && RESUME_SEASON=""
+    [ "$RESUME_EPISODE" = "-" ] && RESUME_EPISODE=""
+    if [ -n "$RESUME_FILE" ] || [ "$RESUME_MODE" = "redlight" ]; then
+      if [ "$RESUME_MODE" = "redlight" ]; then
+        echo "==> Currently playing: ${RESUME_TITLE//_/ } (${RESUME_POS}s in, tmdb ${RESUME_TMDB}) -- will resume via Redlight after deploy"
+      else
+        echo "==> Currently playing: ${RESUME_TITLE//_/ } (${RESUME_POS}s in, not Redlight-tagged) -- will resume via raw URL after deploy"
+      fi
     fi
   fi
 fi
@@ -312,23 +350,40 @@ if [ "$INSTALLED_VERSION" != "$VERSION" ]; then
   echo "  WARNING: expected ${VERSION}, device reports ${INSTALLED_VERSION:-nothing}" >&2
 fi
 
-# --- Resume whatever was playing before the restart. Best-effort: a
-# debrid-signed URL can have expired in the meantime, in which case Kodi just
-# won't play it and we say so rather than pretending this always works.
+# --- Resume whatever was playing before the restart. Best-effort either way.
 #
-# Player.Open's "resume" option only resumes a stored LIBRARY bookmark -- it
-# does nothing for an ad-hoc file/URL item like this one (confirmed for real:
-# a prior run "resumed" but started from 0:00, silently ignoring the position
-# passed there). The actual mechanism for an ad-hoc item is Player.Open with
-# no resume option, THEN Player.Seek to an absolute time once a player exists
-# for it -- Global.Time, not a bare seconds integer. ---
-if [ -n "$RESUME_FILE" ]; then
-  echo "==> Resuming: ${RESUME_TITLE//_/ } at ${RESUME_POS}s"
-  RESULT=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.Open\",\"params\":{\"item\":{\"file\":$(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$RESUME_FILE")}}}")
+# Preferred path ('redlight' mode): re-open through Redlight's own plugin://
+# playback route (mode=playback.media, playback_key() is hardcoded to 'media'
+# in settings.py -- not user-configurable, so this isn't a guess) instead of
+# replaying the raw resolved stream URL. Redlight re-resolves the source
+# fresh, so a since-expired debrid-signed URL is a non-issue, and it goes
+# through the addon's own scrape/episode-group/watched-status machinery
+# rather than bypassing it. Falls back to the raw file only for a
+# non-Redlight-tagged item (no tmdb uniqueid on it).
+#
+# Either way, Player.Open's "resume" option only resumes a stored LIBRARY
+# bookmark -- it does nothing for an ad-hoc/plugin item (confirmed for real: a
+# prior run "resumed" but started from 0:00, silently ignoring the position
+# passed there). So both paths still finish with an explicit Player.Seek to
+# an absolute Global.Time once a player exists, as a safety net regardless of
+# whether Redlight's own resume prompt kicks in first. ---
+if [ "$RESUME_MODE" = "redlight" ] || [ "$RESUME_MODE" = "raw" ]; then
+  if [ "$RESUME_MODE" = "redlight" ]; then
+    if [ "$RESUME_MEDIA_TYPE" = "episode" ]; then
+      OPEN_ITEM="{\"file\":\"plugin://plugin.video.redlight/?mode=playback.media&media_type=episode&tmdb_id=${RESUME_TMDB}&season=${RESUME_SEASON}&episode=${RESUME_EPISODE}\"}"
+    else
+      OPEN_ITEM="{\"file\":\"plugin://plugin.video.redlight/?mode=playback.media&media_type=movie&tmdb_id=${RESUME_TMDB}\"}"
+    fi
+    echo "==> Resuming via Redlight: ${RESUME_TITLE//_/ } at ${RESUME_POS}s"
+  else
+    OPEN_ITEM="{\"file\":$(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$RESUME_FILE")}"
+    echo "==> Resuming raw URL: ${RESUME_TITLE//_/ } at ${RESUME_POS}s"
+  fi
+  RESULT=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.Open\",\"params\":{\"item\":${OPEN_ITEM}}}")
   case "$RESULT" in
     *'"result":"OK"'*)
       RESUME_PLAYERID=""
-      for _ in $(seq 1 15); do
+      for _ in $(seq 1 20); do
         ACTIVE2=$(jsonrpc '{"jsonrpc":"2.0","id":1,"method":"Player.GetActivePlayers"}')
         RESUME_PLAYERID=$(printf '%s' "$ACTIVE2" | python3 -c "import sys,json
 try:
@@ -348,10 +403,16 @@ except Exception: print('')")
       elif [ -n "$RESUME_PLAYERID" ]; then
         echo "  resumed (near the start, no seek needed)."
       else
-        echo "  WARNING: opened but no active player found to seek -- it's playing from 0:00" >&2
+        echo "  WARNING: opened but no active player found to seek within 20s -- check it manually" >&2
       fi
       ;;
-    *) echo "  WARNING: resume call did not confirm OK (link may have expired) -- resume manually if needed" >&2 ;;
+    *)
+      if [ "$RESUME_MODE" = "redlight" ]; then
+        echo "  WARNING: Redlight resume call did not confirm OK -- resume manually if needed" >&2
+      else
+        echo "  WARNING: resume call did not confirm OK (link may have expired) -- resume manually if needed" >&2
+      fi
+      ;;
   esac
 fi
 
