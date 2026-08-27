@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 from operator import itemgetter
+from caches.episode_groups_cache import episode_groups_cache
 from caches.meta_cache import meta_cache
 from apis.tmdb_api import movie_details, tvshow_details, season_episodes_details, movie_set_details, movie_external_id, tvshow_external_id, \
 								episode_groups_data, episode_group_details
+from modules import settings
 from modules.utils import jsondate_to_datetime, subtract_dates
 # from modules.kodi_utils import logger
 
@@ -466,6 +468,19 @@ def preferred_episode_group(groups, prefer_name=None):
 
 def group_details(group_id):
 	return episode_group_details(group_id)
+
+def resolve_assigned_episode_group(tmdb_id):
+	"""A show's active TMDb episode group: an explicit assignment, or (opted in) the anime
+	Seasons-order fallback -- the same resolution sources.check_episode_group() uses for
+	scrape remapping. Returns TMDb group details, or None if neither applies."""
+	group_info = episode_groups_cache.get(tmdb_id)
+	if not group_info and settings.anime_seasons_episode_group_fallback() and is_anime_check(tmdb_id=tmdb_id):
+		groups = episode_groups(tmdb_id)
+		if groups:
+			group_info = preferred_episode_group(groups, prefer_name='seasons')
+	if not group_info:
+		return None
+	return group_details(group_info['id'])
 
 def group_episode_data(details, episode_id=None, season_number=None, episode_number=None):
 	def _comparer(episode_item):

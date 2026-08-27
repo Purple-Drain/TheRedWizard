@@ -5,7 +5,6 @@ import pickle
 import time
 from threading import Thread, current_thread
 from windows.base_window import open_window, create_window
-from caches.episode_groups_cache import episode_groups_cache
 from caches.settings_cache import get_setting
 from scrapers import external, folders
 from modules import debrid, kodi_utils, settings, metadata, watched_status
@@ -427,17 +426,11 @@ class Sources():
 	def check_episode_group(self):
 		try:
 			if any([self.custom_season, self.custom_episode]) or 'skip_episode_group_check' in self.params: return
-			group_info = episode_groups_cache.get(self.tmdb_id)
-			# Opt-in: anime with no assigned group — prefer TMDb "Seasons", else Original Air Date.
-			# Does not write to episode_groups_cache — only an explicit Assign Episode Group persists.
-			if not group_info and settings.anime_seasons_episode_group_fallback() and metadata.is_anime_check(tmdb_id=self.tmdb_id):
-				groups = metadata.episode_groups(self.tmdb_id)
-				if groups:
-					group_info = metadata.preferred_episode_group(groups, prefer_name='seasons')
-			if not group_info: return
-			group_details = metadata.group_episode_data(metadata.group_details(group_info['id']), self.episode_id, self.season, self.episode)
-			if group_details:
-				self.custom_season, self.custom_episode, self.episode_group_used = group_details['season'], group_details['episode'], True
+			group_details = metadata.resolve_assigned_episode_group(self.tmdb_id)
+			if not group_details: return
+			episode_data = metadata.group_episode_data(group_details, self.episode_id, self.season, self.episode)
+			if episode_data:
+				self.custom_season, self.custom_episode, self.episode_group_used = episode_data['season'], episode_data['episode'], True
 				self.episode_group_label = '[B]CUSTOM GROUP: S%02dE%02d[/B]' % (self.custom_season, self.custom_episode)
 		except: self.custom_season, self.custom_episode = None, None
 

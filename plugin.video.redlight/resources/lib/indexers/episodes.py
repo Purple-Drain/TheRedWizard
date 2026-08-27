@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
 from modules import kodi_utils, settings, watched_status as ws
-from modules.metadata import tvshow_meta, episodes_meta, all_episodes_meta
+from modules.metadata import tvshow_meta, episodes_meta, all_episodes_meta, resolve_assigned_episode_group, group_episode_data
 from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool, datetime_workaround
 from datetime import timedelta
 # logger = kodi_utils.logger
@@ -81,8 +81,12 @@ def build_episode_list(params):
 				if not duration:
 					duration = show_duration
 					item['duration'] = duration
-				str_episode_zfill2 = str(episode).zfill(2)
-				seas_ep = '%sx%s. ' % (season, str_episode_zfill2)
+				if group_details and not season_special:
+					mapped = group_episode_data(group_details, episode_id, season, episode)
+				else: mapped = None
+				display_season, display_episode = (mapped['season'], mapped['episode']) if mapped else (season, episode)
+				str_episode_zfill2 = str(display_episode).zfill(2)
+				seas_ep = '%sx%s. ' % (display_season, str_episode_zfill2)
 				if not episode_date or current_date < episode_date:
 					display, unaired = '[COLOR red][I]%s%s[/I][/COLOR]' % (seas_ep, ep_name), True
 					item['title'] = display
@@ -162,6 +166,8 @@ def build_episode_list(params):
 	mpaa, trailer, genre, studio, country = meta_get('mpaa'), str(meta_get('trailer')), meta_get('genre'), meta_get('studio'), meta_get('country')
 	cast = meta_get('short_cast', []) or meta_get('cast', []) or []
 	season = params['season']
+	try: group_details = resolve_assigned_episode_group(tmdb_id)
+	except: group_details = None
 	if rpdb_api_key:
 		try: show_poster = meta_get('rpdb_poster') % rpdb_api_key + rpdb_format
 		except: show_poster = meta_get('poster') or poster_empty
