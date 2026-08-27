@@ -157,11 +157,37 @@ fi
 
 # --- Push the new addon, clearing __pycache__ first so a stale .pyc never
 # shadows a changed .py (a running Kodi process holds the old module in
-# memory regardless, hence the restart below). ---
+# memory regardless, hence the restart below).
+#
+# This adb-over-wifi link has dropped mid-command repeatedly in practice
+# ("adb: device offline" / "error: closed") -- retry with a reconnect between
+# attempts, and HARD-FAIL the whole deploy if the push never lands. Silently
+# continuing to restart Kodi on a failed/partial push means "successfully"
+# redeploying the OLD version -- confirmed happening for real: a prior run of
+# this script did exactly that (device offline mid-push, script pressed on,
+# post-restart version check caught it after the fact). Better to stop here
+# than restart Kodi for nothing. ---
 echo "==> Pushing ${ADDON_ID} to ${KODI_ADDON_DIR}"
-adb -s "$ADB_TARGET" shell "find '$KODI_ADDON_DIR' -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null; echo done" >/dev/null
-adb -s "$ADB_TARGET" push "$WORKDIR/extracted/$ADDON_ID/." "$KODI_ADDON_DIR" >/dev/null
-echo "  pushed."
+PUSH_OK=0
+for attempt in 1 2 3 4 5; do
+  if adb -s "$ADB_TARGET" shell "find '$KODI_ADDON_DIR' -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null; echo done" >/dev/null 2>&1 \
+     && adb -s "$ADB_TARGET" push "$WORKDIR/extracted/$ADDON_ID/." "$KODI_ADDON_DIR" >/dev/null 2>&1; then
+    PUSH_OK=1
+    break
+  fi
+  echo "  push attempt ${attempt} failed (adb link drop?) -- reconnecting and retrying" >&2
+  adb disconnect "$ADB_TARGET" >/dev/null 2>&1 || true
+  sleep 2
+  adb connect "$ADB_TARGET" >/dev/null 2>&1 || true
+  adb -s "$ADB_TARGET" wait-for-device >/dev/null 2>&1 || true
+done
+[ "$PUSH_OK" = "1" ] || { echo "  ABORTING: could not push ${ADDON_ID} after 5 attempts. Kodi was NOT touched." >&2; exit 1; }
+# Verify the push actually landed the right content before going anywhere near
+# a restart -- push can exit 0 having transferred a partial tree if the link
+# drops mid-transfer.
+PUSHED_VERSION=$(adb -s "$ADB_TARGET" shell "grep -m1 -oE 'version=\"[^\"]*\"' '$KODI_ADDON_DIR/addon.xml'" 2>/dev/null | sed 's/version="//;s/"//' | tr -d '\r')
+[ "$PUSHED_VERSION" = "$VERSION" ] || { echo "  ABORTING: pushed but device now reports '${PUSHED_VERSION:-nothing}', expected ${VERSION}. Kodi was NOT restarted." >&2; exit 1; }
+echo "  pushed and verified ${VERSION}."
 
 # --- Shut Kodi down gracefully; force-stop only as a last resort. ---
 kodi_stop() {
