@@ -216,22 +216,31 @@ echo "  pushed and verified ${VERSION}."
 
 # --- Shut Kodi down gracefully; force-stop only as a last resort. ---
 kodi_stop() {
-  local code
+  local code attempt quit_confirmed
   if [ "$WS_ENABLED" != "true" ]; then
     echo "  webserver reports disabled/unreachable -- force-stopping (no graceful Quit possible)." >&2
   else
     echo "==> Asking Kodi to quit gracefully (JSON-RPC Application.Quit)"
-    code=$(curl -sk -o /dev/null -w '%{http_code}' -m 6 -u "${WS_USER}:${WS_PASS}" \
-      -X POST "$JSONRPC_URL" -H 'Content-Type: application/json' \
-      -d '{"jsonrpc":"2.0","id":1,"method":"Application.Quit"}' 2>/dev/null || true)
-    if [ "$code" = "200" ]; then
-      for _ in $(seq 1 15); do
+    # The Quit POST itself has hit transient HTTP 000 on this Shield's flaky
+    # link (not just a slow response) -- retry the POST a few times before
+    # giving up on graceful shutdown, not just once with a short timeout.
+    quit_confirmed=0
+    for attempt in 1 2 3; do
+      code=$(curl -sk -o /dev/null -w '%{http_code}' -m 10 -u "${WS_USER}:${WS_PASS}" \
+        -X POST "$JSONRPC_URL" -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"Application.Quit"}' 2>/dev/null || true)
+      [ "$code" = "200" ] && { quit_confirmed=1; break; }
+      echo "  Quit POST attempt ${attempt} got HTTP ${code:-none}; retrying" >&2
+      sleep 2
+    done
+    if [ "$quit_confirmed" = "1" ]; then
+      for _ in $(seq 1 30); do
         [ -z "$(adb -s "$ADB_TARGET" shell pidof org.xbmc.kodi 2>/dev/null | tr -d '\r')" ] && { echo "  Kodi exited cleanly."; return 0; }
         sleep 1
       done
-      echo "  Quit didn't complete in time; falling back to force-stop." >&2
+      echo "  Quit didn't complete in 30s; falling back to force-stop." >&2
     else
-      echo "  JSON-RPC unavailable (HTTP ${code:-none}); falling back to force-stop." >&2
+      echo "  JSON-RPC unavailable after 3 attempts; falling back to force-stop." >&2
     fi
   fi
   adb -s "$ADB_TARGET" shell am force-stop org.xbmc.kodi
@@ -268,12 +277,43 @@ fi
 
 # --- Resume whatever was playing before the restart. Best-effort: a
 # debrid-signed URL can have expired in the meantime, in which case Kodi just
-# won't play it and we say so rather than pretending this always works. ---
+# won't play it and we say so rather than pretending this always works.
+#
+# Player.Open's "resume" option only resumes a stored LIBRARY bookmark -- it
+# does nothing for an ad-hoc file/URL item like this one (confirmed for real:
+# a prior run "resumed" but started from 0:00, silently ignoring the position
+# passed there). The actual mechanism for an ad-hoc item is Player.Open with
+# no resume option, THEN Player.Seek to an absolute time once a player exists
+# for it -- Global.Time, not a bare seconds integer. ---
 if [ -n "$RESUME_FILE" ]; then
   echo "==> Resuming: ${RESUME_TITLE//_/ } at ${RESUME_POS}s"
-  RESULT=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.Open\",\"params\":{\"item\":{\"file\":$(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$RESUME_FILE")},\"options\":{\"resume\":${RESUME_POS}}}}")
+  RESULT=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.Open\",\"params\":{\"item\":{\"file\":$(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$RESUME_FILE")}}}")
   case "$RESULT" in
-    *'"result":"OK"'*) echo "  resumed." ;;
+    *'"result":"OK"'*)
+      RESUME_PLAYERID=""
+      for _ in $(seq 1 15); do
+        ACTIVE2=$(jsonrpc '{"jsonrpc":"2.0","id":1,"method":"Player.GetActivePlayers"}')
+        RESUME_PLAYERID=$(printf '%s' "$ACTIVE2" | python3 -c "import sys,json
+try:
+  d=json.load(sys.stdin)['result']
+  print(d[0]['playerid'] if d else '')
+except Exception: print('')")
+        [ -n "$RESUME_PLAYERID" ] && break
+        sleep 1
+      done
+      if [ -n "$RESUME_PLAYERID" ] && [ "$RESUME_POS" -gt 5 ] 2>/dev/null; then
+        H=$((RESUME_POS / 3600)); M=$(((RESUME_POS % 3600) / 60)); S=$((RESUME_POS % 60))
+        SEEK=$(jsonrpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"Player.Seek\",\"params\":{\"playerid\":${RESUME_PLAYERID},\"value\":{\"hours\":${H},\"minutes\":${M},\"seconds\":${S},\"milliseconds\":0}}}")
+        case "$SEEK" in
+          *'"error"'*) echo "  WARNING: playing, but seek to ${RESUME_POS}s failed -- it's at 0:00, seek manually" >&2 ;;
+          *) echo "  resumed at ${RESUME_POS}s." ;;
+        esac
+      elif [ -n "$RESUME_PLAYERID" ]; then
+        echo "  resumed (near the start, no seek needed)."
+      else
+        echo "  WARNING: opened but no active player found to seek -- it's playing from 0:00" >&2
+      fi
+      ;;
     *) echo "  WARNING: resume call did not confirm OK (link may have expired) -- resume manually if needed" >&2 ;;
   esac
 fi
