@@ -601,13 +601,21 @@ def get_next_episodes(nextep_content, watched_indicators=None):
 	return data
 
 def _group_filtered_episode_numbers(tmdb_id, season_number, raw_numbers):
-	"""Raw episode numbers for a season, minus any with no entry in the show's assigned TMDb
-	episode group (e.g. the dropped half of a combined-file release). No-op when no group is
-	assigned or the show has no numbers that the group omits."""
+	"""Raw episode numbers for a season, minus any the show's assigned TMDb episode group
+	relocates into its Specials bucket (group season 0) -- TMDb's own signal that an entry
+	isn't a normal numbered episode there, e.g. the half of a combined-file release the group
+	folds away. A raw episode with no group entry at all, or one the group merely reorders into
+	a different regular season, is left alone -- only an explicit Specials relocation counts.
+	No-op when no group is assigned."""
 	try:
 		group_details = metadata.resolve_assigned_episode_group(tmdb_id)
 		if not group_details: return raw_numbers
-		return [n for n in raw_numbers if metadata.group_episode_data(group_details, season_number=season_number, episode_number=n)]
+		kept = []
+		for n in raw_numbers:
+			mapped = metadata.group_episode_data(group_details, season_number=season_number, episode_number=n)
+			if mapped and mapped.get('season') == 0: continue
+			kept.append(n)
+		return kept
 	except Exception:
 		return raw_numbers
 
