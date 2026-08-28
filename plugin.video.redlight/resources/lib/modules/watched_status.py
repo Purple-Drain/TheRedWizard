@@ -600,12 +600,25 @@ def get_next_episodes(nextep_content, watched_indicators=None):
 	data.sort(key=lambda x: (x['last_played']), reverse=True)
 	return data
 
+def _group_filtered_episode_numbers(tmdb_id, season_number, raw_numbers):
+	"""Raw episode numbers for a season, minus any with no entry in the show's assigned TMDb
+	episode group (e.g. the dropped half of a combined-file release). No-op when no group is
+	assigned or the show has no numbers that the group omits."""
+	try:
+		group_details = metadata.resolve_assigned_episode_group(tmdb_id)
+		if not group_details: return raw_numbers
+		return [n for n in raw_numbers if metadata.group_episode_data(group_details, season_number=season_number, episode_number=n)]
+	except Exception:
+		return raw_numbers
+
 def _season_episode_numbers(meta, season_number):
-	"""Actual TMDb episode numbers for a season (supports absolute numbering e.g. One Piece S23E1170)."""
+	"""Actual TMDb episode numbers for a season (supports absolute numbering e.g. One Piece S23E1170),
+	filtered against the show's assigned episode group, if any."""
 	try:
 		from modules.metadata import episodes_meta
 		eps = episodes_meta(season_number, meta) or []
-		return sorted({int(e['episode']) for e in eps if e.get('episode') not in (None, '')})
+		nums = sorted({int(e['episode']) for e in eps if e.get('episode') not in (None, '')})
+		return _group_filtered_episode_numbers(meta.get('tmdb_id'), season_number, nums)
 	except Exception:
 		return []
 
