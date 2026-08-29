@@ -84,6 +84,12 @@ def build_episode_list(params):
 				if group_details and not season_special:
 					mapped = group_episode_data(group_details, episode_id, season, episode)
 				else: mapped = None
+				# The group relocated this raw episode OUT of its regular season INTO Specials -- TMDb's own
+				# signal it isn't a numbered episode here anymore (e.g. the folded-away half of a combined-file
+				# release). Hide it, matching watched_status._group_filtered_episode_numbers(). mapped is None
+				# when the raw episode has no group entry at all (leave alone, fall back to raw numbering), and
+				# the guard above already skips Specials' own listing, so a special can't filter itself out.
+				if mapped and mapped.get('season') == 0: continue
 				display_season, display_episode = (mapped['season'], mapped['episode']) if mapped else (season, episode)
 				str_episode_zfill2 = str(display_episode).zfill(2)
 				seas_ep = '%sx%s. ' % (display_season, str_episode_zfill2)
