@@ -3,7 +3,8 @@ import sys
 from modules import kodi_utils, settings
 from modules.metadata import tvshow_meta
 from modules.utils import get_datetime, adjust_premiered_date, TaskPool
-from modules.watched_status import get_database, watched_info_season, get_watched_status_season, get_progress_status_season, count_aired_episodes
+from modules.watched_status import (get_database, watched_info_season, get_watched_status_season, get_progress_status_season, count_aired_episodes,
+									group_relocated_episodes)
 # logger = kodi_utils.logger
 
 def build_season_list(params):
@@ -36,6 +37,9 @@ def build_season_list(params):
 					else: title = 'Specials'
 				else:
 					if season_number < total_seasons:
+						# Drop episodes the assigned group moved into Specials -- build_episode_list()
+						# no longer lists them, so counting them strands the season short of complete.
+						aired_eps = max(aired_eps - relocated_per_season.get(season_number, 0), 0)
 						episode_count += aired_eps
 					else:
 						# Current/latest season: count by premiered date (same as episode unaired colour).
@@ -110,6 +114,9 @@ def build_season_list(params):
 	else:
 		season_data = [i for i in season_data if not i['season_number'] == 0]
 		season_data.sort(key=lambda k: k['season_number'])
+	relocated_per_season = {}
+	for relocated_season, _ in group_relocated_episodes(tmdb_id):
+		relocated_per_season[relocated_season] = relocated_per_season.get(relocated_season, 0) + 1
 	watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
 	if watched_indicators == 2 and settings.simkl_user_active():
 		from apis.simkl_api import simkl_sync_activities

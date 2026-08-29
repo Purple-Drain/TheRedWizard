@@ -94,6 +94,29 @@ def _schedule_playback_widget_refresh(from_playback):
 		from modules.kodi_utils import schedule_playback_widget_refresh
 		schedule_playback_widget_refresh()
 
+def group_relocated_episodes(tmdb_id):
+	"""Raw (season, episode) pairs the show's assigned TMDb episode group relocates OUT of a
+	regular season INTO its Specials bucket (group season 0) -- exactly the episodes
+	build_episode_list() hides, so episode totals stop counting rows the user can no longer see.
+
+	Built once as a set rather than probing the group per episode, since callers filter whole
+	seasons. Raw Specials (season 0) are excluded: an entry that was already special isn't being
+	relocated out of anything. Empty set when no group is assigned, so every other show is a no-op.
+	"""
+	relocated = set()
+	try:
+		group_details = metadata.resolve_assigned_episode_group(tmdb_id)
+		if not group_details: return relocated
+		for group in group_details.get('groups', []):
+			if group.get('order') != 0: continue
+			for episode in group.get('episodes', []):
+				season_number, episode_number = episode.get('season_number'), episode.get('episode_number')
+				if season_number in (None, 0) or episode_number is None: continue
+				relocated.add((int(season_number), int(episode_number)))
+	except Exception:
+		return set()
+	return relocated
+
 def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None):
 	"""Count episodes that have aired using the same premiered rules as episode lists.
 
@@ -113,11 +136,18 @@ def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None
 		seasons = sorted({int(i.get('season_number', 0)) for i in season_data
 			if i.get('season_number') is not None and not (exclude_specials and int(i.get('season_number', 0)) == 0)})
 	count = 0
+	relocated = group_relocated_episodes(meta.get('tmdb_id'))
 	for snum in seasons:
 		if exclude_specials and snum == 0: continue
 		try: eps = episodes_meta(snum, meta) or []
 		except Exception: eps = []
 		for ep in eps:
+			if relocated:
+				# Don't count an episode the assigned group moved into Specials -- it's no longer
+				# listed in this season, so counting it would leave the season short of complete.
+				try:
+					if (snum, int(ep.get('episode'))) in relocated: continue
+				except Exception: pass
 			premiered = ep.get('premiered')
 			if not premiered: continue
 			try:
