@@ -88,6 +88,12 @@ class RedLightPlayer(xbmc.Player):
 				except:
 					pass
 				self._register_active_playback()
+				# Confirmed playback only, so failed resolves don't create entries. No-op unless
+				# the user turned the playback log on.
+				try:
+					from modules.playback_log import log_playback
+					log_playback(self)
+				except Exception: pass
 				self.monitor()
 			else:
 				self.sources_object.playback_successful = self.playback_successful

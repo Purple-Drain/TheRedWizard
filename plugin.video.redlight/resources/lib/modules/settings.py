@@ -502,6 +502,14 @@ def show_specials():
 def exclude_specials_from_progress():
 	return get_setting('redlight.exclude_specials_progress', 'true') == 'true'
 
+def playback_log_enabled():
+	return get_setting('redlight.playback_log', 'false') == 'true'
+
+def playback_log_include_links():
+	"""Write the full resolved URL rather than a redacted one. Off by default: debrid links
+	carry an API token or account-scoped id, and the log file can be copied off the device."""
+	return get_setting('redlight.playback_log_links', 'false') == 'true'
+
 def single_ep_unwatched_episodes():
 	return get_setting('redlight.single_ep_unwatched_episodes', 'false') == 'true'
 
