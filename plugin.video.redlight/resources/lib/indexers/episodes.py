@@ -6,6 +6,27 @@ from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day,
 from datetime import timedelta
 # logger = kodi_utils.logger
 
+def _group_display_numbers(tmdb_id, season, episode, episode_id, group_cache):
+	"""Season/episode as the show's assigned TMDb episode group numbers them, for DISPLAY only.
+
+	Playback, watched status and scrape params stay on raw TMDb numbering -- the same split
+	build_episode_list() already uses, since the watched table and scrapers are raw-keyed.
+	Returns None when no group applies, so callers fall back to the raw numbers unchanged.
+
+	Unlike build_episode_list(), which renders one show, each widget row is a different show,
+	so group details are memoised per tmdb_id here rather than resolved once per list.
+	"""
+	if not tmdb_id or season == 0: return None
+	try:
+		if tmdb_id not in group_cache:
+			try: group_cache[tmdb_id] = resolve_assigned_episode_group(tmdb_id)
+			except Exception: group_cache[tmdb_id] = None
+		group_details = group_cache[tmdb_id]
+		if not group_details: return None
+		return group_episode_data(group_details, episode_id, season, episode)
+	except Exception:
+		return None
+
 def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	"""Use Trakt/MDBList air date for calendar label + sort (not TMDb premiered).
 
@@ -291,10 +312,12 @@ def build_single_episode(list_type, params={}):
 				poster_path = next((i['poster_path'] for i in season_data if i['season_number'] == int(season)), None)
 				season_poster = 'https://image.tmdb.org/t/p/w780%s' % poster_path if poster_path is not None else show_poster
 			except: season_poster = show_poster
-			str_episode_zfill2 = str(episode).zfill(2)
+			mapped = _group_display_numbers(tmdb_id, season, episode, episode_id, group_cache)
+			display_season, display_episode = (mapped['season'], mapped['episode']) if mapped else (season, episode)
+			str_episode_zfill2 = str(display_episode).zfill(2)
 			if display_format == 0: title_str = '%s - ' % title
 			else: title_str = ''
-			if display_format in (0, 1): seas_ep = '%sx%s. ' % (str(season), str_episode_zfill2)
+			if display_format in (0, 1): seas_ep = '%sx%s. ' % (str(display_season), str_episode_zfill2)
 			else: seas_ep = ''
 			if not list_type_starts_with('next_'):
 				playcount = ws.get_watched_status_episode(watched_info, (season, episode))
@@ -409,7 +432,7 @@ def build_single_episode(list_type, params={}):
 			elif not studio: studio = []
 			info_tag = listitem.getVideoInfoTag(True)
 			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display_title), info_tag.setGenres(genre)
-			info_tag.setPlaycount(playcount), info_tag.setSeason(season), info_tag.setEpisode(episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
+			info_tag.setPlaycount(playcount), info_tag.setSeason(display_season), info_tag.setEpisode(display_episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
 			info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
 			info_tag.setCountries(meta_get('country', [])), info_tag.setTrailer(trailer), info_tag.setTvShowStatus(show_status)
 			info_tag.setStudios(studio), info_tag.setWriters(item_get('writer')), info_tag.setDirectors(item_get('director'))
@@ -436,7 +459,7 @@ def build_single_episode(list_type, params={}):
 				'redlight.tmdb_manager_params': tmdb_manager_params,
 				'redlight.favorites_manager_params': favorites_manager_params
 				})
-			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(season), str_episode_zfill2),
+			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(display_season), str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
 		except Exception as e:
 			# Silent drops blank calendars/next-ep lists; log so meta/InfoTag failures are visible.
@@ -472,6 +495,7 @@ def build_single_episode(list_type, params={}):
 	unwatched_in_title = settings.single_ep_unwatched_in_title()
 	hide_watched = is_external and settings.widget_hide_watched() and list_type != 'episode.recently_watched'
 	api_key, mpaa_region_value = settings.tmdb_api_key(), settings.mpaa_region()
+	group_cache = {}
 	cm_sort_order, ignore_articles = settings.cm_sort_order(), settings.ignore_articles()
 	custom_cm_menu = cm_sort_order != settings.cm_default_order()
 	rpdb_info = settings.rpdb_info('tvshow')
