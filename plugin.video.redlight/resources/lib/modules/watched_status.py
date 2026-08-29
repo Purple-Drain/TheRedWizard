@@ -169,11 +169,22 @@ def progress_aired_eps(meta):
 			return count_aired_episodes(meta)
 		except Exception:
 			return total
-	if not settings.exclude_specials_from_progress(): return total
+	# Ended/Canceled shells below count raw TMDb episode_count, so subtract the episodes the
+	# assigned group moved into Specials -- the season list already excludes them, and leaving
+	# them in here made a show read e.g. "22 of 180" against seasons that only summed to 171.
+	relocated = group_relocated_episodes(meta.get('tmdb_id'))
+	def _minus_relocated(value, last_s=None, last_e=None):
+		"""Drop relocated episodes from a raw total. Bounded by (last_s, last_e) when the caller
+		only counted through the last aired episode, so nothing outside that range is subtracted."""
+		if not relocated: return value
+		if last_s is None: dropped = len(relocated)
+		else: dropped = sum(1 for (s, e) in relocated if s < last_s or (s == last_s and e <= last_e))
+		return max(value - dropped, 0)
+	if not settings.exclude_specials_from_progress(): return _minus_relocated(total)
 	extra_info = meta.get('extra_info') or {}
 	last_ep = extra_info.get('last_episode_to_air')
 	season_data = meta.get('season_data') or []
-	if not season_data: return total
+	if not season_data: return _minus_relocated(total)
 	# Ended/Canceled: count through last aired only so placeholder seasons (e.g. S2E1 with no
 	# air date while last_episode_to_air is still S1 finales) do not inflate the total.
 	if last_ep and status in ('Ended', 'Canceled'):
@@ -182,12 +193,12 @@ def progress_aired_eps(meta):
 			prior = sum(i.get('episode_count', 0) for i in season_data if 0 < i.get('season_number', 0) < last_s)
 			cur = next((i for i in season_data if i.get('season_number') == last_s), None)
 			cur_count = (cur or {}).get('episode_count') or 0
-			if last_e <= cur_count: return prior + last_e
-			return (prior + cur_count) or total
+			if last_e <= cur_count: return _minus_relocated(prior + last_e, last_s, last_e)
+			return _minus_relocated(prior + cur_count, last_s, cur_count) or total
 		except Exception:
 			pass
 	regular = sum(i.get('episode_count', 0) for i in season_data if i.get('season_number', 0) != 0)
-	return regular if regular else total
+	return _minus_relocated(regular) if regular else _minus_relocated(total)
 
 def active_tvshows_information(status_type):
 	def _process(item):
