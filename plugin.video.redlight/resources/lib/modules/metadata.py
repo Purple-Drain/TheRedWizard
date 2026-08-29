@@ -482,6 +482,57 @@ def resolve_assigned_episode_group(tmdb_id):
 		return None
 	return group_details(group_info['id'])
 
+def group_traversal_reachable(details, season_data):
+	"""Whether a group's buckets can safely replace raw seasons when browsing.
+
+	Season rows come from raw season_data, so a bucket whose order has no matching raw season
+	number is unreachable and its episodes would vanish. Groups that restructure seasons -- anime
+	"Seasons"-order over one long raw season being the usual case -- fail this and keep the raw path.
+	"""
+	try:
+		raw_seasons = {int(i.get('season_number')) for i in (season_data or [])
+						if i.get('season_number') is not None}
+		if not raw_seasons: return False
+		orders = set()
+		for group in (details or {}).get('groups', []):
+			order = group.get('order')
+			if order is None: return False
+			orders.add(int(order))
+		return bool(orders) and orders.issubset(raw_seasons)
+	except Exception:
+		return False
+
+def group_season_counts(details, season_data):
+	"""Episodes per season as the season list actually shows them under group-native traversal:
+	the group's bucket for that season, plus raw episodes of that season the group never placed in
+	any bucket (Seinfeld's DVD group omits 4 specials outright, and those stay in Specials).
+
+	Derived from counts alone -- no per-episode metadata -- so it is safe to call while building the
+	season list. Empty dict when the group cannot be traversed safely, so callers keep raw totals.
+	"""
+	try:
+		if not group_traversal_reachable(details, season_data): return {}
+		bucket_sizes, bucketed_per_season = {}, {}
+		for group in details.get('groups', []):
+			order = int(group.get('order'))
+			episodes = group.get('episodes', []) or []
+			bucket_sizes[order] = len(episodes)
+			for entry in episodes:
+				raw_season = entry.get('season_number')
+				if raw_season is None: continue
+				raw_season = int(raw_season)
+				bucketed_per_season[raw_season] = bucketed_per_season.get(raw_season, 0) + 1
+		counts = {}
+		for item in season_data:
+			number = item.get('season_number')
+			if number is None: continue
+			number = int(number)
+			orphans = max(int(item.get('episode_count') or 0) - bucketed_per_season.get(number, 0), 0)
+			counts[number] = bucket_sizes.get(number, 0) + orphans
+		return counts
+	except Exception:
+		return {}
+
 def group_episode_data(details, episode_id=None, season_number=None, episode_number=None):
 	def _comparer(episode_item):
 		if episode_id: return episode_item['id'] == int(episode_id)

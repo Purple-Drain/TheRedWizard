@@ -104,6 +104,22 @@ check('display numbers leave raw Specials alone',
 check('display numbers are a no-op with no assigned group',
       ep._group_display_numbers(1400, 3, 10, None, {1400: None}), None)
 
+# --- season counters must describe the list traversal actually renders ---------------------
+import modules.metadata as md  # noqa: E402
+
+counts = md.group_season_counts(GROUP, SEASONS)
+check('counter for season 3 matches its listed length', counts.get(3), 21)
+check('counter for season 2 matches its listed length', counts.get(2), 13)
+check('counter for Specials includes ungrouped episodes', counts.get(0), 172)
+check('counters sum to the show total', sum(counts.values()), sum(s['episode_count'] for s in SEASONS))
+
+for season in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
+    listed = len(ep._group_season_episodes(GROUP, season, META)[0])
+    check('season %d: counter == rendered list' % season, counts.get(season), listed)
+
+check('counters are empty when traversal is refused', md.group_season_counts(SPLIT, SPLIT_META['season_data']), {})
+check('counters are empty with no group', md.group_season_counts(None, SEASONS), {})
+
 print()
 if failures:
     print('%d FAILED: %s' % (len(failures), failures))

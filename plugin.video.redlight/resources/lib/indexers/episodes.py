@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import sys
 from modules import kodi_utils, settings, watched_status as ws
-from modules.metadata import tvshow_meta, episodes_meta, all_episodes_meta, resolve_assigned_episode_group, group_episode_data
+from modules.metadata import (tvshow_meta, episodes_meta, all_episodes_meta, resolve_assigned_episode_group, group_episode_data,
+								group_traversal_reachable)
 from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool, datetime_workaround
 from datetime import timedelta
 # logger = kodi_utils.logger
@@ -40,24 +41,11 @@ def _group_bucketed_pairs(group_details):
 def _group_traversal_reachable(group_details, meta):
 	"""Whether every bucket corresponds to a season row the user can actually open.
 
-	The seasons list is built from raw season_data, so a bucket whose order has no matching raw
-	season number would be unreachable and its episodes would vanish from the UI. Groups that
-	restructure seasons -- anime "Seasons"-order over one long raw season is the usual case, and
-	it is reachable without an explicit assignment via the anime fallback setting -- fail this and
-	keep the raw path untouched.
+	Thin wrapper so the season list (seasons.py, for its episode totals) and the episode list
+	agree on when traversal is in play -- they must, or the counters describe a different list
+	than the one rendered.
 	"""
-	try:
-		raw_seasons = {int(i.get('season_number')) for i in (meta.get('season_data') or [])
-						if i.get('season_number') is not None}
-		if not raw_seasons: return False
-		orders = set()
-		for group in group_details.get('groups', []):
-			order = group.get('order')
-			if order is None: return False
-			orders.add(int(order))
-		return bool(orders) and orders.issubset(raw_seasons)
-	except Exception:
-		return False
+	return group_traversal_reachable(group_details, (meta or {}).get('season_data'))
 
 def _group_season_episodes(group_details, season, meta):
 	"""Raw episode dicts for one group season, in the group's own order.
