@@ -27,36 +27,63 @@ def _group_display_numbers(tmdb_id, season, episode, episode_id, group_cache):
 	except Exception:
 		return None
 
-def _group_season_bucket(group_details, season):
-	"""The assigned group's own bucket for this season number, or None."""
+def _group_bucketed_pairs(group_details):
+	"""Every raw (season, episode) the group places in some bucket."""
+	pairs = set()
+	for group in group_details.get('groups', []):
+		for entry in group.get('episodes', []):
+			raw_season, raw_episode = entry.get('season_number'), entry.get('episode_number')
+			if raw_season is None or raw_episode is None: continue
+			pairs.add((int(raw_season), int(raw_episode)))
+	return pairs
+
+def _group_traversal_reachable(group_details, meta):
+	"""Whether every bucket corresponds to a season row the user can actually open.
+
+	The seasons list is built from raw season_data, so a bucket whose order has no matching raw
+	season number would be unreachable and its episodes would vanish from the UI. Groups that
+	restructure seasons -- anime "Seasons"-order over one long raw season is the usual case, and
+	it is reachable without an explicit assignment via the anime fallback setting -- fail this and
+	keep the raw path untouched.
+	"""
+	try:
+		raw_seasons = {int(i.get('season_number')) for i in (meta.get('season_data') or [])
+						if i.get('season_number') is not None}
+		if not raw_seasons: return False
+		orders = set()
+		for group in group_details.get('groups', []):
+			order = group.get('order')
+			if order is None: return False
+			orders.add(int(order))
+		return bool(orders) and orders.issubset(raw_seasons)
+	except Exception:
+		return False
+
+def _group_season_episodes(group_details, season, meta):
+	"""Raw episode dicts for one group season, in the group's own order.
+
+	A bucket lists raw (season_number, episode_number) pairs that may span more than one raw
+	season -- that is the point: a group can move an episode between regular seasons (Seinfeld raw
+	S03E10 "The Stranded" belongs to group season 2). Each referenced raw season's metadata is
+	pulled once and the bucket's episodes emitted in bucket order.
+
+	Episodes the group places in NO bucket are then appended from this season's raw list. Groups
+	do not necessarily cover every episode -- Seinfeld's DVD-order group omits 4 specials outright
+	-- and without this sweep those would disappear from the UI entirely.
+
+	Returns (items, raw_seasons), or None to fall back to the raw season list.
+	"""
 	try:
 		wanted = int(season)
 	except Exception:
 		return None
 	try:
-		return next((g for g in group_details.get('groups', []) if g.get('order') == wanted), None)
-	except Exception:
-		return None
-
-def _group_season_episodes(bucket, meta):
-	"""Raw episode dicts for one group season, in the group's own order.
-
-	The bucket lists raw (season_number, episode_number) pairs, which may come from more than one
-	raw season -- that is the whole point: a group can move an episode between regular seasons
-	(Seinfeld raw S03E10 "The Stranded" belongs to group season 2). We pull each referenced raw
-	season's metadata once and emit the items the bucket names, in bucket order.
-
-	Returns (items, raw_seasons) or None to signal "fall back to the raw season list": an empty
-	bucket, or one whose episodes we could not resolve, must not silently render an empty season.
-	"""
-	try:
-		entries = sorted(bucket.get('episodes', []), key=lambda e: e.get('order', 0))
-		if not entries: return None
-		raw_seasons = set()
+		bucket = next((g for g in group_details.get('groups', []) if g.get('order') == wanted), None)
+		entries = sorted((bucket or {}).get('episodes', []), key=lambda e: e.get('order', 0))
+		raw_seasons = {wanted}
 		for entry in entries:
 			raw_season = entry.get('season_number')
 			if raw_season is not None: raw_seasons.add(int(raw_season))
-		if not raw_seasons: return None
 		by_key = {}
 		for raw_season in raw_seasons:
 			for item in (episodes_meta(raw_season, meta) or []):
@@ -68,6 +95,10 @@ def _group_season_episodes(bucket, meta):
 			if raw_season is None or raw_episode is None: continue
 			item = by_key.get((int(raw_season), int(raw_episode)))
 			if item: items.append(item)
+		bucketed = _group_bucketed_pairs(group_details)
+		orphans = [(raw_episode, item) for (raw_season, raw_episode), item in by_key.items()
+					if raw_season == wanted and (raw_season, raw_episode) not in bucketed]
+		items.extend(item for _, item in sorted(orphans))
 		if not items: return None
 		return items, raw_seasons
 	except Exception:
@@ -266,9 +297,8 @@ def build_episode_list(params):
 		# Group-native traversal: build this season from the assigned group's own bucket, so an
 		# episode the group moved here from another raw season appears here, and one it moved away
 		# does not. Falls back to the raw season list whenever the group has no usable bucket.
-		if group_details:
-			bucket = _group_season_bucket(group_details, season)
-			resolved = _group_season_episodes(bucket, meta) if bucket else None
+		if group_details and _group_traversal_reachable(group_details, meta):
+			resolved = _group_season_episodes(group_details, season, meta)
 			if resolved:
 				episodes_data, raw_seasons = resolved
 				# A bucket can span raw seasons, so episode numbers alone are ambiguous; key
