@@ -27,6 +27,52 @@ def _group_display_numbers(tmdb_id, season, episode, episode_id, group_cache):
 	except Exception:
 		return None
 
+def _group_season_bucket(group_details, season):
+	"""The assigned group's own bucket for this season number, or None."""
+	try:
+		wanted = int(season)
+	except Exception:
+		return None
+	try:
+		return next((g for g in group_details.get('groups', []) if g.get('order') == wanted), None)
+	except Exception:
+		return None
+
+def _group_season_episodes(bucket, meta):
+	"""Raw episode dicts for one group season, in the group's own order.
+
+	The bucket lists raw (season_number, episode_number) pairs, which may come from more than one
+	raw season -- that is the whole point: a group can move an episode between regular seasons
+	(Seinfeld raw S03E10 "The Stranded" belongs to group season 2). We pull each referenced raw
+	season's metadata once and emit the items the bucket names, in bucket order.
+
+	Returns (items, raw_seasons) or None to signal "fall back to the raw season list": an empty
+	bucket, or one whose episodes we could not resolve, must not silently render an empty season.
+	"""
+	try:
+		entries = sorted(bucket.get('episodes', []), key=lambda e: e.get('order', 0))
+		if not entries: return None
+		raw_seasons = set()
+		for entry in entries:
+			raw_season = entry.get('season_number')
+			if raw_season is not None: raw_seasons.add(int(raw_season))
+		if not raw_seasons: return None
+		by_key = {}
+		for raw_season in raw_seasons:
+			for item in (episodes_meta(raw_season, meta) or []):
+				try: by_key[(raw_season, int(item['episode']))] = item
+				except Exception: pass
+		items = []
+		for entry in entries:
+			raw_season, raw_episode = entry.get('season_number'), entry.get('episode_number')
+			if raw_season is None or raw_episode is None: continue
+			item = by_key.get((int(raw_season), int(raw_episode)))
+			if item: items.append(item)
+		if not items: return None
+		return items, raw_seasons
+	except Exception:
+		return None
+
 def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	"""Use Trakt/MDBList air date for calendar label + sort (not TMDb premiered).
 
@@ -110,7 +156,10 @@ def build_episode_list(params):
 				# release). Hide it, matching watched_status._group_filtered_episode_numbers(). mapped is None
 				# when the raw episode has no group entry at all (leave alone, fall back to raw numbering), and
 				# the guard above already skips Specials' own listing, so a special can't filter itself out.
-				if mapped and mapped.get('season') == 0: continue
+				# Only needed on the raw-season path. Under group-native traversal the bucket itself
+				# defines membership, and filtering here would drop the episodes the group moved
+				# INTO Specials from the Specials listing too -- making them unreachable entirely.
+				if not group_native and mapped and mapped.get('season') == 0: continue
 				display_season, display_episode = (mapped['season'], mapped['episode']) if mapped else (season, episode)
 				str_episode_zfill2 = str(display_episode).zfill(2)
 				seas_ep = '%sx%s. ' % (display_season, str_episode_zfill2)
@@ -195,6 +244,7 @@ def build_episode_list(params):
 	season = params['season']
 	try: group_details = resolve_assigned_episode_group(tmdb_id)
 	except: group_details = None
+	group_native = False
 	if rpdb_api_key:
 		try: show_poster = meta_get('rpdb_poster') % rpdb_api_key + rpdb_format
 		except: show_poster = meta_get('poster') or poster_empty
@@ -212,8 +262,26 @@ def build_episode_list(params):
 		category_name = 'Season %s' % season if total_seasons == 1 else 'Seasons 1-%s' % total_seasons
 	else:
 		total_seasons = None
-		episodes_data = episodes_meta(season, meta)
-		bookmarks = ws.get_bookmarks_episode(tmdb_id, season, watched_db)
+		episodes_data = bookmarks = None
+		# Group-native traversal: build this season from the assigned group's own bucket, so an
+		# episode the group moved here from another raw season appears here, and one it moved away
+		# does not. Falls back to the raw season list whenever the group has no usable bucket.
+		if group_details:
+			bucket = _group_season_bucket(group_details, season)
+			resolved = _group_season_episodes(bucket, meta) if bucket else None
+			if resolved:
+				episodes_data, raw_seasons = resolved
+				# A bucket can span raw seasons, so episode numbers alone are ambiguous; key
+				# bookmarks by raw season and let _process() use the (season, episode) lookup.
+				bookmarks = {}
+				for raw_season in raw_seasons:
+					try: bookmarks[raw_season] = ws.get_bookmarks_episode(tmdb_id, raw_season, watched_db)
+					except Exception: bookmarks[raw_season] = {}
+				total_seasons = True
+				group_native = True
+		if episodes_data is None:
+			episodes_data = episodes_meta(season, meta)
+			bookmarks = ws.get_bookmarks_episode(tmdb_id, season, watched_db)
 		try:
 			season_data = meta_get('season_data')
 			poster_path = next((i['poster_path'] for i in season_data if i['season_number'] == int(season)), None)

@@ -117,6 +117,23 @@ def group_relocated_episodes(tmdb_id):
 		return set()
 	return relocated
 
+def group_season_episode_counts(tmdb_id):
+	"""Episodes per season as the show's assigned TMDb episode group defines it -- the size of each
+	group bucket. Authoritative wherever the season list is built from those buckets, since a bucket
+	both drops episodes the group moved away and includes ones it moved in (so it is not the same as
+	raw count minus relocated). Empty dict when no group is assigned, so other shows are unaffected."""
+	counts = {}
+	try:
+		group_details = metadata.resolve_assigned_episode_group(tmdb_id)
+		if not group_details: return counts
+		for group in group_details.get('groups', []):
+			order = group.get('order')
+			if order is None: continue
+			counts[int(order)] = len(group.get('episodes', []) or [])
+	except Exception:
+		return {}
+	return counts
+
 def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None):
 	"""Count episodes that have aired using the same premiered rules as episode lists.
 
