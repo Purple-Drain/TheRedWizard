@@ -377,6 +377,19 @@ def include_anime_tvshow():
 def anime_seasons_episode_group_fallback():
 	return get_setting('redlight.anime.seasons_episode_group_fallback', 'false') == 'true'
 
+def episode_group_scrape_remap():
+	"""Use an explicitly-assigned TMDb episode group's own numbering as the scrape/search key.
+
+	Off by default (#79): a group's numbering is display-only elsewhere in this codebase (see
+	indexers/episodes.py's _group_display_numbers docstring) because most libraries are named in
+	raw TMDb numbering, and a group that relocates or merges episodes (e.g. Seinfeld's DVD-order
+	group folding S04E04 into Specials) shifts every later same-season episode's key, causing the
+	wrong file to scrape and play. Enable only when the library is actually ripped/named in the
+	assigned group's order. This does not gate the anime Seasons-order fallback
+	(anime_seasons_episode_group_fallback above), which is its own opt-in for that remap.
+	"""
+	return get_setting('redlight.episode_group.scrape_remap', 'false') == 'true'
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 
