@@ -4410,6 +4410,22 @@
                           <property name="setting_description">Red Light includes a built-in OpenSubtitles API key. Enter your own consumer key here only if you use a private OpenSubtitles consumer app</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_string&amp;setting_id=playback.opensubs_api_key)</onclick>
                       </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Keep a Playback Log</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback_log)]</property>
+                          <property name="setting_description">Record every played item to playback_log.tsv in Red Light's addon data folder: date, title, season/episode, the source release name, provider, quality and size. Kept in its own file so it survives a Kodi restart, unlike kodi.log</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=playback_log)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">    - Include Full Links in the Playback Log</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback_log_links)]</property>
+                          <property name="setting_description">Write the complete resolved link instead of just the provider and file name. Leave this off unless you need it: resolved links usually contain your debrid API token, and anyone you send the log to would get it too</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=playback_log_links)</onclick>
+                      </item>
                 </content>
             </control>
             <control type="group">
