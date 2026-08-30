@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
 from modules import kodi_utils, settings
-from modules.metadata import tvshow_meta
+from modules.metadata import tvshow_meta, resolve_assigned_episode_group, group_season_counts
 from modules.utils import get_datetime, adjust_premiered_date, TaskPool
 from modules.watched_status import (get_database, watched_info_season, get_watched_status_season, get_progress_status_season, count_aired_episodes,
 									group_relocated_episodes)
@@ -36,7 +36,12 @@ def build_season_list(params):
 					if unaired: title = '[COLOR red][I]%s[/I][/COLOR]' % title
 					else: title = 'Specials'
 				else:
-					if season_number < total_seasons:
+					if season_number in group_season_totals:
+						# Group-native traversal is in play: the bucket (plus ungrouped leftovers)
+						# is exactly what build_episode_list() renders for this season.
+						aired_eps = group_season_totals[season_number]
+						if season_number < total_seasons: episode_count += aired_eps
+					elif season_number < total_seasons:
 						# Drop episodes the assigned group moved into Specials -- build_episode_list()
 						# no longer lists them, so counting them strands the season short of complete.
 						aired_eps = max(aired_eps - relocated_per_season.get(season_number, 0), 0)
@@ -117,6 +122,16 @@ def build_season_list(params):
 	relocated_per_season = {}
 	for relocated_season, _ in group_relocated_episodes(tmdb_id):
 		relocated_per_season[relocated_season] = relocated_per_season.get(relocated_season, 0) + 1
+	# When build_episode_list() traverses the group's own buckets, the bucket size (plus any raw
+	# episodes the group never placed) is what it lists -- so it, not raw-minus-relocated, is the
+	# denominator. Empty unless traversal actually applies, leaving other shows on the raw path.
+	# meta_get('season_data'), not the local season_data: that has already been filtered (Specials
+	# dropped when the setting is off), and the gate must see the same unfiltered list that
+	# build_episode_list() checks, or the two disagree about whether traversal is on.
+	try:
+		group_season_totals = group_season_counts(resolve_assigned_episode_group(tmdb_id), meta_get('season_data'))
+	except Exception:
+		group_season_totals = {}
 	watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
 	if watched_indicators == 2 and settings.simkl_user_active():
 		from apis.simkl_api import simkl_sync_activities
