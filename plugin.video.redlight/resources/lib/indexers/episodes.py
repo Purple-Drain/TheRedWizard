@@ -2,7 +2,7 @@
 import sys
 from modules import kodi_utils, settings, watched_status as ws
 from modules.metadata import (tvshow_meta, episodes_meta, all_episodes_meta, resolve_assigned_episode_group, group_episode_data,
-								group_traversal_reachable)
+								group_traversal_reachable, group_season_bucket_episodes)
 from modules.utils import jsondate_to_datetime, adjust_premiered_date, make_day, get_datetime, get_current_timestamp, title_key, date_difference, TaskPool, datetime_workaround
 from datetime import timedelta
 # logger = kodi_utils.logger
@@ -28,16 +28,6 @@ def _group_display_numbers(tmdb_id, season, episode, episode_id, group_cache):
 	except Exception:
 		return None
 
-def _group_bucketed_pairs(group_details):
-	"""Every raw (season, episode) the group places in some bucket."""
-	pairs = set()
-	for group in group_details.get('groups', []):
-		for entry in group.get('episodes', []):
-			raw_season, raw_episode = entry.get('season_number'), entry.get('episode_number')
-			if raw_season is None or raw_episode is None: continue
-			pairs.add((int(raw_season), int(raw_episode)))
-	return pairs
-
 def _group_traversal_reachable(group_details, meta):
 	"""Whether every bucket corresponds to a season row the user can actually open.
 
@@ -52,45 +42,18 @@ def _group_season_episodes(group_details, season, meta):
 
 	A bucket lists raw (season_number, episode_number) pairs that may span more than one raw
 	season -- that is the point: a group can move an episode between regular seasons (Seinfeld raw
-	S03E10 "The Stranded" belongs to group season 2). Each referenced raw season's metadata is
-	pulled once and the bucket's episodes emitted in bucket order.
+	S03E10 "The Stranded" belongs to group season 2). Episodes the group places in NO bucket are
+	appended from this season's raw list, since groups do not necessarily cover every episode
+	(Seinfeld's DVD-order group omits 4 specials outright) and without that sweep those would
+	disappear from the UI entirely.
 
-	Episodes the group places in NO bucket are then appended from this season's raw list. Groups
-	do not necessarily cover every episode -- Seinfeld's DVD-order group omits 4 specials outright
-	-- and without this sweep those would disappear from the UI entirely.
+	Thin wrapper over metadata.group_season_bucket_episodes() -- shared with seasons.py's
+	count_aired_group_season() (#77) so the rendered list and the aired-episode count agree on
+	exactly which episodes a group season contains.
 
 	Returns (items, raw_seasons), or None to fall back to the raw season list.
 	"""
-	try:
-		wanted = int(season)
-	except Exception:
-		return None
-	try:
-		bucket = next((g for g in group_details.get('groups', []) if g.get('order') == wanted), None)
-		entries = sorted((bucket or {}).get('episodes', []), key=lambda e: e.get('order', 0))
-		raw_seasons = {wanted}
-		for entry in entries:
-			raw_season = entry.get('season_number')
-			if raw_season is not None: raw_seasons.add(int(raw_season))
-		by_key = {}
-		for raw_season in raw_seasons:
-			for item in (episodes_meta(raw_season, meta) or []):
-				try: by_key[(raw_season, int(item['episode']))] = item
-				except Exception: pass
-		items = []
-		for entry in entries:
-			raw_season, raw_episode = entry.get('season_number'), entry.get('episode_number')
-			if raw_season is None or raw_episode is None: continue
-			item = by_key.get((int(raw_season), int(raw_episode)))
-			if item: items.append(item)
-		bucketed = _group_bucketed_pairs(group_details)
-		orphans = [(raw_episode, item) for (raw_season, raw_episode), item in by_key.items()
-					if raw_season == wanted and (raw_season, raw_episode) not in bucketed]
-		items.extend(item for _, item in sorted(orphans))
-		if not items: return None
-		return items, raw_seasons
-	except Exception:
-		return None
+	return group_season_bucket_episodes(group_details, season, meta)
 
 def _calendar_episode_date(service_first_aired, tmdb_premiered, adjust_hours):
 	"""Use Trakt/MDBList air date for calendar label + sort (not TMDb premiered).
@@ -347,8 +310,15 @@ def build_single_episode(list_type, params={}):
 			season_data = meta_get('season_data')
 			watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
 			if list_type_starts_with('next'):
+				# get_next_episodes() picked orig_season/orig_episode by raw (season, episode)
+				# order -- correct it into the show's own group order first when it has a
+				# group-native traversal, or "next" walks on from the wrong episode (#76).
+				# Computed once and threaded through both calls below -- each call otherwise
+				# refetches every group-native season's episode metadata on its own.
+				group_pairs = ws.group_ordered_episode_pairs(meta)
+				orig_season, orig_episode = ws.group_corrected_next_seed(meta, watched_info, orig_season, orig_episode, group_pairs=group_pairs)
 				last_watched_season, last_watched_episode = orig_season, orig_episode
-				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta)
+				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta, group_pairs=group_pairs)
 				# Weekly anime: stale season/show cache often stops at the last watched ep until expiry.
 				if (not orig_season or not orig_episode) and meta_get('status') not in ('Ended', 'Canceled'):
 					try:

@@ -533,6 +533,78 @@ def group_season_counts(details, season_data):
 	except Exception:
 		return {}
 
+def group_episode_season_map(details):
+	"""Raw (season, episode) -> the group order (bucket season) that claims it, across every
+	bucket including Specials (order 0). A raw pair absent from this map belongs to no bucket at
+	all and stays under its own raw season -- the same "orphan" rule group_season_counts() uses
+	for its denominator, so a numerator built from this map (see watched_status.
+	watched_info_group_season()) lines up with that denominator instead of staying raw-keyed (#75).
+	"""
+	mapping = {}
+	try:
+		for group in (details or {}).get('groups', []):
+			order = group.get('order')
+			if order is None: continue
+			order = int(order)
+			for entry in group.get('episodes', []) or []:
+				raw_season, raw_episode = entry.get('season_number'), entry.get('episode_number')
+				if raw_season is None or raw_episode is None: continue
+				mapping[(int(raw_season), int(raw_episode))] = order
+	except Exception:
+		return {}
+	return mapping
+
+def group_season_bucket_episodes(details, season_number, meta):
+	"""Raw episode metadata dicts for one group-native season list: the group's own bucket for
+	that order (in bucket order), plus raw episodes of that raw season the group places in no
+	bucket at all (orphans, appended after, sorted by raw episode number) -- exactly the set
+	group_season_counts() sizes and build_episode_list() renders for this season.
+
+	A bucket can span raw seasons (a group can move an episode between regular seasons, e.g.
+	Seinfeld's DVD-order group folding raw S03E10 into group season 2), so each raw season it
+	touches is fetched once via episodes_meta() and looked up by (season, episode).
+
+	Returns (items, raw_seasons), or None if the season has no usable bucket. Shared by
+	episodes.py (rendering) and watched_status.py's count_aired_group_season() (#77) so both
+	agree on exactly which episodes a group-native season contains.
+	"""
+	try:
+		wanted = int(season_number)
+	except Exception:
+		return None
+	try:
+		groups = (details or {}).get('groups', [])
+		bucket = next((g for g in groups if g.get('order') == wanted), None)
+		entries = sorted((bucket or {}).get('episodes', []) or [], key=lambda e: e.get('order', 0))
+		raw_seasons = {wanted}
+		for entry in entries:
+			raw_season = entry.get('season_number')
+			if raw_season is not None: raw_seasons.add(int(raw_season))
+		by_key = {}
+		for raw_season in raw_seasons:
+			for item in (episodes_meta(raw_season, meta) or []):
+				try: by_key[(raw_season, int(item['episode']))] = item
+				except Exception: pass
+		items = []
+		for entry in entries:
+			raw_season, raw_episode = entry.get('season_number'), entry.get('episode_number')
+			if raw_season is None or raw_episode is None: continue
+			item = by_key.get((int(raw_season), int(raw_episode)))
+			if item: items.append(item)
+		bucketed = set()
+		for group in groups:
+			for e in group.get('episodes', []) or []:
+				s, ep = e.get('season_number'), e.get('episode_number')
+				if s is None or ep is None: continue
+				bucketed.add((int(s), int(ep)))
+		orphans = [(raw_episode, item) for (raw_season, raw_episode), item in by_key.items()
+					if raw_season == wanted and (raw_season, raw_episode) not in bucketed]
+		items.extend(item for _, item in sorted(orphans))
+		if not items: return None
+		return items, raw_seasons
+	except Exception:
+		return None
+
 def group_episode_data(details, episode_id=None, season_number=None, episode_number=None):
 	def _comparer(episode_item):
 		if episode_id: return episode_item['id'] == int(episode_id)

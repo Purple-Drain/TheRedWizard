@@ -3,8 +3,8 @@ import sys
 from modules import kodi_utils, settings
 from modules.metadata import tvshow_meta, resolve_assigned_episode_group, group_season_counts
 from modules.utils import get_datetime, adjust_premiered_date, TaskPool
-from modules.watched_status import (get_database, watched_info_season, get_watched_status_season, get_progress_status_season, count_aired_episodes,
-									group_relocated_episodes)
+from modules.watched_status import (get_database, watched_info_season, watched_info_group_season, get_watched_status_season, get_progress_status_season,
+									count_aired_episodes, count_aired_group_season, group_relocated_episodes)
 # logger = kodi_utils.logger
 
 def build_season_list(params):
@@ -39,17 +39,29 @@ def build_season_list(params):
 					if season_number in group_season_totals:
 						# Group-native traversal is in play: the bucket (plus ungrouped leftovers)
 						# is exactly what build_episode_list() renders for this season.
-						aired_eps = group_season_totals[season_number]
-						if season_number < total_seasons: episode_count += aired_eps
+						if season_number < total_seasons:
+							aired_eps = group_season_totals[season_number]
+							episode_count += aired_eps
+						else:
+							# Current/latest season: the bucket can still include unaired episodes
+							# -- count only the aired ones, same premiered-date rule as the raw
+							# path, applied over the bucket's own episode set (#77).
+							aired_eps = count_aired_group_season(meta, group_details, season_number, current_date=current_date, adjust_hours=adjust_hours)
+						# The numerator must be translated through the same group mapping the
+						# bucket-sized denominator above already uses -- a raw-season-keyed count
+						# here could never reach the bucket size, or could overcount it (#75).
+						season_watched_info = group_watched_info.get(season_number, None)
 					elif season_number < total_seasons:
 						# Drop episodes the assigned group moved into Specials -- build_episode_list()
 						# no longer lists them, so counting them strands the season short of complete.
 						aired_eps = max(aired_eps - relocated_per_season.get(season_number, 0), 0)
 						episode_count += aired_eps
+						season_watched_info = watched_info.get(season_number, None)
 					else:
 						# Current/latest season: count by premiered date (same as episode unaired colour).
 						aired_eps = count_aired_episodes(meta, season=season_number, current_date=current_date, adjust_hours=adjust_hours)
-					playcount, watched, unwatched = get_watched_status_season(watched_info.get(season_number, None), aired_eps)
+						season_watched_info = watched_info.get(season_number, None)
+					playcount, watched, unwatched = get_watched_status_season(season_watched_info, aired_eps)
 					progress = get_progress_status_season(watched, aired_eps)
 				visible_progress = 0 if progress == 100 else progress
 				url_params = build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season_number})
@@ -129,9 +141,10 @@ def build_season_list(params):
 	# dropped when the setting is off), and the gate must see the same unfiltered list that
 	# build_episode_list() checks, or the two disagree about whether traversal is on.
 	try:
-		group_season_totals = group_season_counts(resolve_assigned_episode_group(tmdb_id), meta_get('season_data'))
+		group_details = resolve_assigned_episode_group(tmdb_id)
+		group_season_totals = group_season_counts(group_details, meta_get('season_data'))
 	except Exception:
-		group_season_totals = {}
+		group_details, group_season_totals = None, {}
 	watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
 	if watched_indicators == 2 and settings.simkl_user_active():
 		from apis.simkl_api import simkl_sync_activities
@@ -141,6 +154,9 @@ def build_season_list(params):
 		from apis.mdblist_api import mdblist_sync_activities
 		mdblist_sync_activities()
 		watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
+	# Numerator translated into the group's own numbering space, to pair with the bucket-sized
+	# denominator above (group_season_totals) -- see get_watched_status_season() callers below (#75).
+	group_watched_info = watched_info_group_season(tmdb_id, group_details, get_database(watched_indicators)) if group_season_totals else {}
 	list_items = list(list(_process()))
 	if custom_order is not None: return (list_items[0], custom_order)
 	kodi_utils.add_items(handle, list_items)

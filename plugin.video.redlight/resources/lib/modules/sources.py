@@ -428,8 +428,19 @@ class Sources():
 		else: return self.get_sources()
 
 	def check_episode_group(self):
+		# An explicitly-assigned group's numbering is display-only by default (#79): most
+		# libraries are named in raw TMDb numbering, and a group that relocates/merges episodes
+		# (Seinfeld's DVD-order group folding S04E04 into Specials) shifts every later same-season
+		# episode's scrape key, so the wrong file gets found and played. Only remap the scrape key
+		# for an explicit assignment when the user has opted in via episode_group_scrape_remap().
+		# The anime Seasons-order fallback keeps its own opt-in (anime_seasons_episode_group_fallback)
+		# and is unaffected -- it only ever fires when resolve_assigned_episode_group() finds no
+		# explicit assignment, so checking the cache directly here can't miss it.
 		try:
 			if any([self.custom_season, self.custom_episode]) or 'skip_episode_group_check' in self.params: return
+			from caches.episode_groups_cache import episode_groups_cache
+			explicit_assignment = bool(episode_groups_cache.get(self.tmdb_id))
+			if explicit_assignment and not settings.episode_group_scrape_remap(): return
 			group_details = metadata.resolve_assigned_episode_group(self.tmdb_id)
 			if not group_details: return
 			episode_data = metadata.group_episode_data(group_details, self.episode_id, self.season, self.episode)

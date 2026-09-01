@@ -134,6 +134,57 @@ def group_season_episode_counts(tmdb_id):
 		return {}
 	return counts
 
+def watched_info_group_season(media_id, group_details, watched_db=None):
+	"""Watched counts keyed by group order (bucket season) instead of raw season, for shows whose
+	season list is group-native (seasons.py's group_season_totals branch). Translates each raw
+	watched (season, episode) row through the group's own bucket membership -- a row the group
+	places in a bucket counts toward that bucket's order; a row in no bucket at all counts toward
+	its own raw season, the same "orphan" rule metadata.group_season_counts() uses for the
+	denominator -- so this numerator lines up with that bucket-sized denominator instead of
+	staying raw-season-keyed against it (#75). Empty dict when no group is assigned.
+	"""
+	if not group_details: return {}
+	try:
+		episode_map = metadata.group_episode_season_map(group_details)
+	except Exception:
+		return {}
+	if not watched_db: watched_db = get_database()
+	try:
+		rows = watched_db.execute('SELECT season, episode FROM watched WHERE db_type = ? AND media_id = ?',
+									('episode', str(media_id))).fetchall()
+	except Exception:
+		return {}
+	counts = {}
+	for season, episode in rows:
+		try: season_i, episode_i = int(season), int(episode)
+		except Exception: continue
+		group_season = episode_map.get((season_i, episode_i), season_i)
+		counts[group_season] = counts.get(group_season, 0) + 1
+	return counts
+
+def count_aired_group_season(meta, group_details, season_number, current_date=None, adjust_hours=None):
+	"""Aired-episode count for one season under group-native traversal, applying the same
+	premiered-date rule as count_aired_episodes() but over the group bucket's own episode set
+	(which can include an episode moved in from another raw season) instead of the raw season
+	list. Restores date-based counting for the current/latest season, whose bucket can still
+	include unaired episodes -- group_season_counts()'s bucket size alone overcounts it (#77).
+	Past (fully aired) seasons don't need this: their bucket size is already correct.
+	"""
+	from modules.metadata import group_season_bucket_episodes
+	if current_date is None: current_date = get_datetime()
+	if adjust_hours is None: adjust_hours = settings.date_offset()
+	resolved = group_season_bucket_episodes(group_details, season_number, meta)
+	if not resolved: return 0
+	items, _ = resolved
+	count = 0
+	for item in items:
+		premiered = item.get('premiered')
+		if not premiered: continue
+		try: ep_date = adjust_premiered_date(premiered, adjust_hours)[0]
+		except Exception: continue
+		if ep_date and ep_date <= current_date: count += 1
+	return count
+
 def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None):
 	"""Count episodes that have aired using the same premiered rules as episode lists.
 
@@ -658,6 +709,77 @@ def get_next_episodes(nextep_content, watched_indicators=None):
 	data.sort(key=lambda x: (x['last_played']), reverse=True)
 	return data
 
+def group_ordered_episode_pairs(meta):
+	"""Every raw (season, episode) pair in the exact order build_episode_list() renders them
+	across every group-native season -- group order 0's Specials excluded (traversal never walks
+	into Specials, same as the pre-#69 raw path), each season's own bucket-then-orphan order.
+
+	Empty when the show has no assigned group or the group can't safely replace raw seasons
+	(metadata.group_traversal_reachable() -- restructuring groups like anime "Seasons"-order keep
+	the raw path). Callers must treat empty as "fall back to raw walking", not "no next episode".
+
+	This is the traversal-side half of #64/#76: browse order comes from these same buckets
+	(episodes.py's _group_season_episodes()/group_season_bucket_episodes()), so walking this
+	sequence instead of incrementing raw numbers keeps "next episode" in the list the user sees.
+
+	Not cheap -- it fetches every group-native season's episode metadata. group_corrected_next_seed()
+	and get_next() each need it for the same show in the same Next Up row; callers that already have
+	a result should pass it back in via those functions' group_pairs= argument instead of letting each
+	one recompute it (episodes.py's build_single_episode and windows/extras.py's get_next_episode do).
+	"""
+	if meta is None: return []
+	try:
+		tmdb_id = meta.get('tmdb_id')
+		season_data = meta.get('season_data') or []
+		group_details = metadata.resolve_assigned_episode_group(tmdb_id)
+		if not group_details: return []
+		if not metadata.group_traversal_reachable(group_details, season_data): return []
+		orders = sorted({int(g.get('order')) for g in group_details.get('groups', []) if g.get('order') not in (None, 0)})
+		pairs = []
+		for order in orders:
+			resolved = metadata.group_season_bucket_episodes(group_details, order, meta)
+			if not resolved: continue
+			items, _ = resolved
+			for item in items:
+				try: pairs.append((int(item['season']), int(item['episode'])))
+				except Exception: pass
+		return pairs
+	except Exception:
+		return []
+
+def group_corrected_next_seed(meta, watched_info, season, episode, group_pairs=None):
+	"""Correct the (season, episode) get_next_episodes() picked as "last watched" for a show with
+	a group-native traversal.
+
+	get_next_episodes()'s SQL orders by raw (season, episode) DESC to find the most recently
+	progressed episode -- correct only while raw order and group order agree. Seinfeld's DVD-order
+	group places raw S03E10 "The Stranded" at group-order position 8 of season 2's 13-episode
+	bucket, so it can be the highest RAW pair watched while still being watched *before* the rest
+	of season 2 in group order; the SQL pick then names it "last watched" regardless (#76).
+
+	watched_info is every raw (season, episode) pair marked watched for this show (as returned by
+	watched_info_episode()). group_pairs, if given, is a precomputed group_ordered_episode_pairs(meta)
+	-- pass it when the caller is about to call get_next() too, to avoid computing it twice.
+
+	Returns the watched pair that is actually last in the group's own order, or the given seed
+	unchanged when no group applies, traversal isn't reachable, or no watched pair sits later in
+	group order than the seed already given.
+	"""
+	try:
+		pairs = group_pairs if group_pairs is not None else group_ordered_episode_pairs(meta)
+		if not pairs or not watched_info: return season, episode
+		watched_set = set()
+		for row in watched_info:
+			try: watched_set.add((int(row[0]), int(row[1])))
+			except Exception: pass
+		last = None
+		for pair in pairs:
+			if pair in watched_set: last = pair
+		if last is not None: return last
+	except Exception:
+		pass
+	return season, episode
+
 def _group_filtered_episode_numbers(tmdb_id, season_number, raw_numbers):
 	"""Raw episode numbers for a season, minus any the show's assigned TMDb episode group
 	relocates OUT of this season INTO its Specials bucket (group season 0) -- TMDb's own signal
@@ -696,9 +818,23 @@ def _next_season_numbers(season_data, after_season):
 	except Exception:
 		return []
 
-def _find_next_unwatched_episode(season, episode, watched_info, season_data, meta=None):
+def _find_next_unwatched_episode(season, episode, watched_info, season_data, meta=None, group_pairs=None):
 	try:
 		if meta is not None:
+			# Group-native traversal: walk the group's own order, not raw season/episode, so a
+			# reshuffled/relocated episode is reached in the same sequence build_episode_list()
+			# renders (#76). Falls through to the raw walk below when the group can't place
+			# (season, episode) in its ordered sequence at all.
+			pairs = group_pairs if group_pairs is not None else group_ordered_episode_pairs(meta)
+			if pairs:
+				try:
+					idx = pairs.index((int(season), int(episode)))
+					for pair in pairs[idx + 1:]:
+						if not get_watched_status_episode(watched_info, pair):
+							return pair
+					return None, None
+				except ValueError:
+					pass
 			seasons = sorted({i['season_number'] for i in (season_data or []) if i.get('season_number', 0) >= season})
 			for item_season in seasons:
 				nums = _season_episode_numbers(meta, item_season)
@@ -724,12 +860,15 @@ def _find_next_unwatched_episode(season, episode, watched_info, season_data, met
 	except: pass
 	return None, None
 
-def get_next(season, episode, watched_info, season_data, nextep_content, meta=None):
+def get_next(season, episode, watched_info, season_data, nextep_content, meta=None, group_pairs=None):
 	"""Return (season, episode) for the next episode after the given watched S/E.
 
 	When meta is provided, episode numbers come from TMDb season episode lists so shows that use
 	absolute numbering inside seasons (e.g. One Piece S23E1156+) resolve correctly. Without meta,
 	falls back to treating episodes as 1..episode_count (legacy).
+
+	group_pairs, if given, is a precomputed group_ordered_episode_pairs(meta) -- pass it when the
+	caller already called group_corrected_next_seed() for the same show, to avoid recomputing it.
 	"""
 	if episode == 0:
 		if meta is not None:
@@ -739,6 +878,20 @@ def get_next(season, episode, watched_info, season_data, nextep_content, meta=No
 	if nextep_content == 0:
 		try:
 			if meta is not None:
+				# Group-native traversal: the next position in the group's own order, not the
+				# next raw episode number -- the browse list this pairs with is group-ordered
+				# since #69, and incrementing raw numbers skips/misorders whatever the group
+				# reshuffled (#76). Falls through to the raw walk when the group can't place
+				# (season, episode) in its ordered sequence (no group, unreachable, or this
+				# particular pair sits outside every bucket).
+				pairs = group_pairs if group_pairs is not None else group_ordered_episode_pairs(meta)
+				if pairs:
+					try:
+						idx = pairs.index((int(season), int(episode)))
+						if idx + 1 < len(pairs): return pairs[idx + 1]
+						return None, None
+					except ValueError:
+						pass
 				nums = _season_episode_numbers(meta, season)
 				later = [n for n in nums if n > episode]
 				if later: return season, later[0]
@@ -752,7 +905,7 @@ def get_next(season, episode, watched_info, season_data, nextep_content, meta=No
 		except Exception:
 			return None, None
 	else:
-		season, episode = _find_next_unwatched_episode(season, episode, watched_info, season_data, meta)
+		season, episode = _find_next_unwatched_episode(season, episode, watched_info, season_data, meta, group_pairs)
 	return season, episode
 
 def _movie_progress_list(dbcon):
