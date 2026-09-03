@@ -26,6 +26,7 @@ class source:
 			except: self.year = 0
 			self.season, self.episode = info.get('season'), info.get('episode')
 			self.absolute_episode = info.get('absolute_episode')
+			self.title_check = source_utils.episode_title_check(info)
 			self.folder_query = source_utils.clean_title(normalize(title))
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
 			self.title_queries = self._title_queries()
@@ -37,7 +38,7 @@ class source:
 						file_name = self._item_label(item)
 						if self.media_type == 'episode':
 							file_only = normalize(item.get('name') or '')
-							if not source_utils.cloud_episode_matches(self.season, self.episode, file_only, self.absolute_episode): continue
+							if not source_utils.cloud_episode_matches(self.season, self.episode, file_only, self.absolute_episode, self.title_check): continue
 							if self.filter_title and not source_utils.check_title(title, file_name, self.aliases, self.year, 'pack', self.episode): continue
 						elif self.filter_title and not source_utils.check_title(title, file_name, self.aliases, self.year, self.season, self.episode): continue
 						display_name = clean_file_name(normalize(item.get('name') or file_name)).replace('html', ' ').replace('+', ' ').replace('-', ' ')
@@ -115,7 +116,7 @@ class source:
 		if self.filter_title and not self._matches_title(label): return False
 		if self.media_type == 'movie':
 			if self.year and not any(x in label for x in self._year_query_list()): return False
-		elif not source_utils.cloud_episode_matches(self.season, self.episode, normalize(filename or label), self.absolute_episode): return False
+		elif not source_utils.cloud_episode_matches(self.season, self.episode, normalize(filename or label), self.absolute_episode, self.title_check): return False
 		return True
 
 	def _scrape_cloud(self):

@@ -23,6 +23,7 @@ class source:
 			self.media_type, title, self.year = info.get('media_type'), info.get('title'), int(info.get('year'))
 			self.season, self.episode = info.get('season'), info.get('episode')
 			self.tmdb_id = info.get('tmdb_id')
+			self.title_check = source_utils.episode_title_check(info)
 			self.title_query = source_utils.clean_title(normalize(title))
 			self.folder_query = self._season_query_list() if self.media_type == 'episode' else self._year_query_list()
 			self._scrape_directory(self.folder_path, first_run=True)
@@ -50,6 +51,15 @@ class source:
 		source_utils.internal_results(self.scraper_name, self.sources)
 		return self.sources
 
+	def _episode_file_matches(self, normalized):
+		"""Title in the file name decides when it can (#89); otherwise the S/E regex as before."""
+		title_check = getattr(self, 'title_check', None)
+		if title_check is not None:
+			try: verdict = title_check(normalized)
+			except Exception: verdict = None
+			if verdict is not None: return verdict
+		return source_utils.seas_ep_filter(self.season, self.episode, normalized)
+
 	def _make_dirs(self, folder_name):
 		folder_files = []
 		folder_files_append = folder_files.append
@@ -66,7 +76,7 @@ class source:
 			if file_type == 'file':
 				ext = os.path.splitext(urlparse(item[0]).path)[-1].lower()
 				if ext in self.extensions:
-					if self.media_type == 'episode' and not source_utils.seas_ep_filter(self.season, self.episode, normalized): return
+					if self.media_type == 'episode' and not self._episode_file_matches(normalized): return
 					url_path = self.url_path(folder_name, item[0])
 					size = self._get_size(url_path)
 					scrape_results_append((item[0], url_path, size))

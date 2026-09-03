@@ -615,7 +615,13 @@ class RedLightPlayer(xbmc.Player):
 			from modules.source_utils import iter_season_episode_tokens
 			release_name = getattr(self, 'playing_filename', '') or ku.get_property('subs.player_filename')
 			if not release_name: return
-			for season, episode in iter_season_episode_tokens(release_name):
+			tokens = list(iter_season_episode_tokens(release_name))
+			# Only trust the file's own numbering when it agrees with ours about the episode that
+			# just played. A file matched by its title (#89) can carry another scheme's numbers
+			# (DVD-order "S04E20 The Handicap Spot" playing as raw S04E22); its tokens then name
+			# unrelated episodes, not siblings, and marking them would repeat #80's false marks.
+			if not any(season == self.season and episode == self.episode for season, episode in tokens): return
+			for season, episode in tokens:
 				if season != self.season or episode == self.episode: continue
 				sibling_params = dict(primary_watched_params)
 				sibling_params['season'], sibling_params['episode'] = season, episode

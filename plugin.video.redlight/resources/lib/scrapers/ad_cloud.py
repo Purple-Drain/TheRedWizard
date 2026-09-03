@@ -21,6 +21,7 @@ class source:
 			self.media_type, title = info.get('media_type'), info.get('title')
 			self.year, self.season, self.episode = int(info.get('year')), info.get('season'), info.get('episode')
 			self.absolute_episode = info.get('absolute_episode')
+			self.title_check = source_utils.episode_title_check(info)
 			self.tmdb_id = info.get('tmdb_id')
 			self.title = title
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
@@ -74,7 +75,7 @@ class source:
 	def _file_matches(self, filename):
 		if self.media_type == 'movie':
 			if not any(x in normalize(filename) for x in self._year_query_list()): return False
-		elif self.media_type == 'episode' and not source_utils.cloud_episode_matches(self.season, self.episode, filename, self.absolute_episode):
+		elif self.media_type == 'episode' and not source_utils.cloud_episode_matches(self.season, self.episode, filename, self.absolute_episode, self.title_check):
 			return False
 		if not self.filter_title: return True
 		return source_utils.check_title(self.title, filename, self.aliases, self.year, self.season, self.episode)
@@ -138,7 +139,7 @@ class source:
 			links = self.AllDebrid.cloud_file_links(folder_id)
 			links = [i for i in links if i.get('n', '').lower().endswith(tuple(self.extensions)) and i.get('l')]
 			for item in links:
-				if self.media_type == 'episode' and not source_utils.cloud_episode_matches(self.season, self.episode, item['n'], self.absolute_episode): continue
+				if self.media_type == 'episode' and not source_utils.cloud_episode_matches(self.season, self.episode, item['n'], self.absolute_episode, self.title_check): continue
 				if self.filter_title and not source_utils.check_title(self.title, item['n'], self.aliases, self.year, self.season, self.episode): continue
 				self._append_scrape_result(item)
 		except: return
