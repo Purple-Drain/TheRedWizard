@@ -356,14 +356,118 @@ def parse_episode_from_filename(release_title, season=None):
 		return e_num
 	return None
 
-def cloud_episode_matches(season, episode, filename, absolute_episode=None):
+_GENERIC_EPISODE_TITLE_RE = re.compile(r'^(?:episode|ep|part|chapter|pilot)?\s*\d*$')
+
+def episode_title_key(text):
+	"""Fold an episode title, or a file name, to lowercase ASCII words for whole-word comparison.
+
+	Bracketed runs are dropped so "The Trip (1)" and "The Trip (2)" fold to the same key (and are
+	then treated as one ambiguous title, never as a veto for each other) and so a release's
+	"(Syndicated Version)" tail cannot hide the title next to it.
+	"""
+	try:
+		text = _utils_normalize(text or '') or ''
+		text = re.sub(r'[\[({].*?[\])}]', ' ', text)
+		return re.sub(r'[^a-z0-9]+', ' ', text.lower()).strip()
+	except Exception:
+		return ''
+
+class EpisodeTitleCheck:
+	"""Verify or veto a cloud/folder file by the episode title carried in its name (#89).
+
+	A library's SxxEyy numbering need not be TMDb's: Seinfeld season 4 exists in TMDb aired
+	order, in the assigned group's DVD order, and in the DVD order the files were actually named
+	in, and those three disagree from S04E13 on. A number-only match therefore lands on a real,
+	different episode and the failure is silent. Release names in such libraries carry the
+	episode title, which is unambiguous, so:
+
+	  verdict(name) -> True   the name carries the target episode's title (same season, or no
+	                          season token): accept it whatever number it carries
+	                  False  the name carries another same-season episode's title and not the
+	                          target's: reject it even though its number matched
+	                  None   no title evidence either way: fall back to the numeric match
+
+	Titles shorter than four characters and generic ones ("Pilot", "Episode 3", "Part 2") are
+	dropped on both sides so they can never accept or veto anything. A title that contains, or
+	is contained in, the target's is dropped from the veto set too (double-episode halves).
+	"""
+	def __init__(self, target_title, season=None, other_titles=()):
+		try: self.season = int(season)
+		except Exception: self.season = None
+		self.target = self._usable(episode_title_key(target_title))
+		others = set()
+		for title in other_titles or ():
+			key = self._usable(episode_title_key(title))
+			if not key or key == self.target: continue
+			if self.target and (key in self.target or self.target in key): continue
+			others.add(key)
+		self.others = tuple(sorted(others))
+
+	@staticmethod
+	def _usable(key):
+		if len(key) < 4 or _GENERIC_EPISODE_TITLE_RE.match(key): return ''
+		return key
+
+	@staticmethod
+	@lru_cache(maxsize=512)
+	def _pattern(key):
+		# Whole-title match with a boundary at each end; the spaces between the title's own words
+		# are optional so "The FixUp" still matches "The Fix-Up" without letting "the pen" match
+		# inside "thepenguin".
+		return re.compile(r'(?<!\S)' + r' ?'.join(re.escape(word) for word in key.split()) + r'(?!\S)')
+
+	def __bool__(self):
+		return bool(self.target or self.others)
+
+	def verdict(self, filename):
+		if not filename or not self: return None
+		haystack = episode_title_key(filename)
+		if self.target and self._pattern(self.target).search(haystack):
+			if self.season is not None:
+				seasons = set(s_num for s_num, _ in iter_season_episode_tokens(filename))
+				if seasons and self.season not in seasons: return None
+			return True
+		if any(self._pattern(other).search(haystack) for other in self.others): return False
+		return None
+
+	__call__ = verdict
+
+def episode_title_check(info):
+	"""Build the EpisodeTitleCheck for one scrape from search_info, or None when it can't help.
+
+	The target title is search_info['ep_name']; the veto set is the raw season's episode titles,
+	read from meta_cache only (the season was cached when the episode was listed), never fetched.
+	"""
+	try:
+		if info.get('media_type') != 'episode': return None
+		season = info.get('season')
+		other_titles = []
+		try:
+			from caches.meta_cache import meta_cache
+			cached = meta_cache.get_season('%s_%s' % (info.get('tmdb_id'), season)) or []
+			other_titles = [i.get('title') for i in cached if i.get('title')]
+		except Exception:
+			other_titles = []
+		check = EpisodeTitleCheck(info.get('ep_name'), season, other_titles)
+		return check if check else None
+	except Exception:
+		return None
+
+def cloud_episode_matches(season, episode, filename, absolute_episode=None, title_check=None):
 	"""Match requested episode using the file name only — not parent folder names like Episode 1/.
 
+	0) If title_check (an EpisodeTitleCheck) has a verdict from the episode title in the name,
+	   that wins over the numbers (#89).
 	1) Explicit SxxExx / S# -## / NxN tokens (prefer these; never guess against them).
 	2) Else bare aired-order number: match absolute_episode when known, else S01 + episode only.
 	"""
 	if not filename:
 		return False
+	if title_check is not None:
+		try: verdict = title_check(filename)
+		except Exception: verdict = None
+		if verdict is not None:
+			return verdict
 	try:
 		season_i, episode_i = int(season), int(episode)
 	except Exception:
