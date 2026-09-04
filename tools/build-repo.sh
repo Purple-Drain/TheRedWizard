@@ -25,10 +25,13 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 OUT="$ROOT/dist"
 
+# Git Bash ships `python`, Debian-family images only `python3` (#25); take whichever exists.
+PYTHON="$(command -v python3 || command -v python)" || { echo "need python3 or python on PATH" >&2; exit 1; }
+
 # `zip` isn't on a stock Git Bash; fall back to python's zipfile, which is always
 # there (we already depend on python for the .strm patch tooling).
 zip_dir() {  # zip_dir <src_dir> <dest_zip> ; stores paths as <basename>/...
-	python - "$1" "$2" <<'PY'
+	"$PYTHON" - "$1" "$2" <<'PY'
 import os, sys, zipfile
 src, dest = sys.argv[1], sys.argv[2]
 base = os.path.basename(src.rstrip('/\\'))
@@ -45,7 +48,7 @@ PY
 }
 
 addon_version() {  # read version off the <addon id=...> element, NOT the xml decl
-	python - "$1" <<'PY'
+	"$PYTHON" - "$1" <<'PY'
 import sys, xml.etree.ElementTree as ET
 print(ET.parse(sys.argv[1]).getroot().get('version'))
 PY
@@ -78,7 +81,7 @@ for id in "${ADDONS[@]}"; do
 	for extra in icon.png fanart.jpg changelog.txt; do
 		[ -f "$src/$extra" ] && cp "$src/$extra" "$OUT/$id/$extra"
 	done
-	python - "$src" "$OUT/$id" <<'PY'
+	"$PYTHON" - "$src" "$OUT/$id" <<'PY'
 import os, shutil, sys, xml.etree.ElementTree as ET
 src, out = sys.argv[1:3]
 root = ET.parse(os.path.join(src, 'addon.xml')).getroot()   # trusted local input
@@ -94,7 +97,7 @@ PY
 	[ -f "$src/resources/changelog.txt" ] && cp "$src/resources/changelog.txt" "$OUT/$id/changelog.txt"
 
 	# append this add-on's manifest, minus its own <?xml ...?> declaration
-	python - "$src/addon.xml" >> "$OUT/addons.xml" <<'PY'
+	"$PYTHON" - "$src/addon.xml" >> "$OUT/addons.xml" <<'PY'
 import re, sys
 t = open(sys.argv[1], encoding='utf-8').read()
 t = re.sub(r'^\s*<\?xml[^>]*\?>\s*', '', t).rstrip()
@@ -106,7 +109,7 @@ done
 printf '</addons>\n' >> "$OUT/addons.xml"
 
 # Kodi wants the bare md5 hex, no filename column.
-python - "$OUT/addons.xml" "$OUT/addons.xml.md5" <<'PY'
+"$PYTHON" - "$OUT/addons.xml" "$OUT/addons.xml.md5" <<'PY'
 import hashlib, sys
 open(sys.argv[2], 'w').write(hashlib.md5(open(sys.argv[1], 'rb').read()).hexdigest())
 PY
@@ -115,7 +118,7 @@ PY
 # path goes through argv, not -c: MSYS rewrites path-shaped *arguments* into
 # Windows form for a native python.exe, but leaves a -c script body alone, so an
 # inlined /c/... path arrives unconverted and fails to open.
-python - "$OUT/addons.xml" <<'PY' || { echo "generated addons.xml is not well-formed" >&2; exit 1; }
+"$PYTHON" - "$OUT/addons.xml" <<'PY' || { echo "generated addons.xml is not well-formed" >&2; exit 1; }
 import sys, xml.etree.ElementTree as ET
 ET.parse(sys.argv[1])   # trusted local input: our own add-on manifests
 PY
