@@ -11,3 +11,4 @@ __pycache__/
 
 # Local session handoff notes -- private, never meant to reach the fork or upstream.
 CLAUDE.md
+PLAN*.md
