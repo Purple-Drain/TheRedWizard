@@ -524,6 +524,26 @@ def set_bookmark(params):
 		else: refresh_container(refresh)
 	except: pass
 
+def set_bookmark_checkpoint(params):
+	"""Local-only resume checkpoint, written periodically during playback (#58).
+
+	Deliberately lighter than set_bookmark(): only the local progress row, no remote
+	progress sync (Trakt/SIMKL/MDbList/PunchPlay) and no widget refresh, so a periodic
+	tick costs one DB upsert. The full set_bookmark() still runs at a graceful stop and
+	remains the authoritative write; this exists so a hard kill (crash, force-stop,
+	power loss) no longer loses the whole episode's progress. Known limit: with an
+	external watched-indicator provider the local row can be overwritten by that
+	provider's next resync (the same revert mechanism #81 documents), which is still
+	strictly better than no row at all.
+	"""
+	try:
+		media_type, tmdb_id, curr_time, total_time = params.get('media_type'), params.get('tmdb_id'), params.get('curr_time'), params.get('total_time')
+		title, season, episode = params.get('title'), params.get('season'), params.get('episode')
+		adjusted_current_time = float(curr_time) - 5
+		resume_point = round(adjusted_current_time/float(total_time)*100,1)
+		_write_local_progress(settings.watched_indicators(), media_type, tmdb_id, season, episode, resume_point, curr_time, title)
+	except: pass
+
 def mark_movie(params):
 	action, media_type = params.get('action'), 'movie'
 	refresh, from_playback = params.get('refresh', 'true') == 'true', params.get('from_playback', 'false') == 'true'
