@@ -492,9 +492,13 @@ def limit_number_total():
 	return int(get_setting('redlight.results.limit_number_total', '0'))
 
 def trakt_sync_interval():
+	# Clamped like its three siblings below (#98): a stored 0 would reach service.py's
+	# waitForAbort(0), which Kodi treats as wait-forever and silently hangs TraktMonitor.
+	# The UI can't produce 0 (min_value 5) but a settings-DB import bypasses that check.
 	setting = get_setting('redlight.trakt.sync_interval', '60')
-	interval = int(setting) * 60
-	return setting, interval
+	try: interval = max(5, int(setting))
+	except: interval = 60
+	return interval, interval * 60
 
 def lists_sort_order(setting):
 	return int(get_setting('redlight.sort.%s' % setting, '0'))
