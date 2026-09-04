@@ -390,6 +390,16 @@ def episode_group_scrape_remap():
 	"""
 	return get_setting('redlight.episode_group.scrape_remap', 'false') == 'true'
 
+def cloud_playback_retries():
+	"""Extra attempts on the same cloud source when Kodi's player fails to open it (#99).
+
+	TorBox's CDN (and, less often, the others) answers some range requests only after a
+	server-side wait of about two minutes while the next request on the same link is instant,
+	so one failed open on a cloud item is usually bad luck, not a dead link. 0 disables.
+	"""
+	try: return max(0, int(get_setting('redlight.cloud_play_retries', '2')))
+	except: return 2
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 

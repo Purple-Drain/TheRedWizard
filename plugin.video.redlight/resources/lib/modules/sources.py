@@ -1511,6 +1511,9 @@ class Sources():
 		self._absorb_internal_properties()
 		self._finalize_cloud_scraper_properties()
 
+	def cloud_scraper_names_all(self):
+		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+
 	def _cloud_scraper_names(self):
 		names = set(self.cloud_scraper_names or [])
 		names.update(i for i in self.remove_scrapers if i not in ('external',))
@@ -2241,6 +2244,7 @@ class Sources():
 				self._stop_active_playback()
 			retry_easynews = settings.easynews_playback_method('retry')
 			retry_easynews_limit = settings.easynews_playback_method_retries()
+			cloud_retries = settings.cloud_playback_retries()
 			kodi_utils.hide_busy_dialog()
 			if not source: source = playable_results[0]
 			self._log_nextep_resolve_diag(source, phase='play_start')
@@ -2278,6 +2282,14 @@ class Sources():
 					for retry in range(1, retry_easynews_limit):
 						resolve_item = dict(item)
 						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
+						processed_items_append(resolve_item)
+				# Cloud items get the same treatment (#99): a player-open failure on a debrid CDN link
+				# is usually one stalled request, and the next attempt on the same link is instant.
+				elif scrape_provider in self.cloud_scraper_names_all() and cloud_retries:
+					for retry in range(1, cloud_retries + 1):
+						resolve_item = dict(item)
+						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
+						resolve_item['cloud_retry'] = retry
 						processed_items_append(resolve_item)
 			items = list(processed_items)
 			if not self.continue_resolve_check():
@@ -2325,7 +2337,13 @@ class Sources():
 					self.progress_dialog.update_resolver(text=item['resolve_display'])
 					self.progress_dialog.busy_spinner()
 					if count > 1:
-						kodi_utils.sleep(200)
+						# A cloud retry (#99) waits a few seconds so the stalled connection is torn down
+						# before the same link is opened again; other queue steps keep the short gap.
+						if item.get('cloud_retry'):
+							kodi_utils.logger('Red Light', 'Cloud play retry %s for %s' % (item['cloud_retry'], item.get('name', '')))
+							kodi_utils.sleep(3000)
+						else:
+							kodi_utils.sleep(200)
 						try:
 							del player
 						except Exception:
