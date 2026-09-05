@@ -24,6 +24,7 @@ PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
 PROP_RESOLVE_OWNER = 'redlight.resolve_busy_owner'
 PROP_RESOLVE_CANCEL = 'redlight.resolve_cancelled'
 PROP_PLAY_OPENING = 'redlight.play_opening'
+PROP_PLAY_MIME = 'redlight.play_mime'
 PROP_BROWSE_RETURN_SOURCES = 'redlight.browse_return_sources'
 PROP_NEXTEP_SCRAPE_READY = 'redlight.nextep_scrape_ready'
 PROP_NEXTEP_SCRAPE_KEY = 'redlight.nextep_scrape_key'
@@ -43,19 +44,92 @@ _NEXTEP_STASH_PLAY_IN_FLIGHT = False
 
 _STALL_RESUME_REWIND_SEC = 5
 
-def stall_resume_eligible(item):
-	"""A mid-play stall is worth a re-resolve only for a debrid CDN link (#107): a cloud
-	scraper item, or an external result cached on a debrid service. Anything else (folders,
-	EasyNews, NZB, AIOStreams, direct links) keeps today's behaviour."""
+CLOUD_SCRAPER_NAMES = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+DEBRID_SERVICE_NAMES = ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox')
+
+def debrid_cdn_item(item):
+	"""True for a file that plays from a debrid service's CDN: a cloud scraper item, or an
+	external result cached on a debrid service. Anything else (folders, EasyNews, NZB,
+	AIOStreams, direct links) keeps its own behaviour. Shared by the open-time retry copies
+	(#99, #111), the mid-play stall resume (#107) and the mime hint (#124)."""
 	try:
 		provider = item.get('scrape_provider', '')
-		if provider in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'): return True
+		if provider in CLOUD_SCRAPER_NAMES: return True
 		if provider != 'external': return False
 		from modules.debrid import normalize_debrid_provider
 		cached = normalize_debrid_provider(item.get('cache_provider') or item.get('debrid') or '')
-		return cached in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox')
+		return cached in DEBRID_SERVICE_NAMES
 	except Exception:
 		return False
+
+def stall_resume_eligible(item):
+	"""A mid-play stall is worth a re-resolve only for a debrid CDN link (#107)."""
+	return debrid_cdn_item(item)
+
+def retry_copies(item, count, provider_text, extra_info, display_name, retries, marker=None):
+	"""The RETRYxN rows appended to the resolve queue behind an item (#118 consolidation of
+	the EasyNews and cloud copy blocks). Each copy is the item again with a resolve_display
+	that names the attempt; `marker`, when given, is set to the attempt number on the copy so
+	the queue loop can tell a retry from the next source."""
+	copies = []
+	for retry in range(1, max(0, int(retries or 0)) + 1):
+		copy = dict(item)
+		copy['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
+		if marker: copy[marker] = retry
+		copies.append(copy)
+	return copies
+
+# #124: mime types Kodi would otherwise learn from a HEAD request on the CDN link. Only the
+# containers the debrid CDNs actually serve; anything else keeps Kodi's own probing.
+PLAY_MIME_BY_EXT = (
+	('.mkv', 'video/x-matroska'), ('.mp4', 'video/mp4'), ('.avi', 'video/x-msvideo'), ('.ts', 'video/mp2t'),
+)
+
+def play_mime_for(item, url=None):
+	"""The mime type to preset on the ListItem of a debrid CDN item (#124), from the extension
+	of the file name, else of the url's path (query string and Kodi's |header suffix dropped).
+	None for anything that is not a debrid CDN item or whose extension is not in the table,
+	which leaves today's behaviour (Kodi's own lookup) in place."""
+	try:
+		if not debrid_cdn_item(item): return None
+		candidates = (item.get('name') or '', str(url or '').split('|')[0].split('?')[0].split('#')[0])
+		for candidate in candidates:
+			low = candidate.strip().lower()
+			if not low: continue
+			for ext, mime in PLAY_MIME_BY_EXT:
+				if low.endswith(ext): return mime
+		return None
+	except Exception:
+		return None
+
+_FAILURE_REASON_MAX = 90
+
+def describe_debrid_error(provider, error):
+	"""'Real-Debrid: hoster_unavailable (error_code 19)' from the error a debrid API client kept
+	on its last unrestrict call (RD's {'error', 'error_code'} body, TorBox's detail), or None
+	when there was none (#86)."""
+	if not error: return None
+	if isinstance(error, dict):
+		text = error.get('error') or error.get('detail') or error.get('message')
+		code = error.get('error_code')
+		if not text and code in (None, ''): return None
+		text = str(text or 'error')
+		if code not in (None, ''): text = '%s (error_code %s)' % (text, code)
+	else:
+		text = str(error)
+	text = text.strip()
+	if not text: return None
+	return ('%s: %s' % (provider, text) if provider else text)[:_FAILURE_REASON_MAX]
+
+def resolve_failure_reason(url, debrid_error=None, player_error=False, note=None):
+	"""Why one queue entry failed, in one line (#86). No url: the resolver's own note (deadline,
+	exception) beats the debrid API's error, which beats the generic text. With a url, Kodi's
+	player failed the open; `player_error` says onPlayBackError fired."""
+	if not url:
+		return (note or debrid_error or 'no url from resolver')[:_FAILURE_REASON_MAX]
+	reason = 'player could not open the stream'
+	if player_error: reason += ' (Kodi reported a playback error)'
+	return reason
 
 def stall_resume_percent(curr_time, total_time, rewind=_STALL_RESUME_REWIND_SEC):
 	"""StartPercent for the reopen: a few seconds before the stall so the seek lands on data
@@ -1207,14 +1281,14 @@ class Sources():
 		self._touch_sources_busy()
 		return True
 
-	def display_results(self, results):
+	def display_results(self, results, failure_label=''):
 		while True:
 			self._touch_sources_busy()
 			window_format, window_number = settings.results_format()
 			window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
 					window_format=window_format, window_id=window_number, results=results, meta=self.meta, sources_ref=self, episode_group_label=self.episode_group_label,
 					scraper_settings=self.scraper_settings, prescrape=self.prescrape, filters_ignored=self.filters_ignored,
-					uncached_results=self.uncached_results, cache_check_override=self.cache_check_override)
+					uncached_results=self.uncached_results, cache_check_override=self.cache_check_override, failure_label=failure_label)
 			if not window_result:
 				self._kill_progress_dialog()
 				return
@@ -1439,9 +1513,52 @@ class Sources():
 		self._playback_failed_notified = True
 		self._close_progress_before_modal()
 		message = text or self._playback_failed_default_message()
+		reason = self._resolve_failure_text()
 		if self.autoplay or self.background:
-			return kodi_utils.notification('Playback Failed', 4000, settle_ms=400)
+			return kodi_utils.notification('Playback failed: %s' % reason if reason else 'Playback Failed', 4000, settle_ms=400)
+		if reason and not text: message = '%s[CR]%s' % (message, reason)
 		return self._show_modal_message('Playback failed', message)
+
+	def _record_resolve_failure(self, item, reason):
+		"""Remember why the last queue entry failed (#86): read by the Resolve queue failed log
+		line, the fallback sources dialog's label and the playback-failed notification."""
+		provider = item.get('scrape_provider') or ''
+		if provider == 'external': provider = (item.get('debrid') or item.get('cache_provider') or provider).replace('.me', '')
+		self._resolve_failure = {'reason': reason, 'name': item.get('name', ''), 'provider': provider}
+
+	def _resolve_failure_text(self):
+		failure = getattr(self, '_resolve_failure', None) or {}
+		return failure.get('reason') or ''
+
+	def _resolve_failure_label(self):
+		"""One line for the sources dialog opened because a play failed, so it does not read as a
+		match failure (#86): 'Playback failed: player could not open the stream'."""
+		reason = self._resolve_failure_text()
+		return 'Playback failed: %s' % reason if reason else ''
+
+	def _set_play_mime_hint(self, item, url):
+		"""#124: for a debrid CDN item, publish the mime type derived from the file extension in
+		PROP_PLAY_MIME right before the player opens it. RedLightPlayer.make_listing already
+		disables content lookup on every ListItem, which is what skips Kodi's HEAD request
+		(CCurlFile::GetMimeType) before the first ranged GET; make_listing reads this property to
+		call setMimeType() as well, so the READ_MULTI_STREAM decision for MKV is made from the
+		right type instead of an empty one. Cleared for anything else so a stale hint never
+		reaches a later, unrelated play."""
+		mime = play_mime_for(item, url)
+		if mime:
+			kodi_utils.set_property(PROP_PLAY_MIME, mime)
+			kodi_utils.logger('Red Light', 'Play mime hint %s from the file extension for %s (content lookup off)' % (mime, item.get('name', '')))
+		else:
+			kodi_utils.clear_property(PROP_PLAY_MIME)
+		return mime
+
+	def _note_debrid_error(self, provider, api):
+		"""Keep the error the debrid client saw on its last unrestrict call (RD #126, TorBox), for
+		the failure reason of the queue entry being resolved (#86)."""
+		try:
+			self._debrid_error = describe_debrid_error(provider, getattr(api, 'last_unrestrict_error', None))
+		except Exception:
+			self._debrid_error = None
 
 	def _no_results(self):
 		if self.random_continual and self.media_type == 'episode' and self.tmdb_id:
@@ -1538,7 +1655,7 @@ class Sources():
 		self._finalize_cloud_scraper_properties()
 
 	def cloud_scraper_names_all(self):
-		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+		return CLOUD_SCRAPER_NAMES
 
 	def _cloud_scraper_names(self):
 		names = set(self.cloud_scraper_names or [])
@@ -2101,6 +2218,7 @@ class Sources():
 				# collapse everything to None, which then reads as "link expired".
 				import traceback
 				kodi_utils.logger('Red Light', 'resolve failed for %s: %s' % (item.get('name', ''), traceback.format_exc()))
+				self._resolve_note = 'resolver raised %s' % traceback.format_exc().strip().splitlines()[-1][:60]
 				result[0] = None
 		worker = Thread(target=_worker, daemon=True)
 		worker.start()
@@ -2114,6 +2232,7 @@ class Sources():
 				return None
 			if time.time() >= deadline:
 				kodi_utils.logger('Red Light', 'resolve of %s abandoned after the %ss deadline' % (item.get('name', ''), 90 if self.background else 240))
+				self._resolve_note = 'resolver abandoned after the %ss deadline' % (90 if self.background else 240)
 				return None
 			kodi_utils.sleep(poll_ms)
 		try:
@@ -2289,6 +2408,30 @@ class Sources():
 		self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=is_pack)
 		return player
 
+	def _queue_retry_copies(self, item, count, provider_text, extra_info, display_name, retry_easynews, retry_easynews_limit, cloud_retries):
+		"""Retry rows for one queue entry (#118: one place instead of a copy per item kind).
+
+		EasyNews items (native, or an AIOStreams row that is a direct EasyNews link) follow the
+		EasyNews Playback Method (Retry) setting: the limit counts the first attempt, so it yields
+		limit - 1 copies. Debrid CDN items (#99 cloud scrapers, #111 external results cached on a
+		debrid) get cloud_play_retries copies marked `cloud_retry`, which the queue loop turns into
+		the 3 s gap and the "Cloud play retry" log line: a player-open failure on such a link is
+		usually one stalled request, and the next attempt on the same link is instant."""
+		scrape_provider = item.get('scrape_provider')
+		en_retry = scrape_provider == 'easynews'
+		if not en_retry and scrape_provider == 'aiostreams':
+			try:
+				from apis.aiostreams_api import is_direct_easynews_item
+				en_retry = is_direct_easynews_item(item)
+			except Exception:
+				en_retry = False
+		if en_retry:
+			if not retry_easynews: return []
+			return retry_copies(item, count, provider_text, extra_info, display_name, retry_easynews_limit - 1)
+		if cloud_retries and debrid_cdn_item(item):
+			return retry_copies(item, count, provider_text, extra_info, display_name, cloud_retries, marker='cloud_retry')
+		return []
+
 	def play_file(self, results, source={}):
 		playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
 		if not playable_results and not source:
@@ -2303,6 +2446,7 @@ class Sources():
 		try:
 			self.playback_successful, self.cancel_all_playback = None, False
 			self._resolve_user_cancelled = False
+			self._resolve_failure = None
 			defer_stop_for_nextep = getattr(self, '_nextep_alert_handled', False) or (self.background and (self.autoplay_nextep or self.autoscrape_nextep or self.play_type == 'random_continual' or self.random_continual))
 			if not defer_stop_for_nextep:
 				self._stop_active_playback()
@@ -2334,27 +2478,8 @@ class Sources():
 				display_name = item['display_name'].upper()
 				resolve_item['resolve_display'] = '%02d. [B]%s[/B][CR]%s[CR]%s' % (count, provider_text, extra_info, display_name)
 				processed_items_append(resolve_item)
-				# Native EN + AIOStreams EN badge rows share EasyNews Playback Method (Retry).
-				en_retry = scrape_provider == 'easynews'
-				if not en_retry and scrape_provider == 'aiostreams':
-					try:
-						from apis.aiostreams_api import is_direct_easynews_item
-						en_retry = is_direct_easynews_item(item)
-					except Exception:
-						en_retry = False
-				if en_retry and retry_easynews:
-					for retry in range(1, retry_easynews_limit):
-						resolve_item = dict(item)
-						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
-						processed_items_append(resolve_item)
-				# Cloud items get the same treatment (#99): a player-open failure on a debrid CDN link
-				# is usually one stalled request, and the next attempt on the same link is instant.
-				elif scrape_provider in self.cloud_scraper_names_all() and cloud_retries:
-					for retry in range(1, cloud_retries + 1):
-						resolve_item = dict(item)
-						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
-						resolve_item['cloud_retry'] = retry
-						processed_items_append(resolve_item)
+				processed_items.extend(self._queue_retry_copies(item, count, provider_text, extra_info, display_name,
+						retry_easynews, retry_easynews_limit, cloud_retries))
 			items = list(processed_items)
 			if not self.continue_resolve_check():
 				self._kill_progress_dialog()
@@ -2421,7 +2546,10 @@ class Sources():
 							self._resolve_user_cancelled = True
 							self.cancel_all_playback = True
 							break
+						self._resolve_note, self._debrid_error = None, None
 						url = self._resolve_sources_wait(item)
+						if not url and not self._user_cancelled_resolve():
+							self._record_resolve_failure(item, resolve_failure_reason(None, self._debrid_error, note=self._resolve_note))
 						if self._user_cancelled_resolve():
 							self._resolve_user_cancelled = True
 							self.cancel_all_playback = True
@@ -2456,12 +2584,15 @@ class Sources():
 								self._stop_active_playback()
 							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
+							self._set_play_mime_hint(item, url)
 							player.run(url, self)
 							if self.playback_successful and getattr(player, 'stall_position', None):
 								url = self._resume_after_stall(item, url, player)
 						else: continue
 						if self.cancel_all_playback or self._resolve_user_cancelled:
 							break
+						if not self.playback_successful:
+							self._record_resolve_failure(item, resolve_failure_reason(url, player_error=getattr(player, 'playback_error', False)))
 						if self.playback_successful: break
 						# Next queued source — drop Kodi's native playback-failed confirm if it lingered.
 						if count < len(items):
@@ -2479,8 +2610,10 @@ class Sources():
 			if self.cancel_all_playback or self._resolve_user_cancelled:
 				self._finish_resolve_cancel()
 			elif not self.playback_successful or not url:
-				kodi_utils.logger('Red Light', 'Resolve queue failed: success=%s url=%s dialog=%s' % (
-					self.playback_successful, bool(url), bool(self.progress_dialog)))
+				failure = getattr(self, '_resolve_failure', None) or {}
+				kodi_utils.logger('Red Light', 'Resolve queue failed: success=%s url=%s dialog=%s reason=%s last=%s (%s)' % (
+					self.playback_successful, bool(url), bool(self.progress_dialog),
+					failure.get('reason') or 'unknown', failure.get('name') or getattr(self, 'playing_filename', ''), failure.get('provider') or ''))
 				self.playback_failed_action()
 		finally:
 			if self.params.get('nextep_stash_play') == 'true':
@@ -2530,6 +2663,7 @@ class Sources():
 				self.playing_filename, self.playing_item = item['name'], item
 				self.playback_successful = None
 				player = RedLightPlayer()
+				self._set_play_mime_hint(item, url)
 				player.run(url, self)
 				if self.cancel_all_playback or self._resolve_user_cancelled: break
 				if not self.playback_successful:
@@ -2596,7 +2730,7 @@ class Sources():
 					self.cloud_prescrape_autoplay = False
 					if self.autoplay and not self._effective_autoplay():
 						self.autoplay = False
-					return self.display_results(results)
+					return self.display_results(results, failure_label=self._resolve_failure_label())
 			self.cloud_prescrape_autoplay = False
 			if self.autoplay and not self._effective_autoplay():
 				self.autoplay = False
@@ -2611,7 +2745,7 @@ class Sources():
 			self.resolve_dialog_made = False
 			results = self.process_results(list(self.prescrape_sources))
 			if results:
-				return self.display_results(results)
+				return self.display_results(results, failure_label=self._resolve_failure_label())
 		if self.autoplay or self.background:
 			return self._no_results()
 		return self._show_playback_failed_dialog()
@@ -3075,6 +3209,7 @@ class Sources():
 					else: source_item.pop('_offcloud_cleanup_request_id', None)
 			else:
 				url = api.resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
+			if not url: self._note_debrid_error(debrid_provider, api)
 		except: url = None
 		return url
 
@@ -3097,10 +3232,13 @@ class Sources():
 					else:
 						url = tb.unrestrict_link(item_id)
 					url = tb.coerce_play_url(url) or url
+					if not url: self._note_debrid_error('TorBox', tb)
 				elif scrape_provider == 'rd_cloud':
 					# #94: RD can answer hoster_unavailable for a torrent it still lists as downloaded;
 					# the helper reinserts that torrent once per session (folder_id is its id) and retries.
-					url = debrid_function().unrestrict_cloud_link(item_id, folder_id)
+					rd = debrid_function()
+					url = rd.unrestrict_cloud_link(item_id, folder_id)
+					if not url: self._note_debrid_error('Real-Debrid', rd)
 				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_')):
 					url = debrid_function().unrestrict_link(item_id)
 				else:

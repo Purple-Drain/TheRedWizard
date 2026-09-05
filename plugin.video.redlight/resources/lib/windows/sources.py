@@ -31,6 +31,8 @@ class SourcesResults(BaseDialog):
 		self.meta = kwargs.get('meta')
 		self.sources_ref = kwargs.get('sources_ref')
 		self.filters_ignored = kwargs.get('filters_ignored', False)
+		# #86: set when this dialog opened because a play failed, so it does not read as a match failure.
+		self.failure_label = kwargs.get('failure_label', '') or ''
 		self.selected = (None, '')
 		self.meta_get = self.meta.get
 		self.make_poster = self.window_format in ('list', 'medialist')
@@ -400,6 +402,7 @@ class SourcesResults(BaseDialog):
 		self.setProperty('title', self.meta_get('title'))
 		self.setProperty('total_results', self.total_results)
 		self.setProperty('filters_ignored', '| Filters Ignored' if self.filters_ignored else '')
+		self.setProperty('failure_info', '| %s' % self.failure_label if self.failure_label else '')
 
 	def set_poster(self):
 		if self.window_id == 2000: self.set_image(200, self.poster)
