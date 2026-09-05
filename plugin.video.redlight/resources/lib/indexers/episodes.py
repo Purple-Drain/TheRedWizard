@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
+import time
+from caches.widget_cache import widget_cache
 from modules import kodi_utils, settings, watched_status as ws
 from modules.metadata import (tvshow_meta, episodes_meta, all_episodes_meta, resolve_assigned_episode_group, group_episode_data,
 								group_traversal_reachable, group_season_bucket_episodes)
@@ -310,27 +312,39 @@ def build_single_episode(list_type, params={}):
 			season_data = meta_get('season_data')
 			watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
 			if list_type_starts_with('next'):
-				# get_next_episodes() picked orig_season/orig_episode by raw (season, episode)
-				# order -- correct it into the show's own group order first when it has a
-				# group-native traversal, or "next" walks on from the wrong episode (#76).
-				# Computed once and threaded through both calls below -- each call otherwise
-				# refetches every group-native season's episode metadata on its own.
-				group_pairs = ws.group_ordered_episode_pairs(meta)
-				orig_season, orig_episode = ws.group_corrected_next_seed(meta, watched_info, orig_season, orig_episode, group_pairs=group_pairs)
-				last_watched_season, last_watched_episode = orig_season, orig_episode
-				orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta, group_pairs=group_pairs)
-				# Weekly anime: stale season/show cache often stops at the last watched ep until expiry.
-				if (not orig_season or not orig_episode) and meta_get('status') not in ('Ended', 'Canceled'):
-					try:
-						from modules.metadata import refresh_airing_show_meta
-						refresh_airing_show_meta(meta_get('tmdb_id'), last_watched_season)
-						meta = tvshow_meta('tmdb_id', meta_get('tmdb_id'), api_key, mpaa_region_value, current_date, current_time, is_anime_list=is_anime_list)
-						if not meta: return
-						meta_get = meta.get
-						season_data = meta_get('season_data')
-						watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
-						orig_season, orig_episode = ws.get_next(last_watched_season, last_watched_episode, watched_info, season_data, nextep_content, meta)
-					except: pass
+				# Per-show result cache (#121): the (season, episode) resolved below is keyed on the
+				# seed, the method and every watched row for this show, so a rebuild recomputes
+				# only shows whose watched rows changed. Watchlist/favourite "unwatched" entries
+				# (episode 0) are trivial and never cached.
+				nextep_key = None if unwatched else ws.next_episode_cache_key(watched_info, nextep_content, orig_season, orig_episode)
+				resolved = widget_cache.get_next_episode(tmdb_id, nextep_key) if nextep_key else None
+				if resolved:
+					orig_season, orig_episode = resolved
+					nextep_hits.append(tmdb_id)
+				else:
+					# get_next_episodes() picked orig_season/orig_episode by raw (season, episode)
+					# order -- correct it into the show's own group order first when it has a
+					# group-native traversal, or "next" walks on from the wrong episode (#76).
+					# Computed once and threaded through both calls below -- each call otherwise
+					# refetches every group-native season's episode metadata on its own.
+					group_pairs = ws.group_ordered_episode_pairs(meta)
+					orig_season, orig_episode = ws.group_corrected_next_seed(meta, watched_info, orig_season, orig_episode, group_pairs=group_pairs)
+					last_watched_season, last_watched_episode = orig_season, orig_episode
+					orig_season, orig_episode = ws.get_next(orig_season, orig_episode, watched_info, season_data, nextep_content, meta, group_pairs=group_pairs)
+					# Weekly anime: stale season/show cache often stops at the last watched ep until expiry.
+					if (not orig_season or not orig_episode) and meta_get('status') not in ('Ended', 'Canceled'):
+						try:
+							from modules.metadata import refresh_airing_show_meta
+							refresh_airing_show_meta(meta_get('tmdb_id'), last_watched_season)
+							meta = tvshow_meta('tmdb_id', meta_get('tmdb_id'), api_key, mpaa_region_value, current_date, current_time, is_anime_list=is_anime_list)
+							if not meta: return
+							meta_get = meta.get
+							season_data = meta_get('season_data')
+							watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
+							orig_season, orig_episode = ws.get_next(last_watched_season, last_watched_episode, watched_info, season_data, nextep_content, meta)
+						except: pass
+					if nextep_key and orig_season and orig_episode:
+						widget_cache.set_next_episode(tmdb_id, nextep_key, orig_season, orig_episode, meta_get('status'))
 				if not orig_season or not orig_episode: return
 				if ws.get_watched_status_episode(watched_info, (orig_season, orig_episode)): return
 			episodes_data = episodes_meta(orig_season, meta)
@@ -402,7 +416,7 @@ def build_single_episode(list_type, params={}):
 			progress_aired_eps, total_unwatched = None, None
 			if unwatched_info:
 				try:
-					progress_aired_eps = ws.progress_aired_eps(meta)
+					progress_aired_eps = ws.show_facts(meta, show_facts_map)[0]
 					total_unwatched = ws.get_watched_status_tvshow(watched_info_tvshow.get(str(tmdb_id), None), progress_aired_eps)[2]
 				except: progress_aired_eps, total_unwatched = None, None
 				if unwatched_in_title and total_unwatched:
@@ -560,6 +574,7 @@ def build_single_episode(list_type, params={}):
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
 	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
+	build_started, nextep_hits = time.time(), []
 	if list_type in ('episode.next', 'episode.mdblist_next'):
 		mdblist_menu_next = list_type == 'episode.mdblist_next'
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
@@ -672,10 +687,14 @@ def build_single_episode(list_type, params={}):
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
 	list_type_compare = list_type.split('episode.')[1]
 	list_type_starts_with = list_type_compare.startswith
+	# One read for every show's cached facts (unwatched-count suffix), instead of a per-show query.
+	show_facts_map = widget_cache.get_show_facts([i['media_ids'].get('tmdb') for i in data if i.get('media_ids')]) if unwatched_info else {}
 	threads = TaskPool().tasks_enumerate(_process, data, min(len(data), settings.max_threads()))
 	[i.join() for i in threads]
 	if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
 	if list_type_starts_with('next_'):
+		kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s miss, %.1fs'
+			% (list_type, len(data), len(item_list), len(nextep_hits), len(data) - len(nextep_hits), time.time() - build_started))
 		def func(function):
 			if sort_key == 'name': return title_key(function, ignore_articles)
 			elif sort_key == 'last_played': return jsondate_to_datetime(function, resformat)
