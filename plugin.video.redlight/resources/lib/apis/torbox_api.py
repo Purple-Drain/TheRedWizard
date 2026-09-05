@@ -24,14 +24,20 @@ _public_ip_cache = {'ip': '', 'expires': 0}
 
 def _cached_public_ip():
 	'''Public IP rarely changes mid-session; avoid a fresh ipify round-trip on every resolve.
-	Failed lookups are not cached so the next resolve retries rather than going 30 min without a user_ip.'''
-	if _public_ip_cache['ip'] and time.time() < _public_ip_cache['expires']:
+	Failed lookups get a short 60s negative cache (#116) so a downed ipify doesn't cost a fresh
+	2s timeout on every resolve; after 60s the next resolve retries as before.'''
+	now = time.time()
+	if _public_ip_cache['ip'] and now < _public_ip_cache['expires']:
 		return _public_ip_cache['ip']
+	if not _public_ip_cache['ip'] and now < _public_ip_cache['expires']:
+		return ''
 	try: ip = requests.get('https://api.ipify.org', timeout=2).text.strip()
 	except Exception: ip = ''
 	if ip:
 		_public_ip_cache['ip'] = ip
-		_public_ip_cache['expires'] = time.time() + 1800
+		_public_ip_cache['expires'] = now + 1800
+	else:
+		_public_ip_cache['expires'] = now + 60
 	return ip
 
 
