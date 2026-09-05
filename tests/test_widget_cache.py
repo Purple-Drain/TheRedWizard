@@ -289,3 +289,10 @@ def test_meta_refresh_and_meta_clear_forget_widget_rows(db):
 	assert len(_ids(db)) == 2  # movies do not touch the widget rows
 	mc.meta_cache.delete_all()
 	assert _ids(db) == []
+
+
+def test_negative_sentinel_is_reachable_through_the_instance():
+    """Regression for pd.41: episodes.py compares against widget_cache.NEGATIVE on the instance;
+    on 05.09.26 that raised AttributeError for every show and Next Episodes listed nothing."""
+    from caches import widget_cache as module
+    assert module.widget_cache.NEGATIVE is module.NEGATIVE
