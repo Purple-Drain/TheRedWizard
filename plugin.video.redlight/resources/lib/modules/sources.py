@@ -2454,6 +2454,17 @@ class Sources():
 		if self.cloud_prescrape_autoplay:
 			self._kill_progress_dialog(join_timeout=1.0)
 			self.resolve_dialog_made = False
+			# #104: the cloud-only prescrape found sources but every one failed to open (a CDN
+			# stall, a dead debrid link). The "found nothing" case below already continues to the
+			# full scrape; do the same here instead of parking the user in the sources dialog,
+			# once per playback so a scrape that finds the same dead file cannot loop.
+			if (self.prescrape_sources and self.autoplay and settings.cloud_queue_fallthrough()
+					and not getattr(self, '_cloud_queue_fallthrough_done', False)):
+				self._cloud_queue_fallthrough_done = True
+				kodi_utils.logger('Red Light', 'Cloud queue exhausted: %d cloud source(s) failed to open, running the full scrape' % len(self.prescrape_sources))
+				self.cloud_prescrape_autoplay = False
+				self.prescrape, self.prescrape_sources = False, []
+				return self.get_sources()
 			fallback_sources = list(self.prescrape_sources) if self.prescrape_sources else list(getattr(self, '_last_cloud_autoplay_results', []) or [])
 			if fallback_sources:
 				self.prescrape = bool(self.prescrape_sources)
