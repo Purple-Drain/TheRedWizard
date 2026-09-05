@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
+import time
 from apis.real_debrid_api import RealDebrid
 from modules import source_utils
 from threading import Thread
 from modules.utils import clean_file_name, normalize
 from modules.settings import enabled_debrids_check, filter_by_name
+from caches.settings_cache import get_setting
 # from modules.kodi_utils import logger
 
 class source:
@@ -24,12 +26,14 @@ class source:
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
 			self.folder_query = source_utils.clean_title(normalize(title))
 			self.folder_queries = source_utils.folder_title_queries(title, self.aliases)
+			self.scrape_deadline = time.time() + self._deadline_seconds()
 			self._scrape_downloads()
 			self._scrape_cloud()
 			if not self.scrape_results: return source_utils.internal_results(self.scrape_provider, self.sources)
 			aliases = self.aliases
 			def _process():
-				for item in self.scrape_results:
+				# Snapshot: a torrent-info thread abandoned at the deadline may still append.
+				for item in list(self.scrape_results):
 					try:
 						file_name = self._get_filename(item['path'])
 						if self.media_type == 'episode':
@@ -53,8 +57,34 @@ class source:
 		source_utils.internal_results(self.scrape_provider, self.sources)
 		return self.sources
 
+	def _deadline_seconds(self):
+		"""Same scrape budget tb_cloud and pm_cloud give themselves (#112)."""
+		return min(25, max(10, int(get_setting('redlight.results.timeout', '20'))))
+
+	def _past_deadline(self, stage):
+		if time.time() < self.scrape_deadline: return False
+		from modules.kodi_utils import logger
+		logger('Red Light', 'rd_cloud scrape deadline reached before %s' % stage)
+		return True
+
+	def _join_until_deadline(self, threads):
+		"""Join the per-torrent info threads against the scrape deadline (#112). Each is a 20 s-capped
+		torrents/info call and the join used to wait for all of them, so a slow Real-Debrid overran
+		a background next-episode prep with nothing in the log to show why. An abandoned thread
+		finishes on its own; whatever it appends after this point is not waited for."""
+		for thread in threads:
+			remaining = self.scrape_deadline - time.time()
+			if remaining <= 0: break
+			thread.join(timeout=remaining)
+		abandoned = sum(1 for thread in threads if thread.is_alive())
+		if abandoned:
+			from modules.kodi_utils import logger
+			logger('Red Light', 'rd_cloud scrape deadline reached with %d of %d torrent info fetches still running' % (abandoned, len(threads)))
+		return abandoned
+
 	def _scrape_cloud(self):
 		try:
+			if self._past_deadline('the torrent list'): return self.sources
 			try:
 				my_cloud_files = RealDebrid.user_cloud()
 				my_cloud_files = [i for i in my_cloud_files if i['status'] == 'downloaded']
@@ -64,21 +94,22 @@ class source:
 			for item in my_cloud_files:
 				normalized = normalize(item['filename'])
 				folder_name = source_utils.clean_title(normalized)
-				if not folder_name: results_append(item['id'])
-				elif not any(q and q in folder_name for q in self.folder_queries): continue
-				else:
-					if self.media_type == 'movie' and not any(x in normalized for x in year_query_list): continue
-					results_append(item['id'])
+				# A name that cleans to nothing cannot match the title; it used to be fetched
+				# unconditionally, one torrents/info call and one thread per such torrent (#112).
+				if not folder_name: continue
+				if not any(q and q in folder_name for q in self.folder_queries): continue
+				if self.media_type == 'movie' and not any(x in normalized for x in year_query_list): continue
+				results_append(item['id'])
 			if not self.folder_results: return self.sources
-			threads = []
-			threads_append = threads.append
-			for i in self.folder_results: threads_append(Thread(target=self._scrape_folders, args=(i,)))
+			if self._past_deadline('the torrent info fetches'): return self.sources
+			threads = [Thread(target=self._scrape_folders, args=(i,)) for i in self.folder_results]
 			[i.start() for i in threads]
-			[i.join() for i in threads]
+			self._join_until_deadline(threads)
 		except: pass
 
 	def _scrape_folders(self, folder_info):
 		try:
+			if time.time() >= self.scrape_deadline: return
 			folder_files = RealDebrid.user_cloud_info(folder_info)
 			contents = [i for i in folder_files['files'] if i['selected'] == 1 and i['path'].lower().endswith(tuple(self.extensions))]
 			file_urls = folder_files['links']
