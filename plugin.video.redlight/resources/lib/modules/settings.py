@@ -400,6 +400,11 @@ def cloud_playback_retries():
 	try: return max(0, int(get_setting('redlight.cloud_play_retries', '2')))
 	except: return 2
 
+def cloud_queue_fallthrough():
+	"""When an autoplay prescrape found cloud sources but every one failed to open, run the full
+	scrape and keep going instead of opening the sources dialog (#104). On by default."""
+	return get_setting('redlight.cloud_queue_fallthrough', 'true') == 'true'
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 
