@@ -59,6 +59,9 @@ def show_ttl(status):
 
 
 class WidgetCache:
+	# Exposed on the class so callers holding the instance (indexers/episodes.py compares
+	# against widget_cache.NEGATIVE) see the same sentinel as the module constant.
+	NEGATIVE = NEGATIVE
 	def _connect(self):
 		return connect_database('maincache_db')
 
