@@ -405,6 +405,17 @@ def cloud_queue_fallthrough():
 	scrape and keep going instead of opening the sources dialog (#104). On by default."""
 	return get_setting('redlight.cloud_queue_fallthrough', 'true') == 'true'
 
+def cloud_stall_resume():
+	"""When a cloud item's stream dies mid-play (#107: a CDN range request left hanging past
+	curl's low-speed timeout), re-resolve the same item and resume from the stall instead of
+	ending the episode silently. On by default."""
+	return get_setting('redlight.cloud_stall_resume', 'true') == 'true'
+
+def cloud_stall_resume_attempts():
+	"""How many times one playback may be re-resolved and resumed after a mid-play stall (#107)."""
+	try: return max(0, int(get_setting('redlight.cloud_stall_resume_attempts', '2')))
+	except: return 2
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 

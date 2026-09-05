@@ -41,6 +41,32 @@ _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
 _NEXTEP_STASH_PLAY_IN_FLIGHT = False
 
+_STALL_RESUME_REWIND_SEC = 5
+
+def stall_resume_eligible(item):
+	"""A mid-play stall is worth a re-resolve only for a debrid CDN link (#107): a cloud
+	scraper item, or an external result cached on a debrid service. Anything else (folders,
+	EasyNews, NZB, AIOStreams, direct links) keeps today's behaviour."""
+	try:
+		provider = item.get('scrape_provider', '')
+		if provider in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'): return True
+		if provider != 'external': return False
+		from modules.debrid import normalize_debrid_provider
+		cached = normalize_debrid_provider(item.get('cache_provider') or item.get('debrid') or '')
+		return cached in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox')
+	except Exception:
+		return False
+
+def stall_resume_percent(curr_time, total_time, rewind=_STALL_RESUME_REWIND_SEC):
+	"""StartPercent for the reopen: a few seconds before the stall so the seek lands on data
+	the previous connection had already served and the viewer gets their bearings back."""
+	try:
+		curr, total = float(curr_time), float(total_time)
+		if total <= 0: return 0.0
+		return round(max(0.0, min(curr - rewind, total)) / total * 100, 2)
+	except (TypeError, ValueError):
+		return 0.0
+
 def _nextep_stash_play_in_flight():
 	return _NEXTEP_STASH_PLAY_IN_FLIGHT
 
@@ -2405,6 +2431,8 @@ class Sources():
 							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
 							player.run(url, self)
+							if self.playback_successful and getattr(player, 'stall_position', None):
+								url = self._resume_after_stall(item, url, player)
 						else: continue
 						if self.cancel_all_playback or self._resolve_user_cancelled:
 							break
@@ -2434,6 +2462,63 @@ class Sources():
 			self._release_resolve_busy()
 			try: del monitor
 			except: pass
+
+	def _resume_after_stall(self, item, url, player):
+		"""Playback of a cloud item died mid-stream (#107) and the player recorded where.
+		Re-resolve the same item (fresh unrestrict, new connection) and reopen it from just
+		before the stall, up to cloud_stall_resume_attempts times. Returns the url last opened
+		so the caller's deferred cleanup targets it. The item did play, so whatever happens here
+		the queue is left as played: the stop-time bookmark carries the position for a manual
+		relaunch, and neither the remaining queue nor the sources dialog is run on its behalf."""
+		if self.background or not settings.cloud_stall_resume() or not stall_resume_eligible(item):
+			return url
+		attempts = settings.cloud_stall_resume_attempts()
+		name = item.get('name', '')
+		stall = getattr(player, 'stall_position', None)
+		attempt = 0
+		try:
+			while stall and attempt < attempts:
+				attempt += 1
+				curr, total = stall
+				if self._user_cancelled_resolve(): break
+				kodi_utils.logger('Red Light', 'Playback stalled at %ds on %s, re-resolving and resuming (attempt %d/%d)' % (curr, name, attempt, attempts))
+				try: player._dismiss_kodi_playback_error_dialog()
+				except: pass
+				kodi_utils.notification('Stream stalled, resuming', 4000)
+				# The resolver UI so the reopen gets check_playback_start's timeout, cancel and
+				# error-dialog handling (the dialog-less branch there has none).
+				try:
+					self._make_resolve_dialog()
+					self.progress_dialog.reset_is_cancelled()
+					self.progress_dialog.update_resolver(text=item['resolve_display'])
+					self.progress_dialog.busy_spinner()
+				except: pass
+				kodi_utils.sleep(1000)
+				new_url = self._resolve_sources_wait(item)
+				if self._user_cancelled_resolve(): break
+				if not new_url:
+					kodi_utils.logger('Red Light', 'Stall resume: re-resolve of %s returned no link (attempt %d/%d)' % (name, attempt, attempts))
+					continue
+				url = self._ensure_play_headers(new_url, item)
+				self.playback_percent = stall_resume_percent(curr, total)
+				self.playing_filename, self.playing_item = item['name'], item
+				self.playback_successful = None
+				player = RedLightPlayer()
+				player.run(url, self)
+				if self.cancel_all_playback or self._resolve_user_cancelled: break
+				if not self.playback_successful:
+					kodi_utils.logger('Red Light', 'Stall resume: %s did not reopen (attempt %d/%d)' % (name, attempt, attempts))
+					continue
+				stall = getattr(player, 'stall_position', None)
+			if stall and not (self.cancel_all_playback or self._resolve_user_cancelled):
+				kodi_utils.logger('Red Light', 'Stall resume: giving up on %s after %d attempt(s), bookmark kept at %ds' % (name, attempt, stall[0]))
+		except:
+			pass
+		finally:
+			if not (self.cancel_all_playback or self._resolve_user_cancelled):
+				self.playback_successful = True
+				self._kill_progress_dialog(join_timeout=1.0)
+		return url
 
 	def get_playback_percent(self):
 		if self.media_type == 'movie': percent = watched_status.get_progress_status_movie(watched_status.get_bookmarks_movie(), str(self.tmdb_id))
