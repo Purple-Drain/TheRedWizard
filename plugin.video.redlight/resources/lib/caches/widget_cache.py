@@ -15,7 +15,11 @@ scheduled clean sweeps expired rows, and nothing new needs creating on-device.
                      re-requested after a play/stop is a cache read.
 * next episode    -- per show: the (season, episode) Next Episodes resolved for it, stored with a
                      key over that show's watched rows, so only shows whose rows changed recompute
-                     group_ordered_episode_pairs()/get_next().
+                     group_ordered_episode_pairs()/get_next(). A show with no next episode is a
+                     negative result -- also stored, under the same key, so an unwatched-count-only
+                     rebuild doesn't recompute it every time (#121). Negative rows get a short ttl
+                     (30 min, not the show's usual 6h/168h) since an airing show can gain a new
+                     episode at any time; a positive result always replaces a negative one on read.
 
 Rows are JSON, never eval'd. Expiry is seconds from now. Invalidation for things the keys cannot
 see (episode-group assignment, a meta refresh) goes through delete_show()/clear(), called from the
@@ -36,6 +40,14 @@ NEXTEP_PREFIX = PREFIX + 'NEXTEP_'
 AIRING_TTL = 6 * 3600
 ENDED_TTL = 168 * 3600
 LIST_TTL = 10 * 60
+# A show with no next episode is re-checked far sooner than a positive result's own ttl -- an
+# airing show can gain a new episode at any point, so this is deliberately short.
+NEGATIVE_NEXTEP_TTL = 30 * 60
+
+# get_next_episode() sentinel: a cached negative result (no next episode), distinct from a miss
+# (no row / expired / key mismatch), which callers must treat differently -- a miss recomputes,
+# a negative hit does not.
+NEGATIVE = object()
 
 
 def _now():
@@ -104,7 +116,8 @@ class WidgetCache:
 
 	# --- per-show next episode --------------------------------------------------------------
 	def get_next_episode(self, tmdb_id, key):
-		"""(season, episode) stored for the show under exactly this key, else None."""
+		"""(season, episode) stored for the show under exactly this key; NEGATIVE if a "no next
+		episode" result was cached under this key; else None (miss -- caller must recompute)."""
 		try:
 			dbcon = self._connect()
 			row = dbcon.execute('SELECT data, expires FROM maincache WHERE id = ?', (NEXTEP_PREFIX + str(tmdb_id),)).fetchone()
@@ -114,17 +127,23 @@ class WidgetCache:
 			payload = json.loads(data)
 			if payload.get('key') != key: return None
 			season, episode = payload['season'], payload['episode']
-			if season is None or episode is None: return None
+			if season is None or episode is None: return NEGATIVE
 			return int(season), int(episode)
 		except Exception: return None
 
 	def set_next_episode(self, tmdb_id, key, season, episode, status=''):
-		if season is None or episode is None: return
+		"""Store a positive (season, episode) result, or a negative one when season/episode is
+		None -- same key, same invalidation, a short ttl since the show may air again any time."""
 		try:
 			dbcon = self._connect()
+			if season is None or episode is None:
+				ttl = NEGATIVE_NEXTEP_TTL
+				payload = {'key': key, 'season': None, 'episode': None}
+			else:
+				ttl = show_ttl(status)
+				payload = {'key': key, 'season': int(season), 'episode': int(episode)}
 			dbcon.execute('INSERT OR REPLACE INTO maincache (id, data, expires) VALUES (?, ?, ?)',
-				(NEXTEP_PREFIX + str(tmdb_id), json.dumps({'key': key, 'season': int(season), 'episode': int(episode)}),
-				_now() + show_ttl(status)))
+				(NEXTEP_PREFIX + str(tmdb_id), json.dumps(payload), _now() + ttl))
 		except Exception: pass
 
 	# --- invalidation -----------------------------------------------------------------------
