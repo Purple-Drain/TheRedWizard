@@ -85,7 +85,7 @@ class RealDebridAPI:
 		try:
 			url = self.auth_url + 'token'
 			data = {'client_id': self.client_ID, 'client_secret': self.secret, 'code': self.refresh, 'grant_type': 'http://oauth.net/grant_type/device/1.0'}
-			response = requests.post(url, data=data).json()
+			response = requests.post(url, data=data, timeout=20).json()
 			self.token = response['access_token']
 			self.refresh = response['refresh_token']
 			set_setting('rd.token', self.token)
@@ -416,7 +416,7 @@ class RealDebridAPI:
 			if item['path'].endswith('.m2ts'): return True
 		return False
 
-	def _get(self, url):
+	def _get(self, url, _retry=True):
 		original_url = url
 		url = self.base_url + url
 		if self.token in ('empty_setting', ''): return None
@@ -424,12 +424,14 @@ class RealDebridAPI:
 		else: url += '&auth_token=%s' % self.token
 		response = requests.get(url, timeout=20)
 		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
-			if self.refresh_token(): response = self._get(original_url)
+			# Refresh at most once per call (#109): a 400 that is not a token problem used to
+			# refresh, retry, 400 again, and recurse until RecursionError.
+			if _retry and self.refresh_token(): response = self._get(original_url, _retry=False)
 			else: return None
 		try: return response.json()
 		except: return response
 
-	def _post(self, url, post_data):
+	def _post(self, url, post_data, _retry=True):
 		original_url = url
 		url = self.base_url + url
 		if self.token in ('empty_setting', ''): return None
@@ -437,7 +439,7 @@ class RealDebridAPI:
 		else: url += '&auth_token=%s' % self.token
 		response = requests.post(url, data=post_data, timeout=20)
 		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
-			if self.refresh_token(): response = self._post(original_url, post_data)
+			if _retry and self.refresh_token(): response = self._post(original_url, post_data, _retry=False)
 			else: return None
 		try: return response.json()
 		except: return response

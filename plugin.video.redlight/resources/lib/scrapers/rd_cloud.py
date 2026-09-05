@@ -18,7 +18,7 @@ class source:
 			self.folder_results, self.scrape_results = [], []
 			filter_title = filter_by_name(self.scrape_provider)
 			self.media_type, title, self.tmdb_id = info.get('media_type'), info.get('title'), info.get('tmdb_id')
-			self.year, self.season, self.episode = int(info.get('year')), info.get('season'), info.get('episode')
+			self.year, self.season, self.episode = int(info.get('year') or 0), info.get('season'), info.get('episode')
 			self.absolute_episode = info.get('absolute_episode')
 			self.title_check = source_utils.episode_title_check(info)
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))

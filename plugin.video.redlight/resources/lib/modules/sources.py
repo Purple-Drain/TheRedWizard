@@ -2045,11 +2045,23 @@ class Sources():
 			try:
 				result[0] = self.resolve_sources(item, meta)
 			except:
+				# The only place a resolve exception is ever seen (#113): the callers below
+				# collapse everything to None, which then reads as "link expired".
+				import traceback
+				kodi_utils.logger('Red Light', 'resolve failed for %s: %s' % (item.get('name', ''), traceback.format_exc()))
 				result[0] = None
 		worker = Thread(target=_worker, daemon=True)
 		worker.start()
+		# A wall-clock cap (#108): a debrid API outage otherwise holds the resolver for as long
+		# as the API client keeps retrying, and a background next-episode prep has no dialog
+		# through which anyone could cancel it. The worker is a daemon thread, so abandoning it
+		# is safe.
+		deadline = time.time() + (90 if self.background else 240)
 		while worker.is_alive():
 			if self._user_cancelled_resolve():
+				return None
+			if time.time() >= deadline:
+				kodi_utils.logger('Red Light', 'resolve of %s abandoned after the %ss deadline' % (item.get('name', ''), 90 if self.background else 240))
 				return None
 			kodi_utils.sleep(poll_ms)
 		try:

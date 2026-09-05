@@ -8,8 +8,7 @@ from caches.settings_cache import get_setting, set_setting
 from caches.main_cache import cache_object
 from modules.source_utils import supported_video_extensions, seas_ep_filter, extras
 from modules.utils import copy2clip, make_qrcode
-from modules.kodi_utils import make_session, ok_dialog, notification, confirm_dialog, progress_dialog, sleep
-# from modules.kodi_utils import logger
+from modules.kodi_utils import make_session, ok_dialog, notification, confirm_dialog, progress_dialog, sleep, logger
 
 base_url = 'https://api.torbox.app/v1/api/'
 session = make_session(base_url)
@@ -579,16 +578,24 @@ class TorBoxAPI:
 		'''My Services cloud play — same as Gears requestdl.'''
 		return self.unrestrict_link(file_id)
 
-	def unrestrict_link(self, file_id, max_attempts=12):
-		'''Retries with user_ip for search/magnet resolve.'''
+	def unrestrict_link(self, file_id, max_attempts=12, deadline_s=30):
+		'''Retries with user_ip for search/magnet resolve.
+
+		Bounded by wall clock as well as by attempts (#108): each attempt can spend the full
+		20 s request timeout, so twelve of them is over four minutes per queue entry with
+		nothing able to cancel a background next-episode prep.'''
 		try:
 			user_ip = _cached_public_ip()
 			torrent_id, file_id = str(file_id).split(',', 1)
 			params = {'token': self.token, 'torrent_id': _to_int(torrent_id), 'file_id': _to_int(file_id)}
 			if user_ip:
 				params['user_ip'] = user_ip
+			deadline = time.time() + deadline_s
 			for attempt in range(max_attempts):
 				if attempt:
+					if time.time() >= deadline:
+						logger('TorBox', 'requestdl: giving up after %d attempt(s), %ss deadline reached' % (attempt, deadline_s))
+						break
 					sleep(1500)
 				r = self._get('torrents/requestdl', data=params)
 				url = self._requestdl_url(r)
