@@ -21,6 +21,11 @@ PROP_NEXTEP_NATURAL_END = 'redlight.nextep_natural_end'
 PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS = 'redlight.random_continual_skip_attempts'
 PROP_ACTIVE_PLAYBACK_KEY = 'redlight.active_playback_key'
 _NEXTEP_NATURAL_END_SEC = 15
+# A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
+# low-speed timeout) ends playback exactly the way the file ending does, so "early" is
+# measured against the time still to play; the player callbacks tell a user Stop apart.
+_STALL_MIN_REMAINING_SEC = 60
+_STALL_CALLBACK_WAIT_MS = 2000
 # Movies-only: fire stingers alert ~3 min before other alert sources would (typical 90% vs 95% gap on ~1 hr).
 _STINGER_EARLY_OFFSET_SEC = 180
 _NEXTEP_SUB_FETCH_DEFER_SEC = 45
@@ -38,9 +43,34 @@ _INTRO_CHAPTER_MIN_SEGMENT_SEC = 10
 _INTRO_CHAPTER_MIN_END_SEC = 15
 _INTRO_SKIP_POST_END_GRACE_SEC = 20
 
+def abnormal_playback_end(curr_time, total_time, user_stopped=False, superseded=False, cancelled=False, media_marked=False, min_remaining=_STALL_MIN_REMAINING_SEC):
+	"""True when playback ended where nobody asked it to (#107): not a user Stop, not Redlight
+	replacing it (next episode), not a resolve cancel, not already past the watched mark, and
+	with far more than the natural-end threshold still to play. Kodi surfaces no error for a
+	stream that dies mid-play, so this is the whole signal."""
+	if user_stopped or superseded or cancelled or media_marked: return False
+	try: curr, total = float(curr_time), float(total_time)
+	except (TypeError, ValueError): return False
+	if total < 60 or curr <= 0: return False
+	return (total - curr) > min_remaining
+
 class RedLightPlayer(xbmc.Player):
 	def __init__ (self):
 		xbmc.Player.__init__(self)
+		self._cb_started, self._cb_stopped, self._cb_ended = False, False, False
+		self.playback_error = False
+		self.stall_position = None
+
+	# Kodi delivers these on the addon thread while it sits in xbmc.sleep(). A Stopped queued
+	# for the previous playback (Redlight's own stop before this open) arrives before our
+	# Started and is ignored, so the flags describe this player's stream only.
+	def onPlayBackStarted(self): self._cb_started = True
+	def onAVStarted(self): self._cb_started = True
+	def onPlayBackStopped(self):
+		if self._cb_started: self._cb_stopped = True
+	def onPlayBackEnded(self):
+		if self._cb_started: self._cb_ended = True
+	def onPlayBackError(self): self.playback_error = True
 
 	def _resolve_cancelled(self):
 		if not self.is_generic and (self.sources_object._resolve_user_cancelled or self.sources_object.cancel_all_playback):
@@ -367,14 +397,37 @@ class RedLightPlayer(xbmc.Player):
 				except: pass
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
+			marked_before_end = self.media_marked
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
 			self.clear_playback_properties(clear_navigation=False)
 			self._release_active_playback()
+			self._note_abnormal_end(playback_superseded, marked_before_end)
 		except:
 			ku.hide_busy_dialog()
 			self.sources_object.playback_successful = False
 			self.sources_object.cancel_all_playback = True
 			return self.kill_dialog()
+
+	def _note_abnormal_end(self, playback_superseded, marked_before_end):
+		"""Record where playback died if it ended neither by itself nor by hand (#107).
+		play_file reads stall_position to re-resolve and resume a cloud item. Runs after the
+		stop-time bookmark is written, so the bookmark already holds the stall position."""
+		self.stall_position = None
+		try:
+			if self.is_generic or getattr(self, '_nextep_prep_attempted', False): return
+			cancelled = self.cancel_all_playback or self._resolve_cancelled()
+			curr, total = getattr(self, 'curr_time', None), getattr(self, 'total_time', None)
+			if not abnormal_playback_end(curr, total, user_stopped=self._cb_stopped, superseded=playback_superseded, cancelled=cancelled, media_marked=marked_before_end): return
+			# The callbacks lag isPlayingVideo() by a beat; give a Stop the chance to arrive.
+			waited = 0
+			while waited < _STALL_CALLBACK_WAIT_MS and not (self._cb_stopped or self._cb_ended or self.playback_error):
+				ku.sleep(100)
+				waited += 100
+			if self._cb_stopped or self.isPlayingVideo(): return
+			self.stall_position = (float(curr), float(total))
+			ku.logger('Red Light', 'Playback ended early at %ds of %ds on %s (ended=%s error=%s stopped=%s)' % (
+				float(curr), float(total), self.playing_filename or '', self._cb_ended, self.playback_error, self._cb_stopped))
+		except: pass
 
 	def make_listing(self):
 		listitem = ku.make_listitem()
