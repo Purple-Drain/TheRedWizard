@@ -2,15 +2,24 @@
 import re
 import time
 import requests
-from threading import Thread, Semaphore
+from threading import Thread, Semaphore, Lock
 from caches.main_cache import cache_object
 from caches.settings_cache import get_setting, set_setting
 from modules.utils import copy2clip, make_tinyurl, make_qrcode
 from modules.source_utils import supported_video_extensions, seas_ep_filter, extras
-from modules.kodi_utils import sleep, ok_dialog, progress_dialog, notification
-# from modules.kodi_utils import logger
+from modules.kodi_utils import sleep, ok_dialog, progress_dialog, notification, logger
 
 _rd_magnet_semaphore = Semaphore(3)
+
+# #94: RD can answer 503 hoster_unavailable (error_code 19) for every file of a torrent it still lists as
+# downloaded. Reinserting the torrent (what Debrid Media Manager's "reinsert" does: add the magnet again,
+# select the same files, delete the old copy once the new one is downloaded) cures it while RD still has
+# the data cached. One attempt per torrent per session, so a torrent RD has really lost does not loop.
+HOSTER_UNAVAILABLE = 19
+REINSERT_WAIT_SECONDS = 12
+_reinsert_lock = Lock()
+_reinserted_torrents = set()  # hashes tried this session
+_reinserted_links = {}  # old torrent link -> the same file's link on the reinserted torrent
 
 class RealDebridAPI:
 	def __init__(self):
@@ -165,13 +174,132 @@ class RealDebridAPI:
 		return self._get(url)
 
 	def unrestrict_link(self, link):
-		download_url, _download_id = self._unrestrict_link_details(link)
+		download_url, _download_id, _error = self._unrestrict_link_details(link)
 		return download_url
 
 	def _unrestrict_link_details(self, link):
+		'''(download_url, download_id, error). error is RD's {'error', 'error_code'} when unrestrict/link
+		answered one instead of a download (503 hoster_unavailable is error_code 19), else None (#86, #94).'''
 		response = self._post('unrestrict/link', {'link': link})
-		if not isinstance(response, dict): return None, None
-		return response.get('download'), response.get('id')
+		if not isinstance(response, dict): return None, None, None
+		error = self.unrestrict_error(response)
+		if error: logger('Real-Debrid', 'unrestrict/link answered %s (error_code %s) for %s' % (error['error'], error['error_code'], link))
+		return response.get('download'), response.get('id'), error
+
+	@staticmethod
+	def unrestrict_error(response):
+		'''RD's error body as {'error': str, 'error_code': int or None}, or None when the body is not an error.'''
+		if not isinstance(response, dict) or 'error' not in response: return None
+		try: error_code = int(response.get('error_code'))
+		except (TypeError, ValueError): error_code = None
+		return {'error': response.get('error'), 'error_code': error_code}
+
+	def unrestrict_cloud_link(self, link, torrent_id=None):
+		'''Unrestrict a file of a torrent in the user's RD cloud (rd_cloud). On hoster_unavailable, reinsert
+		the torrent once per session and retry the same file on the new copy (#94).'''
+		link = _reinserted_links.get(link, link)
+		download_url, _download_id, error = self._unrestrict_link_details(link)
+		if download_url or not self._reinsert_wanted(error): return download_url
+		new_link = self.reinsert_torrent(torrent_id, link)
+		if not new_link: return None
+		download_url, _download_id, error = self._unrestrict_link_details(new_link)
+		if not download_url: notification('Real-Debrid: torrent reinserted, file still unavailable', 5000)
+		return download_url
+
+	@staticmethod
+	def _reinsert_wanted(error):
+		if not error or error.get('error_code') != HOSTER_UNAVAILABLE: return False
+		return get_setting('redlight.rd.reinsert_on_hoster_unavailable', 'true') == 'true'
+
+	def reinsert_torrent(self, torrent_id, link):
+		with _rd_magnet_semaphore:
+			return self._reinsert_torrent(torrent_id, link)
+
+	def _reinsert_torrent(self, torrent_id, link):
+		'''DMM's order: read the old torrent's selected file ids, add the magnet from its hash, select the same
+		ids, wait for the new copy to reach downloaded, and only then delete the old one. Add-before-delete
+		means a torrent RD has really lost leaves the user with the old (still listed) copy rather than nothing.
+		Returns the same file's link on the reinserted torrent, or None.'''
+		old_info = self._cloud_torrent_for_link(torrent_id, link)
+		if not old_info: return None
+		old_id, info_hash = old_info.get('id') or torrent_id, str(old_info.get('hash') or '').lower()
+		old_links = old_info.get('links') or []
+		selected = [str(i['id']) for i in old_info.get('files') or [] if i.get('selected') == 1 and 'id' in i]
+		if not info_hash or link not in old_links or not selected:
+			logger('Real-Debrid', 'reinsert of %s skipped: cannot map %s to a selected file' % (old_id, link))
+			return None
+		with _reinsert_lock:
+			if info_hash in _reinserted_torrents:
+				logger('Real-Debrid', 'reinsert of %s skipped: already tried this session' % old_id)
+				return None
+			_reinserted_torrents.add(info_hash)
+		name = self._toast_name(old_info.get('filename') or old_id)
+		new_id = None
+		try:
+			torrent = self._add_magnet_ok('magnet:?xt=urn:btih:%s' % info_hash)
+			if not torrent:
+				logger('Real-Debrid', 'reinsert of %s failed: addMagnet refused the hash' % old_id)
+				notification('Real-Debrid: could not re-add %s' % name, 6000)
+				return None
+			new_id = torrent['id']
+			self.add_torrent_select(new_id, ','.join(selected))
+			new_info = self._wait_for_downloaded(new_id, ','.join(selected))
+			new_links = (new_info or {}).get('links') or []
+			if not new_info or len(new_links) != len(old_links):
+				logger('Real-Debrid', 'reinsert of %s: new copy %s not downloaded (status %s), old torrent kept' % (old_id, new_id, (new_info or {}).get('status')))
+				self.delete_torrent(new_id)
+				notification('Real-Debrid no longer has %s cached, old torrent kept' % name, 6000)
+				return None
+			self.delete_torrent(old_id)
+			with _reinsert_lock: _reinserted_links.update(zip(old_links, new_links))
+			try: self.clear_cache(clear_hashes=False)
+			except: pass
+			logger('Real-Debrid', 'reinserted %s as %s, retrying unrestrict' % (old_id, new_id))
+			notification('Real-Debrid: reinserted %s, retrying' % name, 5000)
+			return new_links[old_links.index(link)]
+		except Exception as e:
+			logger('Real-Debrid', 'reinsert of %s failed: %r' % (old_id, e))
+			if new_id:
+				try: self.delete_torrent(new_id)
+				except: pass
+			notification('Real-Debrid: could not reinsert %s' % name, 6000)
+			return None
+
+	def _cloud_torrent_for_link(self, torrent_id, link):
+		'''torrents/info for the cloud torrent that owns link: by id when the source item carried one
+		(rd_cloud's folder_id), else by scanning the torrent list for the link.'''
+		if torrent_id:
+			info = self.torrent_info(torrent_id)
+			if isinstance(info, dict) and 'error' not in info: return info
+		try: torrents = self.user_cloud_check() or []
+		except Exception: torrents = []
+		for torrent in torrents:
+			if isinstance(torrent, dict) and link in (torrent.get('links') or []):
+				info = self.torrent_info(torrent.get('id'))
+				if isinstance(info, dict) and 'error' not in info: return info
+		return None
+
+	def _wait_for_downloaded(self, torrent_id, file_ids='all', wait_seconds=REINSERT_WAIT_SECONDS):
+		'''Poll torrents/info until status is downloaded (instant while RD still has the data cached).
+		None when it is not there by the deadline or RD reports the torrent dead. A selectFiles sent
+		before RD finished converting the magnet leaves the torrent in waiting_files_selection; select once more.'''
+		deadline, reselected = time.time() + wait_seconds, False
+		while True:
+			info = self.torrent_info(torrent_id)
+			if isinstance(info, dict) and 'error' not in info:
+				status = info.get('status')
+				if status == 'downloaded' and info.get('links'): return info
+				if status in ('magnet_error', 'error', 'virus', 'dead'): return None
+				if status == 'waiting_files_selection' and not reselected:
+					reselected = True
+					self.add_torrent_select(torrent_id, file_ids)
+			if time.time() >= deadline: return None
+			sleep(1000)
+
+	@staticmethod
+	def _toast_name(name):
+		name = str(name)
+		return name if len(name) <= 40 else name[:37] + '...'
 
 	@staticmethod
 	def _download_token_from_url(url):
@@ -346,7 +474,7 @@ class RealDebridAPI:
 					match, index = True, value[0]; break
 			if match:
 				rd_link = torrent_info['links'][index]
-				file_url, _download_id = self._unrestrict_link_details(rd_link)
+				file_url, _download_id, _error = self._unrestrict_link_details(rd_link)
 				if file_url and file_url.endswith('rar'): file_url = None
 				if file_url and not any(file_url.lower().endswith(x) for x in extensions): file_url = None
 				# POV-style: drop the temp torrent before play. Do NOT delete Downloads

@@ -3015,7 +3015,7 @@ class Sources():
 					else: title, season, episode = self.get_search_title(), None, None
 					url = debrid_function().resolve_nzb(item.get('nzb_link') or item.get('url_dl'), store_to_cloud, title, season, episode)
 				else:
-					url = self.resolve_internal(scrape_provider, item['id'], item['url_dl'], item.get('direct_debrid_link', False), item.get('cloud_media_type'))
+					url = self.resolve_internal(scrape_provider, item['id'], item['url_dl'], item.get('direct_debrid_link', False), item.get('cloud_media_type'), item.get('folder_id'))
 			elif 'cache_provider' in item or item.get('debrid'):
 				raw_cache = item.get('cache_provider', '')
 				if 'Uncached' in raw_cache:
@@ -3052,7 +3052,7 @@ class Sources():
 		except: url = None
 		return url
 
-	def resolve_internal(self, scrape_provider, item_id, url_dl, direct_debrid_link=False, cloud_media_type=None):
+	def resolve_internal(self, scrape_provider, item_id, url_dl, direct_debrid_link=False, cloud_media_type=None, folder_id=None):
 		url = None
 		try:
 			if direct_debrid_link or scrape_provider == 'folders': url = url_dl
@@ -3071,6 +3071,10 @@ class Sources():
 					else:
 						url = tb.unrestrict_link(item_id)
 					url = tb.coerce_play_url(url) or url
+				elif scrape_provider == 'rd_cloud':
+					# #94: RD can answer hoster_unavailable for a torrent it still lists as downloaded;
+					# the helper reinserts that torrent once per session (folder_id is its id) and retries.
+					url = debrid_function().unrestrict_cloud_link(item_id, folder_id)
 				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_')):
 					url = debrid_function().unrestrict_link(item_id)
 				else:

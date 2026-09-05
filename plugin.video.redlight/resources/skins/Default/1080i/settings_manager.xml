@@ -3314,6 +3314,16 @@
                           <property name="setting_description">When enabled, Red Light removes one active Real Debrid torrent before adding a new one if you already have 5 active downloads (RD's usual limit). This can prevent failed resolves when slots are full, but may delete a transfer you started elsewhere — including in the RD website or another app. Leave disabled unless you often hit resolve failures due to too many active downloads.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=rd.free_active_slot)</onclick>
                       </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(61)</visible>
+                          <visible>!String.IsEqual(Window(10000).Property(redlight.rd.token),empty_setting)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.rd.enabled),true)</visible>
+                          <property name="setting_label">Reinsert torrent when a cloud file is unavailable</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.rd.reinsert_on_hoster_unavailable)]</property>
+                          <property name="setting_description">Real Debrid sometimes keeps a torrent listed as downloaded while every file in it answers hoster unavailable. When enabled, Red Light re-adds the torrent from its hash with the same files selected (what Debrid Media Manager's Reinsert does), deletes the old copy once the new one is downloaded, and retries the file. Tried once per torrent per session; if Real Debrid no longer has the data, the old torrent is kept and a notification says so.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=rd.reinsert_on_hoster_unavailable)</onclick>
+                      </item>
         <!-- TorBox -->
                       <item>
                           <visible>Container(2000).HasFocus(61)</visible>
