@@ -24,6 +24,7 @@ PROP_RESOLVE_BUSY = 'redlight.resolve_busy'
 PROP_RESOLVE_OWNER = 'redlight.resolve_busy_owner'
 PROP_RESOLVE_CANCEL = 'redlight.resolve_cancelled'
 PROP_PLAY_OPENING = 'redlight.play_opening'
+PROP_PLAY_MIME = 'redlight.play_mime'
 PROP_BROWSE_RETURN_SOURCES = 'redlight.browse_return_sources'
 PROP_NEXTEP_SCRAPE_READY = 'redlight.nextep_scrape_ready'
 PROP_NEXTEP_SCRAPE_KEY = 'redlight.nextep_scrape_key'
@@ -77,6 +78,29 @@ def retry_copies(item, count, provider_text, extra_info, display_name, retries, 
 		if marker: copy[marker] = retry
 		copies.append(copy)
 	return copies
+
+# #124: mime types Kodi would otherwise learn from a HEAD request on the CDN link. Only the
+# containers the debrid CDNs actually serve; anything else keeps Kodi's own probing.
+PLAY_MIME_BY_EXT = (
+	('.mkv', 'video/x-matroska'), ('.mp4', 'video/mp4'), ('.avi', 'video/x-msvideo'), ('.ts', 'video/mp2t'),
+)
+
+def play_mime_for(item, url=None):
+	"""The mime type to preset on the ListItem of a debrid CDN item (#124), from the extension
+	of the file name, else of the url's path (query string and Kodi's |header suffix dropped).
+	None for anything that is not a debrid CDN item or whose extension is not in the table,
+	which leaves today's behaviour (Kodi's own lookup) in place."""
+	try:
+		if not debrid_cdn_item(item): return None
+		candidates = (item.get('name') or '', str(url or '').split('|')[0].split('?')[0].split('#')[0])
+		for candidate in candidates:
+			low = candidate.strip().lower()
+			if not low: continue
+			for ext, mime in PLAY_MIME_BY_EXT:
+				if low.endswith(ext): return mime
+		return None
+	except Exception:
+		return None
 
 _FAILURE_REASON_MAX = 90
 
@@ -1512,6 +1536,22 @@ class Sources():
 		reason = self._resolve_failure_text()
 		return 'Playback failed: %s' % reason if reason else ''
 
+	def _set_play_mime_hint(self, item, url):
+		"""#124: for a debrid CDN item, publish the mime type derived from the file extension in
+		PROP_PLAY_MIME right before the player opens it. RedLightPlayer.make_listing already
+		disables content lookup on every ListItem, which is what skips Kodi's HEAD request
+		(CCurlFile::GetMimeType) before the first ranged GET; make_listing reads this property to
+		call setMimeType() as well, so the READ_MULTI_STREAM decision for MKV is made from the
+		right type instead of an empty one. Cleared for anything else so a stale hint never
+		reaches a later, unrelated play."""
+		mime = play_mime_for(item, url)
+		if mime:
+			kodi_utils.set_property(PROP_PLAY_MIME, mime)
+			kodi_utils.logger('Red Light', 'Play mime hint %s from the file extension for %s (content lookup off)' % (mime, item.get('name', '')))
+		else:
+			kodi_utils.clear_property(PROP_PLAY_MIME)
+		return mime
+
 	def _note_debrid_error(self, provider, api):
 		"""Keep the error the debrid client saw on its last unrestrict call (RD #126, TorBox), for
 		the failure reason of the queue entry being resolved (#86)."""
@@ -2544,6 +2584,7 @@ class Sources():
 								self._stop_active_playback()
 							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
+							self._set_play_mime_hint(item, url)
 							player.run(url, self)
 							if self.playback_successful and getattr(player, 'stall_position', None):
 								url = self._resume_after_stall(item, url, player)
@@ -2622,6 +2663,7 @@ class Sources():
 				self.playing_filename, self.playing_item = item['name'], item
 				self.playback_successful = None
 				player = RedLightPlayer()
+				self._set_play_mime_hint(item, url)
 				player.run(url, self)
 				if self.cancel_all_playback or self._resolve_user_cancelled: break
 				if not self.playback_successful:

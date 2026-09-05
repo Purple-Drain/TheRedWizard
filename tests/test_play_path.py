@@ -165,6 +165,57 @@ def test_no_failure_means_empty_label():
     assert Sources._resolve_failure_label(holder) == ''
 
 
+# --- #124: mime hint -------------------------------------------------------------------
+
+from modules import sources as sources_mod  # noqa: E402
+from modules.sources import PLAY_MIME_BY_EXT, PROP_PLAY_MIME, play_mime_for  # noqa: E402
+
+
+@pytest.mark.parametrize('name,mime', [
+    ('Show.S01E01.1080p.mkv', 'video/x-matroska'), ('Show.S01E01.MKV', 'video/x-matroska'),
+    ('movie.mp4', 'video/mp4'), ('old.avi', 'video/x-msvideo'), ('cap.ts', 'video/mp2t'),
+])
+def test_mime_from_file_name(name, mime):
+    assert play_mime_for(_item(name=name)) == mime
+    assert play_mime_for(_item(scrape_provider='external', cache_provider='Real-Debrid', name=name)) == mime
+
+
+def test_mime_from_url_when_name_has_no_extension():
+    item = _item(scrape_provider='external', debrid='TorBox', name='Show S01E01 1080p WEB')
+    assert play_mime_for(item, 'https://tb-cdn.io/dl/abc/Show.S01E01.mkv?token=1|User-Agent=x') == 'video/x-matroska'
+    assert play_mime_for(item, 'https://tb-cdn.io/dl/abc/file.mp4#frag') == 'video/mp4'
+
+
+def test_unknown_extension_keeps_today_behaviour():
+    assert play_mime_for(_item(name='Show.S01E01.wmv'), 'https://x/y.wmv') is None
+    assert play_mime_for(_item(name='Show.S01E01'), 'https://x/y') is None
+    assert play_mime_for(_item(name='Show.S01E01.mkv.part')) is None
+    assert play_mime_for(_item(name=None), None) is None
+
+
+def test_non_debrid_items_get_no_hint():
+    assert play_mime_for(_item(scrape_provider='easynews', name='a.mkv')) is None
+    assert play_mime_for(_item(scrape_provider='folders', name='a.mkv'), 'smb://nas/a.mkv') is None
+    assert play_mime_for(_item(scrape_provider='external', cache_provider='', name='a.mkv')) is None
+
+
+def test_mime_table_covers_the_four_containers():
+    assert dict(PLAY_MIME_BY_EXT) == {'.mkv': 'video/x-matroska', '.mp4': 'video/mp4', '.avi': 'video/x-msvideo', '.ts': 'video/mp2t'}
+
+
+def test_set_play_mime_hint_sets_logs_and_clears(monkeypatch):
+    props, logs = {}, []
+    monkeypatch.setattr(sources_mod.kodi_utils, 'set_property', lambda k, v: props.__setitem__(k, v))
+    monkeypatch.setattr(sources_mod.kodi_utils, 'clear_property', lambda k: props.pop(k, None))
+    monkeypatch.setattr(sources_mod.kodi_utils, 'logger', lambda h, m: logs.append(m))
+    holder = _Holder()
+    assert Sources._set_play_mime_hint(holder, _item(), 'https://tb-cdn.io/f.mkv') == 'video/x-matroska'
+    assert props == {PROP_PLAY_MIME: 'video/x-matroska'}
+    assert len(logs) == 1 and 'video/x-matroska' in logs[0] and 'Show.S01E01.1080p.mkv' in logs[0]
+    assert Sources._set_play_mime_hint(holder, _item(scrape_provider='easynews'), 'https://x/f.mkv') is None
+    assert props == {} and len(logs) == 1
+
+
 def test_note_debrid_error_reads_api_attribute():
     holder = _Holder()
     api = _Holder()
