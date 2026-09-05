@@ -26,6 +26,7 @@ _STINGER_EARLY_OFFSET_SEC = 180
 _NEXTEP_SUB_FETCH_DEFER_SEC = 45
 _NEXTEP_CLOSE_EARLY_PLAY_SEC = 4
 _NEXTEP_CLOSE_POLL_MS = 250
+_RESUME_CHECKPOINT_INTERVAL_SEC = 60
 _INTRO_SKIP_PROMPT_EARLY_SEC = 15
 _INTRO_SKIP_PROMPT_COUNTDOWN_SEC = 15
 _INTRO_SKIP_EARLY_START_SEC = 120
@@ -291,6 +292,7 @@ class RedLightPlayer(xbmc.Player):
 					self.current_point = round(float(self.curr_time/self.total_time * 100), 1)
 					self._wetrakr_progress_tick()
 					self._punchplay_scrobble_progress()
+					self._maybe_write_resume_checkpoint()
 					if play_random_continual:
 						if self._should_prep_random_continual():
 							self.random_continual_triggered = True
@@ -577,6 +579,23 @@ class RedLightPlayer(xbmc.Player):
 			self._wetrakr_send('scrobble', 100 if force_scrobble else percent)
 		elif percent >= 5:
 			self._wetrakr_send('paused', percent)
+
+	def _maybe_write_resume_checkpoint(self):
+		"""Every _RESUME_CHECKPOINT_INTERVAL_SEC, persist a local-only resume point (#58).
+		Without this the bookmark exists solely after a graceful stop, so a crash or
+		force-stop (this Shield's recurring SIGSEGV, #12; deploy hard kills) loses the
+		whole episode's progress. Same 5-90% window as the stop-time bookmark; skipped
+		once the media is marked watched."""
+		try:
+			if self.media_marked: return
+			if not 5 <= self.current_point < 90: return
+			now = time.time()
+			if now - getattr(self, '_resume_checkpoint_written_at', 0) < _RESUME_CHECKPOINT_INTERVAL_SEC: return
+			self._resume_checkpoint_written_at = now
+			progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
+							'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
+			Thread(target=self.run_media_progress, args=(ws.set_bookmark_checkpoint, progress_params)).start()
+		except: pass
 
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
