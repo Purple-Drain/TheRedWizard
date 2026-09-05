@@ -26,6 +26,11 @@ _NEXTEP_NATURAL_END_SEC = 15
 # measured against the time still to play; the player callbacks tell a user Stop apart.
 _STALL_MIN_REMAINING_SEC = 60
 _STALL_CALLBACK_WAIT_MS = 2000
+# How long check_playback_start waits for Kodi to open the stream before giving up (#115).
+# Was an implicit ~20 s (0.26 % per 50 ms tick). 30 s covers curl's 15 s low-speed timeout
+# on each of the two requests a slow-but-streaming open needs. Setting: playback_open_timeout.
+_PLAYBACK_OPEN_TIMEOUT_SEC = 30
+_PLAYBACK_OPEN_TICK_MS = 50
 # Movies-only: fire stingers alert ~3 min before other alert sources would (typical 90% vs 95% gap on ~1 hr).
 _STINGER_EARLY_OFFSET_SEC = 180
 _NEXTEP_SUB_FETCH_DEFER_SEC = 45
@@ -53,6 +58,29 @@ def abnormal_playback_end(curr_time, total_time, user_stopped=False, superseded=
 	except (TypeError, ValueError): return False
 	if total < 60 or curr <= 0: return False
 	return (total - curr) > min_remaining
+
+def playback_open_timeout_ms(setting_value=None, default_sec=_PLAYBACK_OPEN_TIMEOUT_SEC):
+	"""The open window in ms from the playback_open_timeout setting (integer seconds, #115).
+	Anything unparseable or below one second falls back to the default."""
+	try: seconds = int(float(setting_value))
+	except (TypeError, ValueError): seconds = default_sec
+	if seconds < 1: seconds = default_sec
+	return seconds * 1000
+
+def playback_open_percent(elapsed_ms, timeout_ms):
+	"""Resolver progress for the open window, 0..100, one decimal like the old per-tick climb."""
+	try:
+		if timeout_ms <= 0: return 100.0
+		return round(min(100.0, elapsed_ms * 100.0 / timeout_ms), 1)
+	except (TypeError, ZeroDivisionError): return 100.0
+
+def open_window_expired_outcome(is_playing, total_time):
+	"""What playback_successful becomes when the open window runs out (#115). A stream Kodi is
+	already playing with a real duration has opened, just slowly (an MKV index seek under curl's
+	threshold, or fullscreen not active yet); stopping it now would kill a working playback, so it
+	counts as success. Anything else is the old failure."""
+	if not is_playing: return False
+	return total_time not in ('0.0', '', 0, 0.0, None)
 
 class RedLightPlayer(xbmc.Player):
 	def __init__ (self):
@@ -153,15 +181,28 @@ class RedLightPlayer(xbmc.Player):
 			return True
 		return False
 
+	def _playback_open_timeout_ms(self):
+		try: return playback_open_timeout_ms(st.playback_open_timeout())
+		except Exception: return playback_open_timeout_ms(None)
+
+	def _open_window_expired(self):
+		try: total = self.getTotalTime()
+		except Exception: total = None
+		try: playing = bool(self.isPlayingVideo())
+		except Exception: playing = False
+		self.playback_successful = open_window_expired_outcome(playing, total)
+		if self.playback_successful:
+			ku.logger('Red Light', 'Playback open window expired with the video already playing; leaving it alone (#115)')
+
 	def check_playback_start_generic(self):
-		resolve_percent = 0
+		elapsed_ms, timeout_ms = 0, self._playback_open_timeout_ms()
 		while self.playback_successful is None:
 			ku.hide_busy_dialog()
 			if self.kodi_monitor.abortRequested():
 				self.playback_successful = False
 				break
-			elif resolve_percent >= 100:
-				self.playback_successful = False
+			elif elapsed_ms >= timeout_ms:
+				self._open_window_expired()
 				break
 			elif self._dismiss_kodi_playback_error_dialog():
 				self.playback_successful = False
@@ -182,11 +223,11 @@ class RedLightPlayer(xbmc.Player):
 						self.playback_successful = True
 				except:
 					pass
-			resolve_percent = round(resolve_percent + 0.26, 1)
-			ku.sleep(50)
+			elapsed_ms += _PLAYBACK_OPEN_TICK_MS
+			ku.sleep(_PLAYBACK_OPEN_TICK_MS)
 
 	def check_playback_start(self):
-		resolve_percent = 0
+		elapsed_ms, timeout_ms = 0, self._playback_open_timeout_ms()
 		while self.playback_successful is None:
 			ku.hide_busy_dialog()
 			if self._resolve_cancelled():
@@ -214,8 +255,8 @@ class RedLightPlayer(xbmc.Player):
 				self.playback_successful = False
 				self.safe_stop()
 				break
-			elif resolve_percent >= 100:
-				self.playback_successful = False
+			elif elapsed_ms >= timeout_ms:
+				self._open_window_expired()
 				break
 			elif self._dismiss_kodi_playback_error_dialog():
 				self.playback_successful = False
@@ -229,12 +270,12 @@ class RedLightPlayer(xbmc.Player):
 				try:
 					if self.getTotalTime() not in ('0.0', '', 0.0, None) and ku.get_visibility('Window.IsActive(fullscreenvideo)'): self.playback_successful = True
 				except: pass
-			resolve_percent = round(resolve_percent + 0.26, 1)
+			elapsed_ms += _PLAYBACK_OPEN_TICK_MS
 			try:
 				if self.sources_object.progress_dialog:
-					self.sources_object.progress_dialog.update_resolver(percent=resolve_percent)
+					self.sources_object.progress_dialog.update_resolver(percent=playback_open_percent(elapsed_ms, timeout_ms))
 			except: pass
-			ku.sleep(50)
+			ku.sleep(_PLAYBACK_OPEN_TICK_MS)
 
 	def playback_close_dialogs(self):
 		self.sources_object.playback_successful = True
@@ -403,10 +444,44 @@ class RedLightPlayer(xbmc.Player):
 			self._release_active_playback()
 			self._note_abnormal_end(playback_superseded, marked_before_end)
 		except:
+			self._log_monitor_error()
 			ku.hide_busy_dialog()
+			if self.playback_successful:
+				# Playback already opened (#110): a fault in monitor()'s own setup or teardown is
+				# not a user cancel. Leave the player alone, let the video run to its end, then
+				# write the bookmark the normal path would have written.
+				return self._finish_after_monitor_error(playback_superseded)
 			self.sources_object.playback_successful = False
 			self.sources_object.cancel_all_playback = True
 			return self.kill_dialog()
+
+	def _log_monitor_error(self):
+		try: ku.logger('Red Light', 'monitor() failed: %s' % traceback.format_exc())
+		except Exception: pass
+
+	def _finish_after_monitor_error(self, playback_superseded=False):
+		try: self.playback_close_dialogs()
+		except Exception: pass
+		try:
+			while self.isPlayingVideo():
+				if not self._owns_active_playback():
+					playback_superseded = True
+					break
+				try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
+				except Exception: pass
+				try:
+					if self._valid_playback_duration(self.total_time, self.curr_time):
+						self.current_point = round(float(self.curr_time / self.total_time * 100), 1)
+				except Exception: pass
+				ku.sleep(1000)
+		except Exception: pass
+		try:
+			if not playback_superseded and not self.media_marked: self.media_watched_marker()
+		except Exception: pass
+		try: self.clear_playback_properties(clear_navigation=False)
+		except Exception: pass
+		try: self._release_active_playback()
+		except Exception: pass
 
 	def _note_abnormal_end(self, playback_superseded, marked_before_end):
 		"""Record where playback died if it ended neither by itself nor by hand (#107).
