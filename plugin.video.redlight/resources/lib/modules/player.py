@@ -532,6 +532,12 @@ class RedLightPlayer(xbmc.Player):
 					pass
 			self._disable_kodi_url_resume(listitem)
 		else:
+			# #124: sources.py publishes a mime hint from the file extension for cloud/debrid items so
+			# Kodi can skip its HEAD request (content lookup is already off above).
+			play_mime = ku.get_property('redlight.play_mime')
+			if play_mime:
+				try: listitem.setMimeType(play_mime)
+				except Exception: pass
 			self.tmdb_id, self.imdb_id, self.tvdb_id = self.meta_get('tmdb_id', ''), self.meta_get('imdb_id', ''), self.meta_get('tvdb_id', '')
 			self.media_type, self.title, self.year = self.meta_get('media_type'), self.meta_get('title'), self.meta_get('year')
 			self.season, self.episode = self.meta_get('season', ''), self.meta_get('episode', '')
