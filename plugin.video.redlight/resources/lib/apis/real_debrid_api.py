@@ -7,9 +7,12 @@ from caches.main_cache import cache_object
 from caches.settings_cache import get_setting, set_setting
 from modules.utils import copy2clip, make_tinyurl, make_qrcode
 from modules.source_utils import supported_video_extensions, seas_ep_filter, extras
-from modules.kodi_utils import sleep, ok_dialog, progress_dialog, notification, logger
+from modules.kodi_utils import sleep, ok_dialog, progress_dialog, notification, logger, make_session
 
 _rd_magnet_semaphore = Semaphore(3)
+
+# #116: pool RD's connections the way torbox_api.py does, instead of a fresh TLS handshake per call.
+session = make_session()
 
 # #94: RD can answer 503 hoster_unavailable (error_code 19) for every file of a torrent it still lists as
 # downloaded. Reinserting the torrent (what Debrid Media Manager's "reinsert" does: add the magnet again,
@@ -94,7 +97,7 @@ class RealDebridAPI:
 		try:
 			url = self.auth_url + 'token'
 			data = {'client_id': self.client_ID, 'client_secret': self.secret, 'code': self.refresh, 'grant_type': 'http://oauth.net/grant_type/device/1.0'}
-			response = requests.post(url, data=data, timeout=20).json()
+			response = session.post(url, data=data, timeout=20).json()
 			self.token = response['access_token']
 			self.refresh = response['refresh_token']
 			set_setting('rd.token', self.token)
@@ -550,7 +553,7 @@ class RealDebridAPI:
 		if self.token in ('empty_setting', ''): return None
 		if '?' not in url: url += '?auth_token=%s' % self.token
 		else: url += '&auth_token=%s' % self.token
-		response = requests.get(url, timeout=20)
+		response = session.get(url, timeout=20)
 		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
 			# Refresh at most once per call (#109): a 400 that is not a token problem used to
 			# refresh, retry, 400 again, and recurse until RecursionError.
@@ -565,7 +568,7 @@ class RealDebridAPI:
 		if self.token in ('empty_setting', ''): return None
 		if '?' not in url: url += '?auth_token=%s' % self.token
 		else: url += '&auth_token=%s' % self.token
-		response = requests.post(url, data=post_data, timeout=20)
+		response = session.post(url, data=post_data, timeout=20)
 		if response.status_code in (400, 401) and any(value in response.text for value in ('bad_token', 'Bad Request')):
 			if _retry and self.refresh_token(): response = self._post(original_url, post_data, _retry=False)
 			else: return None
