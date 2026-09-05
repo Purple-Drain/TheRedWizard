@@ -629,7 +629,7 @@ class Sources():
 		if not self.prescrape_scrapers and not folder_prescrape: return []
 		for i in self.prescrape_scrapers: threads_append(Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]))
 		[i.start() for i in self.prescrape_threads]
-		if self.background: [i.join() for i in self.prescrape_threads]
+		if self.background: self._join_prescrape_threads()
 		else: self.scrapers_dialog()
 		for i in self.prescrape_scrapers:
 			scraper_name = i[2]
@@ -1580,9 +1580,31 @@ class Sources():
 
 	def _join_internal_threads(self, timeout=30):
 		"""Wait for cloud/internal threads; cap wait so a stuck scraper cannot block results forever."""
+		return self._join_threads_until(self.threads, timeout, 'internal scraper')
+
+	def _join_prescrape_threads(self, timeout=None):
+		"""Background prescrape (next-episode prep, random continual) has no dialog to time it out
+		and nobody watching to cancel it, and the join used to wait on every prescrape thread for
+		as long as it took (#112). Cap it like _join_internal_threads; an abandoned thread finishes
+		on its own, its late results are simply not waited for."""
+		if timeout is None: timeout = self._background_prescrape_timeout()
+		return self._join_threads_until(self.prescrape_threads, timeout, 'background prescrape')
+
+	def _background_prescrape_timeout(self):
+		"""The cloud scrapers stop themselves at min(25, max(10, results.timeout)), so the join gets
+		that plus a margin: the same 15..35 s budget _wait_for_cloud_threads uses."""
+		try: timeout = int(get_setting('redlight.results.timeout', '20'))
+		except: timeout = 20
+		return min(35, max(15, timeout + 10))
+
+	def _join_threads_until(self, threads, timeout, label):
+		"""Join threads against one shared wall-clock deadline and log the ones still running when
+		it trips, so an overrun shows in kodi.log instead of only as a late or missed pop (#112)."""
 		deadline = time.time() + timeout
-		for thread in self.threads:
+		cancelled = False
+		for thread in threads:
 			if self._user_cancelled_scrape():
+				cancelled = True
 				break
 			remaining = deadline - time.time()
 			if remaining <= 0:
@@ -1591,6 +1613,10 @@ class Sources():
 				thread.join(timeout=remaining)
 			except:
 				pass
+		alive = [thread.name for thread in threads if thread.is_alive()]
+		if alive and not cancelled:
+			kodi_utils.logger('Red Light', '%s threads still running after the %.1fs join deadline: %s' % (label, timeout, ', '.join(alive)))
+		return alive
 
 	def _absorb_internal_properties(self):
 		"""Merge internal scraper window properties into sources (cloud may finish after external dialog)."""
