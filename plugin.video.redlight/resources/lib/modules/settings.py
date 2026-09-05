@@ -416,6 +416,11 @@ def cloud_stall_resume_attempts():
 	try: return max(0, int(get_setting('redlight.cloud_stall_resume_attempts', '2')))
 	except: return 2
 
+def playback_open_timeout():
+	"""Seconds check_playback_start waits for Kodi to open a stream before giving up (#115).
+	Returned raw; player.playback_open_timeout_ms validates and applies the default."""
+	return get_setting('redlight.playback_open_timeout', '30')
+
 def auto_play(media_type):
 	return get_setting('redlight.auto_play_%s' % media_type, 'false') == 'true'
 

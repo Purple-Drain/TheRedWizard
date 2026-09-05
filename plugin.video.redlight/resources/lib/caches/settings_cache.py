@@ -1454,6 +1454,7 @@ def default_settings():
 {'setting_id': 'cloud_queue_fallthrough', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'cloud_stall_resume', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'cloud_stall_resume_attempts', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0'},
+{'setting_id': 'playback_open_timeout', 'setting_type': 'action', 'setting_default': '30', 'min_value': '1'},
 {'setting_id': 'results.list_format', 'setting_type': 'string', 'setting_default': 'List'},
 #==================== Rescrape
 {'setting_id': 'rescrape.cache_ignored', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Off', '1': 'Auto', '2': 'Prompt'}},
