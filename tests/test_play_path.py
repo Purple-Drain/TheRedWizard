@@ -1,0 +1,100 @@
+# -*- coding: utf-8 -*-
+"""Play-path helpers in modules.sources: retry copies (#99, #111, #118), the failure reason
+carried to the log line and the sources dialog (#86), and the mime hint (#124).
+
+Pure functions only; the queue loop, the dialog and the ListItem are reasoned about in the PR.
+"""
+import pytest
+
+from modules.sources import Sources, debrid_cdn_item, retry_copies
+
+
+def _item(**kw):
+    base = {'scrape_provider': 'tb_cloud', 'name': 'Show.S01E01.1080p.mkv', 'quality': '1080p',
+            'size_label': '1.2 GB', 'extraInfo': '', 'display_name': 'Show S01E01'}
+    base.update(kw)
+    return base
+
+
+def _queue(item, retry_easynews=False, en_limit=3, cloud_retries=2):
+    # _queue_retry_copies reads nothing from self.
+    return Sources._queue_retry_copies(None, item, 1, 'TB', 'x', 'NAME', retry_easynews, en_limit, cloud_retries)
+
+
+# --- debrid_cdn_item ---------------------------------------------------------------------
+
+@pytest.mark.parametrize('provider', ['rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'])
+def test_cloud_scraper_items_are_debrid_cdn(provider):
+    assert debrid_cdn_item(_item(scrape_provider=provider))
+
+
+@pytest.mark.parametrize('cached', ['Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox', 'tb_cloud', 'torbox'])
+def test_external_debrid_cached_items_are_debrid_cdn(cached):
+    assert debrid_cdn_item(_item(scrape_provider='external', cache_provider=cached, debrid=cached))
+
+
+def test_external_debrid_field_alone_counts():
+    assert debrid_cdn_item({'scrape_provider': 'external', 'debrid': 'Real-Debrid'})
+
+
+@pytest.mark.parametrize('item', [
+    _item(scrape_provider='easynews'), _item(scrape_provider='folders'), _item(scrape_provider='nzb'),
+    _item(scrape_provider='aiostreams'), _item(scrape_provider='external'),
+    _item(scrape_provider='external', cache_provider=''), {},
+])
+def test_other_items_are_not_debrid_cdn(item):
+    assert not debrid_cdn_item(item)
+
+
+# --- retry_copies ------------------------------------------------------------------------
+
+def test_retry_copies_rows_and_marker():
+    item = _item()
+    rows = retry_copies(item, 3, 'TB', 'extra', 'NAME', 2, marker='cloud_retry')
+    assert [r['resolve_display'] for r in rows] == [
+        '03. [B]TB (RETRYx1)[/B][CR]extra[CR]NAME', '03. [B]TB (RETRYx2)[/B][CR]extra[CR]NAME']
+    assert [r['cloud_retry'] for r in rows] == [1, 2]
+    assert all(r is not item and r['name'] == item['name'] for r in rows)
+    assert 'cloud_retry' not in item
+
+
+def test_retry_copies_without_marker_and_zero():
+    rows = retry_copies(_item(), 1, 'EN', 'e', 'N', 2)
+    assert len(rows) == 2 and all('cloud_retry' not in r for r in rows)
+    assert retry_copies(_item(), 1, 'EN', 'e', 'N', 0) == []
+    assert retry_copies(_item(), 1, 'EN', 'e', 'N', -1) == []
+
+
+# --- _queue_retry_copies -----------------------------------------------------------------
+
+def test_cloud_item_gets_cloud_retries():
+    rows = _queue(_item(scrape_provider='rd_cloud'), cloud_retries=2)
+    assert [r['cloud_retry'] for r in rows] == [1, 2]
+
+
+def test_external_debrid_cached_item_gets_the_same_retries():
+    # #111: an external result cached on TorBox plays from the same CDN as a tb_cloud item.
+    rows = _queue(_item(scrape_provider='external', cache_provider='TorBox', debrid='TorBox'), cloud_retries=2)
+    assert [r['cloud_retry'] for r in rows] == [1, 2]
+    assert 'RETRYx2' in rows[1]['resolve_display']
+
+
+def test_external_non_debrid_item_gets_none():
+    assert _queue(_item(scrape_provider='external', cache_provider='', debrid=''), cloud_retries=2) == []
+
+
+def test_cloud_retries_zero_disables():
+    assert _queue(_item(scrape_provider='tb_cloud'), cloud_retries=0) == []
+    assert _queue(_item(scrape_provider='external', cache_provider='Real-Debrid'), cloud_retries=0) == []
+
+
+def test_easynews_retry_semantics_unchanged():
+    # limit counts the first attempt: limit 3 -> two RETRY rows, no cloud marker; off -> none.
+    rows = _queue(_item(scrape_provider='easynews'), retry_easynews=True, en_limit=3)
+    assert len(rows) == 2 and all('cloud_retry' not in r for r in rows)
+    assert _queue(_item(scrape_provider='easynews'), retry_easynews=False, en_limit=3) == []
+    assert _queue(_item(scrape_provider='easynews'), retry_easynews=True, en_limit=1) == []
+
+
+def test_easynews_never_falls_through_to_cloud_retries():
+    assert _queue(_item(scrape_provider='easynews', cache_provider='TorBox'), retry_easynews=False, cloud_retries=2) == []

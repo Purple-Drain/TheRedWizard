@@ -43,19 +43,40 @@ _NEXTEP_STASH_PLAY_IN_FLIGHT = False
 
 _STALL_RESUME_REWIND_SEC = 5
 
-def stall_resume_eligible(item):
-	"""A mid-play stall is worth a re-resolve only for a debrid CDN link (#107): a cloud
-	scraper item, or an external result cached on a debrid service. Anything else (folders,
-	EasyNews, NZB, AIOStreams, direct links) keeps today's behaviour."""
+CLOUD_SCRAPER_NAMES = ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+DEBRID_SERVICE_NAMES = ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox')
+
+def debrid_cdn_item(item):
+	"""True for a file that plays from a debrid service's CDN: a cloud scraper item, or an
+	external result cached on a debrid service. Anything else (folders, EasyNews, NZB,
+	AIOStreams, direct links) keeps its own behaviour. Shared by the open-time retry copies
+	(#99, #111), the mid-play stall resume (#107) and the mime hint (#124)."""
 	try:
 		provider = item.get('scrape_provider', '')
-		if provider in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'): return True
+		if provider in CLOUD_SCRAPER_NAMES: return True
 		if provider != 'external': return False
 		from modules.debrid import normalize_debrid_provider
 		cached = normalize_debrid_provider(item.get('cache_provider') or item.get('debrid') or '')
-		return cached in ('Real-Debrid', 'Premiumize.me', 'AllDebrid', 'Offcloud', 'TorBox')
+		return cached in DEBRID_SERVICE_NAMES
 	except Exception:
 		return False
+
+def stall_resume_eligible(item):
+	"""A mid-play stall is worth a re-resolve only for a debrid CDN link (#107)."""
+	return debrid_cdn_item(item)
+
+def retry_copies(item, count, provider_text, extra_info, display_name, retries, marker=None):
+	"""The RETRYxN rows appended to the resolve queue behind an item (#118 consolidation of
+	the EasyNews and cloud copy blocks). Each copy is the item again with a resolve_display
+	that names the attempt; `marker`, when given, is set to the attempt number on the copy so
+	the queue loop can tell a retry from the next source."""
+	copies = []
+	for retry in range(1, max(0, int(retries or 0)) + 1):
+		copy = dict(item)
+		copy['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
+		if marker: copy[marker] = retry
+		copies.append(copy)
+	return copies
 
 def stall_resume_percent(curr_time, total_time, rewind=_STALL_RESUME_REWIND_SEC):
 	"""StartPercent for the reopen: a few seconds before the stall so the seek lands on data
@@ -1538,7 +1559,7 @@ class Sources():
 		self._finalize_cloud_scraper_properties()
 
 	def cloud_scraper_names_all(self):
-		return ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud')
+		return CLOUD_SCRAPER_NAMES
 
 	def _cloud_scraper_names(self):
 		names = set(self.cloud_scraper_names or [])
@@ -2289,6 +2310,30 @@ class Sources():
 		self._cleanup_browse_transfer(debrid_provider, debrid_files, is_pack=is_pack)
 		return player
 
+	def _queue_retry_copies(self, item, count, provider_text, extra_info, display_name, retry_easynews, retry_easynews_limit, cloud_retries):
+		"""Retry rows for one queue entry (#118: one place instead of a copy per item kind).
+
+		EasyNews items (native, or an AIOStreams row that is a direct EasyNews link) follow the
+		EasyNews Playback Method (Retry) setting: the limit counts the first attempt, so it yields
+		limit - 1 copies. Debrid CDN items (#99 cloud scrapers, #111 external results cached on a
+		debrid) get cloud_play_retries copies marked `cloud_retry`, which the queue loop turns into
+		the 3 s gap and the "Cloud play retry" log line: a player-open failure on such a link is
+		usually one stalled request, and the next attempt on the same link is instant."""
+		scrape_provider = item.get('scrape_provider')
+		en_retry = scrape_provider == 'easynews'
+		if not en_retry and scrape_provider == 'aiostreams':
+			try:
+				from apis.aiostreams_api import is_direct_easynews_item
+				en_retry = is_direct_easynews_item(item)
+			except Exception:
+				en_retry = False
+		if en_retry:
+			if not retry_easynews: return []
+			return retry_copies(item, count, provider_text, extra_info, display_name, retry_easynews_limit - 1)
+		if cloud_retries and debrid_cdn_item(item):
+			return retry_copies(item, count, provider_text, extra_info, display_name, cloud_retries, marker='cloud_retry')
+		return []
+
 	def play_file(self, results, source={}):
 		playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
 		if not playable_results and not source:
@@ -2334,27 +2379,8 @@ class Sources():
 				display_name = item['display_name'].upper()
 				resolve_item['resolve_display'] = '%02d. [B]%s[/B][CR]%s[CR]%s' % (count, provider_text, extra_info, display_name)
 				processed_items_append(resolve_item)
-				# Native EN + AIOStreams EN badge rows share EasyNews Playback Method (Retry).
-				en_retry = scrape_provider == 'easynews'
-				if not en_retry and scrape_provider == 'aiostreams':
-					try:
-						from apis.aiostreams_api import is_direct_easynews_item
-						en_retry = is_direct_easynews_item(item)
-					except Exception:
-						en_retry = False
-				if en_retry and retry_easynews:
-					for retry in range(1, retry_easynews_limit):
-						resolve_item = dict(item)
-						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
-						processed_items_append(resolve_item)
-				# Cloud items get the same treatment (#99): a player-open failure on a debrid CDN link
-				# is usually one stalled request, and the next attempt on the same link is instant.
-				elif scrape_provider in self.cloud_scraper_names_all() and cloud_retries:
-					for retry in range(1, cloud_retries + 1):
-						resolve_item = dict(item)
-						resolve_item['resolve_display'] = '%02d. [B]%s (RETRYx%s)[/B][CR]%s[CR]%s' % (count, provider_text, retry, extra_info, display_name)
-						resolve_item['cloud_retry'] = retry
-						processed_items_append(resolve_item)
+				processed_items.extend(self._queue_retry_copies(item, count, provider_text, extra_info, display_name,
+						retry_easynews, retry_easynews_limit, cloud_retries))
 			items = list(processed_items)
 			if not self.continue_resolve_check():
 				self._kill_progress_dialog()
