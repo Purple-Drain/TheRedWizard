@@ -55,6 +55,15 @@ def routing(sys):
 	elif mode.startswith('nzb.'):
 		from indexers import nzb
 		return getattr(nzb, mode.split('.')[1])(params)
+	elif mode == 'next_episode.info':
+		# #92: JSON answer for "what's next" -- window property + single-item directory listing.
+		from modules.next_episode_api import next_episode_info
+		return next_episode_info(params)
+	elif mode == 'playback.next_episode':
+		# #92: same next-episode computation as next_episode.info, handed to playback.media
+		# in-process (Sources().playback_prep()) instead of a second plugin invocation.
+		from modules.next_episode_api import playback_next_episode
+		return playback_next_episode(params)
 	elif 'playback.' in mode:
 		from modules.kodi_utils import player_check
 		return player_check(mode, params)
