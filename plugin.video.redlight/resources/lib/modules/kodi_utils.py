@@ -955,8 +955,23 @@ def restart_addon_for_addon_xml_change(notify=True):
 	update_local_addons()
 	disable_enable_addon()
 
+def addon_xml_rewrite_needs_restart(invoker_mismatch, icon_mismatch, other_mismatch=False):
+	"""Pure decision (#122): restarting is only ever needed for a difference outside the
+	two values this module itself rewrites (reuselanguageinvoker, icon). Kodi re-reads
+	addon.xml at its next start on its own, so a mismatch confined to those two values can
+	be corrected with a plain file rewrite now, no disable/enable cycle required."""
+	if not invoker_mismatch and not icon_mismatch and not other_mismatch:
+		return False
+	return bool(other_mismatch)
+
 def reuse_language_invoker_check(force=False):
-	"""Fen-style: restore addon.xml from settings; disable/enable when invoker or icon differs."""
+	"""Fen-style: restore addon.xml from settings.
+
+	When the only differences are the reuselanguageinvoker/icon values this function
+	itself rewrites, do a plain file rewrite plus one log line (#122) -- Kodi re-reads
+	addon.xml at its next start, so no disable/enable cycle is needed. Any other
+	difference still gets today's disable/enable restart.
+	"""
 	try:
 		if not force and get_property(_ADDON_XML_APPLIED) == 'true' and not addon_xml_sync_needed():
 			return False
@@ -968,8 +983,11 @@ def reuse_language_invoker_check(force=False):
 		if not changed:
 			logger('Red Light', 'AddonXMLCheck - addon.xml sync failed')
 			return False
-		logger('Red Light', 'AddonXMLCheck - Change Detected. Restarting Red Light')
 		finish_addon_xml_sync()
+		if not addon_xml_rewrite_needs_restart(invoker_mismatch, icon_mismatch):
+			logger('Red Light', 'AddonXMLCheck - addon.xml rewritten in place (reuselanguageinvoker/icon only), no restart needed')
+			return False
+		logger('Red Light', 'AddonXMLCheck - Change Detected. Restarting Red Light')
 		restart_addon_for_addon_xml_change(notify=not force)
 		return True
 	except Exception as e:
