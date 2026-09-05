@@ -78,6 +78,35 @@ def retry_copies(item, count, provider_text, extra_info, display_name, retries, 
 		copies.append(copy)
 	return copies
 
+_FAILURE_REASON_MAX = 90
+
+def describe_debrid_error(provider, error):
+	"""'Real-Debrid: hoster_unavailable (error_code 19)' from the error a debrid API client kept
+	on its last unrestrict call (RD's {'error', 'error_code'} body, TorBox's detail), or None
+	when there was none (#86)."""
+	if not error: return None
+	if isinstance(error, dict):
+		text = error.get('error') or error.get('detail') or error.get('message')
+		code = error.get('error_code')
+		if not text and code in (None, ''): return None
+		text = str(text or 'error')
+		if code not in (None, ''): text = '%s (error_code %s)' % (text, code)
+	else:
+		text = str(error)
+	text = text.strip()
+	if not text: return None
+	return ('%s: %s' % (provider, text) if provider else text)[:_FAILURE_REASON_MAX]
+
+def resolve_failure_reason(url, debrid_error=None, player_error=False, note=None):
+	"""Why one queue entry failed, in one line (#86). No url: the resolver's own note (deadline,
+	exception) beats the debrid API's error, which beats the generic text. With a url, Kodi's
+	player failed the open; `player_error` says onPlayBackError fired."""
+	if not url:
+		return (note or debrid_error or 'no url from resolver')[:_FAILURE_REASON_MAX]
+	reason = 'player could not open the stream'
+	if player_error: reason += ' (Kodi reported a playback error)'
+	return reason
+
 def stall_resume_percent(curr_time, total_time, rewind=_STALL_RESUME_REWIND_SEC):
 	"""StartPercent for the reopen: a few seconds before the stall so the seek lands on data
 	the previous connection had already served and the viewer gets their bearings back."""
@@ -1228,14 +1257,14 @@ class Sources():
 		self._touch_sources_busy()
 		return True
 
-	def display_results(self, results):
+	def display_results(self, results, failure_label=''):
 		while True:
 			self._touch_sources_busy()
 			window_format, window_number = settings.results_format()
 			window_result = open_window(('windows.sources', 'SourcesResults'), 'sources_results.xml',
 					window_format=window_format, window_id=window_number, results=results, meta=self.meta, sources_ref=self, episode_group_label=self.episode_group_label,
 					scraper_settings=self.scraper_settings, prescrape=self.prescrape, filters_ignored=self.filters_ignored,
-					uncached_results=self.uncached_results, cache_check_override=self.cache_check_override)
+					uncached_results=self.uncached_results, cache_check_override=self.cache_check_override, failure_label=failure_label)
 			if not window_result:
 				self._kill_progress_dialog()
 				return
@@ -1460,9 +1489,36 @@ class Sources():
 		self._playback_failed_notified = True
 		self._close_progress_before_modal()
 		message = text or self._playback_failed_default_message()
+		reason = self._resolve_failure_text()
 		if self.autoplay or self.background:
-			return kodi_utils.notification('Playback Failed', 4000, settle_ms=400)
+			return kodi_utils.notification('Playback failed: %s' % reason if reason else 'Playback Failed', 4000, settle_ms=400)
+		if reason and not text: message = '%s[CR]%s' % (message, reason)
 		return self._show_modal_message('Playback failed', message)
+
+	def _record_resolve_failure(self, item, reason):
+		"""Remember why the last queue entry failed (#86): read by the Resolve queue failed log
+		line, the fallback sources dialog's label and the playback-failed notification."""
+		provider = item.get('scrape_provider') or ''
+		if provider == 'external': provider = (item.get('debrid') or item.get('cache_provider') or provider).replace('.me', '')
+		self._resolve_failure = {'reason': reason, 'name': item.get('name', ''), 'provider': provider}
+
+	def _resolve_failure_text(self):
+		failure = getattr(self, '_resolve_failure', None) or {}
+		return failure.get('reason') or ''
+
+	def _resolve_failure_label(self):
+		"""One line for the sources dialog opened because a play failed, so it does not read as a
+		match failure (#86): 'Playback failed: player could not open the stream'."""
+		reason = self._resolve_failure_text()
+		return 'Playback failed: %s' % reason if reason else ''
+
+	def _note_debrid_error(self, provider, api):
+		"""Keep the error the debrid client saw on its last unrestrict call (RD #126, TorBox), for
+		the failure reason of the queue entry being resolved (#86)."""
+		try:
+			self._debrid_error = describe_debrid_error(provider, getattr(api, 'last_unrestrict_error', None))
+		except Exception:
+			self._debrid_error = None
 
 	def _no_results(self):
 		if self.random_continual and self.media_type == 'episode' and self.tmdb_id:
@@ -2122,6 +2178,7 @@ class Sources():
 				# collapse everything to None, which then reads as "link expired".
 				import traceback
 				kodi_utils.logger('Red Light', 'resolve failed for %s: %s' % (item.get('name', ''), traceback.format_exc()))
+				self._resolve_note = 'resolver raised %s' % traceback.format_exc().strip().splitlines()[-1][:60]
 				result[0] = None
 		worker = Thread(target=_worker, daemon=True)
 		worker.start()
@@ -2135,6 +2192,7 @@ class Sources():
 				return None
 			if time.time() >= deadline:
 				kodi_utils.logger('Red Light', 'resolve of %s abandoned after the %ss deadline' % (item.get('name', ''), 90 if self.background else 240))
+				self._resolve_note = 'resolver abandoned after the %ss deadline' % (90 if self.background else 240)
 				return None
 			kodi_utils.sleep(poll_ms)
 		try:
@@ -2348,6 +2406,7 @@ class Sources():
 		try:
 			self.playback_successful, self.cancel_all_playback = None, False
 			self._resolve_user_cancelled = False
+			self._resolve_failure = None
 			defer_stop_for_nextep = getattr(self, '_nextep_alert_handled', False) or (self.background and (self.autoplay_nextep or self.autoscrape_nextep or self.play_type == 'random_continual' or self.random_continual))
 			if not defer_stop_for_nextep:
 				self._stop_active_playback()
@@ -2447,7 +2506,10 @@ class Sources():
 							self._resolve_user_cancelled = True
 							self.cancel_all_playback = True
 							break
+						self._resolve_note, self._debrid_error = None, None
 						url = self._resolve_sources_wait(item)
+						if not url and not self._user_cancelled_resolve():
+							self._record_resolve_failure(item, resolve_failure_reason(None, self._debrid_error, note=self._resolve_note))
 						if self._user_cancelled_resolve():
 							self._resolve_user_cancelled = True
 							self.cancel_all_playback = True
@@ -2488,6 +2550,8 @@ class Sources():
 						else: continue
 						if self.cancel_all_playback or self._resolve_user_cancelled:
 							break
+						if not self.playback_successful:
+							self._record_resolve_failure(item, resolve_failure_reason(url, player_error=getattr(player, 'playback_error', False)))
 						if self.playback_successful: break
 						# Next queued source — drop Kodi's native playback-failed confirm if it lingered.
 						if count < len(items):
@@ -2505,8 +2569,10 @@ class Sources():
 			if self.cancel_all_playback or self._resolve_user_cancelled:
 				self._finish_resolve_cancel()
 			elif not self.playback_successful or not url:
-				kodi_utils.logger('Red Light', 'Resolve queue failed: success=%s url=%s dialog=%s' % (
-					self.playback_successful, bool(url), bool(self.progress_dialog)))
+				failure = getattr(self, '_resolve_failure', None) or {}
+				kodi_utils.logger('Red Light', 'Resolve queue failed: success=%s url=%s dialog=%s reason=%s last=%s (%s)' % (
+					self.playback_successful, bool(url), bool(self.progress_dialog),
+					failure.get('reason') or 'unknown', failure.get('name') or getattr(self, 'playing_filename', ''), failure.get('provider') or ''))
 				self.playback_failed_action()
 		finally:
 			if self.params.get('nextep_stash_play') == 'true':
@@ -2622,7 +2688,7 @@ class Sources():
 					self.cloud_prescrape_autoplay = False
 					if self.autoplay and not self._effective_autoplay():
 						self.autoplay = False
-					return self.display_results(results)
+					return self.display_results(results, failure_label=self._resolve_failure_label())
 			self.cloud_prescrape_autoplay = False
 			if self.autoplay and not self._effective_autoplay():
 				self.autoplay = False
@@ -2637,7 +2703,7 @@ class Sources():
 			self.resolve_dialog_made = False
 			results = self.process_results(list(self.prescrape_sources))
 			if results:
-				return self.display_results(results)
+				return self.display_results(results, failure_label=self._resolve_failure_label())
 		if self.autoplay or self.background:
 			return self._no_results()
 		return self._show_playback_failed_dialog()
@@ -3101,6 +3167,7 @@ class Sources():
 					else: source_item.pop('_offcloud_cleanup_request_id', None)
 			else:
 				url = api.resolve_magnet(item_url, _hash, store_to_cloud, title, season, episode)
+			if not url: self._note_debrid_error(debrid_provider, api)
 		except: url = None
 		return url
 
@@ -3123,10 +3190,13 @@ class Sources():
 					else:
 						url = tb.unrestrict_link(item_id)
 					url = tb.coerce_play_url(url) or url
+					if not url: self._note_debrid_error('TorBox', tb)
 				elif scrape_provider == 'rd_cloud':
 					# #94: RD can answer hoster_unavailable for a torrent it still lists as downloaded;
 					# the helper reinserts that torrent once per session (folder_id is its id) and retries.
-					url = debrid_function().unrestrict_cloud_link(item_id, folder_id)
+					rd = debrid_function()
+					url = rd.unrestrict_cloud_link(item_id, folder_id)
+					if not url: self._note_debrid_error('Real-Debrid', rd)
 				elif any(i in scrape_provider for i in ('rd_', 'ad_', 'tb_')):
 					url = debrid_function().unrestrict_link(item_id)
 				else:

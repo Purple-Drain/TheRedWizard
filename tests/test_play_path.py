@@ -98,3 +98,78 @@ def test_easynews_retry_semantics_unchanged():
 
 def test_easynews_never_falls_through_to_cloud_retries():
     assert _queue(_item(scrape_provider='easynews', cache_provider='TorBox'), retry_easynews=False, cloud_retries=2) == []
+
+
+# --- #86: failure reason ---------------------------------------------------------------
+
+from modules.sources import describe_debrid_error, resolve_failure_reason  # noqa: E402
+
+
+def test_describe_rd_error_body():
+    assert describe_debrid_error('Real-Debrid', {'error': 'hoster_unavailable', 'error_code': 19}) == \
+        'Real-Debrid: hoster_unavailable (error_code 19)'
+
+
+def test_describe_error_without_code_and_torbox_detail():
+    assert describe_debrid_error('Real-Debrid', {'error': 'bad_token', 'error_code': None}) == 'Real-Debrid: bad_token'
+    assert describe_debrid_error('TorBox', {'error': 'requestdl gave up after 3 attempt(s), 30s deadline'}) == \
+        'TorBox: requestdl gave up after 3 attempt(s), 30s deadline'
+    assert describe_debrid_error('TorBox', 'plain text') == 'TorBox: plain text'
+
+
+def test_describe_error_none_cases():
+    assert describe_debrid_error('Real-Debrid', None) is None
+    assert describe_debrid_error('Real-Debrid', {}) is None
+    assert describe_debrid_error('Real-Debrid', {'error': '', 'error_code': None}) is None
+    assert describe_debrid_error('TorBox', '   ') is None
+
+
+def test_describe_error_is_capped():
+    text = describe_debrid_error('TorBox', {'error': 'x' * 300})
+    assert len(text) == 90 and text.startswith('TorBox: xxx')
+
+
+def test_reason_no_url_precedence():
+    assert resolve_failure_reason(None) == 'no url from resolver'
+    assert resolve_failure_reason('', debrid_error='Real-Debrid: hoster_unavailable (error_code 19)') == \
+        'Real-Debrid: hoster_unavailable (error_code 19)'
+    assert resolve_failure_reason(None, debrid_error='Real-Debrid: x', note='resolver abandoned after the 240s deadline') == \
+        'resolver abandoned after the 240s deadline'
+
+
+def test_reason_player_failed_open():
+    assert resolve_failure_reason('https://tb-cdn.io/f.mkv') == 'player could not open the stream'
+    assert resolve_failure_reason('https://tb-cdn.io/f.mkv', debrid_error='ignored', player_error=True) == \
+        'player could not open the stream (Kodi reported a playback error)'
+
+
+class _Holder(Sources):
+    # Sources without its __init__: only the small #86 methods are exercised.
+    def __init__(self): pass
+
+
+def test_record_failure_and_dialog_label():
+    holder = _Holder()
+    Sources._record_resolve_failure(holder, _item(scrape_provider='external', debrid='TorBox'), 'player could not open the stream')
+    assert holder._resolve_failure == {'reason': 'player could not open the stream', 'name': 'Show.S01E01.1080p.mkv', 'provider': 'TorBox'}
+    assert Sources._resolve_failure_label(holder) == 'Playback failed: player could not open the stream'
+    Sources._record_resolve_failure(holder, _item(scrape_provider='rd_cloud'), 'Real-Debrid: hoster_unavailable (error_code 19)')
+    assert holder._resolve_failure['provider'] == 'rd_cloud'
+
+
+def test_no_failure_means_empty_label():
+    holder = _Holder()
+    assert Sources._resolve_failure_label(holder) == ''
+    assert Sources._resolve_failure_text(holder) == ''
+    holder._resolve_failure = None
+    assert Sources._resolve_failure_label(holder) == ''
+
+
+def test_note_debrid_error_reads_api_attribute():
+    holder = _Holder()
+    api = _Holder()
+    api.last_unrestrict_error = {'error': 'hoster_unavailable', 'error_code': 19}
+    Sources._note_debrid_error(holder, 'Real-Debrid', api)
+    assert holder._debrid_error == 'Real-Debrid: hoster_unavailable (error_code 19)'
+    Sources._note_debrid_error(holder, 'TorBox', _Holder())
+    assert holder._debrid_error is None

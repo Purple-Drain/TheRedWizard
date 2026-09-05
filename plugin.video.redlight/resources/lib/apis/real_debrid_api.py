@@ -184,8 +184,12 @@ class RealDebridAPI:
 		'''(download_url, download_id, error). error is RD's {'error', 'error_code'} when unrestrict/link
 		answered one instead of a download (503 hoster_unavailable is error_code 19), else None (#86, #94).'''
 		response = self._post('unrestrict/link', {'link': link})
-		if not isinstance(response, dict): return None, None, None
+		if not isinstance(response, dict):
+			self.last_unrestrict_error = None
+			return None, None, None
 		error = self.unrestrict_error(response)
+		# Kept on the instance so the resolve queue can say why a play failed (#86).
+		self.last_unrestrict_error = error
 		if error: logger('Real-Debrid', 'unrestrict/link answered %s (error_code %s) for %s' % (error['error'], error['error_code'], link))
 		return response.get('download'), response.get('id'), error
 

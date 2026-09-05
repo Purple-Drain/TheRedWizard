@@ -590,6 +590,8 @@ class TorBoxAPI:
 		Bounded by wall clock as well as by attempts (#108): each attempt can spend the full
 		20 s request timeout, so twelve of them is over four minutes per queue entry with
 		nothing able to cancel a background next-episode prep.'''
+		# Kept on the instance so the resolve queue can say why a play failed (#86).
+		self.last_unrestrict_error = None
 		try:
 			user_ip = _cached_public_ip()
 			torrent_id, file_id = str(file_id).split(',', 1)
@@ -601,14 +603,19 @@ class TorBoxAPI:
 				if attempt:
 					if time.time() >= deadline:
 						logger('TorBox', 'requestdl: giving up after %d attempt(s), %ss deadline reached' % (attempt, deadline_s))
+						self.last_unrestrict_error = {'error': 'requestdl gave up after %d attempt(s), %ss deadline' % (attempt, deadline_s)}
 						break
 					sleep(1500)
 				r = self._get('torrents/requestdl', data=params)
 				url = self._requestdl_url(r)
 				if url:
+					self.last_unrestrict_error = None
 					return url
 				if isinstance(r, str) and r.strip().lower().startswith('http'):
 					return r.strip()
+				if isinstance(r, dict) and not r.get('success'):
+					detail = r.get('detail') or r.get('error')
+					if detail: self.last_unrestrict_error = {'error': str(detail)[:120]}
 				if not r or not isinstance(r, dict) or not r.get('success'):
 					continue
 				data = r.get('data')
