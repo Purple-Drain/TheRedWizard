@@ -9,6 +9,7 @@ from caches.settings_cache import get_setting
 from scrapers import external, folders
 from modules import debrid, kodi_utils, settings, metadata, watched_status
 from modules.player import RedLightPlayer
+from modules.thread_tools import StopFlag, join_bounded, log_live_threads
 from modules.source_utils import get_cache_expiry, make_alias_dict, include_exclude_filters, get_file_info, release_info_format, audio_lang_choices, matches_english_or_untagged, \
 								_normalize_release_title
 from modules.utils import clean_file_name, string_to_float, safe_string, remove_accents, get_datetime, append_module_to_syspath, manual_function_import
@@ -648,6 +649,8 @@ class Sources():
 			self._get_sources_depth = max(0, getattr(self, '_get_sources_depth', 1) - 1)
 			if self._get_sources_depth == 0:
 				self._release_sources_busy()
+				try: log_live_threads('get_sources')
+				except: pass
 
 	def collect_results(self):
 		if self.prescrape_sources:
@@ -1473,9 +1476,9 @@ class Sources():
 		if self.progress_thread and self.progress_thread.is_alive():
 			try:
 				kodi_utils.close_dialog('sources_playback.xml')
-				self.progress_thread.join(timeout=2.0)
 			except:
 				pass
+			join_bounded([self.progress_thread], 2.0, 'resolve_progress_dialog')
 		kodi_utils.sleep(400)
 
 	def _show_modal_message(self, heading, text, background_notification=None):
@@ -1989,10 +1992,7 @@ class Sources():
 					self.progress_dialog.close()
 			except:
 				pass
-			try:
-				thread.join(timeout=join_timeout)
-			except:
-				pass
+			join_bounded([thread], join_timeout, 'resolve_progress_dialog')
 		self.progress_dialog, self.progress_thread = None, None
 
 	def _reset_scrape_progress_counts(self):
@@ -2004,7 +2004,7 @@ class Sources():
 		kodi_utils.clear_scrape_progress_ui()
 		kodi_utils.sync_scrape_progress_ui(0, 0, 0, 0, 0, 0)
 		self.progress_dialog = create_window(('windows.sources', 'SourcesPlayback'), 'sources_playback.xml', meta=self.meta, sources_ref=self)
-		self.progress_thread = Thread(target=self.progress_dialog.run)
+		self.progress_thread = Thread(target=self.progress_dialog.run, name='resolve_progress_dialog')
 		self.progress_thread.start()
 		for _ in range(40):
 			try:
@@ -2192,10 +2192,7 @@ class Sources():
 			pass
 		thread = self.progress_thread
 		if thread and thread.is_alive():
-			try:
-				thread.join(timeout=join_timeout)
-			except:
-				pass
+			join_bounded([thread], join_timeout, 'resolve_progress_dialog')
 			if thread.is_alive() and close_overlays and not resolve_cancel and kodi_utils.get_property(PROP_RESOLVE_BUSY) != 'true':
 				try:
 					kodi_utils.close_all_dialog()
@@ -2206,21 +2203,41 @@ class Sources():
 		self.progress_dialog, self.progress_thread = None, None
 		kodi_utils.hide_busy_dialog()
 
+	def _stop_progress_dialog_thread(self, timeout=5.0):
+		"""Signal the resolve/scrape progress dialog to close and join its thread, bounded,
+		so play_file never returns with 'resolve_progress_dialog' still alive (#133). Unlike
+		_kill_progress_dialog this does not touch the sources overlay windows -- it exists only
+		to guarantee the thread is gone (or logged) before the invocation's main code returns."""
+		try:
+			if self.progress_dialog:
+				self.progress_dialog.is_canceled = True
+				self.progress_dialog.close()
+		except Exception:
+			pass
+		return join_bounded([self.progress_thread], timeout, 'resolve_progress_dialog')
+
 	def _resolve_sources_wait(self, item, meta=None, poll_ms=50):
 		if self._user_cancelled_resolve():
 			return None
 		result = [None]
+		stop_flag = StopFlag()
 		def _worker():
 			try:
-				result[0] = self.resolve_sources(item, meta)
+				value = self.resolve_sources(item, meta)
+				if stop_flag: return
+				result[0] = value
 			except:
 				# The only place a resolve exception is ever seen (#113): the callers below
 				# collapse everything to None, which then reads as "link expired".
 				import traceback
-				kodi_utils.logger('Red Light', 'resolve failed for %s: %s' % (item.get('name', ''), traceback.format_exc()))
-				self._resolve_note = 'resolver raised %s' % traceback.format_exc().strip().splitlines()[-1][:60]
+				tb = traceback.format_exc()
+				if stop_flag: return
+				kodi_utils.logger('Red Light', 'resolve failed for %s: %s' % (item.get('name', ''), tb))
+				self._resolve_note = 'resolver raised %s' % tb.strip().splitlines()[-1][:60]
 				result[0] = None
-		worker = Thread(target=_worker, daemon=True)
+		# Deliberately abandoned past the deadline below -- daemon=True plus stop_flag means an
+		# overrun worker keeps resolving in the background but never writes back once abandoned.
+		worker = Thread(target=_worker, daemon=True, name='resolve_sources_worker')
 		worker.start()
 		# A wall-clock cap (#108): a debrid API outage otherwise holds the resolver for as long
 		# as the API client keeps retrying, and a background next-episode prep has no dialog
@@ -2231,6 +2248,7 @@ class Sources():
 			if self._user_cancelled_resolve():
 				return None
 			if time.time() >= deadline:
+				stop_flag.stop()
 				kodi_utils.logger('Red Light', 'resolve of %s abandoned after the %ss deadline' % (item.get('name', ''), 90 if self.background else 240))
 				self._resolve_note = 'resolver abandoned after the %ss deadline' % (90 if self.background else 240)
 				return None
@@ -2267,7 +2285,7 @@ class Sources():
 		if not transfer_id:
 			return
 		api = self.debrid_importer(debrid_provider)()
-		Thread(target=api.delete_torrent, args=(transfer_id,), daemon=True).start()
+		Thread(target=api.delete_torrent, args=(transfer_id,), daemon=True, name='cleanup_browse_transfer').start()
 
 	def _cleanup_offcloud_resolved_url(self, item, url):
 		'''After Offcloud magnet resolve: remove the request once playback is done/failed.
@@ -2294,7 +2312,7 @@ class Sources():
 			if url_request_id and url_request_id != request_id:
 				return
 			api = OffcloudAPI()
-			Thread(target=api.cleanup_resolved_request, args=(request_id,), daemon=True).start()
+			Thread(target=api.cleanup_resolved_request, args=(request_id,), daemon=True, name='cleanup_offcloud_resolved_url').start()
 		except Exception:
 			pass
 
@@ -2320,7 +2338,7 @@ class Sources():
 		try:
 			from apis.real_debrid_api import RealDebridAPI
 			api = RealDebridAPI()
-			Thread(target=api.cleanup_resolved_download, args=(None, url), daemon=True).start()
+			Thread(target=api.cleanup_resolved_download, args=(None, url), daemon=True, name='cleanup_rd_resolved_url').start()
 		except Exception:
 			pass
 
@@ -2619,7 +2637,10 @@ class Sources():
 			if self.params.get('nextep_stash_play') == 'true':
 				_set_nextep_stash_play_in_flight(False)
 			self._release_resolve_busy()
+			self._stop_progress_dialog_thread(5.0)
 			try: del monitor
+			except: pass
+			try: log_live_threads('play_file')
 			except: pass
 
 	def _resume_after_stall(self, item, url, player):
@@ -2853,7 +2874,7 @@ class Sources():
 			from threading import Thread
 			from apis.intro_skip_api import prefetch_intro_segment
 			imdb_id = self.meta.get('imdb_id')
-			Thread(target=prefetch_intro_segment, args=(self.tmdb_id, imdb_id, self.season, self.episode), daemon=True).start()
+			Thread(target=prefetch_intro_segment, args=(self.tmdb_id, imdb_id, self.season, self.episode), daemon=True, name='prefetch_intro_segment').start()
 		except: pass
 
 	def _prefetch_nextep_segment_data(self):
@@ -2868,7 +2889,7 @@ class Sources():
 			alert_key = 'autoplay_alert_timing' if self.play_type == 'autoplay_nextep' else 'autoscrape_alert_timing'
 			if settings._alert_timing_mode(alert_key) == 'introdb':
 				from apis.intro_skip_api import prefetch_credits_start
-				Thread(target=prefetch_credits_start, args=(tmdb_id, imdb_id, season, episode), daemon=True).start()
+				Thread(target=prefetch_credits_start, args=(tmdb_id, imdb_id, season, episode), daemon=True, name='prefetch_credits_start').start()
 		except: pass
 
 	def _playback_remaining_seconds(self, player, allow_stopped=False):
