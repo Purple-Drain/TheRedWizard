@@ -8,6 +8,7 @@ from threading import Thread
 from apis.trakt_api import make_trakt_slug
 from caches.settings_cache import get_setting
 from modules import kodi_utils as ku, settings as st, watched_status as ws
+from modules.thread_tools import TrackedThreads, log_live_threads
 # logger = ku.logger
 
 PROP_RESOLVE_CANCEL = 'redlight.resolve_cancelled'
@@ -18,6 +19,10 @@ PROP_NEXTEP_PREP_DECLINED = 'redlight.nextep_prep_declined'
 PROP_AUTOSCRAPE_NEXTEP_READY = 'redlight.autoscrape_nextep_ready'
 PROP_NEXTEP_AUTOPLAY_CANCELLED = 'redlight.nextep_autoplay_cancelled'
 PROP_NEXTEP_NATURAL_END = 'redlight.nextep_natural_end'
+# How long play_video waits at the end for the threads this player started (scrobbles,
+# watched marks, bookmarks, prefetches, subtitle/notification fetches) before it returns
+# and the invocation ends; Kodi tears the sub-interpreter down shortly after (#133).
+_END_THREAD_JOIN_SEC = 5
 PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS = 'redlight.random_continual_skip_attempts'
 PROP_ACTIVE_PLAYBACK_KEY = 'redlight.active_playback_key'
 _NEXTEP_NATURAL_END_SEC = 15
@@ -88,6 +93,9 @@ class RedLightPlayer(xbmc.Player):
 		self._cb_started, self._cb_stopped, self._cb_ended = False, False, False
 		self.playback_error = False
 		self.stall_position = None
+		# Every thread this player starts (scrobbles, watched marks, bookmarks, prefetches) is
+		# tracked here and joined by _join_end_threads() before play_video returns (#133).
+		self._bg = TrackedThreads('playback threads')
 
 	# Kodi delivers these on the addon thread while it sits in xbmc.sleep(). A Stopped queued
 	# for the previous playback (Redlight's own stop before this open) arrives before our
@@ -104,6 +112,25 @@ class RedLightPlayer(xbmc.Player):
 		if not self.is_generic and (self.sources_object._resolve_user_cancelled or self.sources_object.cancel_all_playback):
 			return True
 		return ku.get_property(PROP_RESOLVE_CANCEL) == 'true'
+
+	def _spawn(self, target, args=(), kwargs=None, name=None, daemon=False):
+		# Tracked so _join_end_threads() can wait for it before play_video returns (#133).
+		try: return self._bg.spawn(target, args=args, kwargs=kwargs, name=name, daemon=daemon)
+		except Exception:
+			thread = Thread(target=target, args=args, kwargs=kwargs or {}, name=name, daemon=daemon)
+			thread.start()
+			return thread
+
+	def _join_end_threads(self, timeout=_END_THREAD_JOIN_SEC):
+		# Bounded wait for the scrobble / watched-mark / bookmark / prefetch threads before
+		# play_video returns. Kodi's sub-interpreter teardown starts shortly after the
+		# invocation's main code returns, so a thread still alive here is a thread racing that
+		# teardown (#133). An overrun is logged by TrackedThreads.join_all itself.
+		try: alive = self._bg.join_all(timeout)
+		except Exception: alive = []
+		try: log_live_threads('playback')
+		except Exception: pass
+		return alive
 
 	def run(self, url=None, obj=None):
 		ku.hide_busy_dialog()
@@ -170,6 +197,11 @@ class RedLightPlayer(xbmc.Player):
 					self.run_error()
 					self._dismiss_kodi_playback_error_dialog()
 				self.safe_stop()
+		# Both the normal-end and user-stop paths reach here through monitor()/safe_stop() above;
+		# Kodi tears this invocation's sub-interpreter down shortly after play_video returns, so
+		# any scrobble/watched-mark/bookmark/prefetch thread still running is racing that teardown
+		# (#133). Bounded join, then log whatever is still alive.
+		self._join_end_threads()
 		try: del self.kodi_monitor
 		except: pass
 
@@ -594,7 +626,7 @@ class RedLightPlayer(xbmc.Player):
 		from apis.trakt_api import trakt_scrobble, trakt_official_status
 		if not trakt_official_status(self.media_type): return
 		percent = self.playback_percent if self.playback_percent else 0
-		Thread(target=trakt_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+		self._spawn(trakt_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode), name='trakt_scrobble_start')
 
 	def _trakt_scrobble_stop(self, percent):
 		# Synchronous: ending playback tears down the player; a background thread often never finishes, leaving Trakt Playing now stuck.
@@ -612,13 +644,13 @@ class RedLightPlayer(xbmc.Player):
 		from apis.simkl_api import simkl_scrobble, simkl_official_status
 		if not simkl_official_status(self.media_type): return
 		percent = self.playback_percent if self.playback_percent else 0
-		Thread(target=simkl_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+		self._spawn(simkl_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode), name='simkl_scrobble_start')
 
 	def _simkl_scrobble_stop(self, percent):
 		if self.is_generic or st.watched_indicators() != 2 or not st.simkl_user_active(): return
 		from apis.simkl_api import simkl_scrobble, simkl_official_status
 		if not simkl_official_status(self.media_type): return
-		Thread(target=simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+		self._spawn(simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode), name='simkl_scrobble_stop')
 
 	def _punchplay_scrobble_start(self):
 		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
@@ -628,7 +660,7 @@ class RedLightPlayer(xbmc.Player):
 		self._punchplay_session_id = str(uuid.uuid4())
 		self._punchplay_last_progress_send = 0
 		percent = self.playback_percent if self.playback_percent else 0
-		Thread(target=punchplay_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+		self._spawn(punchplay_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode),
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
 				'session_id': self._punchplay_session_id}).start()
 
@@ -641,7 +673,7 @@ class RedLightPlayer(xbmc.Player):
 		if now - last < 30: return
 		self._punchplay_last_progress_send = now
 		session_id = getattr(self, '_punchplay_session_id', None)
-		Thread(target=punchplay_scrobble, args=('progress', self.media_type, self.tmdb_id, self.current_point, self.season, self.episode),
+		self._spawn(punchplay_scrobble, args=('progress', self.media_type, self.tmdb_id, self.current_point, self.season, self.episode),
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
 				'session_id': session_id}).start()
 
@@ -650,7 +682,7 @@ class RedLightPlayer(xbmc.Player):
 		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
 		if not punchplay_official_status(self.media_type): return
 		session_id = getattr(self, '_punchplay_session_id', None)
-		Thread(target=punchplay_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+		self._spawn(punchplay_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode),
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
 				'session_id': session_id}).start()
 
@@ -681,7 +713,7 @@ class RedLightPlayer(xbmc.Player):
 		from apis.wetrakr_api import wetrakr_should_scrobble, wetrakr_send_event
 		if not wetrakr_should_scrobble(): return
 		kwargs = self._wetrakr_meta_kwargs(percent)
-		Thread(target=wetrakr_send_event, args=(event, self.media_type), kwargs=kwargs).start()
+		self._spawn(wetrakr_send_event, args=(event, self.media_type), kwargs=kwargs, name='wetrakr_%s' % event)
 
 	def _wetrakr_scrobble_start(self):
 		self._wetrakr_scrobbled = False
@@ -728,7 +760,7 @@ class RedLightPlayer(xbmc.Player):
 			self._resume_checkpoint_written_at = now
 			progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
 							'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
-			Thread(target=self.run_media_progress, args=(ws.set_bookmark_checkpoint, progress_params)).start()
+			self._spawn(self.run_media_progress, args=(ws.set_bookmark_checkpoint, progress_params), name='bookmark_checkpoint')
 		except: pass
 
 	def media_watched_marker(self, force_watched=False):
@@ -743,7 +775,7 @@ class RedLightPlayer(xbmc.Player):
 				watched_function = ws.mark_movie if self.media_type == 'movie' else ws.mark_episode
 				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
 									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
-				Thread(target=self.run_media_progress, args=(watched_function, watched_params)).start()
+				self._spawn(self.run_media_progress, args=(watched_function, watched_params), name='mark_watched')
 				if self.media_type == 'episode':
 					self._mark_combined_release_siblings_watched(watched_params)
 			else:
@@ -756,7 +788,7 @@ class RedLightPlayer(xbmc.Player):
 				if current_point >= 5:
 					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
 									'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
-					Thread(target=self.run_media_progress, args=(ws.set_bookmark, progress_params)).start()
+					self._spawn(self.run_media_progress, args=(ws.set_bookmark, progress_params), name='set_bookmark')
 		except: pass
 
 	def _mark_combined_release_siblings_watched(self, primary_watched_params):
@@ -778,7 +810,7 @@ class RedLightPlayer(xbmc.Player):
 				if season != self.season or episode == self.episode: continue
 				sibling_params = dict(primary_watched_params)
 				sibling_params['season'], sibling_params['episode'] = season, episode
-				Thread(target=self.run_media_progress, args=(ws.mark_episode, sibling_params)).start()
+				self._spawn(self.run_media_progress, args=(ws.mark_episode, sibling_params), name='mark_sibling_watched')
 		except: pass
 
 	def run_media_progress(self, function, params):
@@ -1001,7 +1033,7 @@ class RedLightPlayer(xbmc.Player):
 			finally:
 				ku.clear_property(PROP_NEXTEP_PENDING)
 				ku.clear_property(PROP_NEXTEP_PREP_SCHEDULED)
-		Thread(target=_work, daemon=True).start()
+		self._spawn(_work, name='nextep_prep', daemon=True)
 
 	def _maybe_log_nextep_alert_pending(self):
 		if not self.autoplay_nextep or getattr(self, '_nextep_alert_shown', False): return
@@ -1197,7 +1229,7 @@ class RedLightPlayer(xbmc.Player):
 			except: pass
 		if stinger_keys:
 			from windows.base_window import open_window
-			Thread(target=lambda: open_window(('windows.playback_notifications', 'StingersNotification'), 'playback_notifications.xml', meta=self.meta)).start()
+			self._spawn(lambda: open_window(('windows.playback_notifications', 'StingersNotification'), 'playback_notifications.xml', meta=self.meta), name='stingers_notification')
 
 	def set_resume_point(self, listitem):
 		if self.playback_percent > 0.0: listitem.setProperty('StartPercent', str(self.playback_percent))
@@ -1323,7 +1355,7 @@ class RedLightPlayer(xbmc.Player):
 			except: pass
 			finally:
 				self._outro_credits_start_cached = '__unset__'
-		Thread(target=_work, daemon=True).start()
+		self._spawn(_work, name='introdb_alert_fetch', daemon=True)
 
 	def _maybe_start_subtitle_alert_fetch(self):
 		if getattr(self, '_subtitle_alert_fetch_started', False): return
@@ -1343,7 +1375,7 @@ class RedLightPlayer(xbmc.Player):
 			finally:
 				self._subtitle_alert_fetch_done = True
 				self._clear_subtitle_end_cache()
-		Thread(target=_work, daemon=True).start()
+		self._spawn(_work, name='subtitle_alert_fetch', daemon=True)
 
 	def _subtitle_end_remaining(self, fetch=False, for_alert=False):
 		cached = getattr(self, '_subtitle_end_remaining_cached', '__unset__')
@@ -1582,7 +1614,7 @@ class RedLightPlayer(xbmc.Player):
 			except: pass
 			finally:
 				self._intro_skip_fetch_done = True
-		Thread(target=_work, daemon=True).start()
+		self._spawn(_work, name='intro_skip_fetch', daemon=True)
 
 	def _try_intro_skip_chapters(self):
 		if getattr(self, '_intro_skip_segment', None):
@@ -1787,10 +1819,10 @@ class RedLightPlayer(xbmc.Player):
 			playing_item = getattr(self, 'playing_item', None)
 			if st.submaker_enabled():
 				from indexers.subtitles import Subtitles
-				Thread(target=Subtitles().run, args=(self.imdb_id, season, episode, poster, playing_filename, playing_item, self)).start()
+				self._spawn(Subtitles().run, args=(self.imdb_id, season, episode, poster, playing_filename, playing_item, self), name='subtitles')
 			elif st.opensubs_enabled():
 				from indexers.subtitles import OpenSubtitlesSubs
-				Thread(target=OpenSubtitlesSubs().run, args=(self.imdb_id, season, episode, poster, year, playing_filename, playing_item, self)).start()
+				self._spawn(OpenSubtitlesSubs().run, args=(self.imdb_id, season, episode, poster, year, playing_filename, playing_item, self), name='opensubtitles')
 		except: pass
 
 	def set_playback_properties(self):
