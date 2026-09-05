@@ -74,7 +74,9 @@ class MetaCache:
 			context = nullcontext(dbcon) if dbcon else open_db('metacache_db')
 			with context as active_dbcon:
 				active_dbcon.execute('DELETE FROM metadata WHERE db_type = ? AND %s = ?' % id_type, (media_type, media_id))
-				if media_type == 'tvshow': self.delete_all_seasons(media_id, active_dbcon)
+				if media_type == 'tvshow':
+					self.delete_all_seasons(media_id, active_dbcon)
+					_forget_widget_rows(media_id)
 		except: return
 
 	def delete_season(self, prop_string, dbcon=None):
@@ -112,6 +114,7 @@ class MetaCache:
 			with open_db('metacache_db') as dbcon:
 				for i in ('metadata', 'season_metadata', 'function_cache'): dbcon.execute('DELETE FROM %s' % i)
 				dbcon.execute('VACUUM')
+			_forget_widget_rows()
 		except: return
 
 	def clean_database(self):
@@ -124,6 +127,15 @@ class MetaCache:
 		except: return False
 
 meta_cache = MetaCache()
+
+def _forget_widget_rows(media_id=None):
+	# The widget cache (#120, #121) is derived from show meta; a refreshed or cleared show meta
+	# must take its facts and next-episode rows with it.
+	try:
+		from caches.widget_cache import widget_cache
+		if media_id is None: widget_cache.clear()
+		else: widget_cache.delete_show(media_id)
+	except: pass
 
 def cache_function(function, prop_string, url, expiration=720, json=True):
 	data = meta_cache.get_function(prop_string)

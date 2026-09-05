@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import time
+import hashlib
 from datetime import datetime
 from threading import Thread
 from apis.trakt_api import trakt_watched_status_mark, trakt_official_status, trakt_progress, trakt_get_hidden_items
@@ -7,6 +9,7 @@ from apis.mdblist_api import mdblist_watched_status_mark, mdblist_progress, mdbl
 from apis.punchplay_api import punchplay_watched_status_mark, punchplay_progress, punchplay_official_status
 from caches.base_cache import connect_database, database
 from caches.trakt_cache import clear_trakt_collection_watchlist_data
+from caches.widget_cache import widget_cache
 from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, logger
 from modules.utils import get_datetime, adjust_premiered_date, sort_for_article, TaskPool
 from modules import metadata, settings
@@ -268,35 +271,102 @@ def progress_aired_eps(meta):
 	regular = sum(i.get('episode_count', 0) for i in season_data if i.get('season_number', 0) != 0)
 	return _minus_relocated(regular) if regular else _minus_relocated(total)
 
-def active_tvshows_information(status_type):
+def show_facts(meta, facts_map=None):
+	"""(aired_eps, airing_status) for a show -- the two values that decide in progress vs finished.
+
+	Deriving them (progress_aired_eps(): per-season episode lists for airing shows, episode-group
+	resolution for every show) is the expensive part of the In Progress / Next Episodes builds, so
+	the pair is cached per show (widget_cache, #120). facts_map, if given, is a bulk
+	widget_cache.get_show_facts() read the caller already did; a miss is computed and written through.
+	"""
+	tmdb_id = str(meta.get('tmdb_id'))
+	cached = (facts_map or {}).get(tmdb_id)
+	if cached is None: cached = widget_cache.get_show_facts([tmdb_id]).get(tmdb_id)
+	if cached is not None:
+		try: return int(cached['aired_eps']), cached.get('status', '')
+		except Exception: pass
+	aired_eps, status = progress_aired_eps(meta), meta.get('status', '')
+	widget_cache.set_show_facts({tmdb_id: {'aired_eps': aired_eps, 'status': status}})
+	return aired_eps, status
+
+def classify_tvshow(status_type, watched_row, aired_eps, airing_status, include_other):
+	"""Whether a watched show belongs in the 'watched' or 'progress' list -- the pure decision
+	active_tvshows_information() makes per show, split out so it can run from cached facts."""
+	watched_status = get_watched_status_tvshow(watched_row, aired_eps)[0]
+	if status_type == 'watched':
+		if watched_status != 1: return False
+		return include_other or airing_status in ('Ended', 'Canceled')
+	if watched_status == 0: return True
+	return include_other and airing_status not in ('Ended', 'Canceled')
+
+def active_tvshows_information(status_type, hidden_items=None, stats=None):
+	"""Watched shows that are finished ('watched') or still have unwatched episodes ('progress').
+
+	Filter first, fetch second (#120): every show is decided from cached facts where they exist,
+	and only the remainder loads tvshow_meta and derives its facts (written back for next time).
+	stats, if given, receives 'scanned' (watched shows considered) and 'meta_fetched'.
+	"""
 	def _process(item):
 		media_id = item['media_id']
 		meta = metadata.tvshow_meta('tmdb_id', media_id, api_key, mpaa_region, get_datetime())
-		watched_status = get_watched_status_tvshow(watched_info.get(str(media_id)), progress_aired_eps(meta))[0]
-		airing_status = meta.get('status', '')
-		if status_type == 'watched':
-			if watched_status == 1:
-				if not include_other and airing_status not in ('Ended', 'Canceled'): return
-				results_append(item)
-		else:
-			if watched_status == 0: results_append(item)
-			elif include_other and airing_status not in ('Ended', 'Canceled'): results_append(item)
-	results = []
+		if not meta: return
+		aired_eps, airing_status = progress_aired_eps(meta), meta.get('status', '')
+		new_facts[str(media_id)] = {'aired_eps': aired_eps, 'status': airing_status}
+		if classify_tvshow(status_type, watched_info.get(str(media_id)), aired_eps, airing_status, include_other): results_append(item)
+	results, new_facts = [], {}
 	results_append = results.append
-	watched_indicators = settings.watched_indicators()
 	watched_info = watched_info_tvshow()
 	if status_type == 'progress':
-		hidden_items = get_hidden_progress_items(settings.watched_indicators())
+		if hidden_items is None: hidden_items = get_hidden_progress_items(settings.watched_indicators())
 		for k in hidden_items: watched_info.pop(str(k), None)
 	api_key, mpaa_region = settings.tmdb_api_key(), settings.mpaa_region()
-	watched_items = watched_info.items()
-	data = [v for k, v in watched_items]
+	data = list(watched_info.values())
 	progress_location = settings.tv_progress_location()
 	if status_type == 'watched': include_other = progress_location in (0, 2)
 	else: include_other = progress_location in (1, 2)
-	threads = TaskPool().tasks(_process, data, min(len(data), settings.max_threads()))
+	facts = widget_cache.get_show_facts([i['media_id'] for i in data])
+	missing = []
+	for item in data:
+		cached = facts.get(str(item['media_id']))
+		if cached is None: missing.append(item); continue
+		try:
+			if classify_tvshow(status_type, watched_info.get(str(item['media_id'])), int(cached['aired_eps']), cached.get('status', ''), include_other):
+				results_append(item)
+		except Exception: missing.append(item)
+	threads = TaskPool().tasks(_process, missing, min(len(missing), settings.max_threads()))
 	[i.join() for i in threads]
+	widget_cache.set_show_facts(new_facts)
+	if stats is not None: stats.update({'scanned': len(data), 'meta_fetched': len(missing)})
 	return results
+
+def watched_table_fingerprint(watched_db=None):
+	"""A cheap summary of the active provider's episode rows: row count, distinct shows, newest
+	last_played, and a season/episode checksum. Any mark, unmark or provider sync that changes the
+	table changes it, so it keys derived lists without a hook in every write path -- a sync that
+	rewrites the table with identical contents leaves it (and the cached list) alone."""
+	if not watched_db: watched_db = get_database()
+	try:
+		row = watched_db.execute(
+			'SELECT COUNT(*), COUNT(DISTINCT media_id), MAX(last_played), '
+			'SUM(CAST(season AS INTEGER) * 1000 + CAST(episode AS INTEGER)) FROM watched WHERE db_type = ?',
+			('episode',)).fetchone()
+		return '|'.join(str(i) for i in row)
+	except Exception: return 'unknown-%s' % time.time()
+
+def in_progress_cache_key(hidden_items, watched_db=None):
+	"""Key for the cached In Progress list: everything its contents depend on apart from per-show
+	facts (which carry their own expiry, bounded by the list's 10-minute ttl)."""
+	parts = (settings.watched_indicators(), settings.exclude_specials_from_progress(), settings.tv_progress_location(),
+			sorted(int(i) for i in (hidden_items or [])), watched_table_fingerprint(watched_db), str(get_datetime()))
+	return hashlib.sha1(repr(parts).encode('utf-8')).hexdigest()
+
+def next_episode_cache_key(watched_info, nextep_content, season, episode):
+	"""Key for one show's cached Next Episodes result: the seed get_next_episodes() picked, the
+	method, and every watched (season, episode) row for the show, so a mark or unmark anywhere in
+	the show (not only its newest row) recomputes."""
+	try: rows = sorted((int(r[0]), int(r[1])) for r in (watched_info or []))
+	except Exception: rows = [tuple(r) for r in (watched_info or [])]
+	return hashlib.sha1(repr((int(nextep_content), season, episode, rows)).encode('utf-8')).hexdigest()
 
 def watched_info_movie(watched_db=None):
 	if not watched_db: watched_db = get_database()
@@ -1047,6 +1117,7 @@ def get_in_progress_movies(dummy_arg, page_no):
 	return _sort_progress_list(data)
 
 def get_in_progress_tvshows(dummy_arg, page_no):
+	started = time.time()
 	source = 'local'
 	if settings.watched_indicators() == 1 and settings.trakt_user_active():
 		_refresh_trakt_tvshow_watched()
@@ -1060,8 +1131,18 @@ def get_in_progress_tvshows(dummy_arg, page_no):
 	elif settings.watched_indicators() == 4 and settings.punchplay_user_active():
 		_refresh_punchplay_tvshow_watched()
 		source = 'punchplay'
-	results = active_tvshows_information('progress')
-	logger('Red Light', 'get_in_progress_tvshows: %s item(s) from %s' % (len(results), source))
+	# Keyed after the provider refresh above, so a sync that changed the watched rows misses (#120).
+	hidden_items = get_hidden_progress_items(settings.watched_indicators())
+	cache_key = in_progress_cache_key(hidden_items)
+	stats = {}
+	results = widget_cache.get_list('in_progress_tvshows', cache_key)
+	if results is None:
+		cache_state = 'miss'
+		results = active_tvshows_information('progress', hidden_items=hidden_items, stats=stats)
+		widget_cache.set_list('in_progress_tvshows', cache_key, results)
+	else: cache_state = 'hit'
+	logger('Red Light', 'get_in_progress_tvshows: %s shows scanned, %s with progress from %s (%s meta fetched), cache %s, %.1fs'
+		% (stats.get('scanned', len(results)), len(results), source, stats.get('meta_fetched', 0), cache_state, time.time() - started))
 	if settings.lists_sort_order('progress') == 0: results = sort_for_article(results, 'title', settings.ignore_articles())
 	else: results = sorted(results, key=lambda x: x['last_played'], reverse=True)
 	return results
