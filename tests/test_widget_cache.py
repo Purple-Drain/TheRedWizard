@@ -81,13 +81,45 @@ def test_list_hit_only_on_same_key_and_before_expiry(db, monkeypatch):
 	assert wc.widget_cache.get_list('in_progress_tvshows', 'k1') is None
 
 
-def test_next_episode_hit_only_on_same_key_and_never_stores_none(db):
+def test_next_episode_hit_only_on_same_key(db):
 	assert wc.widget_cache.get_next_episode(7, 'k') is None
-	wc.widget_cache.set_next_episode(7, 'k', None, None)
-	assert _ids(db) == []
 	wc.widget_cache.set_next_episode(7, 'k', 2, 5, 'Ended')
 	assert wc.widget_cache.get_next_episode('7', 'k') == (2, 5)
 	assert wc.widget_cache.get_next_episode(7, 'other') is None
+
+
+def test_next_episode_none_result_is_cached_as_negative_not_a_miss(db):
+	# A show with no next episode (#121 follow-up): stored under the same key as a positive
+	# result would be, distinguishable from a miss so callers don't recompute every rebuild.
+	assert wc.widget_cache.get_next_episode(7, 'k') is None
+	wc.widget_cache.set_next_episode(7, 'k', None, None, 'Ended')
+	assert wc.widget_cache.get_next_episode(7, 'k') is wc.NEGATIVE
+	assert wc.widget_cache.get_next_episode(7, 'other') is None  # different key: still a miss
+	assert _ids(db) == [wc.NEXTEP_PREFIX + '7']
+
+
+def test_negative_next_episode_uses_a_short_ttl_regardless_of_show_status(db):
+	wc.widget_cache.set_next_episode(1, 'k', None, None, 'Ended')       # would be ENDED_TTL if positive
+	wc.widget_cache.set_next_episode(2, 'k', None, None, 'Returning Series')
+	expires = dict(db.execute('SELECT id, expires FROM maincache').fetchall())
+	now = wc._now()
+	for tmdb_id in (1, 2):
+		ttl = expires[wc.NEXTEP_PREFIX + str(tmdb_id)] - now
+		assert 0 < ttl <= wc.NEGATIVE_NEXTEP_TTL
+	assert wc.NEGATIVE_NEXTEP_TTL < wc.AIRING_TTL < wc.ENDED_TTL
+
+
+def test_positive_result_replaces_a_cached_negative_under_the_same_key(db):
+	wc.widget_cache.set_next_episode(7, 'k', None, None)
+	assert wc.widget_cache.get_next_episode(7, 'k') is wc.NEGATIVE
+	wc.widget_cache.set_next_episode(7, 'k', 2, 5, 'Ended')
+	assert wc.widget_cache.get_next_episode(7, 'k') == (2, 5)
+
+
+def test_negative_next_episode_expires_back_to_a_miss(db, monkeypatch):
+	wc.widget_cache.set_next_episode(7, 'k', None, None)
+	monkeypatch.setattr(wc, '_now', lambda: wc.NEGATIVE_NEXTEP_TTL + 10 ** 10)
+	assert wc.widget_cache.get_next_episode(7, 'k') is None
 
 
 def test_delete_show_drops_its_rows_and_every_list_but_nothing_else(db):

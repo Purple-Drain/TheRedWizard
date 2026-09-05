@@ -318,7 +318,10 @@ def build_single_episode(list_type, params={}):
 				# (episode 0) are trivial and never cached.
 				nextep_key = None if unwatched else ws.next_episode_cache_key(watched_info, nextep_content, orig_season, orig_episode)
 				resolved = widget_cache.get_next_episode(tmdb_id, nextep_key) if nextep_key else None
-				if resolved:
+				if resolved is widget_cache.NEGATIVE:
+					nextep_negative_hits.append(tmdb_id)
+					return
+				elif resolved:
 					orig_season, orig_episode = resolved
 					nextep_hits.append(tmdb_id)
 				else:
@@ -343,7 +346,7 @@ def build_single_episode(list_type, params={}):
 							watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
 							orig_season, orig_episode = ws.get_next(last_watched_season, last_watched_episode, watched_info, season_data, nextep_content, meta)
 						except: pass
-					if nextep_key and orig_season and orig_episode:
+					if nextep_key:
 						widget_cache.set_next_episode(tmdb_id, nextep_key, orig_season, orig_episode, meta_get('status'))
 				if not orig_season or not orig_episode: return
 				if ws.get_watched_status_episode(watched_info, (orig_season, orig_episode)): return
@@ -574,7 +577,7 @@ def build_single_episode(list_type, params={}):
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
 	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
-	build_started, nextep_hits = time.time(), []
+	build_started, nextep_hits, nextep_negative_hits = time.time(), [], []
 	if list_type in ('episode.next', 'episode.mdblist_next'):
 		mdblist_menu_next = list_type == 'episode.mdblist_next'
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
@@ -693,8 +696,9 @@ def build_single_episode(list_type, params={}):
 	[i.join() for i in threads]
 	if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
 	if list_type_starts_with('next_'):
-		kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s miss, %.1fs'
-			% (list_type, len(data), len(item_list), len(nextep_hits), len(data) - len(nextep_hits), time.time() - build_started))
+		kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s negative / %s miss, %.1fs'
+			% (list_type, len(data), len(item_list), len(nextep_hits), len(nextep_negative_hits),
+			len(data) - len(nextep_hits) - len(nextep_negative_hits), time.time() - build_started))
 		def func(function):
 			if sort_key == 'name': return title_key(function, ignore_articles)
 			elif sort_key == 'last_played': return jsondate_to_datetime(function, resformat)
