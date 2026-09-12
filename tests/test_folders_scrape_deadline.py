@@ -66,7 +66,7 @@ def test_join_until_deadline_is_quiet_when_threads_finish(instance, logged):
 
 def test_scrape_directory_skips_listing_when_deadline_already_passed(instance, logged, monkeypatch):
     calls = []
-    monkeypatch.setattr(folders, 'cache_object', lambda *a, **k: calls.append(a) or [])
+    monkeypatch.setattr(instance, '_cached_listing', lambda folder: calls.append(folder) or [])
     instance.scrape_deadline = time.time() - 1
     instance._scrape_directory('/mnt/zurg/shows/Seinfeld', first_run=False)
     assert calls == []
@@ -77,7 +77,7 @@ def test_scrape_directory_first_run_ignores_deadline(instance, monkeypatch):
     """first_run always attempts at least one listing, even if somehow called past deadline --
     mirrors rd_cloud's _past_deadline, which only gates stages after the first."""
     calls = []
-    monkeypatch.setattr(folders, 'cache_object', lambda *a, **k: calls.append(a) or [])
+    monkeypatch.setattr(instance, '_cached_listing', lambda folder: calls.append(folder) or [])
     instance.scrape_deadline = time.time() - 1
     instance.title_query, instance.folder_query = 'seinfeld', ('season03',)
     instance._scrape_directory('/mnt/zurg/shows/Seinfeld', first_run=True)

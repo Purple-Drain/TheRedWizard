@@ -2,7 +2,7 @@
 import os
 from urllib.parse import urlparse
 import time
-from caches.main_cache import cache_object
+from caches.main_cache import main_cache
 from caches.settings_cache import get_setting
 from modules import source_utils
 from modules.kodi_utils import list_dirs, open_file
@@ -71,6 +71,19 @@ class source:
 		for i in files: folder_files_append((i, 'file'))
 		return folder_files
 
+	def _cached_listing(self, folder_name):
+		"""Listing cached for four hours, except an empty one (#150). xbmcvfs.listdir returns empty
+		lists for a failed SMB/WebDAV listing as well as for an empty folder, and caching that hid a
+		whole show from this scraper for four hours after one transient Broken pipe. An empty folder
+		is cheap to list again. A cached empty entry left by an older version counts as a miss. The
+		key is unchanged, so delete_all_folderscrapers still clears it."""
+		string = 'FOLDERSCRAPER_%s_%s' % (self.scrape_provider, folder_name)
+		cached = main_cache.get(string)
+		if cached: return cached
+		folder_files = self._make_dirs(folder_name)
+		if folder_files: main_cache.set(string, folder_files, expiration=4)
+		return folder_files
+
 	def _scrape_directory(self, folder_name, first_run=False):
 		if not first_run and time.time() >= self.scrape_deadline:
 			from modules.kodi_utils import logger
@@ -92,8 +105,7 @@ class source:
 		folder_results = []
 		scrape_results_append = self.scrape_results.append
 		folder_results_append = folder_results.append
-		string = 'FOLDERSCRAPER_%s_%s' % (self.scrape_provider, folder_name)
-		folder_files = cache_object(self._make_dirs, string, (folder_name), json=False, expiration=4)
+		folder_files = self._cached_listing(folder_name)
 		folder_threads = list(make_thread_list(_process, folder_files))
 		self._join_until_deadline(folder_threads, 'listing')
 		if not folder_results: return
