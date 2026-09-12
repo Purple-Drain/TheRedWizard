@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import os
 from urllib.parse import urlparse
+import time
 from caches.main_cache import cache_object
+from caches.settings_cache import get_setting
 from modules import source_utils
 from modules.kodi_utils import list_dirs, open_file
 from modules.utils import clean_file_name, normalize, make_thread_list
@@ -19,6 +21,7 @@ class source:
 	def results(self, info):
 		try:
 			if not self.folder_path: return source_utils.internal_results(self.scraper_name, self.sources)
+			self.scrape_deadline = time.time() + self._deadline_seconds()
 			filter_title = filter_by_name('folders')
 			self.media_type, title, self.year = info.get('media_type'), info.get('title'), int(info.get('year'))
 			self.season, self.episode = info.get('season'), info.get('episode')
@@ -69,6 +72,10 @@ class source:
 		return folder_files
 
 	def _scrape_directory(self, folder_name, first_run=False):
+		if not first_run and time.time() >= self.scrape_deadline:
+			from modules.kodi_utils import logger
+			logger('Red Light', 'folders scrape deadline reached before listing %s' % folder_name)
+			return
 		def _process(item):
 			file_type = item[1]
 			normalized = normalize(item[0])
@@ -88,13 +95,33 @@ class source:
 		string = 'FOLDERSCRAPER_%s_%s' % (self.scrape_provider, folder_name)
 		folder_files = cache_object(self._make_dirs, string, (folder_name), json=False, expiration=4)
 		folder_threads = list(make_thread_list(_process, folder_files))
-		[i.join() for i in folder_threads]
+		self._join_until_deadline(folder_threads, 'listing')
 		if not folder_results: return
 		return self._scraper_worker(folder_results)
 
+	def _deadline_seconds(self):
+		"""Same scrape budget the cloud scrapers give themselves (#112); this scraper never had
+		one at all, worse than any of them, since a hung WebDAV/Zurg mount has no HTTP-level
+		timeout to fall back on the way requests-based scrapers do."""
+		return min(25, max(10, int(get_setting('redlight.results.timeout', '20'))))
+
+	def _join_until_deadline(self, threads, label):
+		"""Join against the scrape deadline instead of waiting for every thread unconditionally.
+		A thread left running after this finishes on its own; whatever it appends past this point
+		is not waited for."""
+		for thread in threads:
+			remaining = self.scrape_deadline - time.time()
+			if remaining <= 0: break
+			thread.join(timeout=remaining)
+		abandoned = sum(1 for thread in threads if thread.is_alive())
+		if abandoned:
+			from modules.kodi_utils import logger
+			logger('Red Light', 'folders scrape deadline reached with %d of %d %s threads still running' % (abandoned, len(threads), label))
+		return abandoned
+
 	def _scraper_worker(self, folder_results):
 		scraper_threads = list(make_thread_list(self._scrape_directory, folder_results))
-		[i.join() for i in scraper_threads]
+		self._join_until_deadline(scraper_threads, 'subfolder')
 
 	def url_path(self, folder, file):
 		return os.path.join(folder, file)
