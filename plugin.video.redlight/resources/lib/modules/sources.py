@@ -704,12 +704,10 @@ class Sources():
 				folder_prescrape = True
 		self.prescrape_scrapers.extend(self.internal_sources(True))
 		if not self.prescrape_scrapers and not folder_prescrape: return []
-		started = time.time()
-		for i in self.prescrape_scrapers: threads_append(Thread(target=self._timed_prescrape, args=(i[0], i[1], started), name=i[2]))
+		for i in self.prescrape_scrapers: threads_append(Thread(target=self.activate_providers, args=(i[0], i[1], True), name=i[2]))
 		[i.start() for i in self.prescrape_threads]
 		if self.background: self._join_prescrape_threads()
 		else: self.scrapers_dialog()
-		self._log_prescrape_timing(started, 'wait ended', len(self.prescrape_sources), [i.name for i in self.prescrape_threads if i.is_alive()])
 		for i in self.prescrape_scrapers:
 			scraper_name = i[2]
 			if scraper_name not in self.remove_scrapers:
@@ -718,24 +716,6 @@ class Sources():
 			self.remove_scrapers.append('folders')
 		self.prescrape_ran_scrapers = {i[2] for i in self.prescrape_scrapers}
 		return self.prescrape_sources
-
-	def _timed_prescrape(self, module_type, function, started):
-		"""activate_providers for one prescrape scraper, plus the time it finished (#149)."""
-		sources = None
-		try: sources = self.activate_providers(module_type, function, True)
-		finally: self._log_prescrape_timing(started, '%s done' % current_thread().name, len(sources or []))
-
-	def _log_prescrape_timing(self, started, event, results=None, still_running=None):
-		"""Seconds since the prescrape threads started, per scraper and at the end of the wait, so a
-		folder hit's own latency, and the saving from stopping at it, can be read from kodi.log (#149).
-		started is passed in rather than read off self because get_sources can re-enter."""
-		try:
-			label = 'tmdb=%s' % self.tmdb_id
-			if self.media_type == 'episode': label += ' S%02dE%02d' % (self.season, self.episode)
-			extra = '' if results is None else ' results=%d' % results
-			if still_running: extra += ' still_running=%s' % ','.join(still_running)
-			kodi_utils.logger('ScrapePrescrapeTiming', '%s %s %.2fs%s' % (label, event, time.time() - started, extra))
-		except: pass
 
 	def process_results(self, results):
 		if not results: return results
@@ -1080,7 +1060,7 @@ class Sources():
 		sources = self._get_module(module_type, function).results(self.search_info)
 		if prescrape:
 			if sources: self.prescrape_sources.extend(sources)
-			return sources
+			return
 		# Early cloud scrapers publish via window property only during external scrape.
 		if current_thread().name in self.remove_scrapers:
 			return
