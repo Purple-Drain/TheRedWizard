@@ -350,6 +350,11 @@ class AddonXMLCheck:
 class RedLightMonitor(Monitor):
 	def __init__ (self):
 		Monitor.__init__(self)
+		self.wake_resume = None
+		try:
+			from modules.wake_resume import WakeResumeWatcher
+			self.wake_resume = WakeResumeWatcher(self.waitForAbort)
+		except Exception as e: kodi_utils.logger('WakeResumeWatcher', str(e))
 		self.startServices()
 
 	def startServices(self):
@@ -383,6 +388,9 @@ class RedLightMonitor(Monitor):
 		elif method in ('GUI.OnScreensaverDeactivated', 'System.OnWake'):
 			kodi_utils.clear_property(pause_services_prop)
 			kodi_utils.logger('OnNotificationActions', 'UNPAUSING Red Light Services Due to Device Awake')
+		elif method in ('Player.OnAVStart', 'Player.OnStop'):
+			# A file Kodi resumed itself on wake has no RedLightPlayer behind it (#143).
+			if self.wake_resume: self.wake_resume.on_notification(method, data)
 		elif method in ('Addon.OnDisabled', 'Addon.OnUninstalled'):
 			try:
 				info = json.loads(data)

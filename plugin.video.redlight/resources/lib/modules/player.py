@@ -1849,6 +1849,10 @@ class RedLightPlayer(xbmc.Player):
 			# duplicate-file check).
 			if self.playing_filename:
 				ku.set_property('redlight.now_playing_release', self.playing_filename)
+			# Survives clear_playback_properties(), so the service can recognise this play if Kodi
+			# resumes it on wake with no RedLightPlayer behind it (#143).
+			from modules.wake_resume import write_last_play_record
+			write_last_play_record(self)
 		except: pass
 
 	def safe_stop(self):
