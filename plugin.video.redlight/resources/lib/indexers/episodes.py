@@ -469,7 +469,7 @@ def build_single_episode(list_type, params={}):
 			if settings.tmdblist_user_active():
 				tmdb_manager_params = build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': show_poster})
 			personal_manager_params = build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
-												'premiered': meta_get('premiered'), 'current_time': current_time, 'icon': show_poster})
+												'premiered': meta_get('premiered'), 'icon': show_poster})
 			favorites_manager_params = build_url({'mode': 'favorites_manager_choice', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
 			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
 			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])

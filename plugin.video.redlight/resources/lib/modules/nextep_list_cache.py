@@ -148,6 +148,8 @@ def serve(params):
 	"""Answer build_next_episode from the stored list. True when the directory was served; False means
 	the caller builds it (and the build stores a fresh list)."""
 	started = time.time()
+	try: handle = int(sys.argv[1])
+	except Exception: return _miss('no directory handle', started)
 	try:
 		is_external = kodi_utils.external()
 		key = cache_key(is_external, params)
@@ -158,11 +160,16 @@ def serve(params):
 		make_listitem, kodi_actor = kodi_utils.make_listitem, kodi_utils.kodi_actor()
 		items = [(i['url'], render_episode_row(i['row'], make_listitem, kodi_actor), False) for i in payload['items']]
 	except Exception as e: return _miss('error: %s' % e, started)
-	handle = int(sys.argv[1])
-	kodi_utils.add_items(handle, items)
-	kodi_utils.set_content(handle, 'episodes')
-	kodi_utils.set_category(handle, payload.get('category') or 'Next Episodes')
-	kodi_utils.end_directory(handle, cacheToDisc=False)
+	# Committed from here: a build can no longer answer this handle, so the directory must end whatever
+	# happens, or Kodi's fetch of the widget fails outright instead of showing a list.
+	failed = None
+	try:
+		kodi_utils.add_items(handle, items)
+		kodi_utils.set_content(handle, 'episodes')
+		kodi_utils.set_category(handle, payload.get('category') or 'Next Episodes')
+	except Exception as e: failed = e
+	finally: kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))
-	kodi_utils.logger('Red Light', 'Next Episodes list cache hit: %s listed, %.2fs' % (len(items), time.time() - started))
+	if failed is not None: kodi_utils.logger('Red Light', 'Next Episodes list cache serve failed after committing: %s' % failed)
+	else: kodi_utils.logger('Red Light', 'Next Episodes list cache hit: %s listed, %.2fs' % (len(items), time.time() - started))
 	return True

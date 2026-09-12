@@ -283,6 +283,8 @@ def test_a_built_list_is_stored_and_served_identically_without_metadata(widget):
 	assert (directory['content'], directory['category'], directory['ended'], directory['view']) == \
 		(built['content'], built['category'], built['ended'], built['view'])
 	assert 'list cache hit: 1 listed' in directory['log'][-1]
+	# Nothing time-of-build rides in a stored row: Personal Lists stamps its own date_added.
+	assert 'current_time' not in repr(directory['items'])
 
 
 def test_the_stored_list_stops_being_served_the_day_an_episode_airs(widget, monkeypatch):
@@ -304,6 +306,27 @@ def test_a_mark_after_the_build_is_a_miss_and_forget_drops_both_rows(widget, db)
 	assert nlc.serve({})
 	nlc.forget()
 	assert not nlc.serve({})
+
+
+def test_a_failure_after_committing_still_ends_the_directory(widget, monkeypatch):
+	# Past add_items there is no falling back to a build; Kodi's fetch must still get its end.
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	directory.clear()
+	def fail(handle, items): raise RuntimeError('boom')
+	monkeypatch.setattr(kodi_utils, 'add_items', fail)
+	assert nlc.serve({})
+	assert directory['ended'] is False  # end_directory(handle, cacheToDisc=False) ran
+	assert any('failed after committing' in line for line in directory['log'])
+	assert not any('list cache hit' in line for line in directory['log'])
+
+
+def test_no_handle_is_a_miss_not_an_error(widget, monkeypatch):
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	monkeypatch.setattr(sys, 'argv', ['plugin://plugin.video.redlight/'])
+	assert not nlc.serve({})
+	assert 'no directory handle' in directory['log'][-1]
 
 
 def test_store_refuses_a_key_that_moved_during_the_build(widget, db):
