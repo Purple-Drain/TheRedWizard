@@ -135,11 +135,13 @@ def ensure_listing_databases_ready():
 	"""Plugin entry can run before the service; guarantee core DB tables and settings rows exist."""
 	ensure_database_tables('settings_db')
 	ensure_database_tables('navigator_db')
-	if kodi_utils.get_property('redlight.settings_db_synced') != 'true':
-		try:
-			from caches.settings_cache import sync_settings
-			sync_settings({'silent': 'true', 'load_properties': False})
-		except: pass
+	if kodi_utils.get_property('redlight.settings_db_synced') == 'true': return
+	try:
+		from caches.settings_cache import settings_cache, sync_settings
+		# Existing rows are enough for a listing; the full sync is the service's job (#155).
+		if not settings_cache.is_empty_strict(): return
+		sync_settings({'silent': 'true', 'load_properties': False})
+	except: pass
 
 def get_timestamp(offset=0):
 	# Offset is in HOURS multiply by 3600 to get seconds
