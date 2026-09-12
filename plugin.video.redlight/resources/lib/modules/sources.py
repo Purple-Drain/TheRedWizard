@@ -697,18 +697,35 @@ class Sources():
 
 	def collect_prescrape_results(self):
 		threads_append = self.prescrape_threads.append
-		folder_prescrape = False
+		folder_prescrape, folder_scrapers = False, []
 		if self.active_folders:
 			if settings.check_prescrape_sources('folders', self.media_type):
-				self.append_folder_scrapers(self.prescrape_scrapers)
+				self.append_folder_scrapers(folder_scrapers)
 				folder_prescrape = True
-		self.prescrape_scrapers.extend(self.internal_sources(True))
-		if not self.prescrape_scrapers and not folder_prescrape: return []
+		other_scrapers = self.internal_sources(True)
+		if not (self.prescrape_scrapers or folder_scrapers or other_scrapers) and not folder_prescrape: return []
 		started = time.time()
-		for i in self.prescrape_scrapers: threads_append(Thread(target=self._timed_prescrape, args=(i[0], i[1], started), name=i[2]))
-		[i.start() for i in self.prescrape_threads]
-		if self.background: self._join_prescrape_threads()
-		else: self.scrapers_dialog()
+		def _start(scrapers):
+			self.prescrape_scrapers.extend(scrapers)
+			for i in scrapers:
+				thread = Thread(target=self._timed_prescrape, args=(i[0], i[1], started), name=i[2])
+				threads_append(thread)
+				thread.start()
+		if folder_scrapers and other_scrapers and self._folders_first_enabled():
+			# #149: the folder tier gets a head start, and the cloud tier is started only when the
+			# folders give autoplay nothing to take. On a hit it never runs, so there is nothing to
+			# cancel (the cloud scrapers take no StopFlag). Only scrapers that ran reach
+			# prescrape_scrapers, so skipped ones stay eligible for the full scrape (#104).
+			before = len(self.prescrape_threads)
+			_start(folder_scrapers)
+			folder_threads = self.prescrape_threads[before:]
+			self._wait_prescrape(self._folders_first_head_start())
+			if not self._user_cancelled_scrape() and not self._folders_first_shortcut(folder_threads, started):
+				_start(other_scrapers)
+				self._wait_prescrape()
+		else:
+			_start(folder_scrapers + other_scrapers)
+			self._wait_prescrape()
 		self._log_prescrape_timing(started, 'wait ended', len(self.prescrape_sources), [i.name for i in self.prescrape_threads if i.is_alive()])
 		for i in self.prescrape_scrapers:
 			scraper_name = i[2]
@@ -736,6 +753,45 @@ class Sources():
 			if still_running: extra += ' still_running=%s' % ','.join(still_running)
 			kodi_utils.logger('ScrapePrescrapeTiming', '%s %s %.2fs%s' % (label, event, time.time() - started, extra))
 		except: pass
+
+	def _wait_prescrape(self, max_wait=None):
+		if self.background: self._join_prescrape_threads(max_wait)
+		else: self.scrapers_dialog(max_wait)
+
+	def _folders_first_enabled(self):
+		"""Folders-first prescrape (#149), foreground autoplay only: in background next-episode prep
+		nobody is waiting, so a head start could only make the prep later."""
+		return (not self.background and self.autoplay and settings.prescrape_folders_first()
+				and settings.autoplay_prescrape('folders'))
+
+	def _folders_first_head_start(self):
+		"""Seconds the cloud tier waits for the folder tier (#149). Past this the cloud tier starts
+		alongside the folders and nothing is skipped, so a slow share costs at most this much over
+		the all-at-once prescrape. 4 s until ScrapePrescrapeTiming lines from real folder hits say
+		otherwise."""
+		return 4.0
+
+	def _folders_first_shortcut(self, folder_threads, started):
+		"""True when the finished folder tier alone gives autoplay something to play, so the cloud
+		tier is never started (#149). The candidates come from the same process_results and
+		_prescrape_autoplay_candidates the real path uses, so the title check, quality filters and
+		per-provider autoplay setting all apply. process_results can set cloud_prescrape_autoplay,
+		which skips the resume prompt and changes failure handling, so the probe never leaves it
+		set; the real path sets it again from the same results."""
+		still_running = [i.name for i in folder_threads if i.is_alive()]
+		if still_running: reason = 'folders still running: %s' % ','.join(still_running)
+		elif not self.prescrape_sources: reason = 'no folder results'
+		else:
+			saved = self.cloud_prescrape_autoplay
+			try: candidates = self._prescrape_autoplay_candidates(self.process_results(list(self.prescrape_sources)))
+			except: candidates = []
+			finally: self.cloud_prescrape_autoplay = saved
+			if candidates:
+				self._log_prescrape_timing(started, 'folders first: %d autoplay hit(s), cloud tier skipped' % len(candidates))
+				return True
+			reason = '%d folder result(s), none autoplay would take' % len(self.prescrape_sources)
+		self._log_prescrape_timing(started, 'folders first declined (%s), starting cloud tier' % reason)
+		return False
 
 	def process_results(self, results):
 		if not results: return results
@@ -1245,7 +1301,7 @@ class Sources():
 	def _get_active_scraper_names(self, scraper_list):
 		return [i[2] for i in scraper_list]
 
-	def scrapers_dialog(self):
+	def scrapers_dialog(self, max_wait=None):
 		def _scraperDialog():
 			monitor = kodi_utils.kodi_monitor()
 			start_time = time.time()
@@ -1260,6 +1316,7 @@ class Sources():
 					self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
 					kodi_utils.sleep(self.sleep_time)
 					if len(remaining_providers) == 0: break
+					if max_wait is not None and current_progress >= max_wait: break
 					if percent >= 100:
 						grace_deadline = time.time() + 8
 						while time.time() < grace_deadline and any(x.is_alive() for x in _threads):

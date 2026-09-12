@@ -405,6 +405,11 @@ def cloud_queue_fallthrough():
 	scrape and keep going instead of opening the sources dialog (#104). On by default."""
 	return get_setting('redlight.cloud_queue_fallthrough', 'true') == 'true'
 
+def prescrape_folders_first():
+	"""With an autoplay folder hit, skip the cloud prescrape instead of waiting for it (#149).
+	On by default; hidden, like cloud_queue_fallthrough."""
+	return get_setting('redlight.prescrape_folders_first', 'true') == 'true'
+
 def cloud_stall_resume():
 	"""When a cloud item's stream dies mid-play (#107: a CDN range request left hanging past
 	curl's low-speed timeout), re-resolve the same item and resume from the stall instead of
