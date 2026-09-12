@@ -498,7 +498,7 @@ def _defaultsettings_ids(d_settings):
 
 _ACTIVE_KODI_PROFILE = 'redlight.active_kodi_profile'
 
-def sync_kodi_profile_context():
+def sync_kodi_profile_context(publish=True):
 	"""Reload settings properties when the active Kodi profile changes (multi-profile / shared Trakt)."""
 	try:
 		current = kodi_utils.translate_path(kodi_utils.addon_info('profile'))
@@ -508,25 +508,25 @@ def sync_kodi_profile_context():
 		return False
 	kodi_utils.set_property('redlight.addon_profile', current)
 	previous = kodi_utils.get_property(_ACTIVE_KODI_PROFILE) or ''
+	# The first call of a Kodi session only records the profile; it is not a switch, so properties
+	# the service already published for this same profile stay valid.
+	switched = bool(previous) and previous != current
 	if previous != current:
 		kodi_utils.set_property(_ACTIVE_KODI_PROFILE, current)
+	if switched:
 		kodi_utils.clear_property(_SETTINGS_PROPERTIES_LOADED)
 		settings_cache.clear_db_cache()
-		if kodi_utils.get_property(_SETTINGS_DB_SYNCED) == 'true':
-			_apply_settings_properties_from_db()
-		else:
-			bootstrap_settings_properties(force=True)
-		return True
-	if not _properties_loaded():
-		kodi_utils.set_property(_ACTIVE_KODI_PROFILE, current)
-		if kodi_utils.get_property(_SETTINGS_DB_SYNCED) == 'true':
-			_apply_settings_properties_from_db()
-		else:
-			bootstrap_settings_properties(force=True)
-		return True
-	if not previous:
-		kodi_utils.set_property(_ACTIVE_KODI_PROFILE, current)
-	return False
+	elif _properties_loaded():
+		return False
+	# Listings read settings.db through get_setting(); republishing every property here cost each
+	# widget process ~5 s at a cold boot (#155). The service's BootstrapSettings publishes instead.
+	if not publish:
+		return switched
+	if kodi_utils.get_property(_SETTINGS_DB_SYNCED) == 'true':
+		_apply_settings_properties_from_db()
+	else:
+		bootstrap_settings_properties(force=True)
+	return True
 
 def ensure_settings_properties_loaded():
 	sync_kodi_profile_context()

@@ -28,8 +28,9 @@ def routing(sys):
 	params = dict(parse_qsl(sys.argv[2][1:], keep_blank_values=True))
 	mode = params.get('mode', 'navigator.main')
 	try:
-		from caches.settings_cache import sync_kodi_profile_context
-		sync_kodi_profile_context()
+		from caches.settings_cache import sync_kodi_profile_context, is_directory_listing_mode
+		# playback.next_episode is a listing mode but opens the addon's own windows, whose XML reads the published properties.
+		sync_kodi_profile_context(publish=not is_directory_listing_mode(mode) or mode == 'playback.next_episode')
 	except Exception as e:
 		kodi_utils.logger('routing', 'profile context: %s' % e)
 	prepare_directory_listing(mode)

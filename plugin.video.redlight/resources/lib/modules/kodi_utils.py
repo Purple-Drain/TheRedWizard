@@ -509,7 +509,9 @@ def _resolve_view_id(view_type, fallback_view_types=()):
 	return view_id
 
 def set_view_mode(view_type, content='files', is_external=None, fallback_view_types=()):
-	if get_property('redlight.use_viewtypes') != 'true': return
+	# get_setting, not a raw property read: listings no longer publish properties at a cold boot (#155).
+	from caches.settings_cache import get_setting
+	if get_setting('use_viewtypes', 'false') != 'true': return
 	if is_external == None: is_external = external()
 	if is_external: return
 	view_id = _resolve_view_id(view_type, fallback_view_types)
