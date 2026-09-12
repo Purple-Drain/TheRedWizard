@@ -3,7 +3,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugin.video.redlight", "resources", "lib"))
 
 # No Kodi stubs needed: playback_log's module-level imports are stdlib-only.
-from modules.playback_log import redact_link
+from modules.playback_log import redact_link, strip_userinfo
 
 TOKEN = 'AGVKJ4X7QW2ZP5MN6RT3'
 fails = []
@@ -36,6 +36,21 @@ leaks('opaque final segment', 'https://premiumize.me/dl/%s' % TOKEN)
 check('opaque final segment is dropped',
       redact_link('https://premiumize.me/dl/%s' % TOKEN),
       'https://premiumize.me/...')
+
+# SMB folder source (zurg share): user:password sits in the host segment (#72)
+SMB = 'smb://someuser:%s@10.1.1.22/debrid/shows/Daria (1997)/Daria - S01e13.mkv' % TOKEN
+leaks('password in smb userinfo', SMB)
+check('smb userinfo is dropped, host and filename kept', redact_link(SMB),
+      'smb://10.1.1.22/.../Daria - S01e13.mkv')
+check('smb username is dropped too', 'someuser' in redact_link(SMB), False)
+check('full-link mode strips userinfo', strip_userinfo(SMB),
+      'smb://10.1.1.22/debrid/shows/Daria (1997)/Daria - S01e13.mkv')
+check('full-link mode keeps a link without userinfo',
+      strip_userinfo('https://cdn.example.com/a/b.mkv?token=x'), 'https://cdn.example.com/a/b.mkv?token=x')
+check('an @ in the path is not userinfo',
+      strip_userinfo('https://host.tld/a/b@c.mkv'), 'https://host.tld/a/b@c.mkv')
+check('redact keeps a path @ out of the host',
+      redact_link('https://host.tld/a/b@c.mkv'), 'https://host.tld/.../b@c.mkv')
 
 # Fragment
 check('fragment is dropped',

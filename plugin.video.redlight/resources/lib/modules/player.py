@@ -91,6 +91,19 @@ def seek_to_end(last_seek, total_time, now, window_sec=_SEEK_END_WINDOW_SEC, min
 	if total <= 0 or now - seek_at > window_sec: return False
 	return target >= total - min_remaining
 
+def playback_end_outcome(stopped=False, superseded=False, nextep_handoff=False, abnormal=False, signal=None, seek_end=False):
+	"""How playback closed, for the playback log's end row, so stalls can be counted per provider
+	(#141). A takeover is 'next_episode' when Redlight's own next-episode play started it and
+	'superseded' otherwise; a close near the end or after the watched mark is 'stopped' or 'ended';
+	an early close is 'stall' (the #107 resume case), 'seek_end' (a skip that landed on EOF, #157)
+	or 'no_callback' (Kodi said nothing, so it was left alone)."""
+	if superseded: return 'next_episode' if nextep_handoff else 'superseded'
+	if signal == 'stopped': return 'stopped'
+	if not abnormal: return 'stopped' if stopped else 'ended'
+	if signal is None: return 'no_callback'
+	if seek_end: return 'seek_end'
+	return 'stall'
+
 def playback_open_timeout_ms(setting_value=None, default_sec=_PLAYBACK_OPEN_TIMEOUT_SEC):
 	"""The open window in ms from the playback_open_timeout setting (integer seconds, #115).
 	Anything unparseable or below one second falls back to the default."""
@@ -120,6 +133,7 @@ class RedLightPlayer(xbmc.Player):
 		self._cb_started, self._cb_stopped, self._cb_ended = False, False, False
 		self.playback_error = False
 		self.stall_position = None
+		self.end_outcome = None
 		self._last_seek = None
 		# Every thread this player starts (scrobbles, watched marks, bookmarks, prefetches) is
 		# tracked here and joined by _join_end_threads() before play_video returns (#133).
@@ -507,6 +521,7 @@ class RedLightPlayer(xbmc.Player):
 			self.clear_playback_properties(clear_navigation=False)
 			self._release_active_playback()
 			self._note_abnormal_end(playback_superseded, marked_before_end)
+			self._log_playback_end()
 		except:
 			self._log_monitor_error()
 			ku.hide_busy_dialog()
@@ -546,13 +561,27 @@ class RedLightPlayer(xbmc.Player):
 		except Exception: pass
 		try: self._release_active_playback()
 		except Exception: pass
+		self.end_outcome = 'monitor_error'
+		self._log_playback_end()
+
+	def _log_playback_end(self):
+		# No-op unless the playback log is on; never raises (see playback_log.log_playback_end).
+		try:
+			from modules.playback_log import log_playback_end
+			log_playback_end(self)
+		except Exception: pass
 
 	def _note_abnormal_end(self, playback_superseded, marked_before_end):
 		"""Record where playback died if it ended neither by itself nor by hand (#107).
 		play_file reads stall_position to re-resolve and resume a cloud item. Runs after the
-		stop-time bookmark is written, so the bookmark already holds the stall position."""
+		stop-time bookmark is written, so the bookmark already holds the stall position.
+		Also sets end_outcome for the playback log's end row, on every path. The quiet paths read
+		the Stop flag without waiting for it, so a late Stop near the end can log as 'ended'."""
 		self.stall_position = None
+		self.end_outcome = None
 		try:
+			nextep_handoff = bool(getattr(self, '_nextep_alert_shown', False) or getattr(self, '_nextep_stash_play_scheduled', False))
+			self.end_outcome = playback_end_outcome(stopped=self._cb_stopped, superseded=playback_superseded, nextep_handoff=nextep_handoff)
 			if self.is_generic or getattr(self, '_nextep_prep_attempted', False): return
 			cancelled = self.cancel_all_playback or self._resolve_cancelled()
 			curr, total = getattr(self, 'curr_time', None), getattr(self, 'total_time', None)
@@ -562,15 +591,19 @@ class RedLightPlayer(xbmc.Player):
 			while waited < _STALL_CALLBACK_WAIT_MS and not (self._cb_stopped or self._cb_ended or self.playback_error):
 				ku.sleep(100)
 				waited += 100
-			if self.isPlayingVideo(): return
+			if self.isPlayingVideo():
+				self.end_outcome = 'superseded'
+				return
 			signal = stall_end_signal(self._cb_stopped, self._cb_ended, self.playback_error)
+			last_seek = getattr(self, '_last_seek', None)
+			seek_end = signal == 'stall' and seek_to_end(last_seek, total, time.time())
+			self.end_outcome = playback_end_outcome(stopped=self._cb_stopped, abnormal=True, signal=signal, seek_end=seek_end)
 			if signal != 'stall':
 				if signal is None:
 					ku.logger('Red Light', 'Playback closed at %ds of %ds on %s with no stop, end or error callback within %ds; not resuming' % (
 						float(curr), float(total), self.playing_filename or '', _STALL_CALLBACK_WAIT_MS // 1000))
 				return
-			last_seek = getattr(self, '_last_seek', None)
-			if seek_to_end(last_seek, total, time.time()):
+			if seek_end:
 				ku.logger('Red Light', 'Playback closed at %ds of %ds on %s right after a seek to %ds; a skip to the end, not resuming' % (
 					float(curr), float(total), self.playing_filename or '', last_seek[1]))
 				return
