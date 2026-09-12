@@ -4425,7 +4425,7 @@
                           <property name="setting_label">Keep a Playback Log</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.playback_log)]</property>
-                          <property name="setting_description">Record every played item to playback_log.tsv in Red Light's addon data folder: date, title, season/episode, the source release name, provider, quality and size. Kept in its own file so it survives a Kodi restart, unlike kodi.log</property>
+                          <property name="setting_description">Record every played item to playback_log.tsv in Red Light's addon data folder: date, title, season/episode, the source release name, provider, quality and size, plus an end row saying how each play closed (ended, stopped, next episode, stall, skip to the end) and where. Kept in its own file so it survives a Kodi restart, unlike kodi.log</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=playback_log)</onclick>
                       </item>
                       <item>

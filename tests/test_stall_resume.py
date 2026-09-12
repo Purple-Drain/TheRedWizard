@@ -288,3 +288,90 @@ def test_prep_check_fires_once_start_prep_is_known(monkeypatch):
     player = _prep_player(monkeypatch)
     player.start_prep = 103
     assert player._should_prep_next_ep() is True
+
+
+# --- playback_end_outcome: the playback log's end row (#141, #72) --------------------------
+
+from modules.player import playback_end_outcome  # noqa: E402
+
+
+@pytest.mark.parametrize('kwargs, want', [
+    (dict(superseded=True, nextep_handoff=True), 'next_episode'),
+    (dict(superseded=True), 'superseded'),
+    (dict(superseded=True, stopped=True), 'superseded'),
+    (dict(), 'ended'),
+    (dict(stopped=True), 'stopped'),
+    (dict(abnormal=True, signal='stopped'), 'stopped'),
+    (dict(abnormal=True, signal=None), 'no_callback'),
+    (dict(abnormal=True, signal='stall'), 'stall'),
+    (dict(abnormal=True, signal='stall', seek_end=True), 'seek_end'),
+])
+def test_end_outcome_table(kwargs, want):
+    assert playback_end_outcome(**kwargs) == want
+
+
+def test_stall_sets_outcome_stall(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='ended')
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'stall'
+
+
+def test_late_stop_sets_outcome_stopped(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=3500, callback='stopped')
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'stopped'
+
+
+def test_silent_close_sets_outcome_no_callback(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=None)
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'no_callback'
+
+
+def test_skip_to_the_end_sets_outcome_seek_end(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='ended')
+    player.onPlayBackSeek(1293000, 0)
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'seek_end'
+
+
+def test_another_stream_playing_after_the_wait_is_superseded(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='ended')
+    player.isPlayingVideo = lambda: True
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'superseded'
+
+
+def test_natural_end_sets_outcome_ended(monkeypatch):
+    player, clock, _ = _closed_player(monkeypatch, callback_at_ms=None)
+    player.curr_time = 1290.0
+    player.onPlayBackEnded()
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'ended'
+    assert clock['ms'] == 0   # a quiet end never waits for callbacks
+
+
+def test_nextep_alert_play_is_a_next_episode_handoff(monkeypatch):
+    # Shield, 12.09.26 19:46: Veep S02E09 alert -> Play -> S02E10 took over ("superseded by user
+    # playback" in the log). That is a normal handoff, not a user interrupting the show.
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=None)
+    player._nextep_alert_shown = True
+    player._note_abnormal_end(True, False)
+    assert player.end_outcome == 'next_episode'
+
+
+def test_other_takeover_is_superseded(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=None)
+    player._note_abnormal_end(True, False)
+    assert player.end_outcome == 'superseded'
+
+
+def test_nextep_prep_branch_still_classifies_a_stop(monkeypatch):
+    # _note_abnormal_end returns before the stall check once next-episode prep ran; the end
+    # row must still say Stop vs end there, or autoplay chains drop out of the counts.
+    player, clock, _ = _closed_player(monkeypatch, callback_at_ms=None)
+    player._nextep_prep_attempted = True
+    player.onPlayBackStopped()
+    player._note_abnormal_end(False, False)
+    assert player.end_outcome == 'stopped'
+    assert clock['ms'] == 0
