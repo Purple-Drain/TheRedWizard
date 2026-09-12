@@ -363,6 +363,7 @@ def test_a_changed_state_is_shown_stale_once_then_rebuilt(widget, db):
 	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-12T21:00:00.000Z', 'Alpha')")
 	del built_meta[:]
 	directory.clear(); directory['props'] = props
+	props.clear()  # the next start: Kodi clears Home properties
 	assert nlc.serve({})  # the earlier run's list, at once
 	assert built_meta == [] and directory['items'] == built_items
 	assert 'list cache stale (state changed since it was stored): 1 listed' in directory['log'][-1]
@@ -412,6 +413,32 @@ def test_an_unreadable_watched_table_means_no_key(db, prefs, monkeypatch):
 	assert 'watched table unreadable' in logged[-1]
 
 
+def test_stale_is_only_for_the_start_of_a_session(widget, db):
+	# G1 on #162: once this session built or hit the list, a mark rebuilds instead of showing the old list.
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	assert nlc.serve({})
+	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-12T21:00:00.000Z', 'Alpha')")
+	assert not nlc.serve({})
+	assert nlc.REVALIDATE_PROP not in directory['props'] and 'state changed since it was stored' in directory['log'][-1]
+
+
+def test_a_provider_without_a_local_key_gets_no_stale_list_and_its_build_drops_the_row(widget, db, prefs):
+	# G2 on #162: a leftover list from MDBList must not come back at every start after a switch to Trakt.
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	directory['props'].clear()  # the next start
+	prefs['watched_indicators'] = 1
+	assert not nlc.serve({})
+	assert 'inputs not held locally' in directory['log'][-1]
+	nlc.store(None, True, False, [('u', _row())], [], 'Next Episodes')
+	assert db.execute("SELECT COUNT(*) FROM maincache WHERE id LIKE 'WIDGET_LIST_%'").fetchone()[0] == 0
+
+
+def test_refresh_widgets_stamps_the_property_the_cache_reads():
+	assert "'%s'" % nlc.REFRESHED_PROP in inspect.getsource(kodi_utils.refresh_widgets)
+
+
 def test_an_in_addon_listing_is_never_answered_stale(widget, db, monkeypatch):
 	directory, built_meta = widget
 	monkeypatch.setattr(kodi_utils, 'external', lambda: False)
@@ -424,6 +451,7 @@ def test_an_in_addon_listing_is_never_answered_stale(widget, db, monkeypatch):
 def test_a_hit_needs_list_ttl_and_a_stale_list_needs_stale_max(widget, db):
 	directory, built_meta = widget
 	episodes.build_single_episode('episode.next', {})
+	directory['props'].clear()  # the next start
 	_set_age(db, 'next_episodes_widget', nlc.LIST_TTL + 60)
 	assert nlc.serve({})
 	assert 'list cache stale (older than 12.0 h)' in directory['log'][-1] and 'built 12.0 h ago' in directory['log'][-1]
@@ -486,9 +514,30 @@ def _serve_as(props, key, external=True, anime=False):
 def test_the_service_asks_for_one_rebuild_after_a_stale_start(revalidator):
 	job, clock, props, refreshed, state = revalidator
 	_serve_as(props, nlc.STALE_KEY)
+	def answer(): props[nlc.REVALIDATE_PROP] = nlc.DONE; _serve_as(props, state['key'])
+	state['on_refresh'] = answer
 	job.run(_Monitor(clock))
-	assert props[nlc.REVALIDATE_PROP] == nlc.REBUILD and len(refreshed) == 1
+	assert props[nlc.REVALIDATE_PROP] == nlc.DONE and len(refreshed) == 1
 	assert refreshed[0] - 1000.0 >= nlc.REVALIDATE_AFTER
+
+
+def test_a_rebuild_nobody_answers_ends_the_checks(revalidator):
+	# G3 on #162: the home window was not showing, so the refresh never reached the widget.
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, nlc.STALE_KEY)
+	monitor = _Monitor(clock)
+	job.run(monitor)
+	assert len(refreshed) == 1 and props[nlc.REVALIDATE_PROP] == nlc.DONE
+	assert monitor.calls < monitor.limit and clock.now - refreshed[0] >= nlc.REBUILD_WAIT
+	assert 'not answered' in state['log'][-1]
+
+
+def test_an_in_addon_listing_is_not_revalidated(revalidator):
+	# G4 on #162: a widget refresh cannot re-render it, so it must not spend the rebuilds.
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, 'k0', external=False)
+	job.run(_Monitor(clock))
+	assert refreshed == [] and state['asked'] == []
 
 
 def test_a_list_that_matches_needs_no_refresh_and_the_checks_end(revalidator):
@@ -528,9 +577,9 @@ def test_a_key_that_keeps_moving_stops_at_max_rebuilds(revalidator):
 
 def test_the_service_checks_each_list_with_its_own_flags(revalidator):
 	job, clock, props, refreshed, state = revalidator
-	_serve_as(props, 'k1', external=False, anime=True)
+	_serve_as(props, 'k1', external=True, anime=True)
 	job.run(_Monitor(clock))
-	assert set(state['asked']) == {(False, True)}
+	assert set(state['asked']) == {(True, True)}
 
 
 def test_the_service_waits_for_playback_to_end_before_the_rebuild(revalidator):

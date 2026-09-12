@@ -61,6 +61,9 @@ REVALIDATE_AFTER = 15
 CHECKPOINTS = (15, 45, 90, 150, 240)
 MAX_REBUILDS = 2
 FIRST_ANSWER_WAIT = 30 * 60
+# A rebuild request nobody answers (the home window was not showing) ends the checks after this.
+# Nothing is lost: the list on record is behind, so its next request misses and builds anyway.
+REBUILD_WAIT = 60
 
 SERVED_PROP = 'redlight.nextep_served.%s'
 REVALIDATE_PROP = 'redlight.nextep_revalidate'
@@ -210,7 +213,12 @@ def store(key, is_external, anime, items, future_dates, category):
 	is out of date and asks for a rebuild."""
 	record_served(is_external, anime, key)
 	try:
-		if not key or cache_key(is_external, anime) != key: return
+		if not key:
+			# Built without a key (provider switched, a table unreadable): an older list must not
+			# outlive it and come back as the saved list at a later start.
+			widget_cache.delete_list(list_name(is_external, anime))
+			return
+		if cache_key(is_external, anime) != key: return
 		payload = {'items': [{'url': url, 'row': row} for url, row in items], 'category': category,
 				'valid_until': str(min(future_dates)) if future_dates else '', 'built_at': int(time.time())}
 		json.dumps(payload)
@@ -229,6 +237,17 @@ def _miss(reason, started):
 
 def _age_text(seconds):
 	return '%.1f h' % (seconds / 3600.0) if seconds >= 3600 else '%d s' % seconds
+
+
+def _may_answer_stale(is_external, anime):
+	"""Stale is for the start of a session only: while this list has had no answer yet, or only stale
+	ones (a second container asking for the same path at boot). Once it was built or hit this session,
+	a changed state builds. Never for a provider with no local key: its builds never replace the row."""
+	try:
+		if settings.watched_indicators() not in LOCAL_PROVIDERS: return False
+		raw = kodi_utils.get_property(SERVED_PROP % list_name(is_external, anime))
+		return not raw or json.loads(raw).get('key') == STALE_KEY
+	except Exception: return False
 
 
 def _widgets_refreshed_at():
@@ -252,7 +271,8 @@ def _choose(is_external, anime, revalidate):
 	elif age >= LIST_TTL: reason = 'older than %s' % _age_text(LIST_TTL)
 	elif payload.get('valid_until') and str(get_datetime()) >= payload['valid_until']: reason = 'an episode has aired since'
 	else: return 'hit', stored_key, payload, age, ''
-	if is_external and revalidate == '' and age < STALE_MAX and not refreshed: return 'stale', stored_key, payload, age, reason
+	if is_external and revalidate == '' and age < STALE_MAX and not refreshed and _may_answer_stale(is_external, anime):
+		return 'stale', stored_key, payload, age, reason
 	return None, None, None, age, reason
 
 
