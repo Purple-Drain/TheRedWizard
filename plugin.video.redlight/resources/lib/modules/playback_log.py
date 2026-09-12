@@ -20,8 +20,31 @@ from threading import Lock
 _LOG_NAME = 'playback_log.tsv'
 _MAX_BYTES = 1048576
 _COLUMNS = ('when', 'media_type', 'title', 'season', 'episode', 'tmdb_id',
-			'release', 'provider', 'quality', 'size', 'link')
+			'release', 'provider', 'quality', 'size', 'link', 'event', 'outcome', 'position', 'total')
+_HEADER = '\t'.join(_COLUMNS)
+# A file written before the event/outcome columns existed is moved here once, so no file ever
+# mixes two headers (readers key columns by header name).
+_LEGACY_NAME = 'playback_log.pre-outcome.tsv'
 _lock = Lock()
+
+def strip_userinfo(url):
+	"""Drop a user:password@ prefix from the host of scheme://user:pass@host/path.
+
+	Folder sources on an SMB share (the zurg mount) carry the share's login in the URL, and
+	that is never needed to tell where a play came from, so even the full-link mode drops it
+	(#72). Only the authority is touched: an @ further along the path is left alone.
+	"""
+	if not url: return ''
+	text = str(url)
+	if '://' not in text: return text
+	scheme, rest = text.split('://', 1)
+	cut = len(rest)
+	for sep in '/?#':
+		pos = rest.find(sep)
+		if pos != -1 and pos < cut: cut = pos
+	authority, tail = rest[:cut], rest[cut:]
+	if '@' in authority: authority = authority.rsplit('@', 1)[1]
+	return '%s://%s%s' % (scheme, authority, tail)
 
 def redact_link(url):
 	"""Reduce a resolved link to scheme://host/.../filename.
@@ -33,7 +56,7 @@ def redact_link(url):
 	opaque id, since a token can sit in that position too.
 	"""
 	if not url: return ''
-	text = str(url)
+	text = strip_userinfo(url)
 	if '://' not in text:
 		# Local path or a plugin:// route: keep the last segment, drop the directory tree.
 		return text.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
@@ -68,28 +91,59 @@ def _rotate(path):
 	except OSError:
 		pass
 
+def _retire_old_header(path):
+	"""Move aside a file whose header is not the current one. The first such file goes to
+	_LEGACY_NAME and is kept; after that an old-header file just takes the .1 slot."""
+	try:
+		with open(path, 'r', encoding='utf-8') as handle: header = handle.readline().rstrip('\r\n')
+	except OSError:
+		return
+	if header == _HEADER: return
+	legacy = os.path.join(os.path.dirname(path), _LEGACY_NAME)
+	target = legacy if not os.path.exists(legacy) else '%s.1' % path
+	try:
+		if os.path.exists(target) and target != legacy: os.remove(target)
+		os.rename(path, target)
+	except OSError:
+		pass
+
 def _write(line):
 	path = _log_path()
 	with _lock:
+		if os.path.exists(path): _retire_old_header(path)
 		if os.path.exists(path): _rotate(path)
 		write_header = not os.path.exists(path)
 		# Opened and closed per event on purpose -- addon processes are reloaded and killed
 		# freely, and a long-lived handle would lose buffered lines.
 		with open(path, 'a', encoding='utf-8') as handle:
-			if write_header: handle.write('%s\n' % '\t'.join(_COLUMNS))
+			if write_header: handle.write('%s\n' % _HEADER)
 			handle.write('%s\n' % line)
 
+def _seconds(value):
+	try: return '%d' % float(value)
+	except (TypeError, ValueError): return ''
+
 def log_playback(player):
-	"""Append one row for a confirmed playback. Silent no-op unless the setting is enabled.
+	"""Append the start row for a confirmed playback. Silent no-op unless the setting is enabled.
 
 	Never raises: logging must not be able to break playback.
 	"""
+	_log_event(player, 'start', '', '', '')
+
+def log_playback_end(player):
+	"""Append the end row: how the play closed (player.end_outcome, set by _note_abnormal_end:
+	ended, stopped, next_episode, superseded, stall, seek_end, no_callback, monitor_error) and
+	where, so stalls can be counted per provider (#141). Same identity columns as the start row."""
+	_log_event(player, 'end', getattr(player, 'end_outcome', None) or 'unknown',
+			_seconds(getattr(player, 'curr_time', None)), _seconds(getattr(player, 'total_time', None)))
+
+def _log_event(player, event, outcome, position, total):
 	try:
 		from modules import settings
 		if not settings.playback_log_enabled(): return
 		item = getattr(player, 'playing_item', None) or {}
 		link = getattr(player, 'url', '') or ''
-		if not settings.playback_log_include_links(): link = redact_link(link)
+		link = strip_userinfo(link) if settings.playback_log_include_links() else redact_link(link)
 		row = (
 			time.strftime('%Y-%m-%dT%H:%M:%S'),
 			getattr(player, 'media_type', ''),
@@ -104,7 +158,7 @@ def log_playback(player):
 			item.get('scrape_provider', ''),
 			item.get('quality', ''),
 			item.get('size', ''),
-			link)
+			link, event, outcome, position, total)
 		_write('\t'.join(_clean(i) for i in row))
 	except Exception:
 		pass
