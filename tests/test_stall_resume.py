@@ -144,7 +144,7 @@ def test_degenerate_input_reopens_from_zero(curr, total):
 # --- stall_end_signal and the late-Stop order (12.09.26) ---------------------------------
 
 from modules import player as player_mod  # noqa: E402
-from modules.player import stall_end_signal, _STALL_CALLBACK_WAIT_MS  # noqa: E402
+from modules.player import stall_end_signal, seek_to_end, _STALL_CALLBACK_WAIT_MS, _SEEK_END_WINDOW_SEC  # noqa: E402
 
 
 def test_stop_wins_over_everything():
@@ -201,6 +201,51 @@ def test_end_of_file_well_before_the_end_resumes(monkeypatch):
 
 def test_error_callback_resumes(monkeypatch):
     player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='error')
+    player._note_abnormal_end(False, False)
+    assert player.stall_position == (1010.0, 1293.0)
+
+
+# --- seek_to_end: a skip to the end that fails is not a stall (Veep S02E09, 12.09.26) -------
+
+def test_recent_seek_past_the_end_is_a_skip():
+    # Shield: seek target 1704.68 s on a 1703 s file, EOF 2 s later.
+    assert seek_to_end((100.0, 1704.68), 1703, 102.2)
+
+
+def test_recent_seek_inside_the_last_minute_is_a_skip():
+    assert seek_to_end((100.0, 1650), 1703, 105)
+
+
+def test_seek_into_the_middle_is_not_a_skip():
+    assert not seek_to_end((100.0, 900), 1703, 102)
+
+
+def test_old_seek_is_ignored():
+    assert not seek_to_end((100.0, 1700), 1703, 100 + _SEEK_END_WINDOW_SEC + 1)
+
+
+@pytest.mark.parametrize('last_seek', [None, (), ('a', 'b'), (100.0,)])
+def test_missing_or_bad_seek_is_not_a_skip(last_seek):
+    assert not seek_to_end(last_seek, 1703, 101)
+
+
+def test_seek_callback_records_target_in_seconds():
+    player = RedLightPlayer()
+    player.onPlayBackSeek(1704680, 0)
+    assert player._last_seek[1] == pytest.approx(1704.68)
+
+
+def test_eof_right_after_a_seek_to_the_end_does_not_resume(monkeypatch):
+    player, _, logged = _closed_player(monkeypatch, callback_at_ms=300, callback='ended')
+    player.onPlayBackSeek(1293000, 0)
+    player._note_abnormal_end(False, False)
+    assert player.stall_position is None
+    assert any('skip to the end' in str(a) for a in logged)
+
+
+def test_stall_after_a_seek_into_the_middle_still_resumes(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='ended')
+    player.onPlayBackSeek(600000, 0)
     player._note_abnormal_end(False, False)
     assert player.stall_position == (1010.0, 1293.0)
 

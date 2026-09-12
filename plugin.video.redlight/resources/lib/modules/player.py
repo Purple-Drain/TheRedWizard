@@ -34,6 +34,9 @@ _STALL_MIN_REMAINING_SEC = 60
 # after CloseFile on the Shield (12.09.26), so a 2 s wait read a user Stop as a stall. The wait
 # ends as soon as any callback lands; only a silent close waits the full time.
 _STALL_CALLBACK_WAIT_MS = 10000
+# A seek to (or past) the end that Kodi cannot honour closes the stream as EOF, which reads exactly
+# like a stall (Veep S02E09, 12.09.26). A seek this recent that aimed near the end is the user's skip.
+_SEEK_END_WINDOW_SEC = 30
 # How long check_playback_start waits for Kodi to open the stream before giving up (#115).
 # Was an implicit ~20 s (0.26 % per 50 ms tick). 30 s covers curl's 15 s low-speed timeout
 # on each of the two requests a slow-but-streaming open needs. Setting: playback_open_timeout.
@@ -76,6 +79,18 @@ def stall_end_signal(stopped, ended, error):
 	if ended or error: return 'stall'
 	return None
 
+def seek_to_end(last_seek, total_time, now, window_sec=_SEEK_END_WINDOW_SEC, min_remaining=_STALL_MIN_REMAINING_SEC):
+	"""True when the last seek, (when, target seconds), was made within window_sec of now and aimed
+	within min_remaining of the end or past it: an early close then is that skip landing on EOF, not a
+	stall, so it must not be resumed. A seek into the middle that then stalls still resumes."""
+	if not last_seek: return False
+	try:
+		seek_at, target = float(last_seek[0]), float(last_seek[1])
+		total, now = float(total_time), float(now)
+	except (TypeError, ValueError, IndexError): return False
+	if total <= 0 or now - seek_at > window_sec: return False
+	return target >= total - min_remaining
+
 def playback_open_timeout_ms(setting_value=None, default_sec=_PLAYBACK_OPEN_TIMEOUT_SEC):
 	"""The open window in ms from the playback_open_timeout setting (integer seconds, #115).
 	Anything unparseable or below one second falls back to the default."""
@@ -105,6 +120,7 @@ class RedLightPlayer(xbmc.Player):
 		self._cb_started, self._cb_stopped, self._cb_ended = False, False, False
 		self.playback_error = False
 		self.stall_position = None
+		self._last_seek = None
 		# Every thread this player starts (scrobbles, watched marks, bookmarks, prefetches) is
 		# tracked here and joined by _join_end_threads() before play_video returns (#133).
 		self._bg = TrackedThreads('playback threads')
@@ -119,6 +135,10 @@ class RedLightPlayer(xbmc.Player):
 	def onPlayBackEnded(self):
 		if self._cb_started: self._cb_ended = True
 	def onPlayBackError(self): self.playback_error = True
+	def onPlayBackSeek(self, seek_time, seek_offset):
+		# Kodi passes the seek target in ms; seek_to_end() reads it when the stream closes early.
+		try: self._last_seek = (time.time(), float(seek_time) / 1000.0)
+		except (TypeError, ValueError): pass
 
 	def _resolve_cancelled(self):
 		if not self.is_generic and (self.sources_object._resolve_user_cancelled or self.sources_object.cancel_all_playback):
@@ -548,6 +568,11 @@ class RedLightPlayer(xbmc.Player):
 				if signal is None:
 					ku.logger('Red Light', 'Playback closed at %ds of %ds on %s with no stop, end or error callback within %ds; not resuming' % (
 						float(curr), float(total), self.playing_filename or '', _STALL_CALLBACK_WAIT_MS // 1000))
+				return
+			last_seek = getattr(self, '_last_seek', None)
+			if seek_to_end(last_seek, total, time.time()):
+				ku.logger('Red Light', 'Playback closed at %ds of %ds on %s right after a seek to %ds; a skip to the end, not resuming' % (
+					float(curr), float(total), self.playing_filename or '', last_seek[1]))
 				return
 			self.stall_position = (float(curr), float(total))
 			ku.logger('Red Light', 'Playback ended early at %ds of %ds on %s (ended=%s error=%s stopped=%s)' % (
