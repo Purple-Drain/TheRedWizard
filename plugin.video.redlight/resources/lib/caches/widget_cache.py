@@ -110,6 +110,17 @@ class WidgetCache:
 			return payload.get('data')
 		except Exception: return None
 
+	def get_list_any(self, name):
+		"""(key, list) stored under name whatever key it was stored with, if unexpired; else None.
+		For a caller that decides for itself whether a list built under another key is still usable."""
+		try:
+			dbcon = self._connect()
+			row = dbcon.execute('SELECT data, expires FROM maincache WHERE id = ?', (LIST_PREFIX + name,)).fetchone()
+			if not row or int(row[1]) <= _now(): return None
+			payload = json.loads(row[0])
+			return payload.get('key'), payload.get('data')
+		except Exception: return None
+
 	def set_list(self, name, key, data, ttl=LIST_TTL):
 		try:
 			dbcon = self._connect()

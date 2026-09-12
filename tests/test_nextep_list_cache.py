@@ -112,54 +112,54 @@ def prefs(monkeypatch):
 # --- the key ---------------------------------------------------------------------------------------
 
 def test_key_moves_with_every_local_input(db, prefs):
-	base = nlc.cache_key(True, {})
-	assert base and nlc.cache_key(True, {}) == base
+	base = nlc.cache_key(True)
+	assert base and nlc.cache_key(True) == base
 	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 1, '2026-09-01T10:00:00.000Z', 'A')")
-	watched = nlc.cache_key(True, {})
+	watched = nlc.cache_key(True)
 	assert watched != base
 	db.execute("INSERT INTO progress VALUES ('episode', '1', 1, 2, '40.0', '600', '2026-09-01', 0, 'A')")
-	progress = nlc.cache_key(True, {})
+	progress = nlc.cache_key(True)
 	assert progress != watched
 	db.execute("UPDATE mdblist_data SET data = '[5, 6]' WHERE id = 'mdblist_hidden_items_dropped'")
-	dropped = nlc.cache_key(True, {})
+	dropped = nlc.cache_key(True)
 	assert dropped != progress
 	prefs['nextep_method'] = 0
-	assert nlc.cache_key(True, {}) != dropped
+	assert nlc.cache_key(True) != dropped
 	prefs['nextep_method'] = 1
-	assert nlc.cache_key(True, {}) == dropped
-	assert nlc.cache_key(False, {}) != dropped
-	assert nlc.cache_key(True, {'is_anime_list': 'true'}) != dropped
+	assert nlc.cache_key(True) == dropped
+	assert nlc.cache_key(False) != dropped
+	assert nlc.cache_key(True, True) != dropped
 
 
 def test_watchlist_and_favourites_count_only_when_included(db, prefs):
-	base = nlc.cache_key(True, {})
+	base = nlc.cache_key(True)
 	db.execute("UPDATE mdblist_data SET data = 'changed' WHERE id = 'mdblist_watchlist_live'")
 	db.execute("INSERT INTO favourites VALUES ('tvshow', '7', 'F')")
-	assert nlc.cache_key(True, {}) == base  # include_unwatched off: neither is read
+	assert nlc.cache_key(True) == base  # include_unwatched off: neither is read
 	prefs['nextep_include_unwatched'] = 3
-	both = nlc.cache_key(True, {})
+	both = nlc.cache_key(True)
 	db.execute("INSERT INTO favourites VALUES ('tvshow', '8', 'G')")
-	assert nlc.cache_key(True, {}) != both
+	assert nlc.cache_key(True) != both
 	db.execute("DELETE FROM mdblist_data WHERE id = 'mdblist_watchlist_live'")
-	assert nlc.cache_key(True, {}) is None  # cleared by an activity sync: only the provider knows it now
+	assert nlc.cache_key(True) is None  # cleared by an activity sync: only the provider knows it now
 
 
 def test_no_key_without_the_dropped_row_or_for_a_remote_only_provider(db, prefs):
 	db.execute("DELETE FROM mdblist_data WHERE id = 'mdblist_hidden_items_dropped'")
-	assert nlc.cache_key(True, {}) is None
+	assert nlc.cache_key(True) is None
 	for provider in (1, 2, 4):
 		prefs['watched_indicators'] = provider
-		assert nlc.cache_key(True, {}) is None
+		assert nlc.cache_key(True) is None
 
 
 def test_the_date_is_only_in_the_key_when_a_date_setting_is_on(db, prefs, monkeypatch):
-	base = nlc.cache_key(True, {})
+	base = nlc.cache_key(True)
 	monkeypatch.setattr(nlc, 'get_datetime', lambda: date(2026, 9, 13))
-	assert nlc.cache_key(True, {}) == base
+	assert nlc.cache_key(True) == base
 	prefs['nextep_include_unaired'] = True
-	unaired = nlc.cache_key(True, {})
+	unaired = nlc.cache_key(True)
 	monkeypatch.setattr(nlc, 'get_datetime', lambda: date(2026, 9, 14))
-	assert nlc.cache_key(True, {}) != unaired
+	assert nlc.cache_key(True) != unaired
 
 
 def test_setting_getters_cover_everything_the_next_episodes_build_reads():
@@ -265,6 +265,10 @@ def widget(db, prefs, monkeypatch):
 	monkeypatch.setattr(kodi_utils, 'set_view_mode', lambda *a, **k: directory.__setitem__('view', a))
 	monkeypatch.setattr(kodi_utils, 'logger', lambda heading, message: directory.setdefault('log', []).append(message))
 	monkeypatch.setattr(sys, 'argv', ['plugin://plugin.video.redlight/', '1', ''])
+	props = {}
+	monkeypatch.setattr(kodi_utils, 'get_property', lambda name: props.get(name, ''))
+	monkeypatch.setattr(kodi_utils, 'set_property', lambda name, value: props.__setitem__(name, value))
+	directory['props'] = props
 	return directory, built_meta
 
 
@@ -282,13 +286,14 @@ def test_a_built_list_is_stored_and_served_identically_without_metadata(widget):
 	assert directory['items'] == built['items']
 	assert (directory['content'], directory['category'], directory['ended'], directory['view']) == \
 		(built['content'], built['category'], built['ended'], built['view'])
-	assert 'list cache hit: 1 listed' in directory['log'][-1]
+	assert 'list cache hit: 1 listed, built 0 s ago' in directory['log'][-1]
 	# Nothing time-of-build rides in a stored row: Personal Lists stamps its own date_added.
 	assert 'current_time' not in repr(directory['items'])
 
 
 def test_the_stored_list_stops_being_served_the_day_an_episode_airs(widget, monkeypatch):
 	directory, built_meta = widget
+	directory['props'][nlc.REVALIDATE_PROP] = nlc.DONE
 	episodes.build_single_episode('episode.next', {})
 	monkeypatch.setattr(nlc, 'get_datetime', lambda: date(2026, 9, 14))
 	assert nlc.serve({})
@@ -299,6 +304,7 @@ def test_the_stored_list_stops_being_served_the_day_an_episode_airs(widget, monk
 
 def test_a_mark_after_the_build_is_a_miss_and_forget_drops_both_rows(widget, db):
 	directory, built_meta = widget
+	directory['props'][nlc.REVALIDATE_PROP] = nlc.DONE
 	episodes.build_single_episode('episode.next', {})
 	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-12T21:00:00.000Z', 'Alpha')")
 	assert not nlc.serve({})
@@ -330,7 +336,213 @@ def test_no_handle_is_a_miss_not_an_error(widget, monkeypatch):
 
 
 def test_store_refuses_a_key_that_moved_during_the_build(widget, db):
-	key = nlc.cache_key(True, {})
+	key = nlc.cache_key(True)
 	db.execute("INSERT INTO watched VALUES ('episode', '3', 1, 1, '2026-09-12T21:00:00.000Z', 'Gamma')")
-	nlc.store(key, True, {}, [('u', _row())], [], 'Next Episodes')
+	nlc.store(key, True, False, [('u', _row())], [], 'Next Episodes')
 	assert db.execute("SELECT COUNT(*) FROM maincache").fetchone()[0] == 0
+
+
+# --- stale first, then the service's checks -------------------------------------------------------
+
+def _set_age(db, name, seconds):
+	data, = db.execute("SELECT data FROM maincache WHERE id = ?", (wc.LIST_PREFIX + name,)).fetchone()
+	stored = json.loads(data)
+	stored['data']['built_at'] = int(__import__('time').time()) - seconds
+	db.execute("UPDATE maincache SET data = ? WHERE id = ?", (json.dumps(stored), wc.LIST_PREFIX + name))
+
+
+def _served(props, name='next_episodes_widget'):
+	return json.loads(props[nlc.SERVED_PROP % name])
+
+
+def test_a_changed_state_is_shown_stale_once_then_rebuilt(widget, db):
+	directory, built_meta = widget
+	props = directory['props']
+	episodes.build_single_episode('episode.next', {})
+	built_items = directory['items']
+	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-12T21:00:00.000Z', 'Alpha')")
+	del built_meta[:]
+	directory.clear(); directory['props'] = props
+	assert nlc.serve({})  # the earlier run's list, at once
+	assert built_meta == [] and directory['items'] == built_items
+	assert 'list cache stale (state changed since it was stored): 1 listed' in directory['log'][-1]
+	assert _served(props)['key'] == nlc.STALE_KEY  # so the service's check always rebuilds it
+	props[nlc.REVALIDATE_PROP] = nlc.REBUILD  # what NextEpisodesRevalidate sets
+	assert not nlc.serve({})
+	assert props[nlc.REVALIDATE_PROP] == nlc.DONE  # cleared before the build, not after it
+	assert 'rebuild asked for by the service' in directory['log'][-1]
+	assert not nlc.serve({})  # no second stale list this session
+	assert 'state changed since it was stored' in directory['log'][-1]
+
+
+def test_a_build_records_the_key_the_service_recomputes(widget):
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	assert nlc.served_lists() == {'next_episodes_widget': {'key': nlc.cache_key(True, False), 'external': True, 'anime': False}}
+
+
+def test_a_widget_refresh_makes_a_stored_list_due(widget):
+	directory, built_meta = widget
+	props = directory['props']
+	episodes.build_single_episode('episode.next', {})
+	assert nlc.serve({})
+	props[nlc.REFRESHED_PROP] = str(int(__import__('time').time()) + 1)  # kodi_utils.refresh_widgets()
+	assert not nlc.serve({})  # not even stale: the service's window is still open here
+	assert nlc.REVALIDATE_PROP not in props and 'widgets refreshed since' in directory['log'][-1]
+	episodes.build_single_episode('episode.next', {})
+	props[nlc.REFRESHED_PROP] = '0'
+	assert nlc.serve({})
+
+
+def test_the_anime_list_has_its_own_row_and_forget_drops_all_four(db, prefs):
+	names = set(nlc.list_name(e, a) for e, a in nlc.ALL_LISTS)
+	assert len(names) == 4
+	for is_external, anime in nlc.ALL_LISTS:
+		nlc.store(nlc.cache_key(is_external, anime), is_external, anime, [('u', _row())], [], 'Next Episodes')
+	assert db.execute("SELECT COUNT(*) FROM maincache").fetchone()[0] == 4
+	nlc.forget()
+	assert db.execute("SELECT COUNT(*) FROM maincache").fetchone()[0] == 0
+
+
+def test_an_unreadable_watched_table_means_no_key(db, prefs, monkeypatch):
+	logged = []
+	monkeypatch.setattr(kodi_utils, 'logger', lambda heading, message: logged.append(message))
+	monkeypatch.setattr(ws, 'watched_table_fingerprint', lambda dbcon: 'unknown-1757700000')
+	assert nlc.cache_key(True) is None
+	assert 'watched table unreadable' in logged[-1]
+
+
+def test_an_in_addon_listing_is_never_answered_stale(widget, db, monkeypatch):
+	directory, built_meta = widget
+	monkeypatch.setattr(kodi_utils, 'external', lambda: False)
+	episodes.build_single_episode('episode.next', {})
+	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-12T21:00:00.000Z', 'Alpha')")
+	assert not nlc.serve({})
+	assert 'state changed since it was stored' in directory['log'][-1]
+
+
+def test_a_hit_needs_list_ttl_and_a_stale_list_needs_stale_max(widget, db):
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	_set_age(db, 'next_episodes_widget', nlc.LIST_TTL + 60)
+	assert nlc.serve({})
+	assert 'list cache stale (older than 12.0 h)' in directory['log'][-1] and 'built 12.0 h ago' in directory['log'][-1]
+	_set_age(db, 'next_episodes_widget', nlc.STALE_MAX + 60)
+	assert not nlc.serve({})
+	assert 'older than 12.0 h' in directory['log'][-1]
+
+
+def test_a_failed_property_read_means_no_stale_list(widget, db, monkeypatch):
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-12T21:00:00.000Z', 'Alpha')")
+	def broken(name): raise RuntimeError('no window')
+	monkeypatch.setattr(kodi_utils, 'get_property', broken)
+	assert nlc.revalidate_state() == nlc.DONE
+	assert not nlc.serve({})
+
+
+class _Clock:
+	def __init__(self): self.now = 1000.0
+	def time(self): return self.now
+
+
+class _Monitor:
+	def __init__(self, clock, limit=400): self.clock, self.calls, self.limit = clock, 0, limit
+	def abortRequested(self): return self.calls >= self.limit
+	def waitForAbort(self, seconds):
+		self.calls += 1
+		self.clock.now += seconds
+		return self.calls >= self.limit
+
+
+@pytest.fixture
+def revalidator(monkeypatch):
+	"""NextEpisodesRevalidate on a fake clock. state['key'] is the current key; serving is simulated
+	by writing SERVED_PROP, and a refresh by on_refresh (default: nothing answers it)."""
+	import time as time_module
+	import service
+	clock, props, refreshed = _Clock(), {}, []
+	state = {'key': 'k1', 'playing': False, 'asked': [], 'on_refresh': lambda: None}
+	monkeypatch.setattr(time_module, 'time', clock.time)
+	monkeypatch.setattr(kodi_utils, 'get_property', lambda name: props.get(name, ''))
+	monkeypatch.setattr(kodi_utils, 'set_property', lambda name, value: props.__setitem__(name, value))
+	monkeypatch.setattr(kodi_utils, 'kodi_refresh', lambda: (refreshed.append(clock.now), state['on_refresh']()))
+	monkeypatch.setattr(kodi_utils, 'service_shutting_down', lambda monitor=None: False)
+	monkeypatch.setattr(kodi_utils, 'kodi_player', lambda: type('P', (), {'isPlayingVideo': lambda self: state['playing']})())
+	monkeypatch.setattr(kodi_utils, 'logger', lambda heading, message: state.setdefault('log', []).append(message))
+	def current_key(is_external, anime=False):
+		state['asked'].append((is_external, anime))
+		if state.get('keys'): state['key'] = state['keys'].pop(0)  # one key per check, then the last one stays
+		return state['key']
+	monkeypatch.setattr(nlc, 'cache_key', current_key)
+	return service.NextEpisodesRevalidate(), clock, props, refreshed, state
+
+
+def _serve_as(props, key, external=True, anime=False):
+	props[nlc.SERVED_PROP % nlc.list_name(external, anime)] = json.dumps({'key': key, 'external': external, 'anime': anime})
+
+
+def test_the_service_asks_for_one_rebuild_after_a_stale_start(revalidator):
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, nlc.STALE_KEY)
+	job.run(_Monitor(clock))
+	assert props[nlc.REVALIDATE_PROP] == nlc.REBUILD and len(refreshed) == 1
+	assert refreshed[0] - 1000.0 >= nlc.REVALIDATE_AFTER
+
+
+def test_a_list_that_matches_needs_no_refresh_and_the_checks_end(revalidator):
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, 'k1')
+	monitor = _Monitor(clock)
+	job.run(monitor)
+	assert refreshed == [] and props[nlc.REVALIDATE_PROP] == nlc.DONE
+	assert monitor.calls < monitor.limit  # returned after the last checkpoint
+
+
+def test_another_widgets_sync_after_the_answer_is_caught(revalidator):
+	# F1 on #162, in one run: the 15 s check matches, then In Progress's MDBList sync rewrites the
+	# watched table, and the 45 s check asks for the rebuild.
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, 'k1')
+	state['keys'] = ['k1', 'k2']
+	def answer(): props[nlc.REVALIDATE_PROP] = nlc.DONE; _serve_as(props, state['key'])
+	state['on_refresh'] = answer
+	job.run(_Monitor(clock))
+	assert len(refreshed) == 1 and _served(props)['key'] == 'k2'
+	assert refreshed[0] - 1000.0 >= 45
+
+
+def test_a_key_that_keeps_moving_stops_at_max_rebuilds(revalidator):
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, 'k0')
+	def answer():
+		props[nlc.REVALIDATE_PROP] = nlc.DONE
+		_serve_as(props, state['key'])
+		state['key'] += '+'  # the refresh made In Progress sync again
+	state['on_refresh'] = answer
+	job.run(_Monitor(clock))
+	assert len(refreshed) == nlc.MAX_REBUILDS
+	assert 'still behind after 2 rebuilds' in state['log'][-1]
+
+
+def test_the_service_checks_each_list_with_its_own_flags(revalidator):
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, 'k1', external=False, anime=True)
+	job.run(_Monitor(clock))
+	assert set(state['asked']) == {(False, True)}
+
+
+def test_the_service_waits_for_playback_to_end_before_the_rebuild(revalidator):
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, nlc.STALE_KEY)
+	state['playing'] = True
+	job.run(_Monitor(clock, limit=20))
+	assert refreshed == [] and nlc.REVALIDATE_PROP not in props
+
+
+def test_nothing_answered_ends_the_checks_without_a_refresh(revalidator):
+	job, clock, props, refreshed, state = revalidator
+	job.run(_Monitor(clock))
+	assert props[nlc.REVALIDATE_PROP] == nlc.DONE and refreshed == []
+	assert clock.now - 1000.0 > nlc.FIRST_ANSWER_WAIT

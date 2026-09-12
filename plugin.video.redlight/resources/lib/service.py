@@ -317,6 +317,49 @@ class WidgetRefresher:
 	def external(self):
 		return 'plugin' not in kodi_utils.get_infolabel('Container.PluginName')
 
+class NextEpisodesRevalidate:
+	"""Keep the Next Episodes widget honest in the first minutes after start (#155).
+
+	serve() may answer from a stored list (a hit, or a stale list from an earlier run), and even a
+	fresh build can be overtaken by another widget's provider sync: In Progress syncs MDBList on its
+	own cold build and rewrites the watched table after Next Episodes has answered. Every answer
+	records the key it was built for (nextep_list_cache.record_served). At CHECKPOINTS seconds after
+	the first answer, compare each with the current key; on a mismatch ask for one real build and
+	refresh the widgets.
+
+	MAX_REBUILDS is load-bearing, not defensive: kodi_refresh() re-requests every widget, In Progress
+	can sync again and move the key again, and without the cap that would oscillate. A check is also
+	skipped while an earlier request is still unanswered. After the last checkpoint the session's
+	stale window ends, and freshness is MDBListMonitor's periodic sync and WidgetRefresher's timer."""
+	def run(self, monitor):
+		from time import time
+		from modules import nextep_list_cache as nlc
+		service_started, player = time(), kodi_utils.kodi_player()
+		first_answer, checkpoints, rebuilds = None, list(nlc.CHECKPOINTS), 0
+		while checkpoints and not monitor.abortRequested():
+			if monitor.waitForAbort(5) or kodi_utils.service_shutting_down(monitor): return
+			now = time()
+			served = nlc.served_lists()
+			if first_answer is None:
+				if not served:
+					if now - service_started > nlc.FIRST_ANSWER_WAIT: break
+					continue
+				first_answer = now
+			if now < max(first_answer + checkpoints[0], service_started + nlc.REVALIDATE_AFTER): continue
+			if player.isPlayingVideo() or kodi_utils.get_property(pause_services_prop) == 'true': continue
+			if nlc.revalidate_state() == nlc.REBUILD: continue
+			checkpoints.pop(0)
+			behind = [name for name, info in served.items() if nlc.cache_key(info.get('external'), info.get('anime')) != info.get('key')]
+			if not behind: continue
+			if rebuilds >= nlc.MAX_REBUILDS:
+				kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: %s still behind after %s rebuilds, leaving it to the periodic refresh' % (', '.join(behind), rebuilds))
+				break
+			rebuilds += 1
+			kodi_utils.set_property(nlc.REVALIDATE_PROP, nlc.REBUILD)
+			kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: %s shown from an older state, asking for a real build (%s of %s)' % (', '.join(behind), rebuilds, nlc.MAX_REBUILDS))
+			kodi_utils.kodi_refresh()
+		if nlc.revalidate_state() == '': kodi_utils.set_property(nlc.REVALIDATE_PROP, nlc.DONE)
+
 class AutoStart:
 	def run(self, monitor):
 		kodi_utils.logger('Red Light', 'AutoStart Service Starting')
@@ -377,6 +420,7 @@ class RedLightMonitor(Monitor):
 		_start_daemon(lambda: MdblistMonitor().run(self))
 		_start_daemon(lambda: PunchPlayMonitor().run(self))
 		_start_daemon(lambda: WidgetRefresher().run(self))
+		_start_daemon(lambda: NextEpisodesRevalidate().run(self))
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))
 		_start_daemon(lambda: ServiceExpiryAlerts().run(self))

@@ -690,7 +690,7 @@ def build_single_episode(list_type, params={}):
 			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
 	# Keyed after the provider refresh and fetches above, so it names the state this list is built from.
-	nextep_list_key = nextep_list_cache.cache_key(is_external, params) if cache_next_list else None
+	nextep_list_key = nextep_list_cache.cache_key(is_external, 'is_anime_list' in params) if cache_next_list else None
 	list_type_compare = list_type.split('episode.')[1]
 	list_type_starts_with = list_type_compare.startswith
 	# One read for every show's cached facts (unwatched-count suffix), instead of a per-show query.
@@ -730,8 +730,8 @@ def build_single_episode(list_type, params={}):
 										key=lambda i: i['first_aired'])
 				item_list = [i for i in item_list if not i in airing_today]
 				item_list = airing_today + item_list
-	if nextep_list_key:
-		nextep_list_cache.store(nextep_list_key, is_external, params, [(i['list_items'][0], i['row']) for i in item_list], future_dates,
+	if cache_next_list:
+		nextep_list_cache.store(nextep_list_key, is_external, 'is_anime_list' in params, [(i['list_items'][0], i['row']) for i in item_list], future_dates,
 			_get_category_name())
 	kodi_utils.add_items(handle, [i['list_items'] for i in item_list])
 	kodi_utils.set_content(handle, 'episodes')
