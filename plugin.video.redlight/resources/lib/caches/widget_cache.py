@@ -117,6 +117,10 @@ class WidgetCache:
 				(LIST_PREFIX + name, json.dumps({'key': key, 'data': data}), _now() + int(ttl)))
 		except Exception: pass
 
+	def delete_list(self, name):
+		try: self._connect().execute('DELETE FROM maincache WHERE id = ?', (LIST_PREFIX + name,))
+		except Exception: pass
+
 	# --- per-show next episode --------------------------------------------------------------
 	def get_next_episode(self, tmdb_id, key):
 		"""(season, episode) stored for the show under exactly this key; NEGATIVE if a "no next

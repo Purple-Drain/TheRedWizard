@@ -118,6 +118,9 @@ def routing(sys):
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.recently_watched', params)
 		elif mode == 'build_next_episode':
+			# Stored list first (#155): a hit never loads indexers.episodes or any provider API module.
+			from modules.nextep_list_cache import serve
+			if serve(params): return
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.next', params)
 		elif mode == 'build_my_calendar':
@@ -366,6 +369,9 @@ def routing(sys):
 		from modules.kodi_utils import kodi_refresh
 		return kodi_refresh()
 	elif mode == 'refresh_widgets':
+		# A refresh asks for fresh lists, so the stored Next Episodes list must not answer it (#155).
+		from modules.nextep_list_cache import forget
+		forget()
 		from modules.kodi_utils import refresh_widgets
 		return refresh_widgets(params.get('silent', 'false') == 'true', params.get('reload_skin', 'false') == 'true')
 	elif mode == 'person_data_dialog':

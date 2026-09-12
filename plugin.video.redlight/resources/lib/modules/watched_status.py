@@ -3,10 +3,7 @@ import time
 import hashlib
 from datetime import datetime
 from threading import Thread
-from apis.trakt_api import trakt_watched_status_mark, trakt_official_status, trakt_progress, trakt_get_hidden_items
-from apis.simkl_api import simkl_watched_status_mark, simkl_progress, simkl_official_status
-from apis.mdblist_api import mdblist_watched_status_mark, mdblist_progress, mdblist_official_status
-from apis.punchplay_api import punchplay_watched_status_mark, punchplay_progress, punchplay_official_status
+from importlib import import_module
 from caches.base_cache import connect_database, database
 from caches.trakt_cache import clear_trakt_collection_watchlist_data
 from caches.widget_cache import widget_cache
@@ -14,6 +11,29 @@ from modules.kodi_utils import kodi_progress_background, sleep, get_video_databa
 from modules.utils import get_datetime, adjust_premiered_date, sort_for_article, TaskPool
 from modules import metadata, settings
 # from modules.kodi_utils import logger
+
+def _provider_function(module_name, function_name):
+	"""A stand-in that imports the provider API module on first call, not when this module loads.
+	Every provider module imports requests, which cost 4.4 s of a cold boot's Next Episodes widget
+	before it built anything (#155); a listing that never marks, syncs or clears progress never pays it."""
+	def function(*args, **kwargs):
+		return getattr(import_module(module_name), function_name)(*args, **kwargs)
+	function.__name__ = function_name
+	return function
+
+trakt_watched_status_mark = _provider_function('apis.trakt_api', 'trakt_watched_status_mark')
+trakt_official_status = _provider_function('apis.trakt_api', 'trakt_official_status')
+trakt_progress = _provider_function('apis.trakt_api', 'trakt_progress')
+trakt_get_hidden_items = _provider_function('apis.trakt_api', 'trakt_get_hidden_items')
+simkl_watched_status_mark = _provider_function('apis.simkl_api', 'simkl_watched_status_mark')
+simkl_progress = _provider_function('apis.simkl_api', 'simkl_progress')
+simkl_official_status = _provider_function('apis.simkl_api', 'simkl_official_status')
+mdblist_watched_status_mark = _provider_function('apis.mdblist_api', 'mdblist_watched_status_mark')
+mdblist_progress = _provider_function('apis.mdblist_api', 'mdblist_progress')
+mdblist_official_status = _provider_function('apis.mdblist_api', 'mdblist_official_status')
+punchplay_watched_status_mark = _provider_function('apis.punchplay_api', 'punchplay_watched_status_mark')
+punchplay_progress = _provider_function('apis.punchplay_api', 'punchplay_progress')
+punchplay_official_status = _provider_function('apis.punchplay_api', 'punchplay_official_status')
 
 def get_database(watched_indicators=None):
 	return connect_database({0: 'watched_db', 1: 'trakt_db', 2: 'simkl_db', 3: 'mdblist_db', 4: 'punchplay_db'}[watched_indicators if watched_indicators is not None else settings.watched_indicators()])
