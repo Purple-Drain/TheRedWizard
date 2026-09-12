@@ -139,3 +139,107 @@ def test_stall_near_the_start_reopens_from_zero():
 @pytest.mark.parametrize('curr, total', [(812, 0), (812, None), ('a', 'b'), (None, None)])
 def test_degenerate_input_reopens_from_zero(curr, total):
     assert stall_resume_percent(curr, total) == 0.0
+
+
+# --- stall_end_signal and the late-Stop order (12.09.26) ---------------------------------
+
+from modules import player as player_mod  # noqa: E402
+from modules.player import stall_end_signal, _STALL_CALLBACK_WAIT_MS  # noqa: E402
+
+
+def test_stop_wins_over_everything():
+    assert stall_end_signal(True, False, False) == 'stopped'
+    assert stall_end_signal(True, True, True) == 'stopped'
+
+
+def test_end_or_error_is_a_stall():
+    assert stall_end_signal(False, True, False) == 'stall'
+    assert stall_end_signal(False, False, True) == 'stall'
+
+
+def test_no_callback_is_no_signal():
+    assert stall_end_signal(False, False, False) is None
+
+
+def _closed_player(monkeypatch, callback_at_ms=None, callback='stopped'):
+    """A player whose stream closed at 1010 s of 1293 s (the Daria S01E11 case) and whose
+    Kodi callback lands callback_at_ms after the close, measured on a fake clock."""
+    player = RedLightPlayer()
+    player.onPlayBackStarted()
+    player.is_generic, player.cancel_all_playback = False, False
+    player.curr_time, player.total_time, player.playing_filename = 1010.0, 1293.0, 'Daria S01E11.mkv'
+    player._resolve_cancelled = lambda: False
+    player.isPlayingVideo = lambda: False
+    clock = {'ms': 0}
+
+    def fake_sleep(ms):
+        clock['ms'] += ms
+        if callback_at_ms is not None and clock['ms'] >= callback_at_ms:
+            if callback == 'stopped': player.onPlayBackStopped()
+            elif callback == 'ended': player.onPlayBackEnded()
+            else: player.onPlayBackError()
+
+    logged = []
+    monkeypatch.setattr(player_mod.ku, 'sleep', fake_sleep)
+    monkeypatch.setattr(player_mod.ku, 'logger', lambda *a: logged.append(a))
+    return player, clock, logged
+
+
+def test_stop_arriving_after_the_old_2s_window_does_not_resume(monkeypatch):
+    # Shield, 12.09.26: CloseFile 14:16:41.855, OnPlayBackStopped 14:16:45.352.
+    player, clock, _ = _closed_player(monkeypatch, callback_at_ms=3500, callback='stopped')
+    player._note_abnormal_end(False, False)
+    assert player.stall_position is None
+    assert clock['ms'] < _STALL_CALLBACK_WAIT_MS   # returned as soon as the Stop landed
+
+
+def test_end_of_file_well_before_the_end_resumes(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='ended')
+    player._note_abnormal_end(False, False)
+    assert player.stall_position == (1010.0, 1293.0)
+
+
+def test_error_callback_resumes(monkeypatch):
+    player, _, _ = _closed_player(monkeypatch, callback_at_ms=300, callback='error')
+    player._note_abnormal_end(False, False)
+    assert player.stall_position == (1010.0, 1293.0)
+
+
+def test_silent_close_does_not_resume_and_says_why(monkeypatch):
+    player, clock, logged = _closed_player(monkeypatch, callback_at_ms=None)
+    player._note_abnormal_end(False, False)
+    assert player.stall_position is None
+    assert clock['ms'] >= _STALL_CALLBACK_WAIT_MS
+    assert any('not resuming' in str(a) for a in logged)
+
+
+# --- _should_prep_next_ep before info_next_ep has run -------------------------------------
+
+class _DevicePlayer(RedLightPlayer):
+    # kodi_stub's xbmc.Player answers every attribute; the real one raises, which is the
+    # AttributeError the Shield logged. Reproduce that for the attribute under test.
+    def __getattr__(self, name):
+        if name == 'start_prep': raise AttributeError(name)
+        return super().__getattr__(name)
+
+
+def _prep_player(monkeypatch):
+    player = _DevicePlayer()
+    player.autoplay_nextep = False
+    player._owns_active_playback = lambda: True
+    player.total_time, player.curr_time = 1293.0, 1250.0
+    monkeypatch.setattr(player_mod.ku, 'get_property', lambda key: '')
+    return player
+
+
+def test_prep_check_before_start_prep_exists_is_false_not_an_error(monkeypatch):
+    # Every Daria play on 12.09.26 logged "no attribute 'start_prep'" about 3 s in.
+    player = _prep_player(monkeypatch)
+    assert not hasattr(player, 'start_prep')
+    assert player._should_prep_next_ep() is False
+
+
+def test_prep_check_fires_once_start_prep_is_known(monkeypatch):
+    player = _prep_player(monkeypatch)
+    player.start_prep = 103
+    assert player._should_prep_next_ep() is True

@@ -30,7 +30,10 @@ _NEXTEP_NATURAL_END_SEC = 15
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
 # measured against the time still to play; the player callbacks tell a user Stop apart.
 _STALL_MIN_REMAINING_SEC = 60
-_STALL_CALLBACK_WAIT_MS = 2000
+# Kodi dispatches OnPlayBackStopped only after it has saved the file's state, which took 3.5 s
+# after CloseFile on the Shield (12.09.26), so a 2 s wait read a user Stop as a stall. The wait
+# ends as soon as any callback lands; only a silent close waits the full time.
+_STALL_CALLBACK_WAIT_MS = 10000
 # How long check_playback_start waits for Kodi to open the stream before giving up (#115).
 # Was an implicit ~20 s (0.26 % per 50 ms tick). 30 s covers curl's 15 s low-speed timeout
 # on each of the two requests a slow-but-streaming open needs. Setting: playback_open_timeout.
@@ -63,6 +66,15 @@ def abnormal_playback_end(curr_time, total_time, user_stopped=False, superseded=
 	except (TypeError, ValueError): return False
 	if total < 60 or curr <= 0: return False
 	return (total - curr) > min_remaining
+
+def stall_end_signal(stopped, ended, error):
+	"""What Kodi said about how playback closed (#107): 'stopped' for a Stop, 'stall' for an
+	end-of-file or error well before the end (a dead stream closes as EOF), None while nothing
+	has arrived. Only 'stall' may trigger a re-resolve; a close with no signal is left alone,
+	because resuming a show the user just stopped is worse than missing one resume."""
+	if stopped: return 'stopped'
+	if ended or error: return 'stall'
+	return None
 
 def playback_open_timeout_ms(setting_value=None, default_sec=_PLAYBACK_OPEN_TIMEOUT_SEC):
 	"""The open window in ms from the playback_open_timeout setting (integer seconds, #115).
@@ -530,7 +542,13 @@ class RedLightPlayer(xbmc.Player):
 			while waited < _STALL_CALLBACK_WAIT_MS and not (self._cb_stopped or self._cb_ended or self.playback_error):
 				ku.sleep(100)
 				waited += 100
-			if self._cb_stopped or self.isPlayingVideo(): return
+			if self.isPlayingVideo(): return
+			signal = stall_end_signal(self._cb_stopped, self._cb_ended, self.playback_error)
+			if signal != 'stall':
+				if signal is None:
+					ku.logger('Red Light', 'Playback closed at %ds of %ds on %s with no stop, end or error callback within %ds; not resuming' % (
+						float(curr), float(total), self.playing_filename or '', _STALL_CALLBACK_WAIT_MS // 1000))
+				return
 			self.stall_position = (float(curr), float(total))
 			ku.logger('Red Light', 'Playback ended early at %ds of %ds on %s (ended=%s error=%s stopped=%s)' % (
 				float(curr), float(total), self.playing_filename or '', self._cb_ended, self.playback_error, self._cb_stopped))
@@ -946,7 +964,12 @@ class RedLightPlayer(xbmc.Player):
 			remaining = round(float(self.total_time) - float(self.curr_time))
 		except:
 			return False
-		return remaining > 0 and remaining <= self.start_prep
+		# start_prep is set by info_next_ep(), which _defer_nextep_info() holds back while the
+		# introdb/subtitle timing is fetched (about 40 s on the Shield); until then there is no
+		# prep point to reach, and reading the attribute raised on every play's first tick.
+		start_prep = getattr(self, 'start_prep', None)
+		if start_prep is None: return False
+		return remaining > 0 and remaining <= start_prep
 
 	def _nextep_play_type(self):
 		return 'autoplay_nextep' if self.autoplay_nextep else 'autoscrape_nextep'
