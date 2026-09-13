@@ -2,6 +2,8 @@
 import sys
 import time
 from caches.widget_cache import widget_cache
+from modules import nextep_list_cache
+from modules.episode_rows import render_episode_row
 from modules import kodi_utils, settings, watched_status as ws
 from modules.metadata import (tvshow_meta, episodes_meta, all_episodes_meta, resolve_assigned_episode_group, group_episode_data,
 								group_traversal_reachable, group_season_bucket_episodes)
@@ -303,8 +305,7 @@ def build_single_episode(list_type, params={}):
 			meta_get = meta.get
 			cm = []
 			cm_append = cm.append
-			listitem = make_listitem()
-			set_properties = listitem.setProperties
+			properties = {}
 			orig_season, orig_episode = ep_data_get('season'), ep_data_get('episode')
 			unwatched = ep_data_get('unwatched', False)
 			_position = ep_data_get('custom_order', _position)
@@ -363,6 +364,7 @@ def build_single_episode(list_type, params={}):
 			episode_type = item_get('episode_type') or ''
 			episode_id = item_get('episode_id') or None
 			if not episode_date or current_date < episode_date:
+				if episode_date and list_type_starts_with('next_'): future_dates.append(episode_date)
 				if list_type_starts_with('next_'):
 					if not episode_date: return
 					if not include_unaired: return
@@ -467,7 +469,7 @@ def build_single_episode(list_type, params={}):
 			if settings.tmdblist_user_active():
 				tmdb_manager_params = build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': show_poster})
 			personal_manager_params = build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
-												'premiered': meta_get('premiered'), 'current_time': current_time, 'icon': show_poster})
+												'premiered': meta_get('premiered'), 'icon': show_poster})
 			favorites_manager_params = build_url({'mode': 'favorites_manager_choice', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
 			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
 			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
@@ -488,7 +490,7 @@ def build_single_episode(list_type, params={}):
 								build_url({'mode': 'watched_status.erase_bookmark', 'media_type': 'episode', 'tmdb_id': tmdb_id,
 											'season': season, 'episode': episode, 'refresh': 'true'}))])
 				if unwatched_info and total_unwatched is not None and progress_aired_eps != total_unwatched:
-					set_properties({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
+					properties.update({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
 			if list_type_starts_with('next_') and (season, episode) != (1, 1):
 				cm_append(['unmark_previous_episode', ('[B]Unmark Previous Watched[/B]', 'RunPlugin(%s)' % \
 								build_url({'mode': 'watched_status.unmark_previous_episode', 'action': 'mark_as_unwatched', 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id,
@@ -503,25 +505,22 @@ def build_single_episode(list_type, params={}):
 			# Legacy metacache used 1-tuples for studio; setStudios requires a list.
 			if isinstance(studio, tuple): studio = list(studio)
 			elif not studio: studio = []
-			info_tag = listitem.getVideoInfoTag(True)
-			info_tag.setMediaType('episode'), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(title), info_tag.setTitle(display_title), info_tag.setGenres(genre)
-			info_tag.setPlaycount(playcount), info_tag.setSeason(display_season), info_tag.setEpisode(display_episode), info_tag.setPlot(plot), info_tag.setFirstAired(premiered)
-			info_tag.setDuration(duration), info_tag.setIMDBNumber(imdb_id), info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)})
-			info_tag.setCountries(meta_get('country', [])), info_tag.setTrailer(trailer), info_tag.setTvShowStatus(show_status)
-			info_tag.setStudios(studio), info_tag.setWriters(item_get('writer')), info_tag.setDirectors(item_get('director'))
-			info_tag.setYear(int(year)), info_tag.setRating(item_get('rating')), info_tag.setVotes(item_get('votes')), info_tag.setMpaa(mpaa)
 			full_cast = cast + (item_get('guest_stars') or [])
-			info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
+			# Plain data first, then the ListItem (#155): the Next Episodes list cache stores these rows.
+			row = {'label': display, 'cm': cm, 'properties': properties,
+				'info': {'original_title': orig_title, 'tvshow_title': title, 'title': display_title, 'genres': genre, 'playcount': playcount,
+					'season': display_season, 'episode': display_episode, 'plot': plot, 'first_aired': premiered, 'duration': duration,
+					'imdb': imdb_id, 'unique_ids': {'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)}, 'countries': meta_get('country', []),
+					'trailer': trailer, 'tvshow_status': show_status, 'studios': studio, 'writers': item_get('writer'), 'directors': item_get('director'),
+					'year': int(year), 'rating': item_get('rating'), 'votes': item_get('votes'), 'mpaa': mpaa},
+				'cast': [{'name': item['name'], 'role': item['role'], 'thumbnail': item['thumbnail']} for item in full_cast],
+				'art': {'poster': show_poster, 'fanart': show_fanart, 'thumb': thumb, 'icon':thumb, 'clearlogo': show_clearlogo, 'landscape': show_landscape,
+						'season.poster': season_poster, 'tvshow.poster': show_poster, 'tvshow.clearlogo': show_clearlogo}}
 			if progress and not unaired:
 				# Time only — total would make Kodi/skins show a resume dialog we cannot honour.
-				resume_secs = ws.get_resume_seconds(progress, duration)
-				info_tag.setResumePoint(resume_secs)
-				set_properties({'WatchedProgress': progress})
-			listitem.setLabel(display)
-			listitem.addContextMenuItems(cm)
-			listitem.setArt({'poster': show_poster, 'fanart': show_fanart, 'thumb': thumb, 'icon':thumb, 'clearlogo': show_clearlogo, 'landscape': show_landscape,
-							'season.poster': season_poster, 'tvshow.poster': show_poster, 'tvshow.clearlogo': show_clearlogo})
-			set_properties({
+				row['resume_seconds'] = ws.get_resume_seconds(progress, duration)
+				properties['WatchedProgress'] = progress
+			properties.update({
 				'episode_type': episode_type, 'redlight.extras_params': extras_params, 'redlight.options_params': options_params,
 				'redlight.playback_options_params': playback_options_params,
 				'redlight.trakt_manager_params': trakt_manager_params,
@@ -532,7 +531,8 @@ def build_single_episode(list_type, params={}):
 				'redlight.tmdb_manager_params': tmdb_manager_params,
 				'redlight.favorites_manager_params': favorites_manager_params
 				})
-			item_list_append({'list_items': (play_params, listitem, False), 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(display_season), str_episode_zfill2),
+			listitem = render_episode_row(row, make_listitem, kodi_actor)
+			item_list_append({'list_items': (play_params, listitem, False), 'row': row, 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(display_season), str_episode_zfill2),
 							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
 		except Exception as e:
 			# Silent drops blank calendars/next-ep lists; log so meta/InfoTag failures are visible.
@@ -548,6 +548,7 @@ def build_single_episode(list_type, params={}):
 	elif not is_anime_list and settings.include_anime_tvshow():
 		is_anime_list = None
 	item_list, airing_today, unwatched, return_results = [], [], [], False
+	cache_next_list, future_dates = list_type == 'episode.next', []
 	resinsert = ''
 	item_list_append = item_list.append
 	window_command = 'ActivateWindow(Videos,%s,return)' if is_external else 'Container.Update(%s)'
@@ -688,6 +689,8 @@ def build_single_episode(list_type, params={}):
 			try: data = sorted(data, key=lambda i: (i['sort_title'], i.get('first_aired', '2100-12-31')), reverse=True)
 			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
+	# Keyed after the provider refresh and fetches above, so it names the state this list is built from.
+	nextep_list_key = nextep_list_cache.cache_key(is_external, 'is_anime_list' in params) if cache_next_list else None
 	list_type_compare = list_type.split('episode.')[1]
 	list_type_starts_with = list_type_compare.startswith
 	# One read for every show's cached facts (unwatched-count suffix), instead of a per-show query.
@@ -727,6 +730,9 @@ def build_single_episode(list_type, params={}):
 										key=lambda i: i['first_aired'])
 				item_list = [i for i in item_list if not i in airing_today]
 				item_list = airing_today + item_list
+	if cache_next_list:
+		nextep_list_cache.store(nextep_list_key, is_external, 'is_anime_list' in params, [(i['list_items'][0], i['row']) for i in item_list], future_dates,
+			_get_category_name())
 	kodi_utils.add_items(handle, [i['list_items'] for i in item_list])
 	kodi_utils.set_content(handle, 'episodes')
 	kodi_utils.set_category(handle, _get_category_name())
