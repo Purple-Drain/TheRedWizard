@@ -423,6 +423,17 @@ def test_stale_is_only_for_the_start_of_a_session(widget, db):
 	assert nlc.REVALIDATE_PROP not in directory['props'] and 'state changed since it was stored' in directory['log'][-1]
 
 
+def test_a_local_provider_keeps_its_saved_list_through_a_build_without_a_key(widget, db):
+	# H1 on #162: an activity sync cleared MDBList's dropped row and the refetch failed (network not up).
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	db.execute("DELETE FROM mdblist_data WHERE id = 'mdblist_hidden_items_dropped'")
+	nlc.store(nlc.cache_key(True), True, False, [('u', _row())], [], 'Next Episodes')
+	assert db.execute("SELECT COUNT(*) FROM maincache WHERE id LIKE 'WIDGET_LIST_%'").fetchone()[0] == 1
+	directory['props'].clear()  # the next start
+	assert nlc.serve({}) and 'list cache stale (inputs not held locally)' in directory['log'][-1]
+
+
 def test_a_provider_without_a_local_key_gets_no_stale_list_and_its_build_drops_the_row(widget, db, prefs):
 	# G2 on #162: a leftover list from MDBList must not come back at every start after a switch to Trakt.
 	directory, built_meta = widget
@@ -528,8 +539,30 @@ def test_a_rebuild_nobody_answers_ends_the_checks(revalidator):
 	monitor = _Monitor(clock)
 	job.run(monitor)
 	assert len(refreshed) == 1 and props[nlc.REVALIDATE_PROP] == nlc.DONE
-	assert monitor.calls < monitor.limit and clock.now - refreshed[0] >= nlc.REBUILD_WAIT
+	assert monitor.calls < monitor.limit and nlc.REBUILD_WAIT <= clock.now - refreshed[0] <= nlc.REBUILD_WAIT + 5
 	assert 'not answered' in state['log'][-1]
+
+
+def test_a_rebuild_asked_at_the_last_checkpoint_is_waited_for(revalidator):
+	# H2 on #162: the window used to close, and force DONE, before the widget could answer.
+	job, clock, props, refreshed, state = revalidator
+	_serve_as(props, 'k1')
+	state['keys'] = ['k1'] * (len(nlc.CHECKPOINTS) - 1) + ['k2']
+	answered = []
+	def answer(): answered.append(clock.now)
+	state['on_refresh'] = answer
+	# The widget answers 10 s after the refresh: serve() flips REBUILD to DONE and records k2.
+	original_wait = _Monitor.waitForAbort
+	class _Answering(_Monitor):
+		def waitForAbort(self, seconds):
+			stop = original_wait(self, seconds)
+			if answered and props.get(nlc.REVALIDATE_PROP) == nlc.REBUILD and self.clock.now - answered[0] >= 10:
+				props[nlc.REVALIDATE_PROP] = nlc.DONE
+				_serve_as(props, 'k2')
+			return stop
+	job.run(_Answering(clock))
+	assert len(refreshed) == 1 and props[nlc.REVALIDATE_PROP] == nlc.DONE
+	assert not any('not answered' in line for line in state.get('log', []))
 
 
 def test_an_in_addon_listing_is_not_revalidated(revalidator):

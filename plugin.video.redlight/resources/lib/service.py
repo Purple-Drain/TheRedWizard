@@ -338,9 +338,17 @@ class NextEpisodesRevalidate:
 		from modules import nextep_list_cache as nlc
 		service_started, player = time(), kodi_utils.kodi_player()
 		first_answer, checkpoints, rebuilds, asked_at = None, list(nlc.CHECKPOINTS), 0, 0
-		while checkpoints and not monitor.abortRequested():
+		while not monitor.abortRequested():
 			if monitor.waitForAbort(5) or kodi_utils.service_shutting_down(monitor): return
 			now = time()
+			if player.isPlayingVideo() or kodi_utils.get_property(pause_services_prop) == 'true': continue
+			# A pending request is waited on first, so one asked at the last checkpoint is answered
+			# before the window closes, and its deadline is kept to REBUILD_WAIT.
+			if nlc.revalidate_state() == nlc.REBUILD:
+				if now - asked_at < nlc.REBUILD_WAIT: continue
+				kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: rebuild not answered in %s s, leaving it to the next request' % nlc.REBUILD_WAIT)
+				break
+			if not checkpoints: break
 			served = dict((name, info) for name, info in nlc.served_lists().items() if info.get('external'))
 			if first_answer is None:
 				if not served:
@@ -348,11 +356,6 @@ class NextEpisodesRevalidate:
 					continue
 				first_answer = now
 			if now < max(first_answer + checkpoints[0], service_started + nlc.REVALIDATE_AFTER): continue
-			if player.isPlayingVideo() or kodi_utils.get_property(pause_services_prop) == 'true': continue
-			if nlc.revalidate_state() == nlc.REBUILD:
-				if now - asked_at < nlc.REBUILD_WAIT: continue
-				kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: rebuild not answered in %s s, leaving it to the next request' % nlc.REBUILD_WAIT)
-				break
 			checkpoints.pop(0)
 			behind = [name for name, info in served.items() if nlc.cache_key(info.get('external'), info.get('anime')) != info.get('key')]
 			if not behind: continue

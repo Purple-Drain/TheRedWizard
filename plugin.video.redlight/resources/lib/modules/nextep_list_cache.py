@@ -214,9 +214,11 @@ def store(key, is_external, anime, items, future_dates, category):
 	record_served(is_external, anime, key)
 	try:
 		if not key:
-			# Built without a key (provider switched, a table unreadable): an older list must not
-			# outlive it and come back as the saved list at a later start.
-			widget_cache.delete_list(list_name(is_external, anime))
+			# A provider with no local key (Trakt, Simkl, PunchPlay): a list from before a switch must not
+			# come back as the saved list at a later start. For a local provider no key means a cached row
+			# the provider refetches, or a read that failed (a build before the network is up): the saved
+			# list stays for the next start.
+			if settings.watched_indicators() not in LOCAL_PROVIDERS: widget_cache.delete_list(list_name(is_external, anime))
 			return
 		if cache_key(is_external, anime) != key: return
 		payload = {'items': [{'url': url, 'row': row} for url, row in items], 'category': category,
