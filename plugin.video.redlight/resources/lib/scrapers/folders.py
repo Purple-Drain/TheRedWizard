@@ -55,8 +55,10 @@ class source:
 		return self.sources
 
 	def _episode_file_matches(self, normalized):
-		"""Title in the file name decides when it can (#89); otherwise the S/E regex as before."""
+		"""Title in the file name decides when it can (#89); otherwise the S/E regex as before. An extra
+		filed with the episodes (an "Inside Look", deleted scenes) is never the episode (#165)."""
 		title_check = getattr(self, 'title_check', None)
+		if source_utils.extra_file(normalized, getattr(title_check, 'target', ''), getattr(title_check, 'show', ''), getattr(self, 'title', '')): return False
 		if title_check is not None:
 			try: verdict = title_check(normalized, self.episode)
 			except Exception: verdict = None

@@ -18,6 +18,41 @@ def extras():
 	return ('sample', 'extra', 'extras', 'deleted', 'unused', 'footage', 'inside', 'blooper', 'bloopers',
 			'making.of', 'feature', 'featurette', 'behind.the.scenes', 'trailer')
 
+# Extras filed next to episodes (a remux pack's "Inside Look", "Deleted Scenes", an introduction or a
+# blooper reel) carry the episode's number and title, so the title check and the S/E match both accept
+# them (#165: zurg's "Seinfeld Extras" folder holds Inside.Look.S04E01-E02.The.Trip.mkv). Phrases, not
+# the loose single words extras() uses for TorBox, so an episode titled "Inside Out" still matches.
+_EXTRA_PHRASE = (r'inside[ ._-]*looks?|deleted[ ._-]*scenes?|alternate[ ._-]*(?:final[ ._-]*)?(?:scene|ending)s?'
+	r'|introduction[ ._-]*to|bloopers?|gag[ ._-]*reels?|easter[ ._-]*eggs?|featurettes?|making[ ._-]*of|behind[ ._-]*the[ ._-]*scenes|sample')
+_EXTRA_ANYWHERE_RE = re.compile(r'(?<![a-z0-9])(' + _EXTRA_PHRASE + r')(?![a-z0-9])')
+# An extra's own name leads with the phrase, after an optional "Season.03." prefix.
+_EXTRA_LEAD_RE = re.compile(r'^(?:season[ ._-]*\d{1,2}[ ._-]*)?(' + _EXTRA_PHRASE + r')(?![a-z0-9])')
+# A release sample: "...1080p.BluRay.x264-GRP.sample.mkv". The tag keeps "Show.S02E04.The.Sample.mkv" out.
+_EXTRA_SAMPLE_RE = re.compile(r'(?:\d{3,4}p|x26[45]|h[ .]?26[45]|hevc|web[ .-]?dl|webrip|bluray|remux).*[.-](sample)\.[a-z0-9]{2,4}$')
+
+def _singular_words(text):
+	words = re.findall(r'[a-z0-9]+', (text or '').lower())
+	return ' %s ' % ' '.join(w[:-1] if len(w) > 3 and w.endswith('s') else w for w in words)
+
+def extra_file(filename, *titles):
+	"""True when the file's own name marks it as an extra rather than the episode: the name leads
+	with an extras phrase (after an optional "Season.03."), or has no episode number and carries one
+	anywhere, or is a release sample. A phrase inside the show's or the episode's title never counts
+	(plurals folded), so "The Making of the Mob S01E01" and "Community S01E03 Introduction to Film"
+	still match. Only the file name is read, never a folder above it."""
+	try:
+		name = re.split(r'[\\/]', unquote(filename or ''))[-1].lower()
+		kept = ''.join(_singular_words(title) for title in titles if title)
+		lead = _EXTRA_LEAD_RE.match(name)
+		if lead: hits = [lead]
+		elif any(True for _ in iter_season_episode_tokens(name)): hits = []
+		else: hits = list(_EXTRA_ANYWHERE_RE.finditer(name))
+		sample = _EXTRA_SAMPLE_RE.search(name)
+		if sample: hits.append(sample)
+		return any(_singular_words(match.group(1)) not in kept for match in hits)
+	except Exception:
+		return False
+
 def unwanted_tags():
 	return (
 'tamilrockers.com', 'www.tamilrockers.com', 'www.tamilrockers.ws', 'www.tamilrockers.pl', 'www-tamilrockers-cl', 'www.tamilrockers.cl', 'www.tamilrockers.li',
@@ -423,9 +458,10 @@ class EpisodeTitleCheck:
 	combined file holding both halves ("S03E15-E16 The Boyfriend") is accepted; else its episode
 	number must be the one asked for.
 	"""
-	def __init__(self, target_title, season=None, other_titles=()):
+	def __init__(self, target_title, season=None, other_titles=(), show_title=''):
 		try: self.season = int(season)
 		except Exception: self.season = None
+		self.show = show_title or ''  # for extra_file(): an extras phrase in the show's name never counts
 		other_titles = tuple(other_titles or ())
 		self.target = self._usable(episode_title_key(target_title))
 		parts = _part_numbers(target_title, _TITLE_PART_RE)
@@ -521,7 +557,7 @@ def episode_title_check(info):
 			other_titles = [i.get('title') for i in cached if i.get('title')]
 		except Exception:
 			other_titles = []
-		check = EpisodeTitleCheck(info.get('ep_name'), season, other_titles)
+		check = EpisodeTitleCheck(info.get('ep_name'), season, other_titles, info.get('title'))
 		return check if check else None
 	except Exception:
 		return None
@@ -535,6 +571,8 @@ def cloud_episode_matches(season, episode, filename, absolute_episode=None, titl
 	2) Else bare aired-order number: match absolute_episode when known, else S01 + episode only.
 	"""
 	if not filename:
+		return False
+	if extra_file(filename, getattr(title_check, 'target', ''), getattr(title_check, 'show', '')):
 		return False
 	if title_check is not None:
 		try: verdict = title_check(filename, episode)

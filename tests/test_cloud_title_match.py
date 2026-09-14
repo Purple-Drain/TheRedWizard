@@ -133,6 +133,26 @@ check('"S03E15-E16 The Boyfriend" for The Boyfriend (1), raw S03E17',
 check('same-key titles without a part number still need the numbers',
       su.EpisodeTitleCheck('Homecoming', 2, ['Homecoming', 'Homecoming', 'Other Title'])('Show S02E07 Homecoming mkv'), None)
 
+print('--- extras filed with the episodes (#165 follow-up, the zurg "Seinfeld Extras" folder) ---')
+check('"Inside.Look.S04E01-E02.The.Trip" is not The Trip (2)', matches(2, 'Inside.Look.S04E01-E02.The.Trip.mkv'), False)
+check('"Deleted.Scenes.S04E01.The.Trip.(Part.1)" is not The Trip (1)', matches(1, 'Deleted.Scenes.S04E01.The.Trip.(Part.1).mkv'), False)
+check('an alternate final scene is not The Finale', su.cloud_episode_matches(9, 23, 'Alternate.Final.Scene.S09E23-E24.The.Finale.mkv'), False)
+check('a season introduction is not the episode', su.cloud_episode_matches(3, 15, 'Season.03.Introduction.to.E15-E16.The.Boyfriend.mkv'), False)
+check('a blooper with no episode number is not the episode', su.cloud_episode_matches(4, 23, 'Season.04.The.Pilot.Greenpeace.Raft.Blooper.(Easter.Egg).mkv'), False)
+check('a release sample is not the episode', su.cloud_episode_matches(4, 20, 'Seinfeld.S04E20.1080p.BluRay.x264-GRP.sample.mkv'), False)
+check('a show named with a phrase still matches (review F2)',
+      su.cloud_episode_matches(1, 1, 'The.Making.of.the.Mob.S01E01.Gotham.Rises.mkv', None, su.EpisodeTitleCheck('Gotham Rises', 1, (), 'The Making of the Mob')), True)
+check('a show title exempts a leading phrase', su.extra_file('Inside.Look.S01E01.Pilot.mkv', '', 'Inside Look'), False)
+check('an episode titled with a phrase, no title check (review F3)', su.cloud_episode_matches(1, 3, 'Community.S01E03.Introduction.to.Film.mkv'), True)
+check('"The Sample" as an episode title is not a release sample', su.cloud_episode_matches(2, 4, 'Show.S02E04.The.Sample.mkv'), True)
+check('plurals fold for the title exemption (review F4)', su.extra_file('Deleted.Scenes.S01E02.mkv', 'Deleted Scene'), False)
+check('the episode file itself still matches', matches(1, 'Seinfeld.S04E01.The.Trip.(Part.1).mkv'), True)
+check('a phrase that is the episode title is not an extra',
+      su.cloud_episode_matches(1, 5, 'Show.S01E05.The.Inside.Look.mkv', None, su.EpisodeTitleCheck('The Inside Look', 1, ())), True)
+check('"Inside Out" is not an extra', su.cloud_episode_matches(2, 3, 'Show.S02E03.Inside.Out.mkv'), True)
+check('only the file name counts, not an "Extras" folder above it',
+      su.extra_file('/Seinfeld Extras PROPER/Seinfeld.S04E02.The.Trip.(Part.2).mkv'), False)
+
 print('--- titles that must never accept or veto ---')
 for title in ('Pilot', 'Episode 3', 'Part 2', 'Ep 12', 'Web', ''):
     check('generic/short target %r is dropped' % title, bool(su.EpisodeTitleCheck(title, 1, ())), False)
