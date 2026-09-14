@@ -58,7 +58,7 @@ class source:
 		"""Title in the file name decides when it can (#89); otherwise the S/E regex as before."""
 		title_check = getattr(self, 'title_check', None)
 		if title_check is not None:
-			try: verdict = title_check(normalized)
+			try: verdict = title_check(normalized, self.episode)
 			except Exception: verdict = None
 			if verdict is not None: return verdict
 		return source_utils.seas_ep_filter(self.season, self.episode, normalized)
