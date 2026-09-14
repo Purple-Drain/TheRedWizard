@@ -288,3 +288,58 @@ def test_an_in_addon_build_stores_nothing(widget, db, monkeypatch):
 	monkeypatch.setattr(kodi_utils, 'external', lambda: False)
 	tvshows.TVShows({'action': 'in_progress_tvshows', 'category_name': 'In Progress'}).fetch_list()
 	assert db.execute("SELECT COUNT(*) FROM maincache WHERE id LIKE 'WIDGET_LIST_in_progress%'").fetchone()[0] == 0
+
+
+# --- the next start: saved list first, then the service's rebuild ---------------------------------
+
+def test_a_changed_state_at_the_next_start_shows_the_saved_list_then_rebuilds(widget, db):
+	params = {'action': 'in_progress_tvshows', 'category_name': 'In Progress'}
+	tvshows.TVShows(params).fetch_list()
+	built, props = list(widget['items']), widget['props']
+	_fresh(widget)
+	props.clear()  # the next start: Kodi clears Home properties
+	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-14T21:00:00.000Z', 'Show 1')")
+	assert ipl.serve_tvshows(params)
+	assert widget['meta_calls'] == [] and widget['items'] == built
+	assert 'In Progress TV list cache stale (state changed since it was stored): 3 listed' in widget['log'][-1]
+	name = ipl.TVSHOWS.list_name(True)
+	assert json.loads(props[sl.SERVED_PROP % name])['key'] == sl.STALE_KEY  # so the service always rebuilds it
+	props[sl.REVALIDATE_PROP % name] = sl.REBUILD  # what SavedListsRevalidate sets
+	assert not ipl.serve_tvshows(params)
+	assert props[sl.REVALIDATE_PROP % name] == sl.DONE
+	assert 'rebuild asked for by the service' in widget['log'][-1]
+
+
+class _Clock:
+	def __init__(self): self.now = 1000.0
+	def time(self): return self.now
+
+
+class _Monitor:
+	def __init__(self, clock, limit=400): self.clock, self.calls, self.limit = clock, 0, limit
+	def abortRequested(self): return self.calls >= self.limit
+	def waitForAbort(self, seconds):
+		self.calls += 1
+		self.clock.now += seconds
+		return self.calls >= self.limit
+
+
+def test_the_service_rebuilds_only_the_real_list_that_is_behind(widget, db, monkeypatch):
+	import time as time_module
+	import service
+	params, props = {'action': 'in_progress_tvshows', 'category_name': 'In Progress'}, widget['props']
+	tvshows.TVShows(params).fetch_list()  # records In Progress TV's current key
+	monkeypatch.setattr(nlc, 'cache_key', lambda is_external, anime=False: 'n1')
+	props[sl.SERVED_PROP % nlc.list_name(True)] = json.dumps({'key': 'n1', 'external': True, 'anime': False})
+	db.execute("INSERT INTO watched VALUES ('episode', '1', 1, 2, '2026-09-14T21:00:00.000Z', 'Show 1')")
+	clock, refreshed = _Clock(), []
+	monkeypatch.setattr(time_module, 'time', clock.time)
+	monkeypatch.setattr(kodi_utils, 'kodi_refresh', lambda: refreshed.append(clock.now))
+	monkeypatch.setattr(kodi_utils, 'service_shutting_down', lambda monitor=None: False)
+	monkeypatch.setattr(kodi_utils, 'kodi_player', lambda: type('P', (), {'isPlayingVideo': lambda self: False})())
+	service.SavedListsRevalidate().run(_Monitor(clock, limit=8))  # stops before REBUILD_WAIT
+	assert len(refreshed) == 1
+	assert props[sl.REVALIDATE_PROP % ipl.TVSHOWS.list_name(True)] == sl.REBUILD
+	assert nlc.REVALIDATE_PROP not in props
+	assert sl.REVALIDATE_PROP % ipl.MOVIES.list_name(True) not in props
+	assert 'in_progress_tvshows_list_widget shown from an older state' in widget['log'][-1]
