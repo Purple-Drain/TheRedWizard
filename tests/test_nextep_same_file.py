@@ -33,6 +33,13 @@ def test_the_stash_records_the_release_still_playing(monkeypatch):
     sources._NEXTEP_AUTOPLAY_STASH.clear()
 
 
+def test_the_recorded_release_survives_the_persisted_stash(monkeypatch, tmp_path):
+    # The played stash is the one read back from the file, not the in-memory dict.
+    monkeypatch.setattr(sources, '_nextep_play_stash_path', lambda: str(tmp_path / 'nextep_play_stash.pkl'))
+    assert sources.persist_nextep_play_stash({'results': [], 'playing_release': PLAYING})
+    assert sources.consume_persisted_nextep_play_stash()['playing_release'] == PLAYING
+
+
 def test_the_file_of_the_episode_before_is_skipped():
     assert _sources(PLAYING)._nextep_same_file({'name': PLAYING})
     # The scraped label form of the same file.
