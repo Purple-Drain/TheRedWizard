@@ -977,14 +977,17 @@ def size_sort_weighted():
 	return get_setting('redlight.results.size_sort_weighted', 'false') == 'true'
 
 def results_sort_order():
+	# The last key is the folder slot (1 to 5, 0 for anything that isn't a folder result). It only
+	# breaks exact ties, so when the same file is in two folders (zurg's __realdebrid__ and
+	# __torbox__, say) the lower-numbered folder's copy is listed first (#141).
 	sort_direction = -1 if get_setting('redlight.results.size_sort_direction') == '0' else 1
 	return (
-			lambda k: (k['quality_rank'], k['provider_rank'], sort_direction*k['size_rank']), #Quality, Provider, Size
-			lambda k: (k['quality_rank'], sort_direction*k['size_rank'], k['provider_rank']), #Quality, Size, Provider
-			lambda k: (k['provider_rank'], k['quality_rank'], sort_direction*k['size_rank']), #Provider, Quality, Size
-			lambda k: (k['provider_rank'], sort_direction*k['size_rank'], k['quality_rank']), #Provider, Size, Quality
-			lambda k: (sort_direction*k['size_rank'], k['quality_rank'], k['provider_rank']), #Size, Quality, Provider
-			lambda k: (sort_direction*k['size_rank'], k['provider_rank'], k['quality_rank'])  #Size, Provider, Quality
+			lambda k: (k['quality_rank'], k['provider_rank'], sort_direction*k['size_rank'], k.get('folder_rank', 0)), #Quality, Provider, Size
+			lambda k: (k['quality_rank'], sort_direction*k['size_rank'], k['provider_rank'], k.get('folder_rank', 0)), #Quality, Size, Provider
+			lambda k: (k['provider_rank'], k['quality_rank'], sort_direction*k['size_rank'], k.get('folder_rank', 0)), #Provider, Quality, Size
+			lambda k: (k['provider_rank'], sort_direction*k['size_rank'], k['quality_rank'], k.get('folder_rank', 0)), #Provider, Size, Quality
+			lambda k: (sort_direction*k['size_rank'], k['quality_rank'], k['provider_rank'], k.get('folder_rank', 0)), #Size, Quality, Provider
+			lambda k: (sort_direction*k['size_rank'], k['provider_rank'], k['quality_rank'], k.get('folder_rank', 0))  #Size, Provider, Quality
 			)[int(get_setting('redlight.results.sort_order', '1'))]
 
 def active_internal_scrapers():
