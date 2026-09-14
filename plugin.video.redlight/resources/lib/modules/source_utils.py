@@ -372,15 +372,29 @@ def episode_title_key(text):
 	except Exception:
 		return ''
 
-# The part number of a two-parter: "The Trip (2)", "The Trip (Part 2)" in a TMDb title; in a file
-# name also "Part.2", "Pt 2". Two digits at most, so "(1989)" and "(2160p)" never count.
+# The part number of a two-parter. In a TMDb title: "The Trip (2)", "The Trip (Part 2)"; two digits
+# at most, so "(1989)" and "(2160p)" never count. In a file name: "Part.2", "Pt 2", "Part II",
+# "Parts 1 & 2", "Part 1-2", "2of2"; a bare bracketed digit counts only straight after the title
+# (EpisodeTitleCheck._name_parts), so a copy suffix "(1)" or a "[10]" tag is not a part.
 _TITLE_PART_RE = re.compile(r'[\[(]\s*(?:part|pt)?[\s.]*(\d{1,2})\s*[\])]')
-_NAME_PART_RE = re.compile(r'(?<![a-z0-9])(?:part|pt)[\s._-]*(\d{1,2})(?!\d)|[\[(]\s*(\d{1,2})\s*[\])]')
+_PART_NUM = r'(\d{1,2}|iii|ii|iv|i|one|two|three)'
+_NAME_PART_RE = re.compile(r'(?<![a-z0-9])(?:parts?|pt)[\s._-]*' + _PART_NUM
+	+ r'(?:[\s._-]*(?:and|&|\+|-|to)[\s._-]*(?:parts?|pt)?[\s._-]*' + _PART_NUM + r')?(?![a-z0-9])')
+_NAME_OF_RE = re.compile(r'(?<![a-z0-9])(\d)[\s._-]*of[\s._-]*\d(?![a-z0-9])')
+_PART_WORDS = {'i': 1, 'ii': 2, 'iii': 3, 'iv': 4, 'one': 1, 'two': 2, 'three': 3}
 
 def _part_numbers(text, pattern):
 	try: text = unquote(text or '').lower()
 	except Exception: return set()
-	return set(int(n) for match in pattern.findall(text) for n in (match if isinstance(match, tuple) else (match,)) if n)
+	found = set()
+	for match in pattern.findall(text):
+		for value in (match if isinstance(match, tuple) else (match,)):
+			value = int(value) if value.isdigit() else _PART_WORDS.get(value)
+			if value: found.add(value)
+	return found
+
+def _basename(filename):
+	return re.split(r'[\\/]', filename or '')[-1]
 
 class EpisodeTitleCheck:
 	"""Verify or veto a cloud/folder file by the episode title carried in its name (#89).
@@ -403,9 +417,10 @@ class EpisodeTitleCheck:
 
 	The halves of a two-parter in separate files share one key ("The Trip (1)" and "(2)" both fold
 	to "the trip"), so a title hit alone would accept either half for either episode (#165: autoplay
-	into S04E02 played Part 1). For such an ambiguous target a title hit decides only by the part
-	number in the name ("Part.1"), or accepts a combined file holding both halves; otherwise the
-	numbers decide.
+	into S04E02 played Part 1). For such an ambiguous target a title hit is judged on the file's own
+	name, never its folder (rd_cloud passes the torrent path): its part marker decides; else a
+	combined file holding both halves ("S03E15-E16 The Boyfriend") is accepted; else its episode
+	number must be the one asked for.
 	"""
 	def __init__(self, target_title, season=None, other_titles=()):
 		try: self.season = int(season)
@@ -443,24 +458,35 @@ class EpisodeTitleCheck:
 	def __bool__(self):
 		return bool(self.target or self.others)
 
-	def verdict(self, filename):
+	def verdict(self, filename, episode=None):
 		if not filename or not self: return None
 		haystack = episode_title_key(filename)
 		if self.target and self._pattern(self.target).search(haystack):
-			tokens = list(iter_season_episode_tokens(filename))
 			if self.season is not None:
-				seasons = set(s_num for s_num, _ in tokens)
+				seasons = set(s_num for s_num, _ in iter_season_episode_tokens(filename))
 				if seasons and self.season not in seasons: return None
-			if self.ambiguous: return self._part_verdict(filename, tokens)
+			if self.ambiguous: return self._part_verdict(filename, episode)
 			return True
 		if any(self._pattern(other).search(haystack) for other in self.others): return False
 		return None
 
-	def _part_verdict(self, filename, tokens):
-		parts = _part_numbers(filename, _NAME_PART_RE)
-		if parts: return None if self.part is None else self.part in parts
-		# One combined file holding both halves ("S03E15 E16 The Boyfriend") is right for either.
-		if len(set(e_num for s_num, e_num in tokens if self.season is None or s_num == self.season)) >= 2: return True
+	def _name_parts(self, name):
+		parts = _part_numbers(name, _NAME_PART_RE) | _part_numbers(name, _NAME_OF_RE)
+		try:
+			words = r'[\s._-]*'.join(re.escape(word) for word in self.target.split())
+			for match in re.finditer(words + r'[\s._-]*[\[(]\s*(\d)\s*[\])]', unquote(name).lower()): parts.add(int(match.group(1)))
+		except Exception: pass
+		return parts
+
+	def _part_verdict(self, filename, episode):
+		name = _basename(filename)
+		parts = self._name_parts(name)
+		if parts and self.part is not None: return self.part in parts
+		episodes = set(e_num for s_num, e_num in iter_season_episode_tokens(name) if self.season is None or s_num == self.season)
+		if len(episodes) >= 2: return True
+		try: episode = int(episode)
+		except Exception: return None
+		if episodes: return episode in episodes
 		return None
 
 	__call__ = verdict
@@ -497,7 +523,7 @@ def cloud_episode_matches(season, episode, filename, absolute_episode=None, titl
 	if not filename:
 		return False
 	if title_check is not None:
-		try: verdict = title_check(filename)
+		try: verdict = title_check(filename, episode)
 		except Exception: verdict = None
 		if verdict is not None:
 			return verdict
