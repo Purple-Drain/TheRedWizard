@@ -69,7 +69,7 @@ LOCAL_PROVIDERS = (0, 3)
 
 # Modules that register a Spec when imported. specs() imports them, so the service and forget_all()
 # see every saved list without importing each one by name.
-SPEC_MODULES = ('modules.nextep_list_cache',)
+SPEC_MODULES = ('modules.nextep_list_cache', 'modules.inprogress_lists')
 _SPECS = {}
 
 
@@ -211,6 +211,20 @@ def _choose(spec, is_external, variant, revalidate):
 	return None, None, None, age, reason
 
 
+def nav_row(label, icon, fanart):
+	"""A folder item a list adds after its rows (Next Page): stored with the list and drawn the way
+	kodi_utils.add_dir() draws it."""
+	return {'nav': {'label': label, 'icon': icon, 'fanart': fanart}}
+
+
+def _render_nav(nav, make_listitem):
+	listitem = make_listitem()
+	listitem.setLabel(nav['label'])
+	kodi_utils.set_list_item_art(listitem, nav['icon'], fanart=nav['fanart'], banner=nav['fanart'])
+	listitem.getVideoInfoTag(True).setPlot(' ')
+	return listitem
+
+
 def serve(spec, params, variant=False):
 	"""Answer a widget request from a stored list. True when the directory was served; False means the
 	caller builds it (and the build stores a fresh list)."""
@@ -227,7 +241,8 @@ def serve(spec, params, variant=False):
 		kind, stored_key, payload, age, reason = _choose(spec, is_external, variant, revalidate)
 		if kind is None: return _miss(spec, reason, started)
 		make_listitem, kodi_actor = kodi_utils.make_listitem, kodi_utils.kodi_actor()
-		items = [(i['url'], spec.render(i['row'], make_listitem, kodi_actor), bool(i.get('folder'))) for i in payload['items']]
+		items = [(i['url'], _render_nav(i['row']['nav'], make_listitem) if 'nav' in i['row'] else spec.render(i['row'], make_listitem, kodi_actor),
+				bool(i.get('folder'))) for i in payload['items']]
 	except Exception as e: return _miss(spec, 'error: %s' % e, started)
 	# Committed from here: a build can no longer answer this handle, so the directory must end whatever
 	# happens, or Kodi's fetch of the widget fails outright instead of showing a list.

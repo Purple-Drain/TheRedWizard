@@ -46,6 +46,8 @@ class Movies:
 		try:
 			try: page_no = int(self.params_get('new_page', '1'))
 			except: page_no = self.params_get('new_page')
+			# Page 1 of the In Progress home widget is saved for the next start (#163).
+			self.keep_rows = self.action == 'in_progress_movies' and self.is_external and page_no == 1 and self.paginate_start == 0
 			if self.action in self.personal: var_module, import_function = self.personal[self.action]
 			elif self.action in self.most_watched:
 				from modules.most_watched import normalize_most_watched_action
@@ -191,6 +193,10 @@ class Movies:
 			if self.new_page and not self.widget_hide_next_page:
 				self.new_page.update({'mode': 'build_movie_list', 'action': self.action, 'category_name': self.category_name})
 				kodi_utils.add_dir(handle, self.new_page, 'Next Page (%s) >>' % self.new_page['new_page'], 'nextpage', kodi_utils.get_icon('nextpage_landscape'))
+			if self.keep_rows:
+				from modules import inprogress_lists
+				inprogress_lists.store(inprogress_lists.MOVIES, self.saved_list_key, self.rows,
+					self.new_page if self.new_page and not self.widget_hide_next_page else None, self.category_name)
 		except Exception as e:
 			if self.action in self.mdblist_personal or self.action == 'mdblist_user_list':
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
@@ -371,6 +377,10 @@ class Movies:
 		self.rpdb_api_key, self.rpdb_format = rpdb_info['rpdb_api_key'], rpdb_info['rpdb_format']
 		watched_db = watched_status.get_database(self.watched_indicators)
 		self.watched_info, self.bookmarks = watched_status.watched_info_movie(watched_db), watched_status.get_bookmarks_movie(watched_db)
+		# Keyed after the list's provider refresh, so the saved list is filed under the state it shows (#163).
+		if self.keep_rows:
+			from modules import inprogress_lists
+			self.saved_list_key = inprogress_lists.movie_key(True)
 		self.window_command = 'ActivateWindow(Videos,%s,return)' if self.is_external else 'Container.Update(%s)'
 		open_action = settings.media_open_action('movie')
 		self.open_movieset = open_action in (2, 3) and not self.movieset_list_active

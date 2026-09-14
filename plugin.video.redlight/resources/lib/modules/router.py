@@ -100,9 +100,17 @@ def routing(sys):
 		return getattr(trakt_api, mode.split('.')[1])(params)
 	elif 'build' in mode:
 		if mode == 'build_movie_list':
+			if params.get('action') == 'in_progress_movies':
+				# Saved list first (#163): a hit never loads indexers.movies or any provider API module.
+				from modules.inprogress_lists import serve_movies
+				if serve_movies(params): return
 			from indexers.movies import Movies
 			return Movies(params).fetch_list()
 		elif mode == 'build_tvshow_list':
+			if params.get('action') == 'in_progress_tvshows':
+				# Saved list first (#163): a hit never loads indexers.tvshows or any provider API module.
+				from modules.inprogress_lists import serve_tvshows
+				if serve_tvshows(params): return
 			from indexers.tvshows import TVShows
 			return TVShows(params).fetch_list()
 		elif mode == 'build_season_list':

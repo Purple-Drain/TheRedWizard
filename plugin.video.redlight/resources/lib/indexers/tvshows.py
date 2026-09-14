@@ -59,6 +59,8 @@ class TVShows:
 			is_random = self.params_get('random', 'false') == 'true'
 			try: page_no = int(self.params_get('new_page', '1'))
 			except: page_no = self.params_get('new_page')
+			# Page 1 of the In Progress home widget is saved for the next start (#163).
+			self.keep_rows = self.action == 'in_progress_tvshows' and self.is_external and page_no == 1 and self.paginate_start == 0
 			if page_no == 1 and not self.is_external and self.action != 'mdblist_user_list':
 				if not any([x in kodi_utils.folder_path() for x in ('build_season_list', 'build_episode_list')]):
 					list_mode = 'anime' if self.is_anime_list is True else 'tvshow'
@@ -214,6 +216,10 @@ class TVShows:
 				self.new_page.update({'mode': 'build_tvshow_list', 'action': self.action, 'category_name': self.category_name})
 				if self.is_anime_list is not None: self.new_page['is_anime_list'] = {True: 'true', False: 'false'}[self.is_anime_list]
 				kodi_utils.add_dir(handle, self.new_page, 'Next Page (%s) >>' % self.new_page['new_page'], 'nextpage', kodi_utils.get_icon('nextpage_landscape'))
+			if self.keep_rows:
+				from modules import inprogress_lists
+				inprogress_lists.store(inprogress_lists.TVSHOWS, self.saved_list_key, self.rows,
+					self.new_page if self.new_page and not self.widget_hide_next_page else None, self.category_name)
 		except Exception as e:
 			if self.action in self.mdblist_personal or self.action == 'mdblist_user_list':
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
@@ -397,6 +403,10 @@ class TVShows:
 			from apis.punchplay_api import punchplay_sync_activities
 			punchplay_sync_activities()
 		self.watched_info = watched_status.watched_info_tvshow(watched_db)
+		# Keyed after the provider sync above, so the saved list is filed under the state it shows (#163).
+		if self.keep_rows:
+			from modules import inprogress_lists
+			self.saved_list_key = inprogress_lists.tvshow_key(True)
 		self.window_command = 'ActivateWindow(Videos,%s,return)' if self.is_external else 'Container.Update(%s)'
 		if self.custom_order:
 			threads = TaskPool().tasks(self.build_tvshow_content, self.list, min(len(self.list), settings.max_threads()), 'metacache_db')
