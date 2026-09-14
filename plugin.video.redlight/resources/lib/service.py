@@ -317,57 +317,64 @@ class WidgetRefresher:
 	def external(self):
 		return 'plugin' not in kodi_utils.get_infolabel('Container.PluginName')
 
-class NextEpisodesRevalidate:
-	"""Keep the Next Episodes widget honest in the first minutes after start (#155).
+class SavedListsRevalidate:
+	"""Keep the saved widget lists honest in the first minutes after start (#155, #163).
 
-	serve() may answer from a stored list (a hit, or a stale list from an earlier run), and even a
-	fresh build can be overtaken by another widget's provider sync: In Progress syncs MDBList on its
-	own cold build and rewrites the watched table after Next Episodes has answered. Every answer
-	records the key it was built for (nextep_list_cache.record_served). At CHECKPOINTS seconds after
-	the first answer, compare each with the current key; on a mismatch ask for one real build and
-	refresh the widgets.
+	modules.saved_lists may answer a widget from a stored list (a hit, or a stale list from an earlier
+	run), and even a fresh build can be overtaken by another widget's provider sync: In Progress syncs
+	MDBList on its own build and rewrites the watched table after Next Episodes has answered. Every
+	answer records the key it was built for. At CHECKPOINTS seconds after the first answer, compare
+	each home widget's recorded key with the current one; ask each list that is behind for one real
+	build (its own rebuild request, so the others keep their lists) and refresh the widgets once.
 
-	MAX_REBUILDS is load-bearing, not defensive: kodi_refresh() re-requests every widget, In Progress
-	can sync again and move the key again, and without the cap that would oscillate. A check is also
-	skipped while an earlier request is still unanswered, and a request nobody answers within
+	MAX_REBUILDS is load-bearing, not defensive: kodi_refresh() re-requests every widget, a provider
+	can sync again and move a key again, and without the cap that would oscillate. A pending request is
+	waited on first, including one asked at the last checkpoint, and a request nobody answers within
 	REBUILD_WAIT ends the checks. Only home widgets are checked: a refresh cannot re-render an in-addon
-	listing. After the last checkpoint the session's stale window ends, and freshness is
-	MDBListMonitor's periodic sync and WidgetRefresher's timer."""
+	listing. After the last checkpoint the session's stale window ends for every list, and freshness is
+	the providers' periodic syncs and WidgetRefresher's timer."""
 	def run(self, monitor):
 		from time import time
-		from modules import nextep_list_cache as nlc
+		from modules import saved_lists as sl
+		specs = sl.specs()
 		service_started, player = time(), kodi_utils.kodi_player()
-		first_answer, checkpoints, rebuilds, asked_at = None, list(nlc.CHECKPOINTS), 0, 0
+		first_answer, checkpoints, rebuilds, asked = None, list(sl.CHECKPOINTS), 0, {}
 		while not monitor.abortRequested():
 			if monitor.waitForAbort(5) or kodi_utils.service_shutting_down(monitor): return
 			now = time()
 			if player.isPlayingVideo() or kodi_utils.get_property(pause_services_prop) == 'true': continue
-			# A pending request is waited on first, so one asked at the last checkpoint is answered
-			# before the window closes, and its deadline is kept to REBUILD_WAIT.
-			if nlc.revalidate_state() == nlc.REBUILD:
-				if now - asked_at < nlc.REBUILD_WAIT: continue
-				kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: rebuild not answered in %s s, leaving it to the next request' % nlc.REBUILD_WAIT)
+			pending = [name for name in asked if sl.revalidate_state(name) == sl.REBUILD]
+			if pending:
+				if now - max(asked[name] for name in pending) < sl.REBUILD_WAIT: continue
+				kodi_utils.logger('Red Light', 'SavedListsRevalidate: rebuild of %s not answered in %s s, leaving it to the next request' % (', '.join(pending), sl.REBUILD_WAIT))
 				break
 			if not checkpoints: break
-			served = dict((name, info) for name, info in nlc.served_lists().items() if info.get('external'))
+			served = [(spec, name, info) for spec in specs for name, info in sl.served_lists(spec).items() if info.get('external')]
 			if first_answer is None:
 				if not served:
-					if now - service_started > nlc.FIRST_ANSWER_WAIT: break
+					if now - service_started > sl.FIRST_ANSWER_WAIT: break
 					continue
 				first_answer = now
-			if now < max(first_answer + checkpoints[0], service_started + nlc.REVALIDATE_AFTER): continue
+			if now < max(first_answer + checkpoints[0], service_started + sl.REVALIDATE_AFTER): continue
 			checkpoints.pop(0)
-			behind = [name for name, info in served.items() if nlc.cache_key(info.get('external'), info.get('anime')) != info.get('key')]
+			behind = [name for spec, name, info in served if spec.key(info.get('external'), info.get('anime')) != info.get('key')]
 			if not behind: continue
-			if rebuilds >= nlc.MAX_REBUILDS:
-				kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: %s still behind after %s rebuilds, leaving it to the periodic refresh' % (', '.join(behind), rebuilds))
+			if rebuilds >= sl.MAX_REBUILDS:
+				kodi_utils.logger('Red Light', 'SavedListsRevalidate: %s still behind after %s rebuilds, leaving it to the periodic refresh' % (', '.join(behind), rebuilds))
 				break
 			rebuilds += 1
-			kodi_utils.set_property(nlc.REVALIDATE_PROP, nlc.REBUILD)
-			asked_at = now
-			kodi_utils.logger('Red Light', 'NextEpisodesRevalidate: %s shown from an older state, asking for a real build (%s of %s)' % (', '.join(behind), rebuilds, nlc.MAX_REBUILDS))
+			for name in behind:
+				kodi_utils.set_property(sl.REVALIDATE_PROP % name, sl.REBUILD)
+				asked[name] = now
+			kodi_utils.logger('Red Light', 'SavedListsRevalidate: %s shown from an older state, asking for a real build (%s of %s)' % (', '.join(behind), rebuilds, sl.MAX_REBUILDS))
 			kodi_utils.kodi_refresh()
-		if nlc.revalidate_state() in ('', nlc.REBUILD): kodi_utils.set_property(nlc.REVALIDATE_PROP, nlc.DONE)
+		for spec in specs:
+			for is_external, variant in spec.lists():
+				name = spec.list_name(is_external, variant)
+				if sl.revalidate_state(name) in ('', sl.REBUILD): kodi_utils.set_property(sl.REVALIDATE_PROP % name, sl.DONE)
+
+# The name #162 shipped under.
+NextEpisodesRevalidate = SavedListsRevalidate
 
 class AutoStart:
 	def run(self, monitor):
@@ -429,7 +436,7 @@ class RedLightMonitor(Monitor):
 		_start_daemon(lambda: MdblistMonitor().run(self))
 		_start_daemon(lambda: PunchPlayMonitor().run(self))
 		_start_daemon(lambda: WidgetRefresher().run(self))
-		_start_daemon(lambda: NextEpisodesRevalidate().run(self))
+		_start_daemon(lambda: SavedListsRevalidate().run(self))
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))
 		_start_daemon(lambda: ServiceExpiryAlerts().run(self))

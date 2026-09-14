@@ -4,15 +4,9 @@
 At a cold boot the Next Episodes widget spent about 5.3 s importing its own code before it built
 anything (4.4 s of that was `requests`, which every provider API module imports), then called
 MDBList's sync/last_activities over the network, then rebuilt every watched show. The router asks
-serve() first, and it answers in one of three ways:
-
-* hit: the stored list was built from exactly the current state, after the last widget refresh
-  (the widget_refresh_timer setting or a manual Refresh Widgets, so those still rebuild as they
-  always did), within LIST_TTL, and none of its shows has aired a next episode since. Served as is.
-* stale: the home widget asked, nothing fresh is stored, but a list from an earlier run is (younger
-  than STALE_MAX). Shown at once, so the row is never empty at start, and replaced within seconds
-  by the rebuild the service asks for (below). An in-addon listing is never answered stale.
-* miss: the caller builds the normal way, and the build stores a fresh list.
+serve() first. The hit, stale and miss rules, the recorded keys and the service's checks live in
+modules.saved_lists (shared with In Progress, #163); this module is Next Episodes' spec: its key, its
+rows (modules.episode_rows) and its own validity check.
 
 The key is read from local state only: the active provider's watched and progress tables, the
 dropped shows and watchlist as the provider's cache holds them, favourites, and every setting the
@@ -20,63 +14,16 @@ rows read. Working it out imports no provider module and makes no network call. 
 provider knows (its cache row cleared by an activity sync, a provider with no local reader here, or
 a table that could not be read) means no key, so no hit.
 
-Rows are the JSON-safe dicts modules.episode_rows renders, so a served ListItem is made by the same
-calls as a built one.
-
-Keeping what is on screen honest. Every answer, hit, stale or built, records in a Home-window
-property the key it was built for (record_served). The service's NextEpisodesRevalidate compares that
-with the current key at CHECKPOINTS seconds after the first answer and, on a mismatch, asks for one
-real build and refreshes the widgets. That covers a stale list, and a hit or build overtaken by
-another widget's provider sync (In Progress syncs MDBList on its own cold build, which rewrites the
-watched table after Next Episodes has already answered). MAX_REBUILDS bounds it, because refreshing
-the widgets makes In Progress sync again. Past the last checkpoint, freshness is MDBListMonitor's
-periodic sync and WidgetRefresher's timer, as before this module existed.
-
-Session state lives in Home-window properties, which every Kodi process sees and Kodi clears on
-restart:
-* SERVED_PROP % list name: {"key", "external", "anime"} of the last answer for that list.
-* REVALIDATE_PROP: '' (stale allowed), REBUILD (the service asks for a real build) or DONE (no more
-  stale this session). serve() turns REBUILD into DONE the moment it sees it, before building, so a
-  build that fails or finds no key cannot leave every later request forced into a build.
-A read that fails counts as DONE: no stale list and no forced build.
+A stored list also stops being served on the earliest air date among its next episodes, so a newly
+aired episode appears (valid_until).
 """
-import sys
-import json
-import time
 import hashlib
 from caches.base_cache import connect_database
-from caches.widget_cache import widget_cache
-from modules import kodi_utils, settings
+from modules import kodi_utils, settings, saved_lists
 from modules.episode_rows import render_episode_row
 from modules.utils import get_datetime
-
-LIST_TTL = 12 * 3600
-# How old a stored list may be and still be shown stale while a rebuild runs. It is also the row's
-# own expiry in maincache, so forget(), delete_show() and Clear Main Cache still remove it.
-STALE_MAX = 7 * 24 * 3600
-# The service's checks, in seconds after the first answer of the session (and never before
-# REVALIDATE_AFTER seconds after the service started). The last one is past an In Progress cold
-# build (up to about 15 s) plus its MDBList sync. FIRST_ANSWER_WAIT covers a TV that is still off.
-REVALIDATE_AFTER = 15
-CHECKPOINTS = (15, 45, 90, 150, 240)
-MAX_REBUILDS = 2
-FIRST_ANSWER_WAIT = 30 * 60
-# A rebuild request nobody answers (the home window was not showing) ends the checks after this.
-# Nothing is lost: the list on record is behind, so its next request misses and builds anyway.
-REBUILD_WAIT = 60
-
-SERVED_PROP = 'redlight.nextep_served.%s'
-REVALIDATE_PROP = 'redlight.nextep_revalidate'
-REBUILD, DONE = 'rebuild', 'done'
-# Set by kodi_utils.refresh_widgets(): a list built before it is due for a rebuild.
-REFRESHED_PROP = 'redlight.widgets_refreshed_at'
-# What a stale answer records as its key: never equal to a current key, so the service always
-# rebuilds it (a list stale only by age has the same key as the current state).
-STALE_KEY = 'stale'
-
-# Watched status providers whose Next Episodes inputs can all be read locally: Red Light's own
-# table (0) and MDBList (3). Trakt, Simkl and PunchPlay keep building the normal way.
-LOCAL_PROVIDERS = (0, 3)
+from modules.saved_lists import (LIST_TTL, STALE_MAX, REVALIDATE_AFTER, CHECKPOINTS, MAX_REBUILDS, FIRST_ANSWER_WAIT, REBUILD_WAIT,
+	SERVED_PROP, REBUILD, DONE, REFRESHED_PROP, STALE_KEY, LOCAL_PROVIDERS)
 
 # The mdblist_data rows mdblist_get_dropped_items() and _mdbl_watchlist_raw() cache into. Spelled out
 # rather than imported: apis.mdblist_api imports requests, which is the cost this module avoids.
@@ -95,38 +42,6 @@ SETTING_GETTERS = (
 	'exclude_specials_from_progress', 'tv_progress_location', 'cm_sort_order', 'cm_default_order', 'ignore_articles',
 	'playback_key', 'trakt_user_active', 'simkl_user_active', 'punchplay_user_active', 'mdblist_user_active',
 	'tmdblist_user_active', 'configured_external_scraper_slots')
-
-
-def list_name(is_external, anime=False):
-	# One row per entry point and per list: a widget and an in-addon listing render different context
-	# menus, and Next Episodes and Anime Next Episodes are different lists. Sharing a row would have
-	# each evict the other on every build.
-	return '%s%s' % ('next_episodes_widget' if is_external else 'next_episodes', '_anime' if anime else '')
-
-
-ALL_LISTS = tuple((is_external, anime) for is_external in (True, False) for anime in (False, True))
-
-
-def revalidate_state():
-	try: return kodi_utils.get_property(REVALIDATE_PROP) or ''
-	except Exception: return DONE
-
-
-def record_served(is_external, anime, key):
-	try: kodi_utils.set_property(SERVED_PROP % list_name(is_external, anime), json.dumps({'key': key, 'external': bool(is_external), 'anime': bool(anime)}))
-	except Exception: pass
-
-
-def served_lists():
-	"""{list name: {"key", "external", "anime"}} for every list answered this session."""
-	served = {}
-	for is_external, anime in ALL_LISTS:
-		name = list_name(is_external, anime)
-		try:
-			raw = kodi_utils.get_property(SERVED_PROP % name)
-			if raw: served[name] = json.loads(raw)
-		except Exception: pass
-	return served
 
 
 def _digest(value):
@@ -206,112 +121,49 @@ def cache_key(is_external, anime=False):
 		return None
 
 
+def _still_valid(payload):
+	if payload.get('valid_until') and str(get_datetime()) >= payload['valid_until']: return 'an episode has aired since'
+	return ''
+
+
+# Looked up at call time, so a patched cache_key or get_datetime (tests) is what the engine uses.
+SPEC = saved_lists.register(saved_lists.Spec('next_episodes', 'next_episodes', 'Next Episodes', 'episodes',
+	key=lambda is_external, anime: cache_key(is_external, anime),
+	render=lambda row, make_listitem, kodi_actor: render_episode_row(row, make_listitem, kodi_actor),
+	category='Next Episodes', view='view.episodes_single', fallback_views=('view.episodes',), variants=(False, True),
+	still_valid=lambda payload: _still_valid(payload)))
+ALL_LISTS = SPEC.lists()
+
+
+def list_name(is_external, anime=False):
+	return SPEC.list_name(is_external, anime)
+
+
+# The home widget's rebuild request, the one the tests and most log lines are about.
+REVALIDATE_PROP = saved_lists.REVALIDATE_PROP % list_name(True, False)
+
+
+def revalidate_state(is_external=True, anime=False):
+	return saved_lists.revalidate_state(list_name(is_external, anime))
+
+
+def record_served(is_external, anime, key):
+	saved_lists.record_served(SPEC, is_external, anime, key)
+
+
+def served_lists():
+	return saved_lists.served_lists(SPEC)
+
+
 def store(key, is_external, anime, items, future_dates, category):
-	"""items: [(url, row)] in display order. future_dates: air dates after today seen during the build.
-	Always records what was shown. Stored only if the key still matches, so a watched-table write that
-	landed mid-build is never filed under the state before it; the service then sees the recorded key
-	is out of date and asks for a rebuild."""
-	record_served(is_external, anime, key)
-	try:
-		if not key:
-			# A provider with no local key (Trakt, Simkl, PunchPlay): a list from before a switch must not
-			# come back as the saved list at a later start. For a local provider no key means a cached row
-			# the provider refetches, or a read that failed (a build before the network is up): the saved
-			# list stays for the next start.
-			if settings.watched_indicators() not in LOCAL_PROVIDERS: widget_cache.delete_list(list_name(is_external, anime))
-			return
-		if cache_key(is_external, anime) != key: return
-		payload = {'items': [{'url': url, 'row': row} for url, row in items], 'category': category,
-				'valid_until': str(min(future_dates)) if future_dates else '', 'built_at': int(time.time())}
-		json.dumps(payload)
-		widget_cache.set_list(list_name(is_external, anime), key, payload, ttl=STALE_MAX)
-	except Exception as e: kodi_utils.logger('Red Light', 'Next Episodes list cache store failed: %s' % e)
+	"""items: [(url, row)] in display order. future_dates: air dates after today seen during the build."""
+	saved_lists.store(SPEC, key, is_external, anime, [(url, row, False) for url, row in items], category,
+		extra={'valid_until': str(min(future_dates)) if future_dates else ''})
 
 
 def forget():
-	for is_external, anime in ALL_LISTS: widget_cache.delete_list(list_name(is_external, anime))
-
-
-def _miss(reason, started):
-	kodi_utils.logger('Red Light', 'Next Episodes list cache miss (%s), %.2fs' % (reason, time.time() - started))
-	return False
-
-
-def _age_text(seconds):
-	return '%.1f h' % (seconds / 3600.0) if seconds >= 3600 else '%d s' % seconds
-
-
-def _may_answer_stale(is_external, anime):
-	"""Stale is for the start of a session only: while this list has had no answer yet, or only stale
-	ones (a second container asking for the same path at boot). Once it was built or hit this session,
-	a changed state builds. Never for a provider with no local key: its builds never replace the row."""
-	try:
-		if settings.watched_indicators() not in LOCAL_PROVIDERS: return False
-		raw = kodi_utils.get_property(SERVED_PROP % list_name(is_external, anime))
-		return not raw or json.loads(raw).get('key') == STALE_KEY
-	except Exception: return False
-
-
-def _widgets_refreshed_at():
-	try: return int(float(kodi_utils.get_property(REFRESHED_PROP) or 0))
-	except Exception: return 0
-
-
-def _choose(is_external, anime, revalidate):
-	"""(kind, stored key, payload, age, reason): kind is 'hit', 'stale' or None (a miss, for reason)."""
-	key = cache_key(is_external, anime)
-	stored = widget_cache.get_list_any(list_name(is_external, anime))
-	if not stored or not stored[1]: return None, None, None, None, 'inputs not held locally' if key is None else 'nothing stored'
-	stored_key, payload = stored
-	built_at = int(payload.get('built_at') or 0)
-	age = int(time.time()) - built_at
-	# A widget refresh asks for current data, so a list built before it is never served, not even stale.
-	refreshed = built_at < _widgets_refreshed_at()
-	if refreshed: reason = 'widgets refreshed since'
-	elif key is None: reason = 'inputs not held locally'
-	elif stored_key != key: reason = 'state changed since it was stored'
-	elif age >= LIST_TTL: reason = 'older than %s' % _age_text(LIST_TTL)
-	elif payload.get('valid_until') and str(get_datetime()) >= payload['valid_until']: reason = 'an episode has aired since'
-	else: return 'hit', stored_key, payload, age, ''
-	if is_external and revalidate == '' and age < STALE_MAX and not refreshed and _may_answer_stale(is_external, anime):
-		return 'stale', stored_key, payload, age, reason
-	return None, None, None, age, reason
+	saved_lists.forget(SPEC)
 
 
 def serve(params):
-	"""Answer build_next_episode from a stored list. True when the directory was served; False means
-	the caller builds it (and the build stores a fresh list)."""
-	started = time.time()
-	try: handle = int(sys.argv[1])
-	except Exception: return _miss('no directory handle', started)
-	try:
-		is_external, anime = kodi_utils.external(), 'is_anime_list' in params
-		revalidate = revalidate_state()
-		if revalidate == REBUILD:
-			kodi_utils.set_property(REVALIDATE_PROP, DONE)
-			return _miss('rebuild asked for by the service', started)
-		kind, stored_key, payload, age, reason = _choose(is_external, anime, revalidate)
-		if kind is None: return _miss(reason, started)
-		make_listitem, kodi_actor = kodi_utils.make_listitem, kodi_utils.kodi_actor()
-		items = [(i['url'], render_episode_row(i['row'], make_listitem, kodi_actor), False) for i in payload['items']]
-	except Exception as e: return _miss('error: %s' % e, started)
-	# Committed from here: a build can no longer answer this handle, so the directory must end whatever
-	# happens, or Kodi's fetch of the widget fails outright instead of showing a list.
-	failed = None
-	try:
-		kodi_utils.add_items(handle, items)
-		kodi_utils.set_content(handle, 'episodes')
-		kodi_utils.set_category(handle, payload.get('category') or 'Next Episodes')
-	except Exception as e: failed = e
-	finally: kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))
-	record_served(is_external, anime, STALE_KEY if kind == 'stale' else stored_key)
-	if failed is not None:
-		kodi_utils.logger('Red Light', 'Next Episodes list cache serve failed after committing: %s' % failed)
-	elif kind == 'stale':
-		kodi_utils.logger('Red Light', 'Next Episodes list cache stale (%s): %s listed, built %s ago, rebuild pending, %.2fs'
-			% (reason, len(items), _age_text(age), time.time() - started))
-	else:
-		kodi_utils.logger('Red Light', 'Next Episodes list cache hit: %s listed, built %s ago, %.2fs'
-			% (len(items), _age_text(age), time.time() - started))
-	return True
+	return saved_lists.serve(SPEC, params, 'is_anime_list' in params)

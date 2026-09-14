@@ -369,9 +369,9 @@ def routing(sys):
 		from modules.kodi_utils import kodi_refresh
 		return kodi_refresh()
 	elif mode == 'refresh_widgets':
-		# A refresh asks for fresh lists, so the stored Next Episodes list must not answer it (#155).
-		from modules.nextep_list_cache import forget
-		forget()
+		# A refresh asks for fresh lists, so no saved widget list may answer it (#155, #163).
+		from modules.saved_lists import forget_all
+		forget_all()
 		from modules.kodi_utils import refresh_widgets
 		return refresh_widgets(params.get('silent', 'false') == 'true', params.get('reload_skin', 'false') == 'true')
 	elif mode == 'person_data_dialog':

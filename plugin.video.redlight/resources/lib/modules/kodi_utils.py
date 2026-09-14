@@ -807,7 +807,7 @@ def refresh_widgets(silent=False, reload_skin=False):
 	from caches.lists_cache import lists_cache
 	RandomWidgets().delete_like('random_list.%')
 	if reload_skin: lists_cache.delete_like('trakt_movies_trending_%')
-	# Next Episodes' stored list counts as due from here (modules.nextep_list_cache, #155).
+	# Saved widget lists count as due from here (modules.saved_lists, #155, #163).
 	from time import time
 	set_property('redlight.widgets_refreshed_at', str(int(time())))
 	kodi_refresh()
