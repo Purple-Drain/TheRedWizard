@@ -301,7 +301,10 @@ def stash_nextep_autoplay_results(results, meta, nextep_settings, params):
 		return False
 	key = _nextep_stash_key(meta)
 	if not key: return False
-	_NEXTEP_AUTOPLAY_STASH[key] = {'results': list(results), 'meta': dict(meta), 'nextep_settings': dict(nextep_settings or {}), 'params': dict(params or {})}
+	# The episode being prepared from is still playing now, so its release name is recorded here; by the
+	# time the stash is played Kodi has cleared the live property (#165, Sources._nextep_same_file).
+	_NEXTEP_AUTOPLAY_STASH[key] = {'results': list(results), 'meta': dict(meta), 'nextep_settings': dict(nextep_settings or {}), 'params': dict(params or {}),
+		'playing_release': kodi_utils.get_property('redlight.now_playing_release') or ''}
 	kodi_utils.set_property(PROP_NEXTEP_SCRAPE_KEY, key)
 	kodi_utils.set_property(PROP_NEXTEP_SCRAPE_READY, 'true')
 	kodi_utils.clear_property(PROP_NEXTEP_ALERT_KEY)
@@ -437,6 +440,7 @@ class Sources():
 			self.params['play_type'] = 'autoplay_nextep'
 			self._nextep_stash_results = list(stash.get('results') or [])
 			self._nextep_stash_settings = dict(stash.get('nextep_settings') or {})
+			self._nextep_prior_release = stash.get('playing_release') or ''
 			self._nextep_alert_handled = True
 			params_get = self.params.get
 		self.background = params_get('background', 'false') == 'true'
@@ -2633,7 +2637,8 @@ class Sources():
 						except Exception:
 							pass
 					if self._nextep_same_file(item):
-						kodi_utils.logger('Red Light', 'Autoplay next episode: skipped %s, the file still playing (#165)' % item.get('name', ''))
+						kodi_utils.logger('Red Light', 'Autoplay next episode: skipped %s, the file of the episode before it (#165)' % item.get('name', ''))
+						self._record_resolve_failure(item, 'same file as the episode before it')
 						continue
 					url, self.playback_successful = None, None
 					self.playing_filename = item['name']
@@ -3067,16 +3072,17 @@ class Sources():
 		return still_watching
 
 	def _nextep_same_file(self, item):
-		"""A next-episode play never picks the file still playing (#165). _nextep_duplicate_of_playing()
-		checks only the top result when the scrape is stashed; after a failed first source the queue
-		fell back to the next one, which on 14.09 was the Part 1 file, and played it as Part 2. Only
-		skipped, never marked watched: a same-name match here can be a wrong source, not a combined file.
-		Keyed on play_type, since a next-episode play logs background=False once it starts."""
+		"""A stashed next-episode play never picks the file of the episode before it (#165).
+		_nextep_duplicate_of_playing() checks only the top result when the scrape is stashed; after a
+		failed first source the queue fell back to the next one, which on 14.09 was the Part 1 file, and
+		played it as Part 2. The name compared is the one recorded in the stash while that episode was
+		still playing: the live redlight.now_playing_release is cleared by the time the stash is played,
+		and rewritten for each queue attempt. A manual play loads no stash, so it is never affected. Only
+		skipped, never marked watched: a same-name match here can be a wrong source, not a combined file."""
 		try:
-			if getattr(self, 'play_type', '') not in ('autoplay_nextep', 'autoscrape_nextep'): return False
-			playing = kodi_utils.get_property('redlight.now_playing_release') or ''
+			prior = getattr(self, '_nextep_prior_release', '') or ''
 			name = (item or {}).get('name') or ''
-			return bool(playing and name) and _normalize_release_title(name) == _normalize_release_title(playing)
+			return bool(prior and name) and _normalize_release_title(name) == _normalize_release_title(prior)
 		except Exception:
 			return False
 
