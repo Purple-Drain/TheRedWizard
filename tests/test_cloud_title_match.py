@@ -92,6 +92,27 @@ check('"The Boyfriend (2)" accepts the combined S03E15 E16 file',
 check('"The Fix-Up" vetoes the Boyfriend file even at a matching number',
       su.EpisodeTitleCheck('The Fix-Up', 3, boyfriend_titles)(FILES['boyfriend']), False)
 
+print('--- two-parters in separate files (#165, 14.09.26: autoplay into S04E02 played Part 1) ---')
+assert SEASON4[1] == 'The Trip (1)' and SEASON4[2] == 'The Trip (2)'
+TRIP = {1: 'Seinfeld.S04E01.The.Trip.(Part.1).mkv', 2: 'Seinfeld.S04E02.The.Trip.(Part.2).mkv'}
+TRIP_LABEL = {1: 'Seinfeld S04E01 The Trip (Part 1) mkv', 2: 'Seinfeld S04E02 The Trip (Part 2) mkv'}
+check('S04E02 The Trip (2) no longer accepts the Part 1 file', matches(2, TRIP[1]), False)
+check('S04E02 The Trip (2) accepts the Part 2 file', matches(2, TRIP[2]), True)
+check('S04E01 The Trip (1) accepts the Part 1 file', matches(1, TRIP[1]), True)
+check('S04E01 The Trip (1) no longer accepts the Part 2 file', matches(1, TRIP[2]), False)
+check('the scraped label form behaves the same (Part 1 for E02)', matches(2, TRIP_LABEL[1]), False)
+check('the scraped label form behaves the same (Part 2 for E02)', matches(2, TRIP_LABEL[2]), True)
+check('a DVD-numbered Part 2 file still matches by its part, whatever its number',
+      matches(2, 'Seinfeld S04E05 The Trip (Part 2) mkv'), True)
+check('no part marker: the numbers decide (E02 file for E02)', matches(2, 'Seinfeld S04E02 The Trip mkv'), True)
+check('no part marker: the numbers decide (E02 file for E01)', matches(1, 'Seinfeld S04E02 The Trip mkv'), False)
+check('"Pt 1" counts as a part marker', matches(2, 'Seinfeld S04E02 The Trip Pt 1 mkv'), False)
+check('two-part targets are marked ambiguous', (matcher(1).ambiguous, matcher(1).part, matcher(2).part), (True, 1, 2))
+check('an ordinary title is not', (matcher(20).ambiguous, matcher(20).part), (False, None))
+check('a year or resolution in brackets is not a part marker', matches(2, 'Seinfeld S04E02 The Trip (1992) (2160p) mkv'), True)
+check('same-key titles without a part number still need the numbers',
+      su.EpisodeTitleCheck('Homecoming', 2, ['Homecoming', 'Homecoming', 'Other Title'])('Show S02E07 Homecoming mkv'), None)
+
 print('--- titles that must never accept or veto ---')
 for title in ('Pilot', 'Episode 3', 'Part 2', 'Ep 12', 'Web', ''):
     check('generic/short target %r is dropped' % title, bool(su.EpisodeTitleCheck(title, 1, ())), False)

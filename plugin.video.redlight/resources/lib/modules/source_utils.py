@@ -362,8 +362,8 @@ def episode_title_key(text):
 	"""Fold an episode title, or a file name, to lowercase ASCII words for whole-word comparison.
 
 	Bracketed runs are dropped so "The Trip (1)" and "The Trip (2)" fold to the same key (and are
-	then treated as one ambiguous title, never as a veto for each other) and so a release's
-	"(Syndicated Version)" tail cannot hide the title next to it.
+	then treated as one ambiguous title, never as a veto for each other, nor as an accept on its
+	own: #165) and so a release's "(Syndicated Version)" tail cannot hide the title next to it.
 	"""
 	try:
 		text = _utils_normalize(text or '') or ''
@@ -371,6 +371,16 @@ def episode_title_key(text):
 		return re.sub(r'[^a-z0-9]+', ' ', text.lower()).strip()
 	except Exception:
 		return ''
+
+# The part number of a two-parter: "The Trip (2)", "The Trip (Part 2)" in a TMDb title; in a file
+# name also "Part.2", "Pt 2". Two digits at most, so "(1989)" and "(2160p)" never count.
+_TITLE_PART_RE = re.compile(r'[\[(]\s*(?:part|pt)?[\s.]*(\d{1,2})\s*[\])]')
+_NAME_PART_RE = re.compile(r'(?<![a-z0-9])(?:part|pt)[\s._-]*(\d{1,2})(?!\d)|[\[(]\s*(\d{1,2})\s*[\])]')
+
+def _part_numbers(text, pattern):
+	try: text = unquote(text or '').lower()
+	except Exception: return set()
+	return set(int(n) for match in pattern.findall(text) for n in (match if isinstance(match, tuple) else (match,)) if n)
 
 class EpisodeTitleCheck:
 	"""Verify or veto a cloud/folder file by the episode title carried in its name (#89).
@@ -390,18 +400,32 @@ class EpisodeTitleCheck:
 	Titles shorter than four characters and generic ones ("Pilot", "Episode 3", "Part 2") are
 	dropped on both sides so they can never accept or veto anything. A title that contains, or
 	is contained in, the target's is dropped from the veto set too (double-episode halves).
+
+	The halves of a two-parter in separate files share one key ("The Trip (1)" and "(2)" both fold
+	to "the trip"), so a title hit alone would accept either half for either episode (#165: autoplay
+	into S04E02 played Part 1). For such an ambiguous target a title hit decides only by the part
+	number in the name ("Part.1"), or accepts a combined file holding both halves; otherwise the
+	numbers decide.
 	"""
 	def __init__(self, target_title, season=None, other_titles=()):
 		try: self.season = int(season)
 		except Exception: self.season = None
+		other_titles = tuple(other_titles or ())
 		self.target = self._usable(episode_title_key(target_title))
-		others = set()
-		for title in other_titles or ():
+		parts = _part_numbers(target_title, _TITLE_PART_RE)
+		self.part = min(parts) if len(parts) == 1 else None
+		others, shared = set(), 0
+		for title in other_titles:
 			key = self._usable(episode_title_key(title))
-			if not key or key == self.target: continue
+			if not key: continue
+			if key == self.target:
+				shared += 1
+				continue
 			if self.target and (key in self.target or self.target in key): continue
 			others.add(key)
 		self.others = tuple(sorted(others))
+		# The season list holds the target too, so one same-key title is the target itself.
+		self.ambiguous = bool(self.target) and (self.part is not None or shared >= 2)
 
 	@staticmethod
 	def _usable(key):
@@ -423,11 +447,20 @@ class EpisodeTitleCheck:
 		if not filename or not self: return None
 		haystack = episode_title_key(filename)
 		if self.target and self._pattern(self.target).search(haystack):
+			tokens = list(iter_season_episode_tokens(filename))
 			if self.season is not None:
-				seasons = set(s_num for s_num, _ in iter_season_episode_tokens(filename))
+				seasons = set(s_num for s_num, _ in tokens)
 				if seasons and self.season not in seasons: return None
+			if self.ambiguous: return self._part_verdict(filename, tokens)
 			return True
 		if any(self._pattern(other).search(haystack) for other in self.others): return False
+		return None
+
+	def _part_verdict(self, filename, tokens):
+		parts = _part_numbers(filename, _NAME_PART_RE)
+		if parts: return None if self.part is None else self.part in parts
+		# One combined file holding both halves ("S03E15 E16 The Boyfriend") is right for either.
+		if len(set(e_num for s_num, e_num in tokens if self.season is None or s_num == self.season)) >= 2: return True
 		return None
 
 	__call__ = verdict
