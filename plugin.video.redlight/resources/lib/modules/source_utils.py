@@ -374,13 +374,14 @@ def episode_title_key(text):
 
 # The part number of a two-parter. In a TMDb title: "The Trip (2)", "The Trip (Part 2)"; two digits
 # at most, so "(1989)" and "(2160p)" never count. In a file name: "Part.2", "Pt 2", "Part II",
-# "Parts 1 & 2", "Part 1-2", "2of2"; a bare bracketed digit counts only straight after the title
-# (EpisodeTitleCheck._name_parts), so a copy suffix "(1)" or a "[10]" tag is not a part.
+# "Parts 1 & 2", "Part 1-2", "2of2", "(2)". A file-name marker counts only straight after the title
+# (EpisodeTitleCheck._name_parts), so a release tag ("PT2" audio, "x265-PART2"), a copy suffix
+# "(1)" or a "[10]" tag elsewhere in the name is not a part.
 _TITLE_PART_RE = re.compile(r'[\[(]\s*(?:part|pt)?[\s.]*(\d{1,2})\s*[\])]')
 _PART_NUM = r'(\d{1,2}|iii|ii|iv|i|one|two|three)'
-_NAME_PART_RE = re.compile(r'(?<![a-z0-9])(?:parts?|pt)[\s._-]*' + _PART_NUM
-	+ r'(?:[\s._-]*(?:and|&|\+|-|to)[\s._-]*(?:parts?|pt)?[\s._-]*' + _PART_NUM + r')?(?![a-z0-9])')
-_NAME_OF_RE = re.compile(r'(?<![a-z0-9])(\d)[\s._-]*of[\s._-]*\d(?![a-z0-9])')
+_PART_MARKER = (r'(?:[\[(]\s*)?(?:(?:parts?|pt)[\s._-]*' + _PART_NUM
+	+ r'(?:[\s._-]*(?:and|&|\+|-|to)[\s._-]*(?:parts?|pt)?[\s._-]*' + _PART_NUM + r')?'
+	+ r'|(\d)[\s._-]*of[\s._-]*\d|[\[(]\s*(\d)\s*[\])])(?![a-z0-9])')
 _PART_WORDS = {'i': 1, 'ii': 2, 'iii': 3, 'iv': 4, 'one': 1, 'two': 2, 'three': 3}
 
 def _part_numbers(text, pattern):
@@ -470,23 +471,36 @@ class EpisodeTitleCheck:
 		if any(self._pattern(other).search(haystack) for other in self.others): return False
 		return None
 
+	@staticmethod
+	@lru_cache(maxsize=256)
+	def _marker_pattern(key):
+		return re.compile(r'(?<![a-z0-9])' + r'[\s._-]*'.join(re.escape(word) for word in key.split()) + r'[\s._,-]*' + _PART_MARKER)
+
 	def _name_parts(self, name):
-		parts = _part_numbers(name, _NAME_PART_RE) | _part_numbers(name, _NAME_OF_RE)
-		try:
-			words = r'[\s._-]*'.join(re.escape(word) for word in self.target.split())
-			for match in re.finditer(words + r'[\s._-]*[\[(]\s*(\d)\s*[\])]', unquote(name).lower()): parts.add(int(match.group(1)))
-		except Exception: pass
-		return parts
+		"""Part numbers marked straight after the title in a file name."""
+		try: text = unquote(name or '').lower()
+		except Exception: return set()
+		found = set()
+		for groups in self._marker_pattern(self.target).findall(text):
+			for value in groups:
+				value = int(value) if value.isdigit() else _PART_WORDS.get(value)
+				if value: found.add(value)
+		return found
 
 	def _part_verdict(self, filename, episode):
 		name = _basename(filename)
-		parts = self._name_parts(name)
-		if parts and self.part is not None: return self.part in parts
+		parts = self._name_parts(name) if self.part is not None else set()
 		episodes = set(e_num for s_num, e_num in iter_season_episode_tokens(name) if self.season is None or s_num == self.season)
-		if len(episodes) >= 2: return True
 		try: episode = int(episode)
-		except Exception: return None
-		if episodes: return episode in episodes
+		except Exception: episode = None
+		if parts:
+			if self.part in parts: return True
+			# The name marks the other half. Trust it, unless its own number is the one asked for:
+			# then the two disagree and the numbers decide.
+			if episode is not None and episodes == {episode}: return None
+			return False
+		if len(episodes) >= 2: return True
+		if episode is not None and episodes: return episode in episodes
 		return None
 
 	__call__ = verdict
