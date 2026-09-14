@@ -92,6 +92,14 @@ def test_a_path_kodi_cannot_open_asks_again(env):
     assert env['saved'] == [(SETTING, DAV)]
 
 
+def test_a_typed_addon_data_folder_is_stored_like_a_browsed_one(env, monkeypatch):
+    profile = '/data/kodi/userdata/addon_data/plugin.video.redlight'
+    monkeypatch.setattr(kodi_utils, 'translate_path', lambda p: profile if p.startswith('special://') else p)
+    _run(env, 'type', [profile + '/exports'])
+    assert env['saved'] == [(SETTING, kodi_utils.portable_addon_data_path(profile + '/exports/'))]
+    assert env['saved'][0][1].startswith('special://')
+
+
 def test_the_current_path_is_offered_for_editing(env):
     env['current'] = 'smb://10.1.1.22/debrid/shows/'
     _run(env, 'type', [DAV])

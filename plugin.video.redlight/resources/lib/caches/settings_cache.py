@@ -1088,7 +1088,8 @@ def _type_folder_path(setting_id, current):
 			text='This path has a login in it. Kodi can keep the login in passwords.xml instead, so the path holds none.[CR][CR]Save it with the login?',
 			ok_label='Save', cancel_label='Cancel', default_control=11):
 		return
-	set_setting(setting_id, path)
+	# Same form the browser stores: a folder under Red Light's addon_data as special://, anything else as typed.
+	set_setting(setting_id, kodi_utils.portable_addon_data_path(path))
 
 def restore_setting_default(params):
 	silent = params.get('silent', 'false') == 'true'
