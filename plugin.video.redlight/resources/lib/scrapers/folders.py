@@ -14,6 +14,8 @@ class source:
 	def __init__(self, scrape_provider, scraper_name, folder_path):
 		self.scrape_provider = scrape_provider
 		self.scraper_name = scraper_name
+		# 'folder2' -> 2: the slot's number, the sort's last tie-break (#141).
+		self.folder_rank = int(''.join(c for c in str(scrape_provider) if c.isdigit()) or 0)
 		self.folder_path = folder_path
 		self.sources, self.scrape_results = [], []
 		self.extensions = source_utils.supported_video_extensions()
@@ -44,7 +46,7 @@ class source:
 						video_quality, details = source_utils.get_file_info(name_info=source_utils.release_info_format(file_name))
 						source_item = {'name': file_name, 'display_name': display_name, 'quality': video_quality, 'size': size, 'size_label': '%.2f GB' % size, 'debrid': 'folders',
 									'extraInfo': details, 'url_dl': file_dl, 'id': file_dl, self.scrape_provider : True, 'direct': True, 'source': self.scraper_name,
-									'scrape_provider': 'folders'}
+									'scrape_provider': 'folders', 'folder_rank': self.folder_rank}
 						yield source_item
 					except: pass
 			self.sources = list(_process())
