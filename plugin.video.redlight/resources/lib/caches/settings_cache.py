@@ -1051,13 +1051,45 @@ def set_from_list(params):
 			punchplay_sync_activities(force_update=True)
 		except: pass
 
+_FOLDER_PATH_PREFIXES = ('dav://', 'davs://', 'smb://', 'nfs://', 'ftp://', 'ftps://', 'sftp://', 'http://', 'https://', 'special://', '/')
+
+def normalize_typed_folder_path(value):
+	"""A typed folder path, trimmed and ending in a slash, or None when Kodi couldn't open it as a folder."""
+	value = (value or '').strip()
+	if not value.lower().startswith(_FOLDER_PATH_PREFIXES): return None
+	return value if value.endswith('/') else value + '/'
+
+def _path_has_login(path):
+	return '@' in path.split('://', 1)[-1].split('/', 1)[0]
+
 def set_source_folder_path(params):
+	"""Browse, type a path, or clear. Typing is the only way to a WebDAV folder: Kodi's folder browser
+	lists no dav:// location (#168). Clearing is its own choice now: the old "Enter Blank Value? Yes /
+	Re-Enter Value" prompt read like "yes, enter a value", and Yes blanked a working zurg path on 14.09."""
 	setting_id = params['setting_id']
-	current_setting = get_setting('redlight.%s' % setting_id)
-	if current_setting not in (None, 'None', ''):
-		if kodi_utils.confirm_dialog(text='Enter Blank Value?', ok_label='Yes', cancel_label='Re-Enter Value', default_control=11):
-			return set_setting(setting_id, 'None')
-	return set_path(params)
+	current = get_setting('redlight.%s' % setting_id)
+	is_set = current not in (None, 'None', '', 'empty_setting')
+	choices = [('browse', 'Browse for a folder'), ('type', 'Type a path (dav://, smb://, nfs://)')]
+	if is_set: choices.append(('clear', 'Clear this path'))
+	choice = kodi_utils.select_dialog([i[0] for i in choices], **{'items': json.dumps([{'line1': i[1]} for i in choices]), 'narrow_window': 'true'})
+	if choice == 'browse': return set_path(params)
+	if choice == 'type': return _type_folder_path(setting_id, current if is_set else '')
+	if choice == 'clear': return set_setting(setting_id, 'None')
+
+def _type_folder_path(setting_id, current):
+	# A path with a login in it isn't shown again: the keyboard would put the password on screen.
+	value = kodi_utils.kodi_dialog().input('Folder path (no login: Kodi keeps logins in passwords.xml)', defaultt='' if _path_has_login(current) else current)
+	if not value or not value.strip(): return
+	path = normalize_typed_folder_path(value)
+	if not path:
+		kodi_utils.ok_dialog(text='Kodi can\'t open that as a folder. Start it with dav://, davs://, smb://, nfs:// or /.')
+		return _type_folder_path(setting_id, current)
+	if _path_has_login(path) and not kodi_utils.confirm_dialog(
+			text='This path has a login in it. Kodi can keep the login in passwords.xml instead, so the path holds none.[CR][CR]Save it with the login?',
+			ok_label='Save', cancel_label='Cancel', default_control=11):
+		return
+	# Same form the browser stores: a folder under Red Light's addon_data as special://, anything else as typed.
+	set_setting(setting_id, kodi_utils.portable_addon_data_path(path))
 
 def restore_setting_default(params):
 	silent = params.get('silent', 'false') == 'true'
