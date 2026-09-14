@@ -18,6 +18,24 @@ def extras():
 	return ('sample', 'extra', 'extras', 'deleted', 'unused', 'footage', 'inside', 'blooper', 'bloopers',
 			'making.of', 'feature', 'featurette', 'behind.the.scenes', 'trailer')
 
+# Extras filed next to episodes (a remux pack's "Inside Look", "Deleted Scenes", an introduction or a
+# blooper reel) carry the episode's number and title, so the title check and the S/E match both accept
+# them (#165: zurg's "Seinfeld Extras" folder holds Inside.Look.S04E01-E02.The.Trip.mkv). Phrases, not
+# the loose single words extras() uses for TorBox, so an episode titled "Inside Out" still matches; a
+# phrase that is part of the episode's own title never counts.
+_EXTRA_FILE_RE = re.compile(r'(?<![a-z0-9])(inside[ ._-]*looks?|deleted[ ._-]*scenes?|alternate[ ._-]*(?:final[ ._-]*)?(?:scene|ending)s?'
+	r'|introduction[ ._-]*to|bloopers?|gag[ ._-]*reels?|easter[ ._-]*eggs?|featurettes?|making[ ._-]*of|behind[ ._-]*the[ ._-]*scenes|sample)(?![a-z0-9])')
+
+def extra_file(filename, episode_title=''):
+	"""True when the file's own name marks it as an extra rather than the episode."""
+	try:
+		name = re.split(r'[\\/]', unquote(filename or ''))[-1].lower()
+		title = ' %s ' % re.sub(r'[^a-z0-9]+', ' ', (episode_title or '').lower()).strip()
+		for match in _EXTRA_FILE_RE.finditer(name):
+			if ' %s ' % re.sub(r'[^a-z0-9]+', ' ', match.group(1)).strip() not in title: return True
+	except Exception: pass
+	return False
+
 def unwanted_tags():
 	return (
 'tamilrockers.com', 'www.tamilrockers.com', 'www.tamilrockers.ws', 'www.tamilrockers.pl', 'www-tamilrockers-cl', 'www.tamilrockers.cl', 'www.tamilrockers.li',
@@ -535,6 +553,8 @@ def cloud_episode_matches(season, episode, filename, absolute_episode=None, titl
 	2) Else bare aired-order number: match absolute_episode when known, else S01 + episode only.
 	"""
 	if not filename:
+		return False
+	if extra_file(filename, getattr(title_check, 'target', '') or ''):
 		return False
 	if title_check is not None:
 		try: verdict = title_check(filename, episode)

@@ -2632,6 +2632,9 @@ class Sources():
 							del player
 						except Exception:
 							pass
+					if self._nextep_same_file(item):
+						kodi_utils.logger('Red Light', 'Autoplay next episode: skipped %s, the file still playing (#165)' % item.get('name', ''))
+						continue
 					url, self.playback_successful = None, None
 					self.playing_filename = item['name']
 					self.playing_item = item
@@ -3062,6 +3065,20 @@ class Sources():
 		watch_count += 1
 		self.meta['watch_count'] = watch_count
 		return still_watching
+
+	def _nextep_same_file(self, item):
+		"""A next-episode play never picks the file still playing (#165). _nextep_duplicate_of_playing()
+		checks only the top result when the scrape is stashed; after a failed first source the queue
+		fell back to the next one, which on 14.09 was the Part 1 file, and played it as Part 2. Only
+		skipped, never marked watched: a same-name match here can be a wrong source, not a combined file.
+		Keyed on play_type, since a next-episode play logs background=False once it starts."""
+		try:
+			if getattr(self, 'play_type', '') not in ('autoplay_nextep', 'autoscrape_nextep'): return False
+			playing = kodi_utils.get_property('redlight.now_playing_release') or ''
+			name = (item or {}).get('name') or ''
+			return bool(playing and name) and _normalize_release_title(name) == _normalize_release_title(playing)
+		except Exception:
+			return False
 
 	def _nextep_duplicate_of_playing(self, results):
 		"""Detect a combined-episode release: the "next" episode's top source is literally the
