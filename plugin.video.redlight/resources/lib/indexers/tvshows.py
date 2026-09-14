@@ -60,7 +60,12 @@ class TVShows:
 			try: page_no = int(self.params_get('new_page', '1'))
 			except: page_no = self.params_get('new_page')
 			# Page 1 of the In Progress home widget is saved for the next start (#163).
-			self.keep_rows = self.action == 'in_progress_tvshows' and self.is_external and page_no == 1 and self.paginate_start == 0
+			self.keep_rows = (self.action == 'in_progress_tvshows' and self.is_external and page_no == 1 and self.paginate_start == 0
+				and not self.custom_order)
+			if self.keep_rows:
+				from modules import inprogress_lists
+				self.saved_list_variant = inprogress_lists.tvshow_variant(self.params)
+				self.keep_rows = self.saved_list_variant is not None
 			if page_no == 1 and not self.is_external and self.action != 'mdblist_user_list':
 				if not any([x in kodi_utils.folder_path() for x in ('build_season_list', 'build_episode_list')]):
 					list_mode = 'anime' if self.is_anime_list is True else 'tvshow'
@@ -219,7 +224,7 @@ class TVShows:
 			if self.keep_rows:
 				from modules import inprogress_lists
 				inprogress_lists.store(inprogress_lists.TVSHOWS, self.saved_list_key, self.rows,
-					self.new_page if self.new_page and not self.widget_hide_next_page else None, self.category_name)
+					self.new_page if self.new_page and not self.widget_hide_next_page else None, self.category_name, self.saved_list_variant)
 		except Exception as e:
 			if self.action in self.mdblist_personal or self.action == 'mdblist_user_list':
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
@@ -390,6 +395,11 @@ class TVShows:
 		self.skip_inprogress = settings.media_open_action_skip_inprogress_tvshow()
 		watched_db = watched_status.get_database(self.watched_indicators)
 		self.in_progress_show_ids = watched_status.get_in_progress_tvshow_ids(watched_db) if self.skip_inprogress else set()
+		# Keyed before the sync below: the list's members were fixed by the sync inside get_in_progress_tvshows,
+		# so a change this one brings makes the store's recheck fail and the service rebuild (#163).
+		if self.keep_rows:
+			from modules import inprogress_lists
+			self.saved_list_key = inprogress_lists.tvshow_key(True, self.saved_list_variant)
 		browsing_external_lists = (self.action in self.simkl_personal or self.action in self.punchplay_personal
 			or self.action in self.mdblist_personal or self.action in self.trakt_personal
 			or self.action == 'punchplay_user_list')
@@ -403,10 +413,6 @@ class TVShows:
 			from apis.punchplay_api import punchplay_sync_activities
 			punchplay_sync_activities()
 		self.watched_info = watched_status.watched_info_tvshow(watched_db)
-		# Keyed after the provider sync above, so the saved list is filed under the state it shows (#163).
-		if self.keep_rows:
-			from modules import inprogress_lists
-			self.saved_list_key = inprogress_lists.tvshow_key(True)
 		self.window_command = 'ActivateWindow(Videos,%s,return)' if self.is_external else 'Container.Update(%s)'
 		if self.custom_order:
 			threads = TaskPool().tasks(self.build_tvshow_content, self.list, min(len(self.list), settings.max_threads()), 'metacache_db')

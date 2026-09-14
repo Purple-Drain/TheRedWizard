@@ -343,3 +343,55 @@ def test_the_service_rebuilds_only_the_real_list_that_is_behind(widget, db, monk
 	assert nlc.REVALIDATE_PROP not in props
 	assert sl.REVALIDATE_PROP % ipl.MOVIES.list_name(True) not in props
 	assert 'in_progress_tvshows_list_widget shown from an older state' in widget['log'][-1]
+
+
+# --- review findings on #164 ----------------------------------------------------------------------
+
+def _stored_names(db):
+	return sorted(r[0] for r in db.execute("SELECT id FROM maincache WHERE id LIKE 'WIDGET_LIST_in_progress%'"))
+
+
+def test_anime_in_progress_is_its_own_list(widget, db):
+	plain = {'action': 'in_progress_tvshows', 'category_name': 'In Progress'}
+	anime = dict(plain, is_anime_list='true')
+	tvshows.TVShows(plain).fetch_list()
+	_fresh(widget)
+	assert not ipl.serve_tvshows(anime)  # never answered from In Progress's list
+	_fresh(widget)
+	tvshows.TVShows(anime).fetch_list()
+	built_anime = list(widget['items'])
+	assert 'is_anime_list=true' in built_anime[-1][0]
+	_fresh(widget)
+	assert ipl.serve_tvshows(anime) and widget['items'] == built_anime
+	_fresh(widget)
+	assert ipl.serve_tvshows(plain) and 'is_anime_list' not in widget['items'][-1][0]
+	assert len(_stored_names(db)) == 2
+
+
+def test_a_listing_with_anime_turned_off_is_not_saved_or_served(widget, db):
+	params = {'action': 'in_progress_tvshows', 'category_name': 'In Progress', 'is_anime_list': 'false'}
+	tvshows.TVShows(params).fetch_list()
+	assert _stored_names(db) == []
+	assert not ipl.serve_tvshows(params)
+
+
+def test_a_custom_order_listing_is_not_saved(widget, db):
+	tvshows.TVShows({'action': 'in_progress_tvshows', 'category_name': 'In Progress', 'custom_order': 'true'}).fetch_list()
+	movies.Movies({'action': 'in_progress_movies', 'category_name': 'In Progress', 'custom_order': 'true'}).fetch_list()
+	assert _stored_names(db) == []
+
+
+def test_a_change_from_the_build_s_own_sync_is_rebuilt_not_filed_under_it(widget, db, prefs, monkeypatch):
+	import types
+	prefs['mdblist_user_active'] = True
+	def sync(): db.execute("INSERT INTO watched VALUES ('episode', '2', 1, 2, '2026-09-14T21:00:00.000Z', 'Show 2')")
+	monkeypatch.setitem(sys.modules, 'apis.mdblist_api', types.SimpleNamespace(mdblist_sync_activities=sync))
+	tvshows.TVShows({'action': 'in_progress_tvshows', 'category_name': 'In Progress'}).fetch_list()
+	assert _stored_names(db) == []
+	served = json.loads(widget['props'][sl.SERVED_PROP % ipl.TVSHOWS.list_name(True)])
+	assert served['key'] != ipl.tvshow_key(True)  # so the service asks for a rebuild
+
+
+def test_in_progress_tv_is_fresh_for_the_airing_facts_expiry():
+	assert ipl.TVSHOWS.fresh_for == 6 * 3600 and ipl.TVSHOWS.variants == (False, True)
+	assert ipl.MOVIES.fresh_for == sl.LIST_TTL and ipl.MOVIES.variants == (False,)

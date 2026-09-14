@@ -15,8 +15,13 @@ from a sync that changed things is filed under the state it shows:
 * TV: the watched table fingerprint, the episode progress rows, the hidden (dropped) shows as the
   provider's cache holds them, every setting the list and its rows read, and the date.
 * Movies: the movie progress rows, the watched movies, every setting, and the date.
-Per-show facts (aired-episode counts) are outside the keys; they drift only as far as their own
-expiry allows (6 h airing, 168 h ended), as they already did in the In Progress data cache.
+Per-show facts (aired-episode counts) are outside the TV key. They expire after 6 h for an airing
+show, so the TV list is fresh for 6 h, not 12: a show that gains an episode comes back within about
+6 to 12 h (the rebuild may use facts up to 6 h old), against about 6 h with the data cache alone.
+Past that the saved list is still what a start shows first, then the service rebuilds it.
+
+Anime In Progress (is_anime_list=true) lists different shows from In Progress, so it is its own list.
+A listing with is_anime_list=false is neither saved nor served.
 """
 from modules import kodi_utils, settings, saved_lists
 from modules.movie_rows import render_movie_row
@@ -79,7 +84,7 @@ def tvshow_key(is_external, variant=False):
 			hidden = _mdblist_row_digest(MDBLIST_DROPPED_ROW)
 			if hidden is None: return None
 		else: hidden = sorted(str(i) for i in (ws.get_hidden_progress_items(0) or []))
-		return _digest(('tvshows', _settings(TVSHOW_SETTING_GETTERS, 'tvshow'), watched, progress, hidden, str(get_datetime())))
+		return _digest(('tvshows', bool(variant), _settings(TVSHOW_SETTING_GETTERS, 'tvshow'), watched, progress, hidden, str(get_datetime())))
 	except Exception as e:
 		kodi_utils.logger('Red Light', 'In Progress TV list cache key failed: %s' % e)
 		return None
@@ -100,11 +105,14 @@ def movie_key(is_external, variant=False):
 		return None
 
 
+# An airing show's facts expire after 6 h (see the module docstring).
+TVSHOWS_FRESH_FOR = 6 * 3600
+
 # Looked up at call time, so a patched key (tests) is what the engine uses.
 TVSHOWS = saved_lists.register(saved_lists.Spec('in_progress_tvshows', 'in_progress_tvshows_list', 'In Progress TV', 'tvshows',
 	key=lambda is_external, variant: tvshow_key(is_external, variant),
 	render=lambda row, make_listitem, kodi_actor: render_tvshow_row(row, make_listitem, kodi_actor),
-	category='In Progress', view='view.tvshows', view_when_external=False))
+	category='In Progress', view='view.tvshows', view_when_external=False, variants=(False, True), fresh_for=TVSHOWS_FRESH_FOR))
 MOVIES = saved_lists.register(saved_lists.Spec('in_progress_movies', 'in_progress_movies_list', 'In Progress Movies', 'movies',
 	key=lambda is_external, variant: movie_key(is_external, variant),
 	render=lambda row, make_listitem, kodi_actor: render_movie_row(row, make_listitem, kodi_actor),
@@ -117,19 +125,28 @@ def wanted(params):
 	except Exception: return False
 
 
+def tvshow_variant(params):
+	"""True for Anime In Progress, False for In Progress, None for a listing that is not saved."""
+	value = params.get('is_anime_list')
+	if value is None: return False
+	return True if value == 'true' else None
+
+
 def serve_tvshows(params):
-	return wanted(params) and saved_lists.serve(TVSHOWS, params)
+	variant = tvshow_variant(params)
+	return variant is not None and wanted(params) and saved_lists.serve(TVSHOWS, params, variant)
 
 
 def serve_movies(params):
 	return wanted(params) and saved_lists.serve(MOVIES, params)
 
 
-def store(spec, key, rows, next_page, category):
+def store(spec, key, rows, next_page, category, variant=False):
 	"""rows: [(url, row, is_folder)] in display order; next_page: the Next Page item's url params (the
-	dict the indexer passed to add_dir), or None when the list shows no Next Page item."""
+	dict the indexer passed to add_dir), or None when the list shows no Next Page item; variant: from
+	tvshow_variant() for TV, False for movies."""
 	items = list(rows)
 	if next_page:
 		items.append((kodi_utils.build_url(next_page), saved_lists.nav_row('Next Page (%s) >>' % next_page['new_page'],
 			kodi_utils.get_icon('nextpage'), kodi_utils.get_icon('nextpage_landscape')), True))
-	saved_lists.store(spec, key, True, False, items, category)
+	saved_lists.store(spec, key, True, variant, items, category)

@@ -47,7 +47,8 @@ class Movies:
 			try: page_no = int(self.params_get('new_page', '1'))
 			except: page_no = self.params_get('new_page')
 			# Page 1 of the In Progress home widget is saved for the next start (#163).
-			self.keep_rows = self.action == 'in_progress_movies' and self.is_external and page_no == 1 and self.paginate_start == 0
+			self.keep_rows = (self.action == 'in_progress_movies' and self.is_external and page_no == 1 and self.paginate_start == 0
+				and not self.custom_order)
 			if self.action in self.personal: var_module, import_function = self.personal[self.action]
 			elif self.action in self.most_watched:
 				from modules.most_watched import normalize_most_watched_action
