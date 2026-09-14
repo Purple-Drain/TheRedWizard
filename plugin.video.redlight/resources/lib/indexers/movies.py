@@ -4,6 +4,7 @@ import json
 from modules.metadata import movie_meta, movieset_meta
 from modules.utils import get_datetime, get_current_timestamp, paginate_list, jsondate_to_datetime, TaskPool, manual_function_import
 from modules import kodi_utils, settings, watched_status
+from modules.movie_rows import render_movie_row
 
 class Movies:
 	main = ('tmdb_movies_popular', 'tmdb_movies_popular_today','tmdb_movies_blockbusters','tmdb_movies_in_theaters', 'tmdb_movies_upcoming',
@@ -36,6 +37,8 @@ class Movies:
 		self.custom_order = self.params_get('custom_order', 'false') == 'true'
 		self.paginate_start = int(self.params_get('paginate_start', '0'))
 		self.append = self.items.append
+		# Rows kept only when the finished list is saved (#163).
+		self.rows, self.keep_rows = [], False
 		self.movieset_list_active = False
 
 	def fetch_list(self):
@@ -43,6 +46,9 @@ class Movies:
 		try:
 			try: page_no = int(self.params_get('new_page', '1'))
 			except: page_no = self.params_get('new_page')
+			# Page 1 of the In Progress home widget is saved for the next start (#163).
+			self.keep_rows = (self.action == 'in_progress_movies' and self.is_external and page_no == 1 and self.paginate_start == 0
+				and not self.custom_order)
 			if self.action in self.personal: var_module, import_function = self.personal[self.action]
 			elif self.action in self.most_watched:
 				from modules.most_watched import normalize_most_watched_action
@@ -188,6 +194,10 @@ class Movies:
 			if self.new_page and not self.widget_hide_next_page:
 				self.new_page.update({'mode': 'build_movie_list', 'action': self.action, 'category_name': self.category_name})
 				kodi_utils.add_dir(handle, self.new_page, 'Next Page (%s) >>' % self.new_page['new_page'], 'nextpage', kodi_utils.get_icon('nextpage_landscape'))
+			if self.keep_rows:
+				from modules import inprogress_lists
+				inprogress_lists.store(inprogress_lists.MOVIES, self.saved_list_key, self.rows,
+					self.new_page if self.new_page and not self.widget_hide_next_page else None, self.category_name)
 		except Exception as e:
 			if self.action in self.mdblist_personal or self.action == 'mdblist_user_list':
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
@@ -200,159 +210,161 @@ class Movies:
 		
 	def build_movie_content(self, _position, _id, dbcon=None):
 		try:
-			meta = movie_meta(self.id_type, _id, self.tmdb_api_key, self.mpaa_region, self.current_date, self.current_time, dbcon=dbcon)
-			if not meta or 'blank_entry' in meta: return
-			listitem = self.make_listitem()
-			cm = []
-			cm_append = cm.append
-			set_properties = listitem.setProperties
-			clearprog_params, watched_status_params = '', ''
-			meta_get = meta.get
-			premiered = meta_get('premiered')
-			title, year = meta_get('title'), meta_get('year') or '2050'
-			tmdb_id, imdb_id = meta_get('tmdb_id'), meta_get('imdb_id')
-			str_tmdb_id = str(tmdb_id)
-			if self.rpdb_api_key:
-				try: poster = meta_get('rpdb_poster') % self.rpdb_api_key + self.rpdb_format
-				except: poster = meta_get('poster') or self.poster_empty
-			else: poster = meta_get('poster') or self.poster_empty
-			fanart = meta_get('fanart') or self.fanart_empty
-			clearlogo, landscape = meta_get('clearlogo') or '', meta_get('landscape') or ''
-			thumb = poster or landscape or fanart
-			movieset_id, movieset_name = meta_get('extra_info').get('collection_id', None), meta_get('extra_info').get('collection_name', None)
-			first_airdate = jsondate_to_datetime(premiered, '%Y-%m-%d', True)
-			duration = meta_get('duration')
-			if not first_airdate or self.current_date < first_airdate: unaired = True
-			else: unaired = False
-			progress = watched_status.get_progress_status_movie(self.bookmarks, str_tmdb_id)
-			playcount = watched_status.get_watched_status_movie(self.watched_info, str_tmdb_id)
-			play_params = self.build_url({'mode': self.play_mode, 'media_type': 'movie', 'tmdb_id': tmdb_id, self.playback_key: self.playback_key})
-			extras_params = self.build_url({'mode': 'extras_menu_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'is_external': self.is_external})
-			options_params = self.build_url({'mode': 'options_menu_choice', 'content': 'movie', 'tmdb_id': tmdb_id, 'poster': poster, 'is_external': self.is_external})
-			playback_options_params = self.build_url({'mode': 'playback_choice', 'media_type': 'movie', 'meta': tmdb_id})
-			browse_recommended_params = self.build_url({'mode': 'build_movie_list', 'action': 'tmdb_movies_recommendations', 'is_external': self.is_external,
-										'key_id': tmdb_id, 'name': 'Recommended based on %s' % title})
-			browse_related_params = self.build_url({'mode': 'build_movie_list', 'action': 'trakt_movies_related', 'key_id': imdb_id, 'is_external': self.is_external,
-										'name': 'Related to %s' % title})
-			browse_more_like_this_params = self.build_url({'mode': 'build_movie_list', 'action': 'imdb_more_like_this', 'key_id': imdb_id, 'is_external': self.is_external,
-										'name': 'More Like This based on %s' % title})
-			browse_similar_params = self.build_url({'mode': 'build_movie_list', 'action': 'ai_similar', 'is_external': self.is_external,
-										'key_id': 'movie|%s' % tmdb_id, 'name': 'Similar based on %s' % title})
-			browse_in_trakt_list_params, trakt_manager_params = '', ''
-			if settings.trakt_user_active():
-				browse_in_trakt_list_params = self.build_url({'mode': 'trakt.list.in_trakt_lists', 'media_type': 'movie', 'imdb_id': imdb_id, 'is_external': self.is_external,
-										'category_name': '%s In Trakt Lists' % title})
-				trakt_manager_params = self.build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
-													'title': title, 'icon': poster})
-			simkl_manager_params = ''
-			if settings.simkl_user_active():
-				simkl_manager_params = self.build_url({'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
-														'title': title, 'icon': poster})
-			punchplay_manager_params = ''
-			if settings.punchplay_user_active():
-				punchplay_manager_params = self.build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
-														'title': title, 'icon': poster})
-			mdblist_manager_params = ''
-			if settings.mdblist_user_active():
-				mdblist_manager_params = self.build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
-														'title': title, 'icon': poster})
-			personal_manager_params = self.build_url({'mode': 'personallists_manager_choice', 'list_type': 'movie', 'tmdb_id': tmdb_id, 'title': title,
-										'premiered': premiered, 'current_time': self.current_time, 'icon': poster})
-			tmdb_manager_params = ''
-			if settings.tmdblist_user_active():
-				tmdb_manager_params = self.build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'icon': poster})
-			favorites_manager_params = self.build_url({'mode': 'favorites_manager_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'title': title})
-			belongs_to_movieset = 'true' if all([movieset_id, movieset_name]) else 'false'
-			skip_special = self.skip_inprogress and progress
-			item_open_extras = self.open_extras and not skip_special
-			item_open_movieset = self.open_movieset and not skip_special
-			movieset_active = item_open_movieset and belongs_to_movieset == 'true'
-			if item_open_extras or movieset_active:
-				cm_append(['extras', ('[B]Play[/B]', 'RunPlugin(%s)' % play_params)])
-			if not item_open_extras or movieset_active:
-				cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
-			if movieset_active:
-				url_params = self.build_url({'mode': 'open_movieset_choice', 'key_id': movieset_id, 'name': movieset_name, 'is_external': self.is_external})
-			elif item_open_extras:
-				url_params = extras_params
-			else:
-				url_params = play_params
-			cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
-			cm_append(['playback_options', ('[B]Play Options[/B]', 'RunPlugin(%s)' % playback_options_params)])
-			settings.append_source_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'movie', tmdb_id)
-			settings.append_external_scraper_settings_cm(cm_append, self.build_url)
-			if belongs_to_movieset == 'true' and not self.movieset_list_active and not item_open_movieset:
-				browse_movie_set_params = self.build_url({'mode': 'build_movie_list', 'action': 'tmdb_movies_sets', 'key_id': movieset_id,
-										'name': movieset_name, 'is_external': self.is_external})
-				cm_append(['browse_movie_set', ('[B]Browse Movie Set[/B]', self.window_command % browse_movie_set_params)])
-			else: browse_movie_set_params = ''
-			cm_append(['recommended', ('[B]Browse Recommended[/B]', self.window_command % browse_recommended_params)])
-			cm_append(['related', ('[B]Browse Related[/B]', self.window_command % browse_related_params)])
-			cm_append(['more_like_this', ('[B]Browse More Like This[/B]', self.window_command % browse_more_like_this_params)])
-			if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
-			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
-			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
-			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
-			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
-			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
-			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
-			settings.append_list_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'movie', tmdb_id, imdb_id, 'None', title, poster)
-			cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
-			cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
-			if playcount:
-				if self.widget_hide_watched: return
-				cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_movie', 'action': 'mark_as_unwatched',
-											'tmdb_id': tmdb_id, 'title': title}))])
-			elif not unaired:
-				cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_movie', 'action': 'mark_as_watched',
-											'tmdb_id': tmdb_id, 'title': title}))])
-			if progress:
-				cm_append(['mark_watched', ('[B]Clear Progress[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.erase_bookmark', 'media_type': 'movie',
-											'tmdb_id': tmdb_id, 'refresh': 'true'}))])
-			if not self.is_external: cm_append(['exit', ('[B]Exit Movie List[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'navigator.exit_media_menu'}))])
-			if self.is_external:
-				cm.extend([['refresh', ('[B]Refresh Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'refresh_widgets'}))],
-						['reload', ('[B]Reload Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'kodi_refresh'}))]])
-			cm = self.context_menu(cm)
-			info_tag = listitem.getVideoInfoTag(True)
-			info_tag.setMediaType('movie'), info_tag.setTitle(title), info_tag.setOriginalTitle(meta_get('original_title')), info_tag.setGenres(meta_get('genre'))
-			info_tag.setDuration(duration), info_tag.setPlaycount(playcount), info_tag.setPlot(meta_get('plot'))
-			info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str_tmdb_id}), info_tag.setIMDBNumber(imdb_id), info_tag.setPremiered(premiered)
-			info_tag.setYear(int(year)), info_tag.setRating(meta_get('rating')), info_tag.setVotes(meta_get('votes')), info_tag.setMpaa(meta_get('mpaa'))
-			info_tag.setCountries(meta_get('country')), info_tag.setTrailer(meta_get('trailer'))
-			info_tag.setTagLine(meta_get('tagline')), info_tag.setStudios(meta_get('studio'))
-			info_tag.setWriters(meta_get('writer')), info_tag.setDirectors(meta_get('director'))
-			cast = meta_get('short_cast', []) or meta_get('cast', []) or []
-			info_tag.setCast([self.kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
-			if progress:
-				# Time only — total would make Kodi/skins show a resume dialog we cannot honour.
-				resume_secs = watched_status.get_resume_seconds(progress, duration)
-				info_tag.setResumePoint(resume_secs)
-				set_properties({'WatchedProgress': progress})
-			listitem.setLabel(title)
-			listitem.addContextMenuItems(cm)
-			listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'landscape': landscape, 'thumb': thumb})
-			set_properties({
-				'belongs_to_collection': belongs_to_movieset,
-				'redlight.extras_params': extras_params,
-				'redlight.options_params': options_params,
-				'redlight.playback_options_params': playback_options_params,
-				'redlight.browse_movie_set_params': browse_movie_set_params,
-				'redlight.browse_recommended_params': browse_recommended_params,
-				'redlight.browse_related_params': browse_related_params,
-				'redlight.browse_more_like_this_params': browse_more_like_this_params,
-				'redlight.browse_similar_params': browse_similar_params,
-				'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
-				'redlight.trakt_manager_params': trakt_manager_params,
-				'redlight.simkl_manager_params': simkl_manager_params,
-				'redlight.punchplay_manager_params': punchplay_manager_params,
-				'redlight.mdblist_manager_params': mdblist_manager_params,
-				'redlight.personal_manager_params': personal_manager_params,
-				'redlight.tmdb_manager_params': tmdb_manager_params,
-				'redlight.favorites_manager_params': favorites_manager_params
-				})
-			self.append(((url_params, listitem, False), _position))
+			built = self.movie_row(_id, dbcon)
+			if not built: return
+			url_params, row, is_folder = built
+			self.append(((url_params, render_movie_row(row, self.make_listitem, self.kodi_actor), is_folder), _position))
+			if self.keep_rows: self.rows.append(((url_params, row, is_folder), _position))
 		except: pass
+
+	def movie_row(self, _id, dbcon=None):
+		"""(url, row, is_folder) for one movie, or None when it is left out. The row is the JSON-safe data
+		modules.movie_rows renders, so a saved list is drawn by the same calls as a built one (#163)."""
+		meta = movie_meta(self.id_type, _id, self.tmdb_api_key, self.mpaa_region, self.current_date, self.current_time, dbcon=dbcon)
+		if not meta or 'blank_entry' in meta: return
+		cm, properties = [], {}
+		cm_append = cm.append
+		clearprog_params, watched_status_params = '', ''
+		meta_get = meta.get
+		premiered = meta_get('premiered')
+		title, year = meta_get('title'), meta_get('year') or '2050'
+		tmdb_id, imdb_id = meta_get('tmdb_id'), meta_get('imdb_id')
+		str_tmdb_id = str(tmdb_id)
+		if self.rpdb_api_key:
+			try: poster = meta_get('rpdb_poster') % self.rpdb_api_key + self.rpdb_format
+			except: poster = meta_get('poster') or self.poster_empty
+		else: poster = meta_get('poster') or self.poster_empty
+		fanart = meta_get('fanart') or self.fanart_empty
+		clearlogo, landscape = meta_get('clearlogo') or '', meta_get('landscape') or ''
+		thumb = poster or landscape or fanart
+		movieset_id, movieset_name = meta_get('extra_info').get('collection_id', None), meta_get('extra_info').get('collection_name', None)
+		first_airdate = jsondate_to_datetime(premiered, '%Y-%m-%d', True)
+		duration = meta_get('duration')
+		if not first_airdate or self.current_date < first_airdate: unaired = True
+		else: unaired = False
+		progress = watched_status.get_progress_status_movie(self.bookmarks, str_tmdb_id)
+		playcount = watched_status.get_watched_status_movie(self.watched_info, str_tmdb_id)
+		play_params = self.build_url({'mode': self.play_mode, 'media_type': 'movie', 'tmdb_id': tmdb_id, self.playback_key: self.playback_key})
+		extras_params = self.build_url({'mode': 'extras_menu_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'is_external': self.is_external})
+		options_params = self.build_url({'mode': 'options_menu_choice', 'content': 'movie', 'tmdb_id': tmdb_id, 'poster': poster, 'is_external': self.is_external})
+		playback_options_params = self.build_url({'mode': 'playback_choice', 'media_type': 'movie', 'meta': tmdb_id})
+		browse_recommended_params = self.build_url({'mode': 'build_movie_list', 'action': 'tmdb_movies_recommendations', 'is_external': self.is_external,
+									'key_id': tmdb_id, 'name': 'Recommended based on %s' % title})
+		browse_related_params = self.build_url({'mode': 'build_movie_list', 'action': 'trakt_movies_related', 'key_id': imdb_id, 'is_external': self.is_external,
+									'name': 'Related to %s' % title})
+		browse_more_like_this_params = self.build_url({'mode': 'build_movie_list', 'action': 'imdb_more_like_this', 'key_id': imdb_id, 'is_external': self.is_external,
+									'name': 'More Like This based on %s' % title})
+		browse_similar_params = self.build_url({'mode': 'build_movie_list', 'action': 'ai_similar', 'is_external': self.is_external,
+									'key_id': 'movie|%s' % tmdb_id, 'name': 'Similar based on %s' % title})
+		browse_in_trakt_list_params, trakt_manager_params = '', ''
+		if settings.trakt_user_active():
+			browse_in_trakt_list_params = self.build_url({'mode': 'trakt.list.in_trakt_lists', 'media_type': 'movie', 'imdb_id': imdb_id, 'is_external': self.is_external,
+									'category_name': '%s In Trakt Lists' % title})
+			trakt_manager_params = self.build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
+												'title': title, 'icon': poster})
+		simkl_manager_params = ''
+		if settings.simkl_user_active():
+			simkl_manager_params = self.build_url({'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
+													'title': title, 'icon': poster})
+		punchplay_manager_params = ''
+		if settings.punchplay_user_active():
+			punchplay_manager_params = self.build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
+													'title': title, 'icon': poster})
+		mdblist_manager_params = ''
+		if settings.mdblist_user_active():
+			mdblist_manager_params = self.build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
+													'title': title, 'icon': poster})
+		personal_manager_params = self.build_url({'mode': 'personallists_manager_choice', 'list_type': 'movie', 'tmdb_id': tmdb_id, 'title': title,
+									'premiered': premiered, 'current_time': self.current_time, 'icon': poster})
+		tmdb_manager_params = ''
+		if settings.tmdblist_user_active():
+			tmdb_manager_params = self.build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'icon': poster})
+		favorites_manager_params = self.build_url({'mode': 'favorites_manager_choice', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'title': title})
+		belongs_to_movieset = 'true' if all([movieset_id, movieset_name]) else 'false'
+		skip_special = self.skip_inprogress and progress
+		item_open_extras = self.open_extras and not skip_special
+		item_open_movieset = self.open_movieset and not skip_special
+		movieset_active = item_open_movieset and belongs_to_movieset == 'true'
+		if item_open_extras or movieset_active:
+			cm_append(['extras', ('[B]Play[/B]', 'RunPlugin(%s)' % play_params)])
+		if not item_open_extras or movieset_active:
+			cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
+		if movieset_active:
+			url_params = self.build_url({'mode': 'open_movieset_choice', 'key_id': movieset_id, 'name': movieset_name, 'is_external': self.is_external})
+		elif item_open_extras:
+			url_params = extras_params
+		else:
+			url_params = play_params
+		cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
+		cm_append(['playback_options', ('[B]Play Options[/B]', 'RunPlugin(%s)' % playback_options_params)])
+		settings.append_source_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'movie', tmdb_id)
+		settings.append_external_scraper_settings_cm(cm_append, self.build_url)
+		if belongs_to_movieset == 'true' and not self.movieset_list_active and not item_open_movieset:
+			browse_movie_set_params = self.build_url({'mode': 'build_movie_list', 'action': 'tmdb_movies_sets', 'key_id': movieset_id,
+									'name': movieset_name, 'is_external': self.is_external})
+			cm_append(['browse_movie_set', ('[B]Browse Movie Set[/B]', self.window_command % browse_movie_set_params)])
+		else: browse_movie_set_params = ''
+		cm_append(['recommended', ('[B]Browse Recommended[/B]', self.window_command % browse_recommended_params)])
+		cm_append(['related', ('[B]Browse Related[/B]', self.window_command % browse_related_params)])
+		cm_append(['more_like_this', ('[B]Browse More Like This[/B]', self.window_command % browse_more_like_this_params)])
+		if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
+		if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
+		if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+		if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
+		if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
+		if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
+		if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
+		settings.append_list_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'movie', tmdb_id, imdb_id, 'None', title, poster)
+		cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
+		cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
+		if playcount:
+			if self.widget_hide_watched: return
+			cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_movie', 'action': 'mark_as_unwatched',
+										'tmdb_id': tmdb_id, 'title': title}))])
+		elif not unaired:
+			cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_movie', 'action': 'mark_as_watched',
+										'tmdb_id': tmdb_id, 'title': title}))])
+		if progress:
+			cm_append(['mark_watched', ('[B]Clear Progress[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.erase_bookmark', 'media_type': 'movie',
+										'tmdb_id': tmdb_id, 'refresh': 'true'}))])
+		if not self.is_external: cm_append(['exit', ('[B]Exit Movie List[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'navigator.exit_media_menu'}))])
+		if self.is_external:
+			cm.extend([['refresh', ('[B]Refresh Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'refresh_widgets'}))],
+					['reload', ('[B]Reload Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'kodi_refresh'}))]])
+		cm = self.context_menu(cm)
+		cast = meta_get('short_cast', []) or meta_get('cast', []) or []
+		row = {'label': title, 'cm': cm,
+			'art': {'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'landscape': landscape, 'thumb': thumb},
+			'info': {'title': title, 'original_title': meta_get('original_title'), 'genres': meta_get('genre'), 'duration': duration, 'playcount': playcount,
+				'plot': meta_get('plot'), 'unique_ids': {'imdb': imdb_id, 'tmdb': str_tmdb_id}, 'imdb': imdb_id, 'premiered': premiered, 'year': int(year),
+				'rating': meta_get('rating'), 'votes': meta_get('votes'), 'mpaa': meta_get('mpaa'), 'countries': meta_get('country'), 'trailer': meta_get('trailer'),
+				'tagline': meta_get('tagline'), 'studios': meta_get('studio'), 'writers': meta_get('writer'), 'directors': meta_get('director')},
+			'cast': [{'name': item['name'], 'role': item['role'], 'thumbnail': item['thumbnail']} for item in cast],
+			'properties': properties}
+		if progress:
+			# Time only: a total would make Kodi or the skin show a resume dialog we cannot honour.
+			row['resume_seconds'] = watched_status.get_resume_seconds(progress, duration)
+			properties['WatchedProgress'] = progress
+		properties.update({
+			'belongs_to_collection': belongs_to_movieset,
+			'redlight.extras_params': extras_params,
+			'redlight.options_params': options_params,
+			'redlight.playback_options_params': playback_options_params,
+			'redlight.browse_movie_set_params': browse_movie_set_params,
+			'redlight.browse_recommended_params': browse_recommended_params,
+			'redlight.browse_related_params': browse_related_params,
+			'redlight.browse_more_like_this_params': browse_more_like_this_params,
+			'redlight.browse_similar_params': browse_similar_params,
+			'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
+			'redlight.trakt_manager_params': trakt_manager_params,
+			'redlight.simkl_manager_params': simkl_manager_params,
+			'redlight.punchplay_manager_params': punchplay_manager_params,
+			'redlight.mdblist_manager_params': mdblist_manager_params,
+			'redlight.personal_manager_params': personal_manager_params,
+			'redlight.tmdb_manager_params': tmdb_manager_params,
+			'redlight.favorites_manager_params': favorites_manager_params
+			})
+		return url_params, row, False
 
 	def worker(self):
 		self.kodi_actor, self.make_listitem, self.build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
@@ -366,6 +378,10 @@ class Movies:
 		self.rpdb_api_key, self.rpdb_format = rpdb_info['rpdb_api_key'], rpdb_info['rpdb_format']
 		watched_db = watched_status.get_database(self.watched_indicators)
 		self.watched_info, self.bookmarks = watched_status.watched_info_movie(watched_db), watched_status.get_bookmarks_movie(watched_db)
+		# Keyed after the list's provider refresh, so the saved list is filed under the state it shows (#163).
+		if self.keep_rows:
+			from modules import inprogress_lists
+			self.saved_list_key = inprogress_lists.movie_key(True)
 		self.window_command = 'ActivateWindow(Videos,%s,return)' if self.is_external else 'Container.Update(%s)'
 		open_action = settings.media_open_action('movie')
 		self.open_movieset = open_action in (2, 3) and not self.movieset_list_active
@@ -379,6 +395,8 @@ class Movies:
 			[i.join() for i in threads]
 			self.items.sort(key=lambda k: k[1])
 			self.items = [i[0] for i in self.items]
+			self.rows.sort(key=lambda k: k[1])
+			self.rows = [i[0] for i in self.rows]
 		return self.items
 
 	def context_menu(self, context_menu_items):

@@ -4,6 +4,7 @@ import json
 from modules.metadata import tvshow_meta
 from modules.utils import get_datetime, get_current_timestamp, paginate_list, TaskPool, manual_function_import
 from modules import kodi_utils, settings, watched_status
+from modules.tvshow_rows import render_tvshow_row
 # logger = kodi_utils.logger
 
 class TVShows:
@@ -42,6 +43,8 @@ class TVShows:
 		self.custom_order = self.params_get('custom_order', 'false') == 'true'
 		self.paginate_start = int(self.params_get('paginate_start', '0'))
 		self.append = self.items.append
+		# Rows kept only when the finished list is saved (#163).
+		self.rows, self.keep_rows = [], False
 
 	def is_anime(self):
 		if 'is_anime_list' in self.params: self.is_anime_list = self.params['is_anime_list'] == 'true'
@@ -56,6 +59,13 @@ class TVShows:
 			is_random = self.params_get('random', 'false') == 'true'
 			try: page_no = int(self.params_get('new_page', '1'))
 			except: page_no = self.params_get('new_page')
+			# Page 1 of the In Progress home widget is saved for the next start (#163).
+			self.keep_rows = (self.action == 'in_progress_tvshows' and self.is_external and page_no == 1 and self.paginate_start == 0
+				and not self.custom_order)
+			if self.keep_rows:
+				from modules import inprogress_lists
+				self.saved_list_variant = inprogress_lists.tvshow_variant(self.params)
+				self.keep_rows = self.saved_list_variant is not None
 			if page_no == 1 and not self.is_external and self.action != 'mdblist_user_list':
 				if not any([x in kodi_utils.folder_path() for x in ('build_season_list', 'build_episode_list')]):
 					list_mode = 'anime' if self.is_anime_list is True else 'tvshow'
@@ -211,6 +221,10 @@ class TVShows:
 				self.new_page.update({'mode': 'build_tvshow_list', 'action': self.action, 'category_name': self.category_name})
 				if self.is_anime_list is not None: self.new_page['is_anime_list'] = {True: 'true', False: 'false'}[self.is_anime_list]
 				kodi_utils.add_dir(handle, self.new_page, 'Next Page (%s) >>' % self.new_page['new_page'], 'nextpage', kodi_utils.get_icon('nextpage_landscape'))
+			if self.keep_rows:
+				from modules import inprogress_lists
+				inprogress_lists.store(inprogress_lists.TVSHOWS, self.saved_list_key, self.rows,
+					self.new_page if self.new_page and not self.widget_hide_next_page else None, self.category_name, self.saved_list_variant)
 		except Exception as e:
 			if self.action in self.mdblist_personal or self.action == 'mdblist_user_list':
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
@@ -223,144 +237,148 @@ class TVShows:
 
 	def build_tvshow_content(self, _position, _id, dbcon=None):
 		try:
-			meta = tvshow_meta(self.id_type, _id, self.tmdb_api_key, self.mpaa_region, self.current_date, self.current_time, self.is_anime_list, dbcon=dbcon)
-			if not meta or 'blank_entry' in meta: return
-			cm = []
-			cm_append = cm.append
-			listitem = self.make_listitem()
-			set_properties = listitem.setProperties
-			meta_get = meta.get
-			premiered = meta_get('premiered')
-			trailer, title, year = meta_get('trailer'), meta_get('title'), meta_get('year') or '2050'
-			tvdb_id, imdb_id = meta_get('tvdb_id'), meta_get('imdb_id')
-			if self.rpdb_api_key:
-				try: poster = meta_get('rpdb_poster') % self.rpdb_api_key + self.rpdb_format
-				except: poster = meta_get('poster') or self.poster_empty
-			else: poster = meta_get('poster') or self.poster_empty
-			fanart = meta_get('fanart') or self.fanart_empty
-			clearlogo, landscape = meta_get('clearlogo') or '', meta_get('landscape') or ''
-			thumb = poster or landscape or fanart
-			tmdb_id, total_seasons, total_aired_eps = meta_get('tmdb_id'), meta_get('total_seasons'), meta_get('total_aired_eps')
-			progress_aired_eps = watched_status.progress_aired_eps(meta)
-			unaired = total_aired_eps == 0
-			if unaired: progress, playcount, total_watched, total_unwatched = 0, 0, 0, progress_aired_eps
-			else:
-				playcount, total_watched, total_unwatched = watched_status.get_watched_status_tvshow(self.watched_info.get(str(tmdb_id), None), progress_aired_eps)
-				if total_watched: progress = watched_status.get_progress_status_tvshow(total_watched, progress_aired_eps)
-				else: progress = 0
-				visible_progress = '0' if progress == 100 else progress
-			extras_params = self.build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'tvshow', 'is_external': self.is_external})
-			options_params = self.build_url({'mode': 'options_menu_choice', 'content': 'tvshow', 'tmdb_id': tmdb_id, 'poster': poster,
-										'is_external': self.is_external})
-			browse_recommended_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'tmdb_tv_recommendations', 'key_id': tmdb_id, 'is_external': self.is_external,
-										'name': 'Recommended based on %s' % title})
-			browse_related_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'trakt_tv_related', 'key_id': imdb_id, 'is_external': self.is_external,
-										'name': 'Related to %s' % title})
-			browse_more_like_this_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'imdb_more_like_this', 'key_id': imdb_id, 'is_external': self.is_external,
-										'name': 'More Like This based on %s' % title, 'is_external': self.is_external})
-			browse_similar_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'ai_similar', 'is_external': self.is_external,
-										'key_id': 'tvshow|%s' % tmdb_id, 'name': 'Similar based on %s' % title})
-			browse_in_trakt_list_params, trakt_manager_params = '', ''
-			if settings.trakt_user_active():
-				browse_in_trakt_list_params = self.build_url({'mode': 'trakt.list.in_trakt_lists', 'media_type': 'tvshow', 'imdb_id': imdb_id, 'is_external': self.is_external,
-										'category_name': '%s In Trakt Lists' % title})
-				trakt_manager_params = self.build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
-													'title': title, 'icon': poster})
-			simkl_manager_params = ''
-			if settings.simkl_user_active():
-				simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
-														'title': title, 'icon': poster}
-				if isinstance(_id, dict) and _id.get('simkl') not in (None, '', 'None', 0, '0'):
-					simkl_params['simkl_id'] = _id.get('simkl')
-				if self.is_anime_list is True:
-					simkl_params['simkl_media_kind'] = 'anime'
-				simkl_manager_params = self.build_url(simkl_params)
-			punchplay_manager_params = ''
-			if settings.punchplay_user_active():
-				punchplay_manager_params = self.build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
-														'title': title, 'icon': poster})
-			mdblist_manager_params = ''
-			if settings.mdblist_user_active():
-				mdblist_manager_params = self.build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
-														'title': title, 'icon': poster})
-			personal_manager_params = self.build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
-										'premiered': premiered, 'current_time': self.current_time, 'icon': poster})
-			tmdb_manager_params = ''
-			if settings.tmdblist_user_active():
-				tmdb_manager_params = self.build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': poster})
-			favorites_manager_params = self.build_url({'mode': 'favorites_manager_choice', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
-			if self.all_episodes:
-				if self.all_episodes == 1 and total_seasons > 1: url_params = self.build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id})
-				else: url_params = self.build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': 'all'})
-			else: url_params = self.build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id})
-			item_open_extras = self.open_extras and not (self.skip_inprogress and str(tmdb_id) in self.in_progress_show_ids)
-			item_is_folder = not item_open_extras
-			if item_open_extras:
-				cm_append(['extras', ('[B]Browse[/B]', 'Container.Update(%s)' % url_params)])
-				url_params = extras_params
-			else: cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
-			cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
-			settings.append_external_scraper_settings_cm(cm_append, self.build_url)
-			cm_append(['recommended', ('[B]Browse Recommended[/B]', self.window_command % browse_recommended_params)])
-			cm_append(['related', ('[B]Browse Related[/B]', self.window_command % browse_related_params)])
-			cm_append(['more_like_this', ('[B]Browse More Like This[/B]', self.window_command % browse_more_like_this_params)])
-			if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
-			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
-			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
-			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
-			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
-			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
-			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
-			settings.append_list_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'tvshow', tmdb_id, imdb_id, tvdb_id, title, poster)
-			cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
-			cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
-			if playcount:
-				if self.widget_hide_watched: return
-			elif not unaired:
-				cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_tvshow', 'action': 'mark_as_watched',
-																			'title': title,'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id}))])
-			if progress:
-				cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_tvshow', 'action': 'mark_as_unwatched',
-																			'title': title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id}))])
-			set_properties({'watchedepisodes': str(total_watched), 'unwatchedepisodes': str(total_unwatched)})
-			set_properties({'watchedprogress': visible_progress, 'totalepisodes': str(progress_aired_eps), 'totalseasons': str(total_seasons)})
-			if not self.is_external: cm_append(['exit', ('[B]Exit TV Show List[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'navigator.exit_media_menu'}))])
-			if self.is_external:
-				cm.extend([['refresh', ('[B]Refresh Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'refresh_widgets'}))],
-						['reload', ('[B]Reload Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'kodi_refresh'}))]])
-			cm = self.context_menu(cm)
-			listitem.setLabel(title)
-			listitem.addContextMenuItems(cm)
-			listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'landscape': landscape, 'thumb': thumb, 'icon': landscape,
-							'tvshow.poster': poster, 'tvshow.clearlogo': clearlogo})
-			info_tag = listitem.getVideoInfoTag(True)
-			info_tag.setMediaType('tvshow'), info_tag.setTitle(title), info_tag.setTvShowTitle(title), info_tag.setOriginalTitle(meta_get('original_title'))
-			info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)}), info_tag.setIMDBNumber(imdb_id)
-			info_tag.setPlot(meta_get('plot')), info_tag.setPlaycount(playcount), info_tag.setGenres(meta_get('genre')), info_tag.setYear(int(year))
-			info_tag.setTagLine(meta_get('tagline')), info_tag.setStudios(meta_get('studio')), info_tag.setWriters(meta_get('writer')), info_tag.setDirectors(meta_get('director'))
-			info_tag.setVotes(meta_get('votes')), info_tag.setMpaa(meta_get('mpaa')), info_tag.setDuration(meta_get('duration')), info_tag.setCountries(meta_get('country'))
-			info_tag.setTrailer(meta_get('trailer')), info_tag.setPremiered(premiered)
-			info_tag.setTvShowStatus(meta_get('status')), info_tag.setRating(meta_get('rating'))
-			cast = meta_get('short_cast', []) or meta_get('cast', []) or []
-			info_tag.setCast([self.kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
-			set_properties({
-				'redlight.extras_params': extras_params,
-				'redlight.options_params': options_params,
-				'redlight.browse_recommended_params': browse_recommended_params,
-				'redlight.browse_related_params': browse_related_params,
-				'redlight.browse_more_like_this_params': browse_more_like_this_params,
-				'redlight.browse_similar_params': browse_similar_params,
-				'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
-				'redlight.trakt_manager_params': trakt_manager_params,
-				'redlight.simkl_manager_params': simkl_manager_params,
-				'redlight.punchplay_manager_params': punchplay_manager_params,
-				'redlight.mdblist_manager_params': mdblist_manager_params,
-				'redlight.personal_manager_params': personal_manager_params,
-				'redlight.tmdb_manager_params': tmdb_manager_params,
-				'redlight.favorites_manager_params': favorites_manager_params
-				})
-			self.append(((url_params, listitem, item_is_folder), _position))
+			built = self.tvshow_row(_id, dbcon)
+			if not built: return
+			url_params, row, item_is_folder = built
+			self.append(((url_params, render_tvshow_row(row, self.make_listitem, self.kodi_actor), item_is_folder), _position))
+			if self.keep_rows: self.rows.append(((url_params, row, item_is_folder), _position))
 		except: pass
+
+	def tvshow_row(self, _id, dbcon=None):
+		"""(url, row, is_folder) for one show, or None when it is left out. The row is the JSON-safe data
+		modules.tvshow_rows renders, so a saved list is drawn by the same calls as a built one (#163)."""
+		meta = tvshow_meta(self.id_type, _id, self.tmdb_api_key, self.mpaa_region, self.current_date, self.current_time, self.is_anime_list, dbcon=dbcon)
+		if not meta or 'blank_entry' in meta: return
+		cm, properties = [], {}
+		cm_append = cm.append
+		meta_get = meta.get
+		premiered = meta_get('premiered')
+		trailer, title, year = meta_get('trailer'), meta_get('title'), meta_get('year') or '2050'
+		tvdb_id, imdb_id = meta_get('tvdb_id'), meta_get('imdb_id')
+		if self.rpdb_api_key:
+			try: poster = meta_get('rpdb_poster') % self.rpdb_api_key + self.rpdb_format
+			except: poster = meta_get('poster') or self.poster_empty
+		else: poster = meta_get('poster') or self.poster_empty
+		fanart = meta_get('fanart') or self.fanart_empty
+		clearlogo, landscape = meta_get('clearlogo') or '', meta_get('landscape') or ''
+		thumb = poster or landscape or fanart
+		tmdb_id, total_seasons, total_aired_eps = meta_get('tmdb_id'), meta_get('total_seasons'), meta_get('total_aired_eps')
+		progress_aired_eps = watched_status.progress_aired_eps(meta)
+		unaired = total_aired_eps == 0
+		if unaired: progress, playcount, total_watched, total_unwatched = 0, 0, 0, progress_aired_eps
+		else:
+			playcount, total_watched, total_unwatched = watched_status.get_watched_status_tvshow(self.watched_info.get(str(tmdb_id), None), progress_aired_eps)
+			if total_watched: progress = watched_status.get_progress_status_tvshow(total_watched, progress_aired_eps)
+			else: progress = 0
+			visible_progress = '0' if progress == 100 else progress
+		extras_params = self.build_url({'mode': 'extras_menu_choice', 'tmdb_id': tmdb_id, 'media_type': 'tvshow', 'is_external': self.is_external})
+		options_params = self.build_url({'mode': 'options_menu_choice', 'content': 'tvshow', 'tmdb_id': tmdb_id, 'poster': poster,
+									'is_external': self.is_external})
+		browse_recommended_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'tmdb_tv_recommendations', 'key_id': tmdb_id, 'is_external': self.is_external,
+									'name': 'Recommended based on %s' % title})
+		browse_related_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'trakt_tv_related', 'key_id': imdb_id, 'is_external': self.is_external,
+									'name': 'Related to %s' % title})
+		browse_more_like_this_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'imdb_more_like_this', 'key_id': imdb_id, 'is_external': self.is_external,
+									'name': 'More Like This based on %s' % title, 'is_external': self.is_external})
+		browse_similar_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'ai_similar', 'is_external': self.is_external,
+									'key_id': 'tvshow|%s' % tmdb_id, 'name': 'Similar based on %s' % title})
+		browse_in_trakt_list_params, trakt_manager_params = '', ''
+		if settings.trakt_user_active():
+			browse_in_trakt_list_params = self.build_url({'mode': 'trakt.list.in_trakt_lists', 'media_type': 'tvshow', 'imdb_id': imdb_id, 'is_external': self.is_external,
+									'category_name': '%s In Trakt Lists' % title})
+			trakt_manager_params = self.build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+												'title': title, 'icon': poster})
+		simkl_manager_params = ''
+		if settings.simkl_user_active():
+			simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': poster}
+			if isinstance(_id, dict) and _id.get('simkl') not in (None, '', 'None', 0, '0'):
+				simkl_params['simkl_id'] = _id.get('simkl')
+			if self.is_anime_list is True:
+				simkl_params['simkl_media_kind'] = 'anime'
+			simkl_manager_params = self.build_url(simkl_params)
+		punchplay_manager_params = ''
+		if settings.punchplay_user_active():
+			punchplay_manager_params = self.build_url({'mode': 'punchplay_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': poster})
+		mdblist_manager_params = ''
+		if settings.mdblist_user_active():
+			mdblist_manager_params = self.build_url({'mode': 'mdblist_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+													'title': title, 'icon': poster})
+		personal_manager_params = self.build_url({'mode': 'personallists_manager_choice', 'list_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title,
+									'premiered': premiered, 'current_time': self.current_time, 'icon': poster})
+		tmdb_manager_params = ''
+		if settings.tmdblist_user_active():
+			tmdb_manager_params = self.build_url({'mode': 'tmdblists_manager_choice', 'media_type': 'tv', 'tmdb_id': tmdb_id, 'icon': poster})
+		favorites_manager_params = self.build_url({'mode': 'favorites_manager_choice', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'title': title})
+		if self.all_episodes:
+			if self.all_episodes == 1 and total_seasons > 1: url_params = self.build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id})
+			else: url_params = self.build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': 'all'})
+		else: url_params = self.build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id})
+		item_open_extras = self.open_extras and not (self.skip_inprogress and str(tmdb_id) in self.in_progress_show_ids)
+		item_is_folder = not item_open_extras
+		if item_open_extras:
+			cm_append(['extras', ('[B]Browse[/B]', 'Container.Update(%s)' % url_params)])
+			url_params = extras_params
+		else: cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
+		cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
+		settings.append_external_scraper_settings_cm(cm_append, self.build_url)
+		cm_append(['recommended', ('[B]Browse Recommended[/B]', self.window_command % browse_recommended_params)])
+		cm_append(['related', ('[B]Browse Related[/B]', self.window_command % browse_related_params)])
+		cm_append(['more_like_this', ('[B]Browse More Like This[/B]', self.window_command % browse_more_like_this_params)])
+		if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
+		if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
+		if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+		if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
+		if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
+		if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
+		if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
+		settings.append_list_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'tvshow', tmdb_id, imdb_id, tvdb_id, title, poster)
+		cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
+		cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
+		if playcount:
+			if self.widget_hide_watched: return
+		elif not unaired:
+			cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_tvshow', 'action': 'mark_as_watched',
+																		'title': title,'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id}))])
+		if progress:
+			cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'watched_status.mark_tvshow', 'action': 'mark_as_unwatched',
+																		'title': title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id}))])
+		properties.update({'watchedepisodes': str(total_watched), 'unwatchedepisodes': str(total_unwatched)})
+		properties.update({'watchedprogress': visible_progress, 'totalepisodes': str(progress_aired_eps), 'totalseasons': str(total_seasons)})
+		if not self.is_external: cm_append(['exit', ('[B]Exit TV Show List[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'navigator.exit_media_menu'}))])
+		if self.is_external:
+			cm.extend([['refresh', ('[B]Refresh Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'refresh_widgets'}))],
+					['reload', ('[B]Reload Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'kodi_refresh'}))]])
+		cm = self.context_menu(cm)
+		cast = meta_get('short_cast', []) or meta_get('cast', []) or []
+		row = {'label': title, 'cm': cm,
+			'art': {'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'landscape': landscape, 'thumb': thumb, 'icon': landscape,
+				'tvshow.poster': poster, 'tvshow.clearlogo': clearlogo},
+			'info': {'title': title, 'original_title': meta_get('original_title'), 'unique_ids': {'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)},
+				'imdb': imdb_id, 'plot': meta_get('plot'), 'playcount': playcount, 'genres': meta_get('genre'), 'year': int(year),
+				'tagline': meta_get('tagline'), 'studios': meta_get('studio'), 'writers': meta_get('writer'), 'directors': meta_get('director'),
+				'votes': meta_get('votes'), 'mpaa': meta_get('mpaa'), 'duration': meta_get('duration'), 'countries': meta_get('country'),
+				'trailer': meta_get('trailer'), 'premiered': premiered, 'status': meta_get('status'), 'rating': meta_get('rating')},
+			'cast': [{'name': item['name'], 'role': item['role'], 'thumbnail': item['thumbnail']} for item in cast],
+			'properties': properties}
+		properties.update({
+			'redlight.extras_params': extras_params,
+			'redlight.options_params': options_params,
+			'redlight.browse_recommended_params': browse_recommended_params,
+			'redlight.browse_related_params': browse_related_params,
+			'redlight.browse_more_like_this_params': browse_more_like_this_params,
+			'redlight.browse_similar_params': browse_similar_params,
+			'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
+			'redlight.trakt_manager_params': trakt_manager_params,
+			'redlight.simkl_manager_params': simkl_manager_params,
+			'redlight.punchplay_manager_params': punchplay_manager_params,
+			'redlight.mdblist_manager_params': mdblist_manager_params,
+			'redlight.personal_manager_params': personal_manager_params,
+			'redlight.tmdb_manager_params': tmdb_manager_params,
+			'redlight.favorites_manager_params': favorites_manager_params
+			})
+		return url_params, row, item_is_folder
 
 	def worker(self):
 		self.kodi_actor, self.make_listitem, self.build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
@@ -377,6 +395,11 @@ class TVShows:
 		self.skip_inprogress = settings.media_open_action_skip_inprogress_tvshow()
 		watched_db = watched_status.get_database(self.watched_indicators)
 		self.in_progress_show_ids = watched_status.get_in_progress_tvshow_ids(watched_db) if self.skip_inprogress else set()
+		# Keyed before the sync below: the list's members were fixed by the sync inside get_in_progress_tvshows,
+		# so a change this one brings makes the store's recheck fail and the service rebuild (#163).
+		if self.keep_rows:
+			from modules import inprogress_lists
+			self.saved_list_key = inprogress_lists.tvshow_key(True, self.saved_list_variant)
 		browsing_external_lists = (self.action in self.simkl_personal or self.action in self.punchplay_personal
 			or self.action in self.mdblist_personal or self.action in self.trakt_personal
 			or self.action == 'punchplay_user_list')
@@ -399,6 +422,8 @@ class TVShows:
 			[i.join() for i in threads]
 			self.items.sort(key=lambda k: k[1])
 			self.items = [i[0] for i in self.items]
+			self.rows.sort(key=lambda k: k[1])
+			self.rows = [i[0] for i in self.rows]
 		return self.items
 
 	def context_menu(self, context_menu_items):
