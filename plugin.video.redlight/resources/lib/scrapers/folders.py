@@ -18,6 +18,9 @@ class source:
 		self.folder_rank = int(''.join(c for c in str(scrape_provider) if c.isdigit()) or 0)
 		self.folder_path = folder_path
 		self.sources, self.scrape_results = [], []
+		# Set again by results(); defaults so a scrape reached any other way can't raise inside a
+		# thread, where the error would drop every file silently.
+		self.title, self.aliases, self.filter_title = '', [], True
 		self.extensions = source_utils.supported_video_extensions()
 
 	def results(self, info):
@@ -31,9 +34,12 @@ class source:
 			self.title_check = source_utils.episode_title_check(info)
 			self.title_query = source_utils.clean_title(normalize(title))
 			self.folder_query = self._season_query_list() if self.media_type == 'episode' else self._year_query_list()
-			self._scrape_directory(self.folder_path, first_run=True)
+			self.title, self.filter_title = title, filter_title
+			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
+			root = self._as_dir(self.folder_path)
+			self._scrape_directory(root, first_run=True, below_title=self._names_title(root))
 			if not self.scrape_results: return source_utils.internal_results(self.scraper_name, self.sources)
-			aliases = source_utils.get_aliases_titles(info.get('aliases', []))
+			aliases = self.aliases
 			def _process():
 				for item in self.scrape_results:
 					try:
@@ -88,7 +94,11 @@ class source:
 		if folder_files: main_cache.set(string, folder_files, expiration=4)
 		return folder_files
 
-	def _scrape_directory(self, folder_name, first_run=False):
+	def _scrape_directory(self, folder_name, first_run=False, below_title=False):
+		"""below_title: an enclosing folder (or the configured path itself) carries the title, so a
+		folder named only by the year or season ("1994 Remaster", "Season 03") belongs to it. At the
+		top of a whole-library path it doesn't (#172): a Clerks (1994) search went into Friends
+		1994-2004 and Muriel's Wedding (1994) and opened every video file there."""
 		if not first_run and time.time() >= self.scrape_deadline:
 			from modules.kodi_utils import logger
 			logger('Red Light', 'folders scrape deadline reached before listing %s' % folder_name)
@@ -100,12 +110,16 @@ class source:
 			if file_type == 'file':
 				ext = os.path.splitext(urlparse(item[0]).path)[-1].lower()
 				if ext in self.extensions:
-					if self.media_type == 'episode' and not self._episode_file_matches(normalized): return
+					if self.media_type == 'episode':
+						if not self._episode_file_matches(normalized): return
+					elif not self._film_file_matches(normalized): return
 					url_path = self.url_path(folder_name, item[0])
-					size = self._get_size(url_path)
+					size = self._file_size(url_path)
+					if size is None: return
 					scrape_results_append((item[0], url_path, size))
-			elif self.title_query in item_name or any(x in item_name for x in self.folder_query):
-					folder_results_append((os.path.join(folder_name, item[0])))
+			elif self.title_query in item_name or (below_title and any(x in item_name for x in self.folder_query)):
+					# True by construction: this folder either matched the title or sits below one that did.
+					folder_results_append((self._as_dir(os.path.join(folder_name, item[0])), True))
 		folder_results = []
 		scrape_results_append = self.scrape_results.append
 		folder_results_append = folder_results.append
@@ -136,8 +150,32 @@ class source:
 		return abandoned
 
 	def _scraper_worker(self, folder_results):
-		scraper_threads = list(make_thread_list(self._scrape_directory, folder_results))
+		scraper_threads = list(make_thread_list(lambda entry: self._scrape_directory(entry[0], below_title=entry[1]), folder_results))
 		self._join_until_deadline(scraper_threads, 'subfolder')
+
+	def _as_dir(self, path):
+		"""Folder paths end with a slash (#172). zurg answers a WebDAV folder with the folder itself
+		first, slash included; asked for the path without one, Kodi lists that entry as a subfolder of
+		the same name, and the scraper went into <folder>/<same name> for a 404 on every folder."""
+		return path if path.endswith(('/', '\\')) else path + '/'
+
+	def _names_title(self, path):
+		"""True when the configured path is the show's or film's own folder (.../Seinfeld/)."""
+		return self.title_query in source_utils.clean_title(normalize(os.path.basename(path.rstrip('/\\'))))
+
+	def _film_file_matches(self, normalized):
+		"""The title check results() applies anyway, made before the file is opened for its size (#172),
+		so a folder of other films costs no opens. Skipped when Filter by name is off, as there."""
+		if not self.filter_title: return True
+		return source_utils.check_title(self.title, normalized, self.aliases, self.year, self.season, self.episode)
+
+	def _file_size(self, url_path):
+		"""The size, or None with a log line: an exception here used to drop the file without a trace."""
+		try: return self._get_size(url_path)
+		except Exception as e:
+			from modules.kodi_utils import logger
+			logger('Red Light', 'folders: dropped %s, its size could not be read (%s)' % (url_path, e))
+			return None
 
 	def url_path(self, folder, file):
 		return os.path.join(folder, file)
