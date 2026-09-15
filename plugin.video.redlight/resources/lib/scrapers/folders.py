@@ -18,6 +18,9 @@ class source:
 		self.folder_rank = int(''.join(c for c in str(scrape_provider) if c.isdigit()) or 0)
 		self.folder_path = folder_path
 		self.sources, self.scrape_results = [], []
+		# Set again by results(); defaults so a scrape reached any other way can't raise inside a
+		# thread, where the error would drop every file silently.
+		self.title, self.aliases, self.filter_title = '', [], True
 		self.extensions = source_utils.supported_video_extensions()
 
 	def results(self, info):
@@ -115,6 +118,7 @@ class source:
 					if size is None: return
 					scrape_results_append((item[0], url_path, size))
 			elif self.title_query in item_name or (below_title and any(x in item_name for x in self.folder_query)):
+					# True by construction: this folder either matched the title or sits below one that did.
 					folder_results_append((self._as_dir(os.path.join(folder_name, item[0])), True))
 		folder_results = []
 		scrape_results_append = self.scrape_results.append

@@ -125,6 +125,26 @@ def test_season_folder_at_the_top_of_a_show_folder_path_is_searched(monkeypatch)
     assert [r[0] for r in s.scrape_results] == ['Seinfeld.S03E01.The.Note.mkv']
 
 
+@pytest.mark.parametrize('root', ['dav://10.1.1.22:9999/dav/__realdebrid__/', 'dav://10.1.1.22:9999/dav/__torbox__/',
+                                  'dav://10.1.1.22:9999/dav/__magic__/tv/', 'dav://10.1.1.22:9999/dav/__magic__/movies/'])
+@pytest.mark.parametrize('title_query', ['seinfeld', 'daria', 'clerks', 'real', 'magic', 'movies'])
+def test_whole_library_paths_in_use_never_count_as_the_title_folder(root, title_query):
+    """The four folder slots set on the Shield and the TCL (14/15.09.26). A title whose clean name
+    is inside the slot's own folder name (Real, Magic) is the edge: '__realdebrid__' cleans to
+    'realdebrid', which holds 'real', so a show called Real would let season folders count at the
+    top of that slot. Only season-named folders are affected, and zurg's slot roots hold releases."""
+    s = folders.source('folder1', 'Real-Debrid', root)
+    s.title_query = title_query
+    cleaned = {'__realdebrid__': 'realdebrid', '__torbox__': 'torbox', 'tv': 'tv', 'movies': 'movies'}[root.rstrip('/').rsplit('/', 1)[-1]]
+    assert s._names_title(root) == (title_query in cleaned)
+
+
+def test_scrape_without_results_setup_uses_safe_defaults(monkeypatch):
+    """_film_file_matches reads title/aliases/filter_title; results() sets them, __init__ defaults them."""
+    s = folders.source('folder2', 'TorBox', ROOT)
+    assert (s.title, s.aliases, s.filter_title) == ('', [], True)
+
+
 def test_as_dir_adds_one_slash_only_when_missing():
     s = folders.source('folder1', 'Real-Debrid', ROOT)
     assert s._as_dir('dav://h/dav/shows/Daria (1997)') == 'dav://h/dav/shows/Daria (1997)/'
