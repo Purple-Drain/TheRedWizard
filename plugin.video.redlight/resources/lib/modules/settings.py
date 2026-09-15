@@ -410,6 +410,11 @@ def prescrape_folders_first():
 	On by default; hidden, like cloud_queue_fallthrough."""
 	return get_setting('redlight.prescrape_folders_first', 'true') == 'true'
 
+def folders_only_list():
+	"""With Autoplay off, open the source list at the folder results and leave the cloud scrapers
+	to the list's search entry (#175). Off by default; under Folders in the settings window."""
+	return get_setting('redlight.folders.only_list', 'false') == 'true'
+
 def cloud_stall_resume():
 	"""When a cloud item's stream dies mid-play (#107: a CDN range request left hanging past
 	curl's low-speed timeout), re-resolve the same item and resume from the stall instead of

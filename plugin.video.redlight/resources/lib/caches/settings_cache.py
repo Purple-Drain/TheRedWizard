@@ -1451,6 +1451,7 @@ def default_settings():
 {'setting_id': 'folders.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'check.folders', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoplay.folders', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'folders.only_list', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'results.sort_folders_first', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'results.folders_ignore_filters', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'folders.priority', 'setting_type': 'action', 'setting_default': '6', 'min_value': '1', 'max_value': '10'},

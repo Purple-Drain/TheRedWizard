@@ -3522,6 +3522,16 @@
                       <item>
                           <visible>Container(2000).HasFocus(62)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.folders),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.check.folders),true)</visible>
+                          <property name="setting_label">    - List Folder Results First</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.folders.only_list)]</property>
+                          <property name="setting_description">When Autoplay is off and your local media folders find the title, open the results list with only those results instead of waiting for the debrid cloud scrapers. The last entry in the list then searches the clouds and the external scrapers. When the folders find nothing, or are still searching after 4 seconds, the search carries on as usual.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=folders.only_list)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(62)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.folders),true)</visible>
                           <property name="setting_label">Show Results at Top</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.results.sort_folders_first)]</property>

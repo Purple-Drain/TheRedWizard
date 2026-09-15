@@ -715,16 +715,24 @@ class Sources():
 				thread = Thread(target=self._timed_prescrape, args=(i[0], i[1], started), name=i[2])
 				threads_append(thread)
 				thread.start()
-		if folder_scrapers and other_scrapers and self._folders_first_enabled():
+		folders_first = self._folders_first_enabled()
+		folders_only = not folders_first and self._folders_only_list_enabled()
+		self.folders_only_skipped = []
+		if folder_scrapers and other_scrapers and (folders_first or folders_only):
 			# #149: the folder tier gets a head start, and the cloud tier is started only when the
 			# folders give autoplay nothing to take. On a hit it never runs, so there is nothing to
 			# cancel (the cloud scrapers take no StopFlag). Only scrapers that ran reach
 			# prescrape_scrapers, so skipped ones stay eligible for the full scrape (#104).
+			# #175: with Autoplay off, the manual list stops the same way at any folder result that
+			# survives process_results; folders_only_skipped lets the list's last entry search them.
 			before = len(self.prescrape_threads)
 			_start(folder_scrapers)
 			folder_threads = self.prescrape_threads[before:]
 			self._wait_prescrape(self._folders_first_head_start())
-			if not self._user_cancelled_scrape() and not self._folders_first_shortcut(folder_threads, started):
+			if self._user_cancelled_scrape(): pass
+			elif self._folders_first_shortcut(folder_threads, started, autoplay_only=folders_first):
+				if folders_only: self.folders_only_skipped = [i[2] for i in other_scrapers]
+			else:
 				_start(other_scrapers)
 				self._wait_prescrape()
 		else:
@@ -775,26 +783,38 @@ class Sources():
 		otherwise."""
 		return 4.0
 
-	def _folders_first_shortcut(self, folder_threads, started):
-		"""True when the finished folder tier alone gives autoplay something to play, so the cloud
-		tier is never started (#149). The candidates come from the same process_results and
+	def _folders_only_list_enabled(self):
+		"""Folder results first in the manual list (#175): Autoplay off, in the foreground. With
+		Autoplay on, the folders-first path above decides."""
+		return not self.background and not self.autoplay and settings.folders_only_list()
+
+	def _folders_first_shortcut(self, folder_threads, started, autoplay_only=True):
+		"""True when the finished folder tier alone is enough, so the cloud tier is never started
+		(#149). The candidates come from the same process_results and
 		_prescrape_autoplay_candidates the real path uses, so the title check, quality filters and
-		per-provider autoplay setting all apply. process_results can set cloud_prescrape_autoplay,
-		which skips the resume prompt and changes failure handling, so the probe never leaves it
-		set; the real path sets it again from the same results."""
+		per-provider autoplay setting all apply. With autoplay_only False (the manual list, #175)
+		any folder result that survives process_results is enough. process_results can set
+		cloud_prescrape_autoplay, which skips the resume prompt and changes failure handling, so
+		the probe never leaves it set; the real path sets it again from the same results."""
+		mode = 'folders first' if autoplay_only else 'folders only'
 		still_running = [i.name for i in folder_threads if i.is_alive()]
 		if still_running: reason = 'folders still running: %s' % ','.join(still_running)
 		elif not self.prescrape_sources: reason = 'no folder results'
 		else:
 			saved = self.cloud_prescrape_autoplay
-			try: candidates = self._prescrape_autoplay_candidates(self.process_results(list(self.prescrape_sources)))
+			try:
+				candidates = self.process_results(list(self.prescrape_sources))
+				if autoplay_only: candidates = self._prescrape_autoplay_candidates(candidates)
 			except: candidates = []
 			finally: self.cloud_prescrape_autoplay = saved
-			if candidates:
+			if candidates and autoplay_only:
 				self._log_prescrape_timing(started, 'folders first: %d autoplay hit(s), cloud tier skipped' % len(candidates))
 				return True
-			reason = '%d folder result(s), none autoplay would take' % len(self.prescrape_sources)
-		self._log_prescrape_timing(started, 'folders first declined (%s), starting cloud tier' % reason)
+			if candidates:
+				self._log_prescrape_timing(started, 'folders only: %d folder result(s) listed, cloud tier left for the search entry' % len(candidates))
+				return True
+			reason = '%d folder result(s), %s' % (len(self.prescrape_sources), 'none autoplay would take' if autoplay_only else 'none passed the filters')
+		self._log_prescrape_timing(started, '%s declined (%s), starting cloud tier' % (mode, reason))
 		return False
 
 	def process_results(self, results):
@@ -1439,10 +1459,12 @@ class Sources():
 		self.quality_filter = self._quality_filter()
 
 	def _exclude_internal_scrapers_for_external_only_followup(self):
-		"""Run External Scraper Search: skip all non-external scrapers; keep prescrape results in memory."""
+		"""Run External Scraper Search: skip all non-external scrapers; keep prescrape results in memory.
+		Cloud scrapers a folders-only list skipped (#175) never ran, so they stay in the search."""
 		self.determine_scrapers_status()
+		skipped = set(getattr(self, 'folders_only_skipped', None) or ())
 		for scraper in self.active_internal_scrapers:
-			if scraper != 'external' and scraper not in self.remove_scrapers:
+			if scraper != 'external' and scraper not in skipped and scraper not in self.remove_scrapers:
 				self.remove_scrapers.append(scraper)
 
 	def _reset_scrape_state(self, keep_disabled_ext_ignored=False):
@@ -1451,7 +1473,7 @@ class Sources():
 		self.filters_ignored = self.ignore_scrape_filters
 		self.sources, self.prescrape_sources, self.orig_results = [], [], []
 		self.threads, self.providers, self.prescrape_scrapers, self.prescrape_threads = [], [], [], []
-		self.prescrape_ran_scrapers = set()
+		self.prescrape_ran_scrapers, self.folders_only_skipped = set(), []
 		self.remove_scrapers, self.uncached_results = ['external'], []
 		self.active_folders, self.folder_info = False, []
 		self.internal_scraper_names, self.resolve_dialog_made = [], False
