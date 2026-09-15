@@ -143,6 +143,13 @@ class SourcesResults(BaseDialog):
 		if getattr(ref, 'active_external', False): return True
 		return False
 
+	def _full_search_label(self):
+		"""Text of the list's last entry. After a folders-only list (#175) it searches the skipped
+		cloud scrapers as well, so it says so."""
+		ref = self.sources_ref
+		if not (ref and getattr(ref, 'folders_only_skipped', None)): return 'RUN EXTERNAL SCRAPER SEARCH'
+		return 'SEARCH CLOUD AND EXTERNAL SCRAPERS' if getattr(ref, 'active_external', False) else 'SEARCH CLOUD SCRAPERS'
+
 	def onAction(self, action):
 		if self.get_visibility('Control.HasFocus(%s)' % self.filter_window_id): return self.filter_action(action)
 		chosen_listitem = self.get_listitem(self.window_id)
@@ -338,6 +345,7 @@ class SourcesResults(BaseDialog):
 			if self.prescrape and self._offer_full_scrape():
 				prescrape_listitem = self.make_listitem()
 				prescrape_listitem.setProperty('perform_full_search', 'true')
+				prescrape_listitem.setProperty('full_search_label', self._full_search_label())
 				self.item_list.append(prescrape_listitem)
 		except:
 			self.item_list = []
