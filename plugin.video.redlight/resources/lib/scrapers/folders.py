@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import time
 from caches.main_cache import main_cache
 from caches.settings_cache import get_setting
@@ -104,8 +104,11 @@ class source:
 			logger('Red Light', 'folders scrape deadline reached before listing %s' % folder_name)
 			return
 		def _process(item):
-			file_type = item[1]
-			normalized = normalize(item[0])
+			# Kodi returns WebDAV names URL-encoded ('Hunt%20for%20the%20Wilderpeople%20%282016%29',
+			# checked with xbmcvfs.listdir on Kodi 22, #172): match on the decoded name, build paths
+			# from the name exactly as Kodi gave it, which is the form its own listing accepts.
+			file_type, name = item[1], unquote(item[0])
+			normalized = normalize(name)
 			item_name = source_utils.clean_title(normalized)
 			if file_type == 'file':
 				ext = os.path.splitext(urlparse(item[0]).path)[-1].lower()
@@ -116,7 +119,7 @@ class source:
 					url_path = self.url_path(folder_name, item[0])
 					size = self._file_size(url_path)
 					if size is None: return
-					scrape_results_append((item[0], url_path, size))
+					scrape_results_append((name, url_path, size))
 			elif self.title_query in item_name or (below_title and any(x in item_name for x in self.folder_query)):
 					# True by construction: this folder either matched the title or sits below one that did.
 					folder_results_append((self._as_dir(os.path.join(folder_name, item[0])), True))
@@ -161,7 +164,7 @@ class source:
 
 	def _names_title(self, path):
 		"""True when the configured path is the show's or film's own folder (.../Seinfeld/)."""
-		return self.title_query in source_utils.clean_title(normalize(os.path.basename(path.rstrip('/\\'))))
+		return self.title_query in source_utils.clean_title(normalize(unquote(os.path.basename(path.rstrip('/\\')))))
 
 	def _film_file_matches(self, normalized):
 		"""The title check results() applies anyway, made before the file is opened for its size (#172),
