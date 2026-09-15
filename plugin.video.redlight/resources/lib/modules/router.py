@@ -63,9 +63,11 @@ def routing(sys):
 	elif mode == 'playback.next_episode':
 		# #92: same next-episode computation as next_episode.info, handed to playback.media
 		# in-process (Sources().playback_prep()) instead of a second plugin invocation.
+		kodi_utils.release_resolve_handle(sys.argv)
 		from modules.next_episode_api import playback_next_episode
 		return playback_next_episode(params)
 	elif 'playback.' in mode:
+		kodi_utils.release_resolve_handle(sys.argv)
 		from modules.kodi_utils import player_check
 		return player_check(mode, params)
 	elif 'choice' in mode:

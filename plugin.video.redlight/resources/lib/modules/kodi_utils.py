@@ -1286,6 +1286,22 @@ def notification(line1, time=5000, icon=None, settle_ms=0):
 	if settle_ms: sleep(settle_ms)
 	kodi_dialog().notification('Red Light', line1, icon or addon_icon_mini(), time, False)
 
+def release_resolve_handle(argv):
+	# #179: when Kodi plays a playback.* URL as a playable item (TMDbHelper's Red Light player,
+	# "is_resolvable": "false"), it gives this invocation a handle and waits for setResolvedUrl.
+	# Red Light plays through its own xbmc.Player and stays open until the episode ends, so Kodi 22
+	# then reports "One or more items failed to play". Resolving to nothing straight away lets Kodi
+	# drop the item quietly, inside its 20 s playlist timeout, and playback carries on as it does
+	# for a RunPlugin launch. RunPlugin launches have handle -1 and are left alone.
+	try: handle = int(argv[1])
+	except (IndexError, TypeError, ValueError): return False
+	if handle < 0: return False
+	try: xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
+	except Exception as e:
+		logger('release_resolve_handle', str(e))
+		return False
+	return True
+
 def player_check(mode, params):
 	from modules.settings import playback_key
 	if mode == 'playback.%s' % playback_key():
