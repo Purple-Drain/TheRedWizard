@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import re
+import time
 from threading import Lock
 from modules import kodi_utils
 from caches.base_cache import connect_database
@@ -28,6 +29,25 @@ _META_AUTH_VISIBILITY_SETTINGS = frozenset((
 	'punchplay.user', 'punchplay.token', 'punchplay.client',
 	'wetrakr.user', 'wetrakr.token',
 ))
+# Logins (#176). Home window properties can be read by any add-on, skin or JSON-RPC client, so these
+# are mirrored only as a stand-in: a real value shows as SECRET_MASK, while '', empty_setting, '0' and
+# the shipped default pass through, which is all settings_manager.xml compares them against.
+# get_setting and read_db_value read them from settings.db. Each process keeps them briefly, and a
+# write through set, write_db or set_many bumps _SECRETS_GENERATION (a non-secret Home property), which
+# makes every process read them again, so a refreshed token is seen everywhere at once, as the shared
+# property gave before. _SECRET_TTL bounds how long a write that bypasses those can go unseen.
+SECRET_SETTING_IDS = frozenset((
+	'rd.token', 'rd.refresh', 'rd.secret', 'rd.client_id', 'tb.token', 'pm.token', 'ad.token', 'oc.token',
+	'trakt.token', 'trakt.refresh', 'trakt.secret', 'tmdb.token', 'tmdb.lists_read_token',
+	'tmdb.session_id', 'tmdb.account_session_id', 'mdblist.token', 'mdblist.refresh', 'simkl.token',
+	'wetrakr.token', 'punchplay.token', 'punchplay.refresh',
+	'easynews_password', 'aiostreams.password', 'nzb1.key', 'nzb2.key', 'nzb3.key',
+	'playback.opensubs_api_key', 'playback.opensubs_password', 'playback.opensubs_token',
+	'google_api', 'groq_api', 'omdb_api',
+))
+SECRET_MASK = '********'
+_SECRET_TTL = 2.0
+_SECRETS_GENERATION = 'redlight.settings_secrets_generation'
 _NEW_SETTING_VALUE_MIGRATIONS = {
 	'trakt.calendar_display': 'single_ep_display',
 	'trakt.calendar_display_widget': 'single_ep_display_widget',
@@ -207,11 +227,11 @@ def sanitize_setting_value(setting_id, value, setting_info=None, validate_paths=
 
 class SettingsCache:
 	def __init__(self):
-		self._db_cache = {}
+		self._db_cache, self._secret_cache = {}, {}
 		self._db_warmed = False
 
 	def clear_db_cache(self):
-		self._db_cache = {}
+		self._db_cache, self._secret_cache = {}, {}
 		self._db_warmed = False
 
 	def _warm_db_cache(self):
@@ -219,6 +239,7 @@ class SettingsCache:
 		self._db_warmed = True
 		try:
 			for setting_id, setting_value in self.get_all().items():
+				if setting_id in SECRET_SETTING_IDS: continue
 				setting_info = default_setting_values(setting_id)
 				if setting_info: setting_value = sanitize_setting_value(setting_id, setting_value, setting_info, validate_paths=False)
 				else: setting_value = property_safe_string(setting_value)
@@ -227,23 +248,30 @@ class SettingsCache:
 
 	def read_db_value(self, setting_id, validate_paths=False):
 		setting_id = setting_id.replace('redlight.', '')
-		if setting_id in self._db_cache: return self._db_cache[setting_id]
-		if not self._db_warmed: self._warm_db_cache()
-		if setting_id in self._db_cache: return self._db_cache[setting_id]
+		secret = setting_id in SECRET_SETTING_IDS
+		if secret:
+			generation = kodi_utils.get_property(_SECRETS_GENERATION)
+			hit = self._secret_cache.get(setting_id)
+			if hit and hit[2] == generation and time.monotonic() - hit[1] < _SECRET_TTL: return hit[0]
+		else:
+			if setting_id in self._db_cache: return self._db_cache[setting_id]
+			if not self._db_warmed: self._warm_db_cache()
+			if setting_id in self._db_cache: return self._db_cache[setting_id]
 		try:
 			dbcon = connect_database('settings_db')
 			row = dbcon.execute('SELECT setting_value FROM settings WHERE setting_id = ?', (setting_id,)).fetchone()
 			if not row:
-				self._db_cache[setting_id] = None
+				if not secret: self._db_cache[setting_id] = None
 				return None
 			setting_value = row[0]
 			setting_info = default_setting_values(setting_id)
 			if setting_info: setting_value = sanitize_setting_value(setting_id, setting_value, setting_info, validate_paths=validate_paths)
 			else: setting_value = property_safe_string(setting_value)
-			self._db_cache[setting_id] = setting_value
+			if secret: self._secret_cache[setting_id] = (setting_value, time.monotonic(), generation)
+			else: self._db_cache[setting_id] = setting_value
 			return setting_value
 		except:
-			self._db_cache[setting_id] = None
+			if not secret: self._db_cache[setting_id] = None
 			return None
 
 	def get(self, setting_id):
@@ -289,6 +317,7 @@ class SettingsCache:
 		setting_id = setting_id.replace('redlight.', '')
 		self._db_cache.pop(setting_id, None)
 		self._db_cache.pop('%s_name' % setting_id, None)
+		self._secret_cache.pop(setting_id, None)
 		dbcon = connect_database('settings_db')
 		setting_info = default_setting_values(setting_id)
 		if not setting_info: return
@@ -306,6 +335,7 @@ class SettingsCache:
 					persist_active_profile(old_instance)
 				except: pass
 		dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', (setting_id, setting_type, setting_default, setting_value))
+		if setting_id in SECRET_SETTING_IDS: _bump_secrets_generation()
 		if instance_switch is not None:
 			try:
 				from apis.aiostreams_api import apply_profile
@@ -383,12 +413,14 @@ class SettingsCache:
 	def set_many(self, settings_list, load_properties=True):
 		dbcon = connect_database('settings_db')
 		dbcon.executemany('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', settings_list)
+		if any(item[0] in SECRET_SETTING_IDS for item in settings_list): _bump_secrets_generation()
 		if load_properties:
 			for item in settings_list: self.set_memory_cache(item[0], item[3] or item[2])
 
 	def write_db(self, setting_id, setting_value, setting_info=None):
 		setting_id = setting_id.replace('redlight.', '')
 		self._db_cache.pop(setting_id, None)
+		self._secret_cache.pop(setting_id, None)
 		if setting_info is None: setting_info = default_setting_values(setting_id)
 		if setting_info: setting_value = sanitize_setting_value(setting_id, setting_value, setting_info)
 		else: setting_value = property_safe_string(setting_value)
@@ -398,9 +430,11 @@ class SettingsCache:
 				(setting_id, setting_info['setting_type'], setting_info['setting_default'], setting_value))
 		else:
 			dbcon.execute('INSERT OR REPLACE INTO settings VALUES (?, ?, ?, ?)', (setting_id, 'name', '', setting_value))
+		if setting_id in SECRET_SETTING_IDS: _bump_secrets_generation()
 
 	def set_memory_cache(self, setting_id, setting_value):
 		try:
+			if setting_id in SECRET_SETTING_IDS: setting_value = _property_stand_in(setting_id, setting_value)
 			kodi_utils.set_property('redlight.%s' % setting_id, property_safe_string(setting_value))
 		except: pass
 
@@ -423,8 +457,20 @@ settings_cache = SettingsCache()
 def set_setting(setting_id, value):
 	settings_cache.set(setting_id, value)
 
+def _bump_secrets_generation():
+	"""Tell every Python process to read its logins again (#176). Called after the database write."""
+	try: kodi_utils.set_property(_SECRETS_GENERATION, '%.6f' % time.time())
+	except: pass
+
+def _property_stand_in(setting_id, value):
+	"""What a login's Home property holds (#176): unset and shipped-default values as they are, so the
+	settings window can still tell set from unset, and SECRET_MASK for anything else."""
+	info = default_setting_values(setting_id)
+	if value in (None, '', 'empty_setting', '0') or (info and value == info['setting_default']): return value or ''
+	return SECRET_MASK
+
 def get_setting(setting_id, fallback=''):
-	if _properties_loaded():
+	if _properties_loaded() and setting_id.replace('redlight.', '') not in SECRET_SETTING_IDS:
 		prop = kodi_utils.get_property(setting_id)
 		if prop not in ('', None): return prop
 	value = settings_cache.read_db_value(setting_id)
