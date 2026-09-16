@@ -700,6 +700,8 @@ class Sources():
 		return self.sources
 
 	def collect_prescrape_results(self):
+		if settings.prescrape_sequential() and not self.background:
+			return self._collect_prescrape_results_sequential()
 		threads_append = self.prescrape_threads.append
 		folder_prescrape, folder_scrapers = False, []
 		if self.active_folders:
@@ -801,12 +803,12 @@ class Sources():
 		if still_running: reason = 'folders still running: %s' % ','.join(still_running)
 		elif not self.prescrape_sources: reason = 'no folder results'
 		else:
-			saved = self.cloud_prescrape_autoplay
+			saved, saved_autoplay = self.cloud_prescrape_autoplay, self.autoplay
 			try:
 				candidates = self.process_results(list(self.prescrape_sources))
 				if autoplay_only: candidates = self._prescrape_autoplay_candidates(candidates)
 			except: candidates = []
-			finally: self.cloud_prescrape_autoplay = saved
+			finally: self.cloud_prescrape_autoplay, self.autoplay = saved, saved_autoplay
 			if candidates and autoplay_only:
 				self._log_prescrape_timing(started, 'folders first: %d autoplay hit(s), cloud tier skipped' % len(candidates))
 				return True
@@ -816,6 +818,121 @@ class Sources():
 			reason = '%d folder result(s), %s' % (len(self.prescrape_sources), 'none autoplay would take' if autoplay_only else 'none passed the filters')
 		self._log_prescrape_timing(started, '%s declined (%s), starting cloud tier' % (mode, reason))
 		return False
+
+	def _collect_prescrape_results_sequential(self):
+		"""The waterfall ladder (#22, opt-in: redlight.prescrape.sequential, foreground only, #3).
+		Rungs run in ascending provider_sort_ranks() order (#6, one dial, reused rather than a second
+		settings surface); everything inside one rung starts together and races, reacting to the
+		first usable result instead of waiting for the whole rung (#10). A decided rung's losing
+		threads are left running, same as today's folder tier: they take no stop flag, and whatever
+		they add to prescrape_sources afterwards is still there for playback_failed_action's
+		fallback-pool check. One shared started clock, so a rung never gets a fresh budget window."""
+		threads_append = self.prescrape_threads.append
+		folder_prescrape, folder_scrapers = False, []
+		if self.active_folders:
+			if settings.check_prescrape_sources('folders', self.media_type):
+				self.append_folder_scrapers(folder_scrapers)
+				folder_prescrape = True
+		other_scrapers = self.internal_sources(True)
+		self.folders_only_skipped = []
+		if not (self.prescrape_scrapers or folder_scrapers or other_scrapers) and not folder_prescrape:
+			return []
+		started = time.time()
+		ranks = settings.provider_sort_ranks()
+		def _rank(i):
+			return ranks.get('folders' if i[0] == 'folders' else i[2], 11)
+		rungs = {}
+		for i in list(folder_scrapers) + list(other_scrapers):
+			rungs.setdefault(_rank(i), []).append(i)
+		rung_order = sorted(rungs)
+		budget_total = 25
+		autoplay_only = self.autoplay
+		def _start(scrapers):
+			self.prescrape_scrapers.extend(scrapers)
+			rung_threads = []
+			for i in scrapers:
+				thread = Thread(target=self._timed_prescrape, args=(i[0], i[1], started), name=i[2])
+				threads_append(thread)
+				rung_threads.append(thread)
+				thread.start()
+			return rung_threads
+		for idx, rank in enumerate(rung_order):
+			rung_scrapers = rungs[rank]
+			remaining = budget_total - (time.time() - started)
+			if remaining <= 0:
+				self._log_prescrape_timing(started, 'rung budget_out_before_start rank=%s scrapers=%s' % (rank, ','.join(i[2] for i in rung_scrapers)))
+				continue
+			self._log_prescrape_timing(started, 'rung started rank=%s scrapers=%s' % (rank, ','.join(i[2] for i in rung_scrapers)))
+			rung_threads = _start(rung_scrapers)
+			if self._user_cancelled_scrape():
+				break
+			if self._wait_for_rung(rung_threads, started, rank, remaining, autoplay_only):
+				if not autoplay_only:
+					for later_rank in rung_order[idx + 1:]:
+						self.folders_only_skipped.extend(i[2] for i in rungs[later_rank] if i[0] != 'folders')
+				break
+		self._log_prescrape_timing(started, 'wait ended', len(self.prescrape_sources), [i.name for i in self.prescrape_threads if i.is_alive()])
+		for i in self.prescrape_scrapers:
+			scraper_name = i[2]
+			if scraper_name not in self.remove_scrapers:
+				self.remove_scrapers.append(scraper_name)
+		if folder_prescrape and 'folders' not in self.remove_scrapers:
+			self.remove_scrapers.append('folders')
+		self.prescrape_ran_scrapers = {i[2] for i in self.prescrape_scrapers}
+		return self.prescrape_sources
+
+	def _sequential_rung_candidates(self, autoplay_only):
+		"""Same probe _folders_first_shortcut uses (real process_results plus the autoplay filter),
+		generalized to any rung: autoplay on needs a candidate autoplay would take, autoplay off (the
+		manual list, #175 generalized) needs any result that survives process_results."""
+		if not self.prescrape_sources:
+			return []
+		saved, saved_autoplay = self.cloud_prescrape_autoplay, self.autoplay
+		try:
+			candidates = self.process_results(list(self.prescrape_sources))
+			if autoplay_only:
+				candidates = self._prescrape_autoplay_candidates(candidates)
+		except:
+			candidates = []
+		finally:
+			self.cloud_prescrape_autoplay, self.autoplay = saved, saved_autoplay
+		return candidates
+
+	def _wait_for_rung(self, rung_threads, started, rank, remaining_budget, autoplay_only):
+		"""Poll one ladder rung: react to the first usable result (race, not first-slot-always, #10),
+		never stop the rest of the rung, and use the shared started clock for the dialog percent so it
+		never resets per rung (risk #2). Every stop reason (hit/declined/budget_out) is logged with the
+		rank so a pulled kodi.log can be checked against the ladder order (the owner's skill/hook
+		question on #22)."""
+		deadline = time.time() + max(0.0, remaining_budget)
+		monitor = None if self.background else kodi_utils.kodi_monitor()
+		show_dialog = not self.background and self.progress_dialog
+		while True:
+			if self._user_cancelled_scrape():
+				return False
+			self._touch_sources_busy()
+			if not self.background:
+				self._process_internal_results()
+			candidates = self._sequential_rung_candidates(autoplay_only)
+			if candidates:
+				self._log_prescrape_timing(started, 'rung hit rank=%s winner=%s results=%d' % (
+						rank, candidates[0].get('scrape_provider', ''), len(candidates)))
+				return True
+			alive = [t for t in rung_threads if t.is_alive()]
+			if show_dialog:
+				elapsed = max(time.time() - started, 0)
+				percent = int((elapsed / float(25)) * 100)
+				line1 = ', '.join(t.getName() for t in alive).upper()
+				self.progress_dialog.update_scraper(self.sources_sd, self.sources_720p, self.sources_1080p, self.sources_4k, self.sources_total, line1, percent)
+			if not alive:
+				self._log_prescrape_timing(started, 'rung declined rank=%s reason=no_candidates' % rank)
+				return False
+			if time.time() >= deadline:
+				self._log_prescrape_timing(started, 'rung budget_out rank=%s' % rank, still_running=[t.getName() for t in alive])
+				return False
+			kodi_utils.sleep(self.sleep_time)
+			if monitor is not None and monitor.abortRequested():
+				return False
 
 	def process_results(self, results):
 		if not results: return results
@@ -859,11 +976,14 @@ class Sources():
 				results = self._merge_aiostreams_at_provider_rank(non_aio, aio_block)
 		if self.prescrape:
 			self.all_scrapers = self.active_internal_scrapers
-			if self.autoplay:
-				autoplay_results = self._prescrape_autoplay_candidates(results)
-				if autoplay_results:
-					self.cloud_prescrape_autoplay = True
-					results = autoplay_results
+			# #22/204ace1: per-provider prescrape autoplay (Check Before Full Search + its own
+			# Autoplay Result) must work independent of the global Autoplay switch, not only when it
+			# happens to already be on.
+			autoplay_results = self._prescrape_autoplay_candidates(results)
+			if autoplay_results:
+				self.autoplay = True
+				self.cloud_prescrape_autoplay = True
+				results = autoplay_results
 		else:
 			self.all_scrapers = list(set(self.active_internal_scrapers + self.remove_scrapers))
 			kodi_utils.clear_property('fs_filterless_search')
@@ -1296,7 +1416,8 @@ class Sources():
 			if self.autoplay_nextep and not self.autoscrape_nextep:
 				return self._stash_nextep_autoplay_play(autoplay_queue)
 			return self.play_file(autoplay_queue)
-		prescrape_autoplay = self._prescrape_autoplay_candidates(results) if self.autoplay else []
+		# #22/204ace1: unconditional, same reasoning as the process_results site above.
+		prescrape_autoplay = self._prescrape_autoplay_candidates(results)
 		if prescrape_autoplay:
 			self.cloud_prescrape_autoplay = True
 			self._last_cloud_autoplay_results = list(prescrape_autoplay)
@@ -2839,6 +2960,20 @@ class Sources():
 		if self.cloud_prescrape_autoplay:
 			self._kill_progress_dialog(join_timeout=1.0)
 			self.resolve_dialog_made = False
+			already_tried = list(getattr(self, '_last_cloud_autoplay_results', None) or [])
+			fresh = [i for i in list(self.prescrape_sources) if i not in already_tried]
+			fresh_autoplay = self._prescrape_autoplay_candidates(fresh) if fresh else []
+			if (fresh_autoplay and self.autoplay
+					and not getattr(self, '_prescrape_fallback_pool_done', False)):
+				# #22/C10: a slower rung/slot is never stopped once another one wins, so it can still
+				# finish while the winner is being retried. Try what it produced through the same
+				# per-item retry queue play_file already builds, once, before treating the ladder as
+				# exhausted and falling through further.
+				self._prescrape_fallback_pool_done = True
+				self._last_cloud_autoplay_results = already_tried + fresh_autoplay
+				kodi_utils.logger('Red Light', 'Cloud queue exhausted: retrying with %d result(s) that finished after the winning pick' % len(fresh_autoplay))
+				self._prepare_cloud_autoplay_resolve()
+				return self.play_file(fresh_autoplay)
 			# #104: the cloud-only prescrape found sources but every one failed to open (a CDN
 			# stall, a dead debrid link). The "found nothing" case below already continues to the
 			# full scrape; do the same here instead of parking the user in the sources dialog,
