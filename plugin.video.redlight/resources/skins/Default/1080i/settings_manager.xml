@@ -2412,7 +2412,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.aio.priority)]</property>
-                          <property name="setting_description">Choose the order in which AIOStreams results appear in relation to any other active accounts. The lower the number, the higher the sort order.</property>
+                          <property name="setting_description">Choose the order in which AIOStreams results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=aio.priority)</onclick>
                       </item>
         <!-- All Debrid -->
@@ -2522,7 +2522,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.ad.priority)]</property>
-                          <property name="setting_description">Choose the order in which All Debrid results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                          <property name="setting_description">Choose the order in which All Debrid results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=ad.priority)</onclick>
                       </item>
         <!-- EasyNews -->
@@ -2668,7 +2668,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.en.priority)]</property>
-                          <property name="setting_description">Choose the order in which EasyNews results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                          <property name="setting_description">Choose the order in which EasyNews results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=en.priority)</onclick>
                       </item>
         <!-- NZB Indexers -->
@@ -2894,7 +2894,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nzb.priority)]</property>
-                          <property name="setting_description">Sort order for NZB indexer results in the sources list relative to other providers. Lower number = higher in the list.</property>
+                          <property name="setting_description">Sort order for NZB indexer results in the sources list relative to other providers. Lower number = higher in the list. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=nzb.priority)</onclick>
                       </item>
         <!-- Offcloud -->
@@ -3037,7 +3037,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.oc.priority)]</property>
-                          <property name="setting_description">Choose the order in which Offcloud results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                          <property name="setting_description">Choose the order in which Offcloud results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=oc.priority)</onclick>
                       </item>
         <!-- Premiumize -->
@@ -3170,7 +3170,7 @@
                          <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                          <property name="setting_type">numeric</property>
                          <property name="setting_value">$INFO[Window(10000).Property(redlight.pm.priority)]</property>
-                         <property name="setting_description">Choose the order in which Premiumize results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                         <property name="setting_description">Choose the order in which Premiumize results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=pm.priority)</onclick>
                      </item>
         <!-- Real Debrid -->
@@ -3291,7 +3291,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.rd.priority)]</property>
-                          <property name="setting_description">Choose the order in which Real Debrid results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                          <property name="setting_description">Choose the order in which Real Debrid results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=rd.priority)</onclick>
                       </item>
                       <item>
@@ -3464,7 +3464,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.tb.priority)]</property>
-                          <property name="setting_description">Choose the order in which TorBox results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                          <property name="setting_description">Choose the order in which TorBox results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=tb.priority)</onclick>
                       </item>
         <!-- Local Media Folders -->
@@ -3532,6 +3532,16 @@
                       <item>
                           <visible>Container(2000).HasFocus(62)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.provider.folders),true)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.check.folders),true)</visible>
+                          <property name="setting_label">    - Waterfall Prescrape (Advanced)</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.prescrape.sequential)]</property>
+                          <property name="setting_description">Run the whole prescrape search as a strict ladder instead of one folders-then-clouds step: each priority group (set below, lower number first) searches on its own, one group's results are used the moment one is found, and no later group is started. When off, only the folders-first behaviour above applies. Off by default (#22).</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=prescrape.sequential)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(62)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.provider.folders),true)</visible>
                           <property name="setting_label">Show Results at Top</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.results.sort_folders_first)]</property>
@@ -3553,7 +3563,7 @@
                           <property name="setting_label">Priority (Lower Number Equals Higher Priority)</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.folders.priority)]</property>
-                          <property name="setting_description">Choose the order in which Media Folders results appear in relation to any other active accounts. The lower the number, the higher the sort order</property>
+                          <property name="setting_description">Choose the order in which Media Folders results appear in relation to any other active accounts. The lower the number, the higher the sort order. Also the waterfall prescrape rung order when Waterfall Prescrape is on (#22).</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=folders.priority)</onclick>
                       </item>
 <!-- RESULTS 70 -->

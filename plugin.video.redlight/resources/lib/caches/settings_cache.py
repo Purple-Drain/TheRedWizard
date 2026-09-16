@@ -1532,6 +1532,7 @@ def default_settings():
 {'setting_id': 'cloud_play_retries', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0'},
 {'setting_id': 'cloud_queue_fallthrough', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'prescrape_folders_first', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'prescrape.sequential', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cloud_stall_resume', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'cloud_stall_resume_attempts', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0'},
 {'setting_id': 'playback_open_timeout', 'setting_type': 'action', 'setting_default': '30', 'min_value': '1'},
