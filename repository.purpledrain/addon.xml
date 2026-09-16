@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="repository.purpledrain" name="Purple Drain Fork Repo" version="1.1.0" provider-name="Purple-Drain">
+<addon id="repository.purpledrain" name="Purple Drain Fork Repo" version="1.2.0" provider-name="Purple-Drain">
     <extension point="xbmc.addon.repository" name="Purple Drain Fork Repo">
         <dir>
             <info compressed="false">https://purple-drain.github.io/TheRedWizard/addons.xml</info>
@@ -11,10 +11,15 @@
             <checksum>https://purple-drain.github.io/skin.arctic.fuse.3/addons.xml.md5</checksum>
             <datadir zip="true">https://purple-drain.github.io/skin.arctic.fuse.3/</datadir>
         </dir>
+        <dir>
+            <info compressed="false">https://purple-drain.github.io/plugin.video.beinsports.apac/addons.xml</info>
+            <checksum>https://purple-drain.github.io/plugin.video.beinsports.apac/addons.xml.md5</checksum>
+            <datadir zip="true">https://purple-drain.github.io/plugin.video.beinsports.apac/</datadir>
+        </dir>
     </extension>
     <extension point="xbmc.addon.metadata">
-        <summary lang="en">Purple-Drain fork add-ons: Redlight and Arctic Fuse 3</summary>
-        <description lang="en">Serves plugin.video.redlight from the Purple-Drain fork (github.com/Purple-Drain/TheRedWizard) and skin.arctic.fuse.3 from the Purple-Drain skin fork (github.com/Purple-Drain/skin.arctic.fuse.3), so both update from the forks instead of upstream's repositories.</description>
+        <summary lang="en">Purple-Drain fork add-ons: Redlight, Arctic Fuse 3 and beIN Sports Connect</summary>
+        <description lang="en">Serves plugin.video.redlight from the Purple-Drain fork (github.com/Purple-Drain/TheRedWizard), skin.arctic.fuse.3 from the Purple-Drain skin fork (github.com/Purple-Drain/skin.arctic.fuse.3), and plugin.video.beinsports.apac from the Purple-Drain beIN fork (github.com/Purple-Drain/plugin.video.beinsports.apac), so all three update from the forks instead of upstream's repositories.</description>
         <platform>all</platform>
     </extension>
 </addon>
