@@ -444,6 +444,10 @@ def autoplay_next_episode():
 	if auto_play('episode') and get_setting('redlight.autoplay_next_episode', 'false') == 'true': return True
 	else: return False
 
+def autoplay_preresolve_next_episode():
+	'''#1: resolve the next episode's top source during the last minutes of the current one.'''
+	return autoplay_next_episode() and get_setting('redlight.autoplay_preresolve_next_episode', 'true') == 'true'
+
 def skip_intro_mode():
 	return int(get_setting('redlight.autoplay_skip_intro', '0'))
 

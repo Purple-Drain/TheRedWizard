@@ -4197,6 +4197,15 @@
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true)</visible>
+                          <property name="setting_label">    - Pre-resolve Next Episode</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_preresolve_next_episode)]</property>
+                          <property name="setting_description">Resolve the next episode's top source during the last minutes of the current one, so the switch is instant. Falls back to a normal resolve if the link has expired</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=autoplay_preresolve_next_episode)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true)</visible>
                           <property name="setting_label">    - Next Episode Alert Method</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_alert_method_name)]</property>

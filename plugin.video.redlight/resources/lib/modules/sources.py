@@ -42,6 +42,10 @@ _NEXTEP_NATURAL_END_SEC = 15
 _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
 _NEXTEP_STASH_PLAY_IN_FLIGHT = False
+# #1: how long a background-prep pre-resolve stays usable at handoff. Longer than any
+# realistic gap between the prep running and the alert/stash play firing; past this the
+# resolved url is old enough that a fresh resolve is safer than risking an expired link.
+NEXTEP_PRERESOLVE_TTL_SEC = 900
 
 _STALL_RESUME_REWIND_SEC = 5
 
@@ -218,6 +222,30 @@ def _nextep_stash_key(meta):
 	except:
 		return None
 
+def nextep_preresolve_item_key(item):
+	'''Identity of a source item for the pre-resolve gate (#1): the pre-resolved url is only
+	handed to play_file() when it is about to open the exact item it was resolved for.'''
+	if not item:
+		return None
+	try:
+		return '%s|%s' % (item.get('name', ''), item.get('hash') or item.get('url_dl') or '')
+	except Exception:
+		return None
+
+def nextep_preresolve_is_fresh(preresolved, item, now=None):
+	'''#1: gate on the item_key matching *and* the TTL. A stale or mismatched stash is simply
+	ignored (returns False) so the normal resolve path runs -- no new failure surface.'''
+	if not preresolved or not item:
+		return False
+	item_key = preresolved.get('item_key')
+	if not item_key or item_key != nextep_preresolve_item_key(item):
+		return False
+	resolved_at = preresolved.get('resolved_at')
+	if not isinstance(resolved_at, (int, float)):
+		return False
+	now = time.time() if now is None else now
+	return (now - resolved_at) <= NEXTEP_PRERESOLVE_TTL_SEC
+
 def peek_nextep_autoplay_stash():
 	key = kodi_utils.get_property(PROP_NEXTEP_SCRAPE_KEY)
 	if not key: return None
@@ -296,7 +324,7 @@ def claim_nextep_alert_handled(key):
 def clear_nextep_autoplay_cancelled():
 	kodi_utils.clear_property(PROP_NEXTEP_AUTOPLAY_CANCELLED)
 
-def stash_nextep_autoplay_results(results, meta, nextep_settings, params):
+def stash_nextep_autoplay_results(results, meta, nextep_settings, params, preresolved=None):
 	if nextep_autoplay_cancelled():
 		return False
 	key = _nextep_stash_key(meta)
@@ -304,7 +332,11 @@ def stash_nextep_autoplay_results(results, meta, nextep_settings, params):
 	# The episode being prepared from is still playing now, so its release name is recorded here; by the
 	# time the stash is played Kodi has cleared the live property (#165, Sources._nextep_same_file).
 	_NEXTEP_AUTOPLAY_STASH[key] = {'results': list(results), 'meta': dict(meta), 'nextep_settings': dict(nextep_settings or {}), 'params': dict(params or {}),
-		'playing_release': kodi_utils.get_property('redlight.now_playing_release') or ''}
+		'playing_release': kodi_utils.get_property('redlight.now_playing_release') or '',
+		# #1: the top candidate resolved ahead of time, so play_file() can skip a fresh resolve
+		# and the progress/resolve dialogs at handoff. Absent (None) when pre-resolve was
+		# skipped or failed -- the normal resolve path is the only path in that case.
+		'preresolved': dict(preresolved) if preresolved else None}
 	kodi_utils.set_property(PROP_NEXTEP_SCRAPE_KEY, key)
 	kodi_utils.set_property(PROP_NEXTEP_SCRAPE_READY, 'true')
 	kodi_utils.clear_property(PROP_NEXTEP_ALERT_KEY)
@@ -442,6 +474,9 @@ class Sources():
 			self._nextep_stash_settings = dict(stash.get('nextep_settings') or {})
 			self._nextep_prior_release = stash.get('playing_release') or ''
 			self._nextep_alert_handled = True
+			# #1: carried through the pickled stash as-is; play_file() checks freshness/item_key
+			# itself, so a stale or mismatched value here is harmless -- it just won't be used.
+			self._nextep_preresolved = stash.get('preresolved')
 			params_get = self.params.get
 		self.background = params_get('background', 'false') == 'true'
 		self.play_type = params_get('play_type', '')
@@ -2674,6 +2709,37 @@ class Sources():
 			return retry_copies(item, count, provider_text, extra_info, display_name, cloud_retries, marker='cloud_retry')
 		return []
 
+	def _try_preresolved_play(self, item, preresolved, monitor):
+		"""#1: hand a background-prep pre-resolved url straight to the player, no fresh resolve.
+		Returns (success, url). On any failure url is None and the caller falls back to the
+		normal per-item loop from the same item, same as a fresh resolve failing would."""
+		try:
+			if self._user_cancelled_resolve() or (monitor and monitor.abortRequested()):
+				self._resolve_user_cancelled = True
+				self.cancel_all_playback = True
+				return False, None
+			self.playing_filename = item.get('name', '')
+			self.playing_item = item
+			url = self._ensure_play_headers(preresolved['url'], item)
+			self._set_play_mime_hint(item, url)
+			player = RedLightPlayer()
+			player.run(url, self)
+			if self.playback_successful:
+				age = round(time.time() - preresolved.get('resolved_at', time.time()), 1)
+				kodi_utils.logger('Red Light', 'Autoplay next episode: played pre-resolved url (age %ss)' % age)
+				self._cleanup_offcloud_resolved_url(item, url)
+				self._cleanup_rd_resolved_url(item, url)
+				return True, url
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolved url rejected (playback failed)')
+			self._cleanup_offcloud_resolved_url(item, url)
+			self._cleanup_rd_resolved_url(item, url)
+			self.playback_successful = None
+			return False, None
+		except Exception as exc:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolved url rejected (%s)' % exc)
+			self.playback_successful = None
+			return False, None
+
 	def play_file(self, results, source={}):
 		playable_results = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
 		if not playable_results and not source:
@@ -2726,11 +2792,17 @@ class Sources():
 			if not self.continue_resolve_check():
 				self._kill_progress_dialog()
 				return
+			# #1: a fresh background-prep pre-resolve for this exact item skips the progress/resolve
+			# dialogs and _resolve_sources_wait below entirely -- the "loading episode" wait these
+			# exist for already happened during the prior episode's last minutes.
+			preresolved = getattr(self, '_nextep_preresolved', None)
+			self._nextep_preresolved = None
+			use_preresolve = bool(preresolved) and bool(items) and nextep_preresolve_is_fresh(preresolved, items[0])
 			if defer_stop_for_nextep:
-				if getattr(self, '_nextep_alert_handled', False) and not self.resolve_dialog_made:
+				if getattr(self, '_nextep_alert_handled', False) and not self.resolve_dialog_made and not use_preresolve:
 					self._make_resolve_dialog()
 				self._stop_active_playback(light=True)
-			if not self.progress_dialog and not self.background:
+			if not self.progress_dialog and not self.background and not use_preresolve:
 				self._make_progress_dialog()
 			if self._nextep_aio_en_fresh_start(source):
 				self.playback_percent = 0.0
@@ -2739,13 +2811,20 @@ class Sources():
 			if self.playback_percent == None:
 				self._finish_resolve_cancel()
 				return
-			self._prepare_resolve_ui()
-			if not self.resolve_dialog_made: self._make_resolve_dialog()
+			if not use_preresolve:
+				self._prepare_resolve_ui()
+				if not self.resolve_dialog_made: self._make_resolve_dialog()
 			if self.background: kodi_utils.sleep(1000)
 			monitor = kodi_utils.kodi_monitor()
+			skip_loop = False
+			if use_preresolve:
+				skip_loop, url = self._try_preresolved_play(items[0], preresolved, monitor)
+				if not skip_loop:
+					self._prepare_resolve_ui()
+					if not self.resolve_dialog_made: self._make_resolve_dialog()
 			for count, item in enumerate(items, 1):
 				try:
-					if self._resolve_user_cancelled or self.cancel_all_playback:
+					if skip_loop or self._resolve_user_cancelled or self.cancel_all_playback:
 						break
 					self._touch_sources_busy()
 					kodi_utils.hide_busy_dialog()
@@ -3303,13 +3382,48 @@ class Sources():
 			if not self._advance_past_duplicate_nextep():
 				self._decline_nextep_prep('duplicate file, no further episode')
 			return
-		if stash_nextep_autoplay_results(results, self.meta, self.nextep_settings, self.params):
+		preresolved = self._preresolve_nextep_candidate(results)
+		if stash_nextep_autoplay_results(results, self.meta, self.nextep_settings, self.params, preresolved=preresolved):
 			kodi_utils.logger('Red Light', 'Autoplay next episode scrape ready: %s S%02dE%02d (%s results)' % (
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), len(results)))
 		else:
 			kodi_utils.logger('Red Light', 'Autoplay next episode stash failed: %s S%02dE%02d' % (
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')))
 			self._decline_nextep_prep('stash failed')
+
+	def _preresolve_nextep_candidate(self, results):
+		"""#1: resolve the top autoplay_nextep candidate now, during the background prep, so
+		handoff at the actual episode switch can skip the resolve entirely. Scope: autoplay_nextep
+		only, called from _stash_nextep_autoplay_play. Returns None (pre-resolve absent, not a
+		failure) whenever the setting is off, there's no playable candidate, the candidate is a
+		folders hit (needs no unrestrict), or the resolve fails/times out -- the item stays in
+		results either way and gets a normal resolve at handoff."""
+		if not settings.autoplay_preresolve_next_episode():
+			return None
+		playable = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
+		if not playable:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (no playable candidate)')
+			return None
+		candidate = playable[0]
+		if candidate.get('scrape_provider') == 'folders':
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (folders source, no unrestrict needed)')
+			return None
+		started = time.time()
+		try:
+			url = self._resolve_sources_wait(candidate)
+		except Exception as exc:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (resolver raised %s)' % exc)
+			return None
+		if not url:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (resolve failed or timed out)')
+			return None
+		item_key = nextep_preresolve_item_key(candidate)
+		if not item_key:
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (no item key)')
+			return None
+		kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolved %s in %ss' % (
+			candidate.get('name', ''), round(time.time() - started, 1)))
+		return {'url': url, 'item_key': item_key, 'resolved_at': time.time()}
 
 	def continue_resolve_check(self):
 		try:
