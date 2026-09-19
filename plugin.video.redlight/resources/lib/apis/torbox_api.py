@@ -19,6 +19,16 @@ def _to_int(value, default=0):
 	except Exception: return default
 
 
+def _is_retryable_status(status):
+	'''#108: a definitive 4xx (auth/bad request/not found, etc) will not fix itself on retry;
+	429 (rate limit), 5xx and None (transport error, no response at all) still get another shot.'''
+	if status is None or status == 429:
+		return True
+	if 400 <= status < 500:
+		return False
+	return True
+
+
 _public_ip_cache = {'ip': '', 'expires': 0}
 
 
@@ -79,10 +89,14 @@ class TorBoxAPI:
 		except Exception: return None
 
 	def _get(self, url, data=None, timeout=20):
+		# last_status (#108): the status of the most recent call, so a retry loop can tell a
+		# definitive 4xx apart from a transport error (None) or a 5xx worth another attempt.
+		self.last_status = None
 		if self.token in ('empty_setting', '', None): return None
 		try:
 			headers = {'Authorization': 'Bearer %s' % self.token}
 			response = session.get(base_url + url, params=data or {}, headers=headers, timeout=timeout)
+			self.last_status = response.status_code
 			parsed = self._safe_json(response)
 			if parsed is not None:
 				return parsed
@@ -616,6 +630,14 @@ class TorBoxAPI:
 				if isinstance(r, dict) and not r.get('success'):
 					detail = r.get('detail') or r.get('error')
 					if detail: self.last_unrestrict_error = {'error': str(detail)[:120]}
+				# #108 item 3: check after the detail capture above, so a 4xx with a JSON body
+				# keeps the API's own detail in last_unrestrict_error instead of it being
+				# overwritten by the generic "requestdl returned N".
+				if not _is_retryable_status(self.last_status):
+					logger('TorBox', 'requestdl: stopping, definitive %s response' % self.last_status)
+					if not self.last_unrestrict_error:
+						self.last_unrestrict_error = {'error': 'requestdl returned %s' % self.last_status}
+					break
 				if not r or not isinstance(r, dict) or not r.get('success'):
 					continue
 				data = r.get('data')
