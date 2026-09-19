@@ -2724,6 +2724,13 @@ class Sources():
 			self._set_play_mime_hint(item, url)
 			player = RedLightPlayer()
 			player.run(url, self)
+			# #107: mirror the normal loop -- a mid-stream stall gets one re-resolve/reopen
+			# cycle before the deferred cleanup below runs, same as a freshly-resolved item.
+			# _resume_after_stall lazily makes its own resolve dialog for the reopen (the fast
+			# path deliberately made none), and always returns with playback_successful True
+			# unless the user cancelled, so the check below still applies to the *returned* url.
+			if self.playback_successful and getattr(player, 'stall_position', None):
+				url = self._resume_after_stall(item, url, player)
 			if self.playback_successful:
 				age = round(time.time() - preresolved.get('resolved_at', time.time()), 1)
 				kodi_utils.logger('Red Light', 'Autoplay next episode: played pre-resolved url (age %ss)' % age)

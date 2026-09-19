@@ -185,3 +185,76 @@ def test_try_preresolved_play_cancelled_before_start(monkeypatch):
     assert url is None
     assert obj._resolve_user_cancelled is True
     assert obj.cancel_all_playback is True
+
+
+def test_try_preresolved_play_runs_stall_resume_and_returns_its_url(monkeypatch):
+    """#107: a mid-stream stall on the fast path gets the same re-resolve/reopen cycle the
+    normal loop runs right after player.run, and the deferred cleanup targets the url
+    _resume_after_stall last opened, not the original pre-resolved one."""
+    obj = _sources()
+    obj.playback_successful = None
+    monkeypatch.setattr(obj, '_user_cancelled_resolve', lambda: False)
+    monkeypatch.setattr(obj, '_ensure_play_headers', lambda url, item: url)
+    monkeypatch.setattr(obj, '_set_play_mime_hint', lambda item, url: None)
+
+    cleanup_urls = []
+    monkeypatch.setattr(obj, '_cleanup_offcloud_resolved_url', lambda item, url: cleanup_urls.append(url))
+    monkeypatch.setattr(obj, '_cleanup_rd_resolved_url', lambda item, url: None)
+    monkeypatch.setattr(kodi_utils, 'logger', lambda *a: None)
+
+    class FakePlayer:
+        def __init__(self):
+            self.stall_position = (30, 120)
+
+        def run(inner_self, url, src):
+            src.playback_successful = True
+
+    monkeypatch.setattr(sources, 'RedLightPlayer', FakePlayer)
+
+    resume_calls = []
+
+    def fake_resume_after_stall(item, url, player):
+        resume_calls.append((item, url, player))
+        return 'http://reopened-after-stall'
+
+    monkeypatch.setattr(obj, '_resume_after_stall', fake_resume_after_stall)
+
+    preresolved = {'url': 'http://x', 'item_key': 'a|b', 'resolved_at': 1000.0}
+    ok, url = obj._try_preresolved_play(ITEM, preresolved, monitor=None)
+
+    assert ok is True
+    assert url == 'http://reopened-after-stall'
+    assert len(resume_calls) == 1
+    # cleanup ran against the reopened url, not the original pre-resolved one.
+    assert cleanup_urls == ['http://reopened-after-stall']
+
+
+def test_try_preresolved_play_no_stall_skips_resume(monkeypatch):
+    """No stall_position on the player: _resume_after_stall is never called, and the original
+    pre-resolved url (after header prep) is what cleanup targets, same as before #107's fix."""
+    obj = _sources()
+    obj.playback_successful = None
+    monkeypatch.setattr(obj, '_user_cancelled_resolve', lambda: False)
+    monkeypatch.setattr(obj, '_ensure_play_headers', lambda url, item: url)
+    monkeypatch.setattr(obj, '_set_play_mime_hint', lambda item, url: None)
+    monkeypatch.setattr(obj, '_cleanup_offcloud_resolved_url', lambda item, url: None)
+    monkeypatch.setattr(obj, '_cleanup_rd_resolved_url', lambda item, url: None)
+    monkeypatch.setattr(kodi_utils, 'logger', lambda *a: None)
+
+    resume_calls = []
+    monkeypatch.setattr(obj, '_resume_after_stall', lambda item, url, player: resume_calls.append(1))
+
+    class FakePlayer:
+        def __init__(self):
+            self.stall_position = None
+
+        def run(inner_self, url, src):
+            src.playback_successful = True
+
+    monkeypatch.setattr(sources, 'RedLightPlayer', FakePlayer)
+    preresolved = {'url': 'http://x', 'item_key': 'a|b', 'resolved_at': 1000.0}
+    ok, url = obj._try_preresolved_play(ITEM, preresolved, monitor=None)
+
+    assert ok is True
+    assert url == 'http://x'
+    assert resume_calls == []
