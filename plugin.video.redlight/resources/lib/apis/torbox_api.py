@@ -627,13 +627,17 @@ class TorBoxAPI:
 					return url
 				if isinstance(r, str) and r.strip().lower().startswith('http'):
 					return r.strip()
-				if not _is_retryable_status(self.last_status):
-					logger('TorBox', 'requestdl: stopping, definitive %s response' % self.last_status)
-					self.last_unrestrict_error = {'error': 'requestdl returned %s' % self.last_status}
-					break
 				if isinstance(r, dict) and not r.get('success'):
 					detail = r.get('detail') or r.get('error')
 					if detail: self.last_unrestrict_error = {'error': str(detail)[:120]}
+				# #108 item 3: check after the detail capture above, so a 4xx with a JSON body
+				# keeps the API's own detail in last_unrestrict_error instead of it being
+				# overwritten by the generic "requestdl returned N".
+				if not _is_retryable_status(self.last_status):
+					logger('TorBox', 'requestdl: stopping, definitive %s response' % self.last_status)
+					if not self.last_unrestrict_error:
+						self.last_unrestrict_error = {'error': 'requestdl returned %s' % self.last_status}
+					break
 				if not r or not isinstance(r, dict) or not r.get('success'):
 					continue
 				data = r.get('data')

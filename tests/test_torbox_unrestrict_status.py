@@ -38,7 +38,9 @@ class _FakeClock:
         return self.now
 
 
-def test_unrestrict_link_stops_retrying_on_definitive_4xx(monkeypatch):
+def test_unrestrict_link_stops_retrying_on_definitive_4xx_with_body_detail(monkeypatch):
+    """A 4xx with a JSON body: the API's own detail survives in last_unrestrict_error instead
+    of being overwritten by the generic 'requestdl returned N' message."""
     api = tb.TorBoxAPI()
     api.token = 'tok'
     monkeypatch.setattr(tb, '_cached_public_ip', lambda: '')
@@ -57,7 +59,31 @@ def test_unrestrict_link_stops_retrying_on_definitive_4xx(monkeypatch):
 
     assert result is None
     assert len(calls) == 1
-    assert api.last_unrestrict_error == {'error': 'requestdl returned 401'}
+    assert api.last_unrestrict_error == {'error': 'invalid token'}
+
+
+def test_unrestrict_link_stops_retrying_on_definitive_4xx_without_body(monkeypatch):
+    """A 4xx with no parseable JSON body (r is None, a transport-shaped miss): falls back to
+    the generic 'requestdl returned N' message, same as before."""
+    api = tb.TorBoxAPI()
+    api.token = 'tok'
+    monkeypatch.setattr(tb, '_cached_public_ip', lambda: '')
+
+    calls = []
+
+    def fake_get(url, data=None):
+        calls.append(1)
+        api.last_status = 404
+        return None
+
+    monkeypatch.setattr(api, '_get', fake_get)
+    monkeypatch.setattr(tb, 'sleep', lambda ms: None)
+
+    result = api.unrestrict_link('123,456')
+
+    assert result is None
+    assert len(calls) == 1
+    assert api.last_unrestrict_error == {'error': 'requestdl returned 404'}
 
 
 def test_unrestrict_link_keeps_retrying_on_5xx_until_deadline(monkeypatch):
