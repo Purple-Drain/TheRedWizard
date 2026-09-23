@@ -70,6 +70,18 @@ def abnormal_playback_end(curr_time, total_time, user_stopped=False, superseded=
 	if total < 60 or curr <= 0: return False
 	return (total - curr) > min_remaining
 
+def silent_open_failure(curr_time, total_time, user_stopped=False, superseded=False, cancelled=False, media_marked=False):
+	"""True when playback reached monitor() -- #115's open check already confirmed a real duration
+	and fullscreen video -- but no play time was ever recorded before it closed (#190: a curl read
+	failure straight after OpenFile, which Kodi closes as a clean end with no dialog of its own).
+	abnormal_playback_end requires real curr_time progress and so silently drops exactly this case,
+	since curr_time never left zero."""
+	if user_stopped or superseded or cancelled or media_marked: return False
+	try: curr, total = float(curr_time or 0), float(total_time or 0)
+	except (TypeError, ValueError): return False
+	if total < 60: return False
+	return curr <= 0
+
 def stall_end_signal(stopped, ended, error):
 	"""What Kodi said about how playback closed (#107): 'stopped' for a Stop, 'stall' for an
 	end-of-file or error well before the end (a dead stream closes as EOF), None while nothing
@@ -585,7 +597,12 @@ class RedLightPlayer(xbmc.Player):
 			if self.is_generic or getattr(self, '_nextep_prep_attempted', False): return
 			cancelled = self.cancel_all_playback or self._resolve_cancelled()
 			curr, total = getattr(self, 'curr_time', None), getattr(self, 'total_time', None)
-			if not abnormal_playback_end(curr, total, user_stopped=self._cb_stopped, superseded=playback_superseded, cancelled=cancelled, media_marked=marked_before_end): return
+			abnormal = abnormal_playback_end(curr, total, user_stopped=self._cb_stopped, superseded=playback_superseded, cancelled=cancelled, media_marked=marked_before_end)
+			# #190: a stream that opened (this function only runs after monitor() started, so Kodi
+			# already confirmed a real duration) but never advanced past 0s before closing is dropped
+			# by abnormal_playback_end's curr<=0 guard above, and Kodi shows nothing of its own for it.
+			silent_fail = (not abnormal) and silent_open_failure(curr, total, user_stopped=self._cb_stopped, superseded=playback_superseded, cancelled=cancelled, media_marked=marked_before_end)
+			if not abnormal and not silent_fail: return
 			# The callbacks lag isPlayingVideo() by a beat; give a Stop the chance to arrive.
 			waited = 0
 			while waited < _STALL_CALLBACK_WAIT_MS and not (self._cb_stopped or self._cb_ended or self.playback_error):
@@ -595,6 +612,14 @@ class RedLightPlayer(xbmc.Player):
 				self.end_outcome = 'superseded'
 				return
 			signal = stall_end_signal(self._cb_stopped, self._cb_ended, self.playback_error)
+			if silent_fail:
+				if signal == 'stall':
+					self.end_outcome = 'silent_open_failure'
+					ku.logger('Red Light', 'Playback opened but never advanced past 0s on %s before closing (ended=%s error=%s); notifying (#190)' % (
+						self.playing_filename or '', self._cb_ended, self.playback_error))
+					try: ku.notification('Playback failed to start: the stream closed with an error. Try again or pick another source.', 5000)
+					except Exception: pass
+				return
 			last_seek = getattr(self, '_last_seek', None)
 			seek_end = signal == 'stall' and seek_to_end(last_seek, total, time.time())
 			self.end_outcome = playback_end_outcome(stopped=self._cb_stopped, abnormal=True, signal=signal, seek_end=seek_end)
