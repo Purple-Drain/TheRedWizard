@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # TRUMP - UNFIT FOR OFFICE
 import xbmc, xbmcgui, xbmcplugin, xbmcvfs, xbmcaddon
-import os
+import os, time
 from urllib.parse import urlencode, unquote
 
 def addon_themes():
@@ -1286,6 +1286,54 @@ def notification(line1, time=5000, icon=None, settle_ms=0):
 	if settle_ms: sleep(settle_ms)
 	kodi_dialog().notification('Red Light', line1, icon or addon_icon_mini(), time, False)
 
+# #188: staged rollout step 1 of #179's option A design (issue comment 2026-09-16 06:18). A
+# throwaway diagnostic, not a release: side-loaded onto one device at a time, never merged to
+# main, no addon.xml bump. Its only trigger is this marker file's presence, so with the file
+# absent (every real install, and every test) release_resolve_handle is byte-for-byte pd.67.
+_RESOLVE_PROBE_MARKER = _ADDON_DATA_SPECIAL + 'resolve_probe.enabled'
+_RESOLVE_PROBE_DUMMY = 'resources/media/resolve_probe_dummy.mp4'
+_RESOLVE_PROBE_WAIT_MS = 6000
+
+def resolve_probe(handle):
+	"""#188: resolves the handle True to a tiny bundled clip instead of answering False, and
+	logs which of onPlayBackStarted/onAVStarted/onPlayBackStopped/onPlayBackEnded a throwaway
+	RedLightPlayer receives for it. This is the one premise nothing has confirmed on a real
+	device (#179's option A spec, section 1): that an invocation's Player object still gets
+	Kodi's callbacks once CApplicationPlay, not RedLightPlayer.play(), opens the file after a
+	True resolve. Nothing else changes -- real content still plays straight after this returns,
+	through player_check()'s own separate flow on the same invocation, exactly as today."""
+	from modules.player import RedLightPlayer
+	started_at = time.time()
+	try:
+		dummy_path = os.path.join(addon_path(), _RESOLVE_PROBE_DUMMY)
+		listing = xbmcgui.ListItem(path=dummy_path, offscreen=True)
+		listing.setProperty('IsPlayable', 'true')
+		listing.setInfo('video', {'title': 'Redlight resolve probe (#188)'})
+	except Exception as e:
+		logger('ResolveProbe', 'setup failed, falling back to a plain resolve: %s' % e)
+		try: xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
+		except Exception: pass
+		return False
+	observer = RedLightPlayer()
+	try:
+		xbmcplugin.setResolvedUrl(handle, True, listing)
+	except Exception as e:
+		logger('ResolveProbe', 'setResolvedUrl(True) failed: %s' % e)
+		return False
+	waited = 0
+	while waited < _RESOLVE_PROBE_WAIT_MS:
+		sleep(100)
+		waited += 100
+		if observer._cb_stopped or observer._cb_ended: break
+	if observer.isPlayingVideo():
+		try: observer.stop()
+		except Exception: pass
+		sleep(500)
+	logger('ResolveProbe', 'handle=%s started=%s stopped=%s ended=%s error=%s waited_ms=%s elapsed_ms=%s' % (
+		handle, observer._cb_started, observer._cb_stopped, observer._cb_ended, observer.playback_error,
+		waited, int((time.time() - started_at) * 1000)))
+	return True
+
 def release_resolve_handle(argv):
 	# #179: when Kodi plays a playback.* URL as a playable item (TMDbHelper's Red Light player,
 	# "is_resolvable": "false"), it gives this invocation a handle and waits for setResolvedUrl.
@@ -1296,6 +1344,8 @@ def release_resolve_handle(argv):
 	try: handle = int(argv[1])
 	except (IndexError, TypeError, ValueError): return False
 	if handle < 0: return False
+	if path_exists(_RESOLVE_PROBE_MARKER):
+		return resolve_probe(handle)
 	try: xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
 	except Exception as e:
 		logger('release_resolve_handle', str(e))
