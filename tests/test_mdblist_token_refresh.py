@@ -157,3 +157,25 @@ def test_monitor_refreshes_ahead_of_expiry(monkeypatch, store, expires_offset, r
 	m.mdblist_refresh_if_due()
 	assert (len(fake.posts) == 1) is refreshes
 	assert (store['mdblist.token'] == 'new-access') is refreshes
+
+
+def test_expiry_round_trips_through_the_real_settings_cache(monkeypatch, tmp_path):
+	"""Existing settings.db files have no mdblist.expires row; saving tokens must create it and the
+	monitor must read it back, or refresh-ahead would silently never fire."""
+	import sqlite3
+	props = {}
+	monkeypatch.setattr(m.kodi_utils, 'set_property', lambda key, value: props.__setitem__(key, value))
+	monkeypatch.setattr(m.kodi_utils, 'get_property', lambda key: props.get(key, ''))
+	con = sqlite3.connect(str(tmp_path / 'settings.db'), isolation_level=None, check_same_thread=False)
+	con.execute('CREATE TABLE settings (setting_id text unique, setting_type text, setting_default text, setting_value text)')
+	for setting_id, value in (('mdblist.token', 'old-access'), ('mdblist.refresh', 'old-refresh')):
+		con.execute('INSERT INTO settings VALUES (?, ?, ?, ?)', (setting_id, 'string', '0', value))
+	monkeypatch.setattr(sc, 'connect_database', lambda name: con)
+	monkeypatch.setattr(sc, 'settings_cache', sc.SettingsCache())
+	assert m._mdblist_save_tokens({'access_token': 'new-access', 'refresh_token': 'new-refresh', 'expires_in': 2592000})
+	assert m._mdblist_token() == 'new-access'
+	assert m.get_setting('redlight.mdblist.refresh') == 'new-refresh'
+	assert int(m.get_setting('redlight.mdblist.expires', '0')) > time.time() + 2591000
+	fake = use_session(monkeypatch, FakeSession([FakeResponse(200, {})], NEW_PAIR))
+	m.mdblist_refresh_if_due()
+	assert fake.posts == []
