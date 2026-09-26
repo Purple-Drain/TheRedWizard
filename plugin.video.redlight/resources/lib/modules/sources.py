@@ -884,6 +884,9 @@ class Sources():
 		autoplay_only = self.autoplay
 		def _start(scrapers):
 			self.prescrape_scrapers.extend(scrapers)
+			# #199: _wait_for_rung's foreground poll reads these through _process_internal_results; only
+			# scrapers_dialog set them before, and the ladder never calls it.
+			self.internal_scrapers = self._get_active_scraper_names(self.prescrape_scrapers)
 			rung_threads = []
 			for i in scrapers:
 				thread = Thread(target=self._timed_prescrape, args=(i[0], i[1], started), name=i[2])
