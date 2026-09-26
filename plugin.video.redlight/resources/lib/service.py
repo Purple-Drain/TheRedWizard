@@ -207,7 +207,7 @@ class SimklMonitor:
 class MdblistMonitor:
 	def run(self, monitor):
 		kodi_utils.logger('Red Light', 'MDBListMonitor Service Starting')
-		from apis.mdblist_api import mdblist_sync_activities
+		from apis.mdblist_api import mdblist_sync_activities, mdblist_refresh_if_due
 		from modules.settings import mdblist_user_active, mdblist_sync_interval
 		player = kodi_utils.kodi_player()
 		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
@@ -220,7 +220,9 @@ class MdblistMonitor:
 				sync_kodi_profile_context()
 				sync_interval, wait_time = mdblist_sync_interval()
 				next_update_string = 'MDBList Sync finished - Next Sync in %s minutes' % sync_interval
-				if mdblist_user_active(): status = mdblist_sync_activities()
+				if mdblist_user_active():
+					mdblist_refresh_if_due()
+					status = mdblist_sync_activities()
 				else: status = 'no_auth'
 				if status == 'failed': kodi_utils.logger('Red Light', 'MDBList Sync Failed')
 				elif status == 'no_auth': kodi_utils.logger('Red Light', 'MDBList Sync Not Run - No Account')
