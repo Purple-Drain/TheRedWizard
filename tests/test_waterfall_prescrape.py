@@ -201,6 +201,25 @@ def test_progress_percent_never_goes_backwards_across_rungs(switches, logged):
     assert percents == sorted(percents)
 
 
+def test_foreground_poll_runs_the_real_internal_results_count(switches, logged, monkeypatch):
+    """#199: _wait_for_rung's foreground poll calls the real _process_internal_results, which iterates
+    internal_scrapers. Only scrapers_dialog assigned that before, so every foreground ladder play raised
+    AttributeError on its first poll, and the open progress dialog then froze Kodi. The fixture above
+    stubs _process_internal_results, which hid it."""
+    import json
+    props = {'redlight.internal_results.rd_cloud': json.dumps([RD_HIT])}
+    monkeypatch.setattr(kodi_utils, 'get_property', lambda key: props.get(key, ''))
+    monkeypatch.setattr(kodi_utils, 'set_property', lambda key, value: props.__setitem__(key, value))
+    src = _bare_sources({'rd_cloud': [RD_HIT]}, folders=(), cloud=(RD, AD))
+    del src._process_internal_results  # use the real method, not the fixture's stub
+    counted = []
+    src._sources_quality_count = lambda sources: counted.extend(sources)
+    assert src._collect_prescrape_results_sequential() == [RD_HIT]
+    assert src.internal_scrapers == ['rd_cloud']
+    assert counted == [RD_HIT]
+    assert props['redlight.internal_results.rd_cloud'] == 'checked'
+
+
 def test_fallback_pool_retries_a_slower_slots_result_before_the_full_scrape(switches, monkeypatch):
     src = object.__new__(Sources)
     src.autoplay, src.background = True, False
