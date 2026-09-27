@@ -4206,6 +4206,23 @@
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true)</visible>
+                          <property name="setting_label">    - Warm Up Next Episode</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_warm_read)]</property>
+                          <property name="setting_description">Read the first few MB of the next episode's file during the current one, so zurg and the debrid CDN have it ready when it starts</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep_warm_read)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Warm Up Next Episodes Widget</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_widget_warm)]</property>
+                          <property name="setting_description">When the Next Episodes widget is rebuilt, look up its first 3 episodes in your folder sources (zurg) and read the start of each file, so pressing play starts faster. No debrid service is contacted</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep_widget_warm)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true) + String.IsEqual(Window(10000).Property(redlight.autoplay_next_episode),true)</visible>
                           <property name="setting_label">    - Next Episode Alert Method</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_alert_method_name)]</property>

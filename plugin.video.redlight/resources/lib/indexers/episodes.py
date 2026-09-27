@@ -731,6 +731,10 @@ def build_single_episode(list_type, params={}):
 				item_list = [i for i in item_list if not i in airing_today]
 				item_list = airing_today + item_list
 	if cache_next_list:
+		try:
+			from modules.nextep_warm import request_widget_warm
+			request_widget_warm([i['list_items'][0] for i in item_list])
+		except Exception: pass
 		nextep_list_cache.store(nextep_list_key, is_external, 'is_anime_list' in params, [(i['list_items'][0], i['row']) for i in item_list], future_dates,
 			_get_category_name())
 	kodi_utils.add_items(handle, [i['list_items'] for i in item_list])

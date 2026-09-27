@@ -1620,6 +1620,8 @@ def default_settings():
 {'setting_id': 'autoplay.episode_size_max', 'setting_type': 'action', 'setting_default': '0', 'min_value': '0'},
 {'setting_id': 'autoplay_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoplay_preresolve_next_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'nextep_warm_read', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'nextep_widget_warm', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'autoplay_alert_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Window', '1': 'Notification'}},
 {'setting_id': 'autoplay_default_action', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Play', '1': 'Cancel', '2': 'Pause & Wait'}},
 {'setting_id': 'autoplay_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
