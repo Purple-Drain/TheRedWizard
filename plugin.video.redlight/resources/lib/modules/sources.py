@@ -3409,7 +3409,11 @@ class Sources():
 			# returns nothing is dropped here, and the handoff resolves afresh.
 			try:
 				from modules.nextep_warm import warm_end_of_episode
-				if warm_end_of_episode(results, self.meta, preresolved) == 'preresolved_dead':
+				# A skip is waiting on this stash: the busy flag held through the read delayed its
+				# hand-over by the read's ~3 s (#1, W-280926-2), so hand over first and skip the warm.
+				if kodi_utils.get_property('redlight.skip_prep_waiting') == 'true':
+					kodi_utils.logger('Red Light', 'NextEpWarm: skipped, a next-episode skip is waiting')
+				elif warm_end_of_episode(results, self.meta, preresolved) == 'preresolved_dead':
 					stash = _NEXTEP_AUTOPLAY_STASH.get(_nextep_stash_key(self.meta))
 					if stash: stash['preresolved'] = None
 			except Exception as exc:
