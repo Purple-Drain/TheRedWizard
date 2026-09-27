@@ -32,11 +32,16 @@ PROP_SKIP_EPISODE_ACK = 'redlight.skip_episode_ack'
 _SKIP_ACK_WAIT_MS = 2000
 # #1 C410: how long a claimed skip waits for its on-demand prep before stopping the old way.
 _SKIP_PREP_WAIT_SEC = 30
+# Set while a claimed skip waits for its prep; the prep then skips the warm read so it stashes sooner.
+PROP_SKIP_PREP_WAITING = 'redlight.skip_prep_waiting'
 _NEXTEP_NATURAL_END_SEC = 15
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
 # end never advances into it; Red Light's own next-episode hand-off owns the end.
 _QUEUED_NEXT_DROP_SEC = _NEXTEP_NATURAL_END_SEC + 5
 QUEUED_NEXT_MODE = 'playback.queued_next'
+# Set by the marker's own plugin call. Kodi drops the marker as unplayable and ends the playlist, so
+# by the end handling its position is gone; this property is what survives (#199 C6, 28.09.26).
+PROP_QUEUED_NEXT_HIT = 'redlight.queued_next_hit'
 # A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
 # measured against the time still to play; the player callbacks tell a user Stop apart.
@@ -180,6 +185,7 @@ def queued_next_selected(argv):
 	"""#199 C6: Kodi reached the queued next-episode marker (the remote's plain Next key). The playing
 	episode is already stopping by then; its end handling sees the playlist moved onto the marker
 	and does the skip. This invocation only has to let Kodi drop the marker quietly."""
+	ku.set_property(PROP_QUEUED_NEXT_HIT, 'true')
 	ku.release_resolve_handle(argv)
 	ku.logger('Red Light', 'Play next episode now: Next key reached the queued marker')
 	return True
@@ -259,6 +265,7 @@ class RedLightPlayer(xbmc.Player):
 		ku.volume_checker()
 		ku.set_property(PROP_PLAY_OPENING, 'true')
 		self._queued_next = False
+		ku.clear_property(PROP_QUEUED_NEXT_HIT)
 		listitem = self.make_listing()
 		if not self._play_with_queued_next(listitem): self.play(self.url, listitem)
 		if self.is_generic:
@@ -367,6 +374,15 @@ class RedLightPlayer(xbmc.Player):
 		elapsed_ms, timeout_ms = 0, self._playback_open_timeout_ms()
 		while self.playback_successful is None:
 			ku.hide_busy_dialog()
+			if getattr(self, '_cb_stopped', False):
+				# #1 bug F (28.09.26): Kodi only reports Stopped after this stream started, so it is a
+				# user Stop while the open was still settling, not a failed source. Treat it as a
+				# cancel; before this the loop fell through and the next source was played.
+				ku.logger('Red Light', 'Playback stopped by the user while opening: not trying the next source')
+				self.sources_object.cancel_all_playback = True
+				self.sources_object._resolve_user_cancelled = True
+				self.playback_successful = False
+				break
 			if self._resolve_cancelled():
 				self.sources_object.cancel_all_playback = True
 				self.sources_object._resolve_user_cancelled = True
@@ -1364,6 +1380,9 @@ class RedLightPlayer(xbmc.Player):
 	def _queued_next_taken(self):
 		if not getattr(self, '_queued_next', False): return False
 		self._queued_next = False
+		if ku.get_property(PROP_QUEUED_NEXT_HIT) == 'true':
+			ku.clear_property(PROP_QUEUED_NEXT_HIT)
+			return True
 		try: return ku.make_playlist('video').getposition() == 1
 		except Exception: return False
 
@@ -1397,6 +1416,7 @@ class RedLightPlayer(xbmc.Player):
 		ku.clear_property(PROP_SKIP_EPISODE)
 		ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
 		self._skip_prep_deadline = time.time() + _SKIP_PREP_WAIT_SEC
+		ku.set_property(PROP_SKIP_PREP_WAITING, 'true')
 		if not self.media_marked: self.media_watched_marker(force_watched=True)
 		if not getattr(self, 'nextep_info_gathered', False):
 			try: self.info_next_ep()
@@ -1420,6 +1440,7 @@ class RedLightPlayer(xbmc.Player):
 			return False
 		self._nextep_stash_play_scheduled = True
 		self._skip_prep_deadline = None
+		ku.clear_property(PROP_SKIP_PREP_WAITING)
 		ku.clear_property(PROP_SKIP_EPISODE)
 		ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
 		self._log_nextep('Play next episode now: playing the prepared next episode')
@@ -1429,6 +1450,7 @@ class RedLightPlayer(xbmc.Player):
 		"""The on-demand prep could not produce a next episode: skip the old way (stop, then the end
 		handling marks watched and starts a fresh play of the next episode)."""
 		self._skip_prep_deadline = None
+		ku.clear_property(PROP_SKIP_PREP_WAITING)
 		self._log_nextep('Play next episode now: %s, stopping instead' % reason)
 		ku.set_property(PROP_SKIP_EPISODE, 'true')
 		try: self.stop()
