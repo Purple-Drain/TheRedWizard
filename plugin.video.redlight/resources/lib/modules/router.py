@@ -65,6 +65,10 @@ def routing(sys):
 		kodi_utils.release_resolve_handle(sys.argv)
 		from modules.player import request_skip_episode
 		return request_skip_episode()
+	elif mode == 'playback.queued_next':
+		# #199 C6: the remote's Next key reached the marker queued behind a Red Light episode.
+		from modules.player import queued_next_selected
+		return queued_next_selected(sys.argv)
 	elif mode == 'playback.next_episode':
 		# #92: same next-episode computation as next_episode.info, handed to playback.media
 		# in-process (Sources().playback_prep()) instead of a second plugin invocation.

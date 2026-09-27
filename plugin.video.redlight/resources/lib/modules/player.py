@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import xbmc
+import xbmcgui
 import json
 import time
 import traceback
@@ -30,6 +31,10 @@ PROP_SKIP_EPISODE = 'redlight.skip_episode_requested'
 PROP_SKIP_EPISODE_ACK = 'redlight.skip_episode_ack'
 _SKIP_ACK_WAIT_MS = 2000
 _NEXTEP_NATURAL_END_SEC = 15
+# #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
+# end never advances into it; Red Light's own next-episode hand-off owns the end.
+_QUEUED_NEXT_DROP_SEC = _NEXTEP_NATURAL_END_SEC + 5
+QUEUED_NEXT_MODE = 'playback.queued_next'
 # A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
 # measured against the time still to play; the player callbacks tell a user Stop apart.
@@ -169,6 +174,14 @@ def request_skip_episode():
 	ku.kodi_player().stop()
 	return True
 
+def queued_next_selected(argv):
+	"""#199 C6: Kodi reached the queued next-episode marker (the remote's plain Next key). The playing
+	episode is already stopping by then; its end handling sees the playlist moved onto the marker
+	and does the skip. This invocation only has to let Kodi drop the marker quietly."""
+	ku.release_resolve_handle(argv)
+	ku.logger('Red Light', 'Play next episode now: Next key reached the queued marker')
+	return True
+
 class RedLightPlayer(xbmc.Player):
 	def __init__ (self):
 		xbmc.Player.__init__(self)
@@ -243,7 +256,9 @@ class RedLightPlayer(xbmc.Player):
 			return
 		ku.volume_checker()
 		ku.set_property(PROP_PLAY_OPENING, 'true')
-		self.play(self.url, self.make_listing())
+		self._queued_next = False
+		listitem = self.make_listing()
+		if not self._play_with_queued_next(listitem): self.play(self.url, listitem)
 		if self.is_generic:
 			self.check_playback_start_generic()
 			if self.playback_successful:
@@ -472,6 +487,7 @@ class RedLightPlayer(xbmc.Player):
 							pass
 					ku.sleep(_monitor_sleep_ms)
 					self._try_skip_to_stash()
+					self._maybe_drop_queued_next()
 					try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
 					except: ku.sleep(250); continue
 					if not self._valid_playback_duration(self.total_time, self.curr_time):
@@ -515,6 +531,7 @@ class RedLightPlayer(xbmc.Player):
 				except Exception:
 					self._log_monitor_tick_error()
 				if not self.subs_searched: self.run_subtitles()
+			natural_end = False
 			try:
 				_remaining = None
 				if getattr(self, 'total_time', None) not in (None, '', 0, 0.0) and getattr(self, 'curr_time', None) not in (None, ''):
@@ -559,6 +576,10 @@ class RedLightPlayer(xbmc.Player):
 				except: pass
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
+			# #199 C6: the Next key moved Kodi's playlist onto the queued marker, a skip like C7's.
+			if not playback_superseded and not natural_end and self._queued_next_taken():
+				ku.set_property(PROP_SKIP_EPISODE, 'true')
+				self._log_nextep('Play next episode now: Next key, moving on')
 			# #199 C7: request_skip_episode stopped this play to move on; count it as watched.
 			skip_requested = not playback_superseded and ku.get_property(PROP_SKIP_EPISODE) == 'true'
 			if skip_requested:
@@ -1304,6 +1325,45 @@ class RedLightPlayer(xbmc.Player):
 		if schedule_nextep_stashed_play(stash, show_busy=False):
 			self._nextep_stash_play_scheduled = True
 			self._log_nextep('Autoplay next episode: early stash resolve at remaining=%ss' % remaining)
+
+	def _play_with_queued_next(self, listitem):
+		"""#199 C6: an episode plays as item 0 of Kodi's video playlist with a marker for the next
+		episode as item 1, so the remote's plain Next key has somewhere to go (a single-item play only
+		walks chapters). The marker is a plugin URL, not a stream; nothing is resolved ahead."""
+		if self.is_generic or getattr(self, 'media_type', None) != 'episode': return False
+		try:
+			playlist = ku.make_playlist('video')
+			playlist.clear()
+			playlist.add(self.url, listitem)
+			marker = xbmcgui.ListItem(label='Next episode', offscreen=True)
+			marker.setProperty('IsPlayable', 'true')
+			playlist.add(ku.build_url({'mode': QUEUED_NEXT_MODE}), marker)
+			self.play(playlist)
+		except Exception as exc:
+			ku.logger('Red Light', 'Queued next episode: playlist play failed, playing alone: %s' % exc)
+			try: ku.clear_video_playlist()
+			except Exception: pass
+			return False
+		self._queued_next = True
+		return True
+
+	def _maybe_drop_queued_next(self):
+		if not getattr(self, '_queued_next', False): return
+		try: remaining = float(self.getTotalTime()) - float(self.getTime())
+		except Exception: return
+		if not (0 < remaining <= _QUEUED_NEXT_DROP_SEC): return
+		self._queued_next = False
+		try:
+			playlist = ku.make_playlist('video')
+			if playlist.size() > 1: playlist.remove(ku.build_url({'mode': QUEUED_NEXT_MODE}))
+		except Exception as exc:
+			ku.logger('Red Light', 'Queued next episode: marker removal failed: %s' % exc)
+
+	def _queued_next_taken(self):
+		if not getattr(self, '_queued_next', False): return False
+		self._queued_next = False
+		try: return ku.make_playlist('video').getposition() == 1
+		except Exception: return False
 
 	def _try_skip_to_stash(self):
 		"""#1: the explicit next-episode skip (request_skip_episode) reuses the prepared next episode.
