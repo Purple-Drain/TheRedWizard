@@ -171,3 +171,21 @@ def test_next_up_dialog_plays_on_a_skip(monkeypatch):
     assert player_mod.PROP_SKIP_EPISODE not in props
     props.clear()
     assert dialog._skip_requested() is False
+
+
+def test_intro_prompt_yields_to_a_skip(monkeypatch):
+    """W-280926-3: a skip in the intro-prompt window closes the prompt and acks, keeping the flag."""
+    from modules import kodi_utils
+    from windows.playback_notifications import IntroSkipPrompt
+    props = Props({player_mod.PROP_SKIP_EPISODE: 'true'})
+    monkeypatch.setattr(kodi_utils, 'get_property', props.get_property)
+    monkeypatch.setattr(kodi_utils, 'set_property', props.set_property)
+    monkeypatch.setattr(kodi_utils, 'logger', lambda *a: None)
+    dialog = object.__new__(IntroSkipPrompt)
+    dialog.selected, dialog.closed = True, False
+    closed = []
+    dialog.close = lambda: closed.append(1)
+    assert dialog._skip_requested() is True
+    assert dialog.selected is False and dialog.closed and closed == [1]
+    assert props[player_mod.PROP_SKIP_EPISODE_ACK] == 'true'
+    assert props[player_mod.PROP_SKIP_EPISODE] == 'true'
