@@ -528,6 +528,8 @@ class Sources():
 		self.cloud_prescrape_autoplay = False
 		self._playback_failed_notified = False
 		self.get_meta()
+		if params_get('nextep_stash_play') == 'true':
+			kodi_utils.logger('Red Light', 'Autoplay next episode play: meta loaded')  # #196 timing
 		if not self.background and params_get('nextep_stash_play') != 'true':
 			cancel_pending_nextep_on_user_play(self.meta)
 		self.determine_scrapers_status()
