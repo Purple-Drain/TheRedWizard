@@ -189,3 +189,17 @@ def test_intro_prompt_yields_to_a_skip(monkeypatch):
     assert dialog.selected is False and dialog.closed and closed == [1]
     assert props[player_mod.PROP_SKIP_EPISODE_ACK] == 'true'
     assert props[player_mod.PROP_SKIP_EPISODE] == 'true'
+
+
+def test_autoplay_off_skip_prepares_the_autoplay_way(monkeypatch):
+    """pd.90: with autoplay off an explicit skip still prepares and hands over (not random plays)."""
+    props = Props({player_mod.PROP_SKIP_EPISODE: 'true'})
+    _wire(monkeypatch, props, None)
+    player, marks, calls = _prep_player(monkeypatch, props)
+    player.autoplay_nextep, player.autoscrape_nextep = False, True
+    player._skip_prep_allowed = True
+    player.info_next_ep = lambda: setattr(player, 'nextep_info_gathered', True)
+    assert player._try_skip_to_stash() is True
+    assert player.autoplay_nextep is True and player.autoscrape_nextep is False
+    assert calls == {'prep': 1, 'stop': 0}
+    assert props[player_mod.PROP_SKIP_EPISODE_ACK] == 'true'
