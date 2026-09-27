@@ -631,6 +631,7 @@ class RedLightPlayer(xbmc.Player):
 			if seek_end:
 				ku.logger('Red Light', 'Playback closed at %ds of %ds on %s right after a seek to %ds; a skip to the end, not resuming' % (
 					float(curr), float(total), self.playing_filename or '', last_seek[1]))
+				self._play_next_after_seek_end()
 				return
 			self.stall_position = (float(curr), float(total))
 			ku.logger('Red Light', 'Playback ended early at %ds of %ds on %s (ended=%s error=%s stopped=%s)' % (
@@ -1111,6 +1112,30 @@ class RedLightPlayer(xbmc.Player):
 		try: remaining = round(float(self.total_time) - float(self.curr_time))
 		except: return False
 		return remaining > 0 and remaining <= self.random_continual_start_prep
+
+	def _play_next_after_seek_end(self):
+		"""#199: a skip to the end jumps over the start_prep window, so no next episode was prepared
+		and the natural-end hand-off has nothing to play. Work out the literal next episode the same
+		way the prep does and start it as a fresh play (mode=playback.media, as a Next Episodes row
+		does), so this play's own cleanup finishes independently."""
+		if getattr(self, 'media_type', None) != 'episode' or not getattr(self, 'autoplay_nextep', False): return
+		if getattr(self, '_nextep_prep_attempted', False): return
+		try:
+			from modules.episode_tools import EpisodeTools
+			from modules.settings import playback_key
+			nextep_settings = dict(getattr(self, 'nextep_settings', None) or {})
+			nextep_settings.setdefault('play_type', self._nextep_play_type())
+			params = EpisodeTools(dict(self.meta), nextep_settings).next_episode_info()
+			if not isinstance(params, dict):
+				self._log_nextep('Skip to the end: no next episode to start (%s)' % params)
+				return
+			for key in ('background', 'nextep_settings', 'play_type'): params.pop(key, None)
+			params['mode'] = 'playback.%s' % playback_key()
+			self._log_nextep('Skip to the end: starting %s S%02dE%02d' % (
+				self.meta_get('title', ''), int(params['season']), int(params['episode'])))
+			ku.run_plugin(params)
+		except Exception as exc:
+			ku.logger('Red Light', 'Skip to the end: next episode start failed: %s' % exc)
 
 	def _schedule_next_ep(self):
 		if ku.get_property(PROP_NEXTEP_PENDING) == 'true':
