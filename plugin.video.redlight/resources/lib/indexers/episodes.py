@@ -169,6 +169,8 @@ def build_episode_list(params):
 					if playcount:
 						cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_episode', 'action': 'mark_as_unwatched',
 													'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season, 'episode': episode,  'title': title}))])
+						cm_append(['mark_watched', ('[B]Rewatch From Here[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.rewatch_cursor', 'action': 'set',
+													'tmdb_id': tmdb_id, 'season': season, 'episode': episode}))])
 					else: cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_episode', 'action': 'mark_as_watched',
 													'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season, 'episode': episode,  'title': title}))])
 					if progress: cm_append(['mark_watched', ('[B]Clear Progress[/B]', 'RunPlugin(%s)' % \
@@ -312,7 +314,21 @@ def build_single_episode(list_type, params={}):
 			tmdb_id, tvdb_id, imdb_id, title, show_year = meta_get('tmdb_id'), meta_get('tvdb_id'), meta_get('imdb_id'), meta_get('title'), meta_get('year') or '2050'
 			season_data = meta_get('season_data')
 			watched_info = ws.watched_info_episode(meta_get('tmdb_id'), watched_db)
-			if list_type_starts_with('next'):
+			# #1 C407: a rewatch cursor for this show offers the literal next episode after it (or,
+			# from the context menu, that episode itself), watched or not. Local only, never cached
+			# per show; the list cache key carries the cursor state.
+			rewatch = None
+			if list_type_starts_with('next') and not unwatched:
+				try:
+					from modules.rewatch_cursor import seed as rewatch_seed
+					rewatch = rewatch_seed(tmdb_id)
+				except Exception: rewatch = None
+			if rewatch:
+				r_season, r_episode, show_self = rewatch
+				if show_self: orig_season, orig_episode = r_season, r_episode
+				else: orig_season, orig_episode = ws.get_next(r_season, r_episode, watched_info, season_data, 0, meta)
+				if not orig_season or not orig_episode: return
+			elif list_type_starts_with('next'):
 				# Per-show result cache (#121): the (season, episode) resolved below is keyed on the
 				# seed, the method and every watched row for this show, so a rebuild recomputes
 				# only shows whose watched rows changed. Watchlist/favourite "unwatched" entries
@@ -396,7 +412,7 @@ def build_single_episode(list_type, params={}):
 			else: seas_ep = ''
 			if not list_type_starts_with('next_'):
 				playcount = ws.get_watched_status_episode(watched_info, (season, episode))
-				if playcount and hide_watched: return
+				if playcount and hide_watched and not rewatch: return
 			if list_type_starts_with('next_'):
 				playcount = 0
 				if include_airdate:
@@ -483,6 +499,8 @@ def build_single_episode(list_type, params={}):
 				if playcount:
 					cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_episode', 'action': 'mark_as_unwatched',
 												'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season, 'episode': episode,  'title': title}))])
+					cm_append(['mark_watched', ('[B]Rewatch From Here[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.rewatch_cursor', 'action': 'set',
+												'tmdb_id': tmdb_id, 'season': season, 'episode': episode}))])
 				else: cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_episode', 'action': 'mark_as_watched',
 											'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season, 'episode': episode,  'title': title}))])
 				if progress:
@@ -491,6 +509,9 @@ def build_single_episode(list_type, params={}):
 											'season': season, 'episode': episode, 'refresh': 'true'}))])
 				if unwatched_info and total_unwatched is not None and progress_aired_eps != total_unwatched:
 					properties.update({'watchedepisodes': '1', 'unwatchedepisodes': str(total_unwatched)})
+			if rewatch:
+				cm_append(['mark_watched', ('[B]Stop Rewatching[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.rewatch_cursor', 'action': 'clear',
+								'tmdb_id': tmdb_id, 'season': season, 'episode': episode}))])
 			if list_type_starts_with('next_') and (season, episode) != (1, 1):
 				cm_append(['unmark_previous_episode', ('[B]Unmark Previous Watched[/B]', 'RunPlugin(%s)' % \
 								build_url({'mode': 'watched_status.unmark_previous_episode', 'action': 'mark_as_unwatched', 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id,

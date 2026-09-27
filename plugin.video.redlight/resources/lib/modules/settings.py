@@ -1221,6 +1221,11 @@ def flatten_episodes():
 def nextep_method():
 	return int(get_setting('redlight.nextep.method', '0'))
 
+def nextep_rewatch_continue():
+	"""#1 C407: after starting an already watched episode, Next Episodes continues from it (True)
+	or walks on to the first unwatched episode as before (False, the default)."""
+	return get_setting('redlight.nextep.rewatch_mode', '0') == '1'
+
 def nextep_limit_history():
 	return get_setting('redlight.nextep.limit_history', 'false') == 'true'
 

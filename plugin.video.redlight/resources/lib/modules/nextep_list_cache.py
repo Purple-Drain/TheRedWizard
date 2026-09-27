@@ -114,6 +114,10 @@ def cache_key(is_external, anime=False):
 		values = [(name, getattr(settings, name)()) for name in SETTING_GETTERS]
 		values.append(('single_ep_display_format', settings.single_ep_display_format(is_external)))
 		values.append(('rpdb_info', settings.rpdb_info('tvshow')))
+		try:
+			from modules.rewatch_cursor import state_token
+			values.append(('rewatch', state_token()))
+		except Exception: pass
 		dated = settings.nextep_include_airdate() or settings.nextep_airing_today() or settings.nextep_include_unaired()
 		return _digest((values, state, str(get_datetime()) if dated else '', bool(anime), bool(is_external)))
 	except Exception as e:

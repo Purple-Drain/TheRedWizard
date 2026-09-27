@@ -169,6 +169,9 @@ def routing(sys):
 			from indexers.random_lists import RandomLists
 			return RandomLists(params).run_random()
 	elif 'watched_status.' in mode:
+		if mode == 'watched_status.rewatch_cursor':
+			from modules.rewatch_cursor import menu
+			return menu(params)
 		if mode == 'watched_status.mark_episode':
 			from modules.watched_status import mark_episode
 			return mark_episode(params)
