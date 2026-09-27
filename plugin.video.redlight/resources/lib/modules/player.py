@@ -30,6 +30,8 @@ PROP_SKIP_EPISODE = 'redlight.skip_episode_requested'
 # Set by the playing monitor when it took the skip over with the prepared next episode (#1).
 PROP_SKIP_EPISODE_ACK = 'redlight.skip_episode_ack'
 _SKIP_ACK_WAIT_MS = 2000
+# #1 C410: how long a claimed skip waits for its on-demand prep before stopping the old way.
+_SKIP_PREP_WAIT_SEC = 30
 _NEXTEP_NATURAL_END_SEC = 15
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
 # end never advances into it; Red Light's own next-episode hand-off owns the end.
@@ -1366,16 +1368,49 @@ class RedLightPlayer(xbmc.Player):
 		except Exception: return False
 
 	def _try_skip_to_stash(self):
-		"""#1: the explicit next-episode skip (request_skip_episode) reuses the prepared next episode.
-		Same hand-off as the Next Up dialog's Play: mark this one watched, then schedule the stashed
-		play while still in fullscreen. Without a stash (prep not run yet, or autoplay off) the skip
-		is left to request_skip_episode's stop and the fresh play after it."""
-		if ku.get_property(PROP_SKIP_EPISODE) != 'true': return False
+		"""#1: the explicit next-episode skip (request_skip_episode, or the Next key's C6 marker path
+		via the same flag) hands over from fullscreen, the way the Next Up dialog's Play does, so there
+		is no stop and no home screen.
+
+		Stash ready: mark this one watched and schedule the stashed play now. No stash yet (C410): claim
+		the skip at once, start the next-episode prep in the background while this episode keeps
+		playing, and hand over as soon as it stashes. Only when the prep ends without a stash, or takes
+		longer than _SKIP_PREP_WAIT_SEC, does the skip fall back to the stop and fresh play."""
 		if self.media_type != 'episode' or not getattr(self, 'autoplay_nextep', False): return False
 		if getattr(self, '_nextep_stash_play_scheduled', False): return False
+		waiting = getattr(self, '_skip_prep_deadline', None)
+		if not waiting and ku.get_property(PROP_SKIP_EPISODE) != 'true': return False
 		try:
-			from modules.sources import nextep_autoplay_cancelled, nextep_end_play_superseded, peek_nextep_autoplay_stash, schedule_nextep_stashed_play, take_nextep_autoplay_stash
-			if nextep_autoplay_cancelled() or nextep_end_play_superseded() or not peek_nextep_autoplay_stash(): return False
+			from modules.sources import nextep_autoplay_cancelled, peek_nextep_autoplay_stash
+			if nextep_autoplay_cancelled(): return self._skip_prep_fallback('next episode cancelled') if waiting else False
+			ready = bool(peek_nextep_autoplay_stash())
+		except Exception as exc:
+			ku.logger('Red Light', 'Play next episode now: stash check failed: %s' % exc)
+			return False
+		if ready: return self._skip_hand_over()
+		if waiting:
+			prep_running = ku.get_property(PROP_NEXTEP_PENDING) == 'true'
+			if not prep_running: return self._skip_prep_fallback('prep ended without a next episode')
+			if time.time() > waiting: return self._skip_prep_fallback('prep took over %ss' % _SKIP_PREP_WAIT_SEC)
+			return False
+		# Claim the skip so request_skip_episode does not stop playback, then prepare on demand.
+		ku.clear_property(PROP_SKIP_EPISODE)
+		ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
+		self._skip_prep_deadline = time.time() + _SKIP_PREP_WAIT_SEC
+		if not self.media_marked: self.media_watched_marker(force_watched=True)
+		if not getattr(self, 'nextep_info_gathered', False):
+			try: self.info_next_ep()
+			except Exception as exc: ku.logger('Red Light', 'Play next episode now: next-episode settings failed: %s' % exc)
+		if ku.get_property(PROP_NEXTEP_PENDING) != 'true':
+			if getattr(self, 'nextep_settings', None): self._schedule_next_ep()
+			else: return self._skip_prep_fallback('no next-episode settings')
+		self._log_nextep('Play next episode now: preparing the next episode while this one plays')
+		return True
+
+	def _skip_hand_over(self):
+		try:
+			from modules.sources import nextep_end_play_superseded, schedule_nextep_stashed_play, take_nextep_autoplay_stash
+			if nextep_end_play_superseded(): return False
 			stash = take_nextep_autoplay_stash()
 			if not stash: return False
 			if not self.media_marked: self.media_watched_marker(force_watched=True)
@@ -1384,10 +1419,21 @@ class RedLightPlayer(xbmc.Player):
 			ku.logger('Red Light', 'Play next episode now: stash hand-off failed: %s' % exc)
 			return False
 		self._nextep_stash_play_scheduled = True
+		self._skip_prep_deadline = None
 		ku.clear_property(PROP_SKIP_EPISODE)
 		ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
 		self._log_nextep('Play next episode now: playing the prepared next episode')
 		return True
+
+	def _skip_prep_fallback(self, reason):
+		"""The on-demand prep could not produce a next episode: skip the old way (stop, then the end
+		handling marks watched and starts a fresh play of the next episode)."""
+		self._skip_prep_deadline = None
+		self._log_nextep('Play next episode now: %s, stopping instead' % reason)
+		ku.set_property(PROP_SKIP_EPISODE, 'true')
+		try: self.stop()
+		except Exception: pass
+		return False
 
 	def _try_autoplay_nextep_alert(self):
 		if not self._should_show_autoplay_nextep_alert(): return
