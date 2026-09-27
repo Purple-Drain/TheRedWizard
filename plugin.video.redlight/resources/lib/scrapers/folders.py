@@ -201,12 +201,42 @@ class source:
 		return source_utils.check_title(self.title, normalized, self.aliases, self.year, self.season, self.episode)
 
 	def _file_size(self, url_path):
-		"""The size, or None with a log line: an exception here used to drop the file without a trace."""
+		"""The size, or None with a log line: an exception here used to drop the file without a trace.
+		#199: the folder's listing size first (one Files.GetDirectory per folder, cached with the listing),
+		the per-file open only when the listing has no size for it."""
+		try:
+			# A .strm keeps its 'strm' marker from _get_size; its listed size is the text file's, not the video's.
+			listed = None if url_path.endswith('.strm') else self._listed_sizes(os.path.dirname(url_path)).get(unquote(os.path.basename(url_path)))
+			if listed: return round(float(listed)/1073741824, 2)
+		except Exception: pass
 		try: return self._get_size(url_path)
 		except Exception as e:
 			from modules.kodi_utils import logger
 			logger('Red Light', 'folders: dropped %s, its size could not be read (%s)' % (url_path, e))
 			return None
+
+	def _listed_sizes(self, folder):
+		"""{decoded file name: bytes} for one folder, from Kodi's own listing with the size property. Cached
+		for four hours under the FOLDERSCRAPER_ prefix so delete_all_folderscrapers clears it too; an empty
+		answer is never cached (#150), it just means every file falls back to the per-file open."""
+		memo = self.__dict__.setdefault('_sizes_memo', {})
+		if folder in memo: return memo[folder]
+		key = 'FOLDERSCRAPER_SIZES_%s_%s' % (self.scrape_provider, folder)
+		sizes = main_cache.get(key)
+		if not sizes:
+			sizes = {}
+			try:
+				from modules.kodi_utils import get_jsonrpc
+				answer = get_jsonrpc({'jsonrpc': '2.0', 'id': 1, 'method': 'Files.GetDirectory',
+					'params': {'directory': self._as_dir(folder), 'media': 'files', 'properties': ['size']}}) or {}
+				for entry in answer.get('files') or []:
+					if entry.get('filetype') != 'file' or not entry.get('size'): continue
+					name = unquote(entry.get('file', '').rstrip('/').rsplit('/', 1)[-1])
+					if name: sizes[name] = entry['size']
+			except Exception: sizes = {}
+			if sizes: main_cache.set(key, sizes, expiration=4)
+		memo[folder] = sizes
+		return sizes
 
 	def url_path(self, folder, file):
 		return os.path.join(folder, file)
