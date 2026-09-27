@@ -59,7 +59,11 @@ class EpisodeTools:
 			url_params = {'media_type': 'episode', 'tmdb_id': self.meta_get('tmdb_id'), 'tvshowtitle': self.meta_get('rootname'), 'season': season, 'playcount': playcount,
 						'episode': episode, 'background': 'true', 'nextep_settings': self.nextep_settings, 'play_type': play_type, 'watch_count': watch_count}
 			if custom_title: url_params['custom_title'] = custom_title
-			if 'custom_year' in self.meta: url_params['custom_year'] = self.meta_get('custom_year')
+			# Only a real value: Sources stores custom_year=None on every play, and the explicit skip
+			# sends these params through a plugin URL, where None becomes the string 'None' and
+			# int(year) then raised in every scraper (#1, 27.09.26).
+			custom_year = self.meta_get('custom_year')
+			if custom_year not in (None, '', 'None'): url_params['custom_year'] = custom_year
 		except Exception as exc:
 			kodi_utils.logger('Red Light', 'Next episode prep error: %s S%02dE%02d (%s)' % (title, current_season, current_episode, exc))
 			url_params = 'error'
