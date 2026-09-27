@@ -472,6 +472,9 @@ class RedLightPlayer(xbmc.Player):
 				disable_autoplay_next_episode = self.sources_object.disable_autoplay_next_episode
 				self.num_episodes = getattr(self.sources_object, 'num_episodes', None)
 				if disable_autoplay_next_episode: ku.notification('Scrape with Custom Values - Autoplay Next Episode Cancelled', 4500)
+				# #1: an explicit skip may prepare the next episode even with autoplay off, but never
+				# for random or custom plays, which have no "next" of their own.
+				self._skip_prep_allowed = not any((play_random_continual, play_random, disable_autoplay_next_episode))
 				if any((play_random_continual, play_random, disable_autoplay_next_episode)): self.autoplay_nextep, self.autoscrape_nextep = False, False
 				else: self.autoplay_nextep, self.autoscrape_nextep = self.sources_object.autoplay_nextep, self.sources_object.autoscrape_nextep
 				# Play # Episodes: remaining count includes the current episode.
@@ -1431,10 +1434,17 @@ class RedLightPlayer(xbmc.Player):
 		the skip at once, start the next-episode prep in the background while this episode keeps
 		playing, and hand over as soon as it stashes. Only when the prep ends without a stash, or takes
 		longer than _SKIP_PREP_WAIT_SEC, does the skip fall back to the stop and fresh play."""
-		if self.media_type != 'episode' or not getattr(self, 'autoplay_nextep', False): return False
+		if self.media_type != 'episode': return False
 		if getattr(self, '_nextep_stash_play_scheduled', False): return False
 		waiting = getattr(self, '_skip_prep_deadline', None)
 		if not waiting and ku.get_property(PROP_SKIP_EPISODE) != 'true': return False
+		if not getattr(self, 'autoplay_nextep', False):
+			# Autoplay (or only autoscrape) is off: the skip is the request, so prepare this one next
+			# episode the autoplay way (stash, then fullscreen hand-over) instead of stopping (#1).
+			if getattr(self, '_skip_prep_allowed', False) is not True: return False
+			self.autoplay_nextep, self.autoscrape_nextep = True, False
+			self.nextep_info_gathered = False
+			self._log_nextep('Play next episode now: autoplay is off, preparing this skip the autoplay way')
 		try:
 			from modules.sources import nextep_autoplay_cancelled, peek_nextep_autoplay_stash
 			if nextep_autoplay_cancelled(): return self._skip_prep_fallback('next episode cancelled') if waiting else False
