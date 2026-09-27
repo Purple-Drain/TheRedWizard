@@ -4214,7 +4214,6 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
-                          <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),true)</visible>
                           <property name="setting_label">Warm Up Next Episodes Widget</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_widget_warm)]</property>

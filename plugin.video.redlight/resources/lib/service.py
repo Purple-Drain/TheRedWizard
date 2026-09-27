@@ -386,11 +386,11 @@ class NextEpWidgetWarm:
 		from modules import nextep_warm
 		player, warmed = kodi_utils.kodi_player(), {}
 		busy_props = ('redlight.sources_busy', 'redlight.resolve_busy', pause_services_prop)
+		idle = lambda: not player.isPlayingVideo() and not any(kodi_utils.get_property(p) == 'true' for p in busy_props)
 		while not monitor.abortRequested():
 			if monitor.waitForAbort(10) or kodi_utils.service_shutting_down(monitor): return
-			if not kodi_utils.get_property(nextep_warm.WIDGET_REQUEST_PROP): continue
-			if player.isPlayingVideo() or any(kodi_utils.get_property(p) == 'true' for p in busy_props): continue
-			try: nextep_warm.warm_widget_items(nextep_warm.take_widget_request(), warmed, monitor)
+			if not kodi_utils.get_property(nextep_warm.WIDGET_REQUEST_PROP) or not idle(): continue
+			try: nextep_warm.warm_widget_items(nextep_warm.take_widget_request(), warmed, monitor, idle)
 			except Exception as e: kodi_utils.logger('NextEpWidgetWarm', str(e))
 
 class AutoStart:

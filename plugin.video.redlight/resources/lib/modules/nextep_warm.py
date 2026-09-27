@@ -13,8 +13,11 @@ Two callers:
   NextEpWidgetWarm thread scrapes the first WIDGET_N items with the folders scrapers only and warms any
   hit. No debrid API call is made from the widget path (owner C341): no cache check, nothing added.
 
-Every candidate logs one summary line, 'NextEpWarm: origin=... top=zurg|cloud|none ...', so how often the
-top source is a zurg folder can be counted across days (the data behind the owner's later C342 choice).
+Every candidate logs one summary line, 'NextEpWarm: origin=... top=...', also kept in the addon profile's
+nextep_warm.log, so how often the top source is a zurg folder can be counted across days (the data behind the
+owner's later C342 choice). top=zurg|cloud|none at episode end (the real top result); top=zurg|nozurg on the
+widget, where only the folders scrapers run, so nozurg means the play would need a cloud source. The widget's
+pick is the first folders hit, without the play's quality and size filters.
 """
 import json
 import time
@@ -27,6 +30,7 @@ WIDGET_N = 3
 # A zurg file read within this window is still warm; a widget rebuild inside it does not read it again.
 WIDGET_REWARM_SEC = 1800
 WIDGET_REQUEST_PROP = 'redlight.nextep_widget_warm_request'
+LOG_FILE, LOG_KEEP = 'nextep_warm.log', 2000
 
 
 def warm_read(path, max_bytes=WARM_BYTES, deadline_s=WARM_DEADLINE_SEC):
@@ -68,8 +72,24 @@ def log_summary(origin, meta, kind, warm, detail=''):
 		got, ms, err = warm
 		outcome = 'warm=%s bytes=%s ms=%s' % ('ok' if got and not err else 'fail', got, ms)
 		if err: outcome += ' err=%s' % err
-	kodi_utils.logger('Red Light', 'NextEpWarm: origin=%s top=%s %s %s tmdb=%s %s%s' % (
-		origin, kind, outcome, meta.get('title', ''), meta.get('tmdb_id', ''), se, (' (%s)' % detail) if detail else ''))
+	line = 'NextEpWarm: origin=%s top=%s %s %s tmdb=%s %s%s' % (
+		origin, kind, outcome, meta.get('title', ''), meta.get('tmdb_id', ''), se, (' (%s)' % detail) if detail else '')
+	kodi_utils.logger('Red Light', line)
+	_append_count_log(line)
+
+
+def _append_count_log(line):
+	'''kodi.log rotates at every Kodi start, so the lines are also kept in a small file of their own
+	(addon profile, last LOG_KEEP lines) and one read covers days.'''
+	try:
+		import os
+		path = os.path.join(kodi_utils.addon_profile(), LOG_FILE)
+		lines = []
+		if os.path.isfile(path):
+			with open(path, 'r', encoding='utf-8') as handle: lines = handle.read().splitlines()[-(LOG_KEEP - 1):]
+		lines.append('%s %s' % (time.strftime('%Y-%m-%dT%H:%M:%S'), line))
+		with open(path, 'w', encoding='utf-8') as handle: handle.write('\n'.join(lines) + '\n')
+	except Exception: pass
 
 
 def warm_end_of_episode(results, meta, preresolved=None):
@@ -81,7 +101,10 @@ def warm_end_of_episode(results, meta, preresolved=None):
 	if kind == 'zurg':
 		return log_summary('episode_end', meta, kind, warm_read(top.get('url_dl')))
 	if kind == 'cloud' and preresolved and preresolved.get('url'):
-		return log_summary('episode_end', meta, kind, warm_read(preresolved['url']), 'pre-resolved url')
+		warm = warm_read(preresolved['url'])
+		dead = not warm[0]
+		log_summary('episode_end', meta, kind, warm, 'pre-resolved url, dropped' if dead else 'pre-resolved url')
+		return 'preresolved_dead' if dead else None
 	log_summary('episode_end', meta, kind, None, 'no pre-resolved url' if kind == 'cloud' else 'no playable result')
 
 
@@ -129,11 +152,13 @@ def _folders_results(tmdb_id, season, episode):
 	return s.meta, results
 
 
-def warm_widget_items(urls, warmed, monitor=None):
-	'''Service side. warmed: {episode key: time read}, kept by the caller across requests.'''
+def warm_widget_items(urls, warmed, monitor=None, idle=None):
+	'''Service side. warmed: {episode key: time read}, kept by the caller across requests. idle(): False
+	once a play or scrape has started; checked before every item and every read.'''
 	now = time.time()
+	still_idle = lambda: (monitor is None or not monitor.abortRequested()) and (idle is None or idle())
 	for url in urls:
-		if monitor is not None and monitor.abortRequested(): return
+		if not still_idle(): return
 		ids = _episode_params(url)
 		if not ids: continue
 		key = '%s_%s_%s' % ids
@@ -146,7 +171,8 @@ def warm_widget_items(urls, warmed, monitor=None):
 		meta = dict(meta or {}, tmdb_id=ids[0], season=ids[1], episode=ids[2])
 		if not results:
 			# Folders only: no hit here means the play would need a cloud source (C342's count).
-			log_summary('widget', meta, 'cloud', None, 'no folders hit')
+			log_summary('widget', meta, 'nozurg', None, 'no folders hit')
 			continue
+		if not still_idle(): return
 		log_summary('widget', meta, 'zurg', warm_read(results[0].get('url_dl')))
 		warmed[key] = time.time()

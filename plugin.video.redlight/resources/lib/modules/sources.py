@@ -3399,14 +3399,18 @@ class Sources():
 				self._decline_nextep_prep('duplicate file, no further episode')
 			return
 		preresolved = self._preresolve_nextep_candidate(results)
-		try:
-			from modules.nextep_warm import warm_end_of_episode
-			warm_end_of_episode(results, self.meta, preresolved)
-		except Exception as exc:
-			kodi_utils.logger('Red Light', 'NextEpWarm: end-of-episode warm failed: %s' % exc)
 		if stash_nextep_autoplay_results(results, self.meta, self.nextep_settings, self.params, preresolved=preresolved):
 			kodi_utils.logger('Red Light', 'Autoplay next episode scrape ready: %s S%02dE%02d (%s results)' % (
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), len(results)))
+			# #1: after the stash, so a slow read never delays the handoff. A pre-resolved url that
+			# returns nothing is dropped here, and the handoff resolves afresh.
+			try:
+				from modules.nextep_warm import warm_end_of_episode
+				if warm_end_of_episode(results, self.meta, preresolved) == 'preresolved_dead':
+					stash = _NEXTEP_AUTOPLAY_STASH.get(_nextep_stash_key(self.meta))
+					if stash: stash['preresolved'] = None
+			except Exception as exc:
+				kodi_utils.logger('Red Light', 'NextEpWarm: end-of-episode warm failed: %s' % exc)
 		else:
 			kodi_utils.logger('Red Light', 'Autoplay next episode stash failed: %s S%02dE%02d' % (
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode')))
