@@ -73,6 +73,8 @@ def routing(sys):
 		return playback_next_episode(params)
 	elif 'playback.' in mode:
 		kodi_utils.release_resolve_handle(sys.argv)
+		if params.get('nextep_stash_play') == 'true':
+			kodi_utils.logger('Red Light', 'Autoplay next episode play: router bootstrap done')  # #196 timing
 		from modules.kodi_utils import player_check
 		return player_check(mode, params)
 	elif 'choice' in mode:
