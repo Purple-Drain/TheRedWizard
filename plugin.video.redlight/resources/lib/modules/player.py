@@ -464,6 +464,7 @@ class RedLightPlayer(xbmc.Player):
 				elif st.autoscrape_next_episode() or st.autoplay_next_episode():
 					self._log_nextep('Next episode disabled this play (random=%s random_continual=%s custom_values=%s play_n=%s)' % (
 						play_random, play_random_continual, disable_autoplay_next_episode, self.num_episodes or ''))
+				if not (play_random or play_random_continual): self._note_rewatch()
 			else:
 				self.num_episodes = None
 				show_stinger, stinger_alert_timing, stingers_percentage_fallback = st.stingers_show(), st.stingers_alert_timing(), st.stingers_percentage()
@@ -1385,6 +1386,18 @@ class RedLightPlayer(xbmc.Player):
 			return True
 		try: return ku.make_playlist('video').getposition() == 1
 		except Exception: return False
+
+	def _note_rewatch(self):
+		"""#1 C407: keep the show's rewatch cursor (modules.rewatch_cursor) in step with this play."""
+		try:
+			from modules import watched_status as ws
+			from modules.rewatch_cursor import on_play_started
+			tmdb_id, season, episode = self.meta_get('tmdb_id'), self.meta_get('season'), self.meta_get('episode')
+			watched = bool(ws.get_watched_status_episode(ws.watched_info_episode(tmdb_id), (int(season), int(episode))))
+			done = on_play_started(tmdb_id, season, episode, watched, st.nextep_rewatch_continue())
+			if done: ku.logger('Red Light', 'Rewatch cursor %s: tmdb=%s S%02dE%02d' % (done, tmdb_id, int(season), int(episode)))
+		except Exception as exc:
+			ku.logger('Red Light', 'Rewatch cursor update failed: %s' % exc)
 
 	def _try_skip_to_stash(self):
 		"""#1: the explicit next-episode skip (request_skip_episode, or the Next key's C6 marker path
