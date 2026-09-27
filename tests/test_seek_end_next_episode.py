@@ -103,3 +103,55 @@ def test_intro_prompt_closes_once_playback_stops():
     prompt.monitor()
     assert prompt.timed_out is True
     assert len(ticks) == 1
+
+
+# #199 C7: 'play next episode now' (mode=playback.skip_episode).
+
+def _props(monkeypatch, initial):
+    props = dict(initial)
+    monkeypatch.setattr(player_mod.ku, 'get_property', lambda key: props.get(key, ''))
+    monkeypatch.setattr(player_mod.ku, 'set_property', lambda key, value: props.__setitem__(key, value))
+    monkeypatch.setattr(player_mod.ku, 'clear_property', lambda key: props.pop(key, None))
+    monkeypatch.setattr(player_mod.ku, 'logger', lambda *a: None)
+    return props
+
+
+def test_skip_request_flags_and_stops_a_red_light_play(monkeypatch):
+    props = _props(monkeypatch, {player_mod.PROP_ACTIVE_PLAYBACK_KEY: 'k1'})
+    stopped = []
+    monkeypatch.setattr(player_mod.ku, 'kodi_player', lambda: type('P', (), {'stop': lambda self: stopped.append(True)})())
+    assert player_mod.request_skip_episode() is True
+    assert props[player_mod.PROP_SKIP_EPISODE] == 'true'
+    assert stopped == [True]
+
+
+def test_skip_request_ignores_playback_red_light_does_not_own(monkeypatch):
+    props = _props(monkeypatch, {})
+    notes, stopped = [], []
+    monkeypatch.setattr(player_mod.ku, 'notification', lambda *a, **k: notes.append(a))
+    monkeypatch.setattr(player_mod.ku, 'kodi_player', lambda: type('P', (), {'stop': lambda self: stopped.append(True)})())
+    assert player_mod.request_skip_episode() is False
+    assert player_mod.PROP_SKIP_EPISODE not in props and stopped == [] and len(notes) == 1
+
+
+def test_explicit_skip_ignores_autoplay_off_and_an_earlier_prep(monkeypatch):
+    player, launched, _, _ = _player(monkeypatch, NEXT, autoplay=False, prep_attempted=True)
+    player._play_next_after_seek_end(explicit=True)
+    assert len(launched) == 1 and launched[0]['mode'] == 'playback.media'
+
+
+def test_explicit_skip_still_ignores_movies(monkeypatch):
+    player, launched, _, _ = _player(monkeypatch, NEXT, media_type='movie')
+    player._play_next_after_seek_end(explicit=True)
+    assert launched == []
+
+
+def test_router_sends_skip_episode_to_the_player(monkeypatch):
+    import sys
+    from modules import router, kodi_utils
+    called = []
+    monkeypatch.setattr(player_mod, 'request_skip_episode', lambda: called.append(True) or True)
+    monkeypatch.setattr(kodi_utils, 'release_resolve_handle', lambda argv: None)
+    monkeypatch.setattr(sys, 'argv', ['plugin://plugin.video.redlight/', '-1', '?mode=playback.skip_episode'])
+    router.routing(sys)
+    assert called == [True]

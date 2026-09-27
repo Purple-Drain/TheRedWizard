@@ -60,6 +60,11 @@ def routing(sys):
 		# #92: JSON answer for "what's next" -- window property + single-item directory listing.
 		from modules.next_episode_api import next_episode_info
 		return next_episode_info(params)
+	elif mode == 'playback.skip_episode':
+		# #199 C7: 'play next episode now' for a remote key or Yatse button.
+		kodi_utils.release_resolve_handle(sys.argv)
+		from modules.player import request_skip_episode
+		return request_skip_episode()
 	elif mode == 'playback.next_episode':
 		# #92: same next-episode computation as next_episode.info, handed to playback.media
 		# in-process (Sources().playback_prep()) instead of a second plugin invocation.

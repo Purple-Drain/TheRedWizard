@@ -25,6 +25,7 @@ PROP_NEXTEP_NATURAL_END = 'redlight.nextep_natural_end'
 _END_THREAD_JOIN_SEC = 5
 PROP_RANDOM_CONTINUAL_SKIP_ATTEMPTS = 'redlight.random_continual_skip_attempts'
 PROP_ACTIVE_PLAYBACK_KEY = 'redlight.active_playback_key'
+PROP_SKIP_EPISODE = 'redlight.skip_episode_requested'
 _NEXTEP_NATURAL_END_SEC = 15
 # A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
@@ -138,6 +139,20 @@ def open_window_expired_outcome(is_playing, total_time):
 	counts as success. Anything else is the old failure."""
 	if not is_playing: return False
 	return total_time not in ('0.0', '', 0, 0.0, None)
+
+def request_skip_episode():
+	"""#199 C7: mode=playback.skip_episode, 'play next episode now'. Kodi's Next only walks chapters
+	because Red Light hands it one item, so a key or a Yatse button can run
+	RunPlugin(plugin://plugin.video.redlight/?mode=playback.skip_episode) instead. Only acts on a
+	play Red Light owns: flags the skip and stops, and the player's end handling marks the episode
+	watched and starts the next one."""
+	if not ku.get_property(PROP_ACTIVE_PLAYBACK_KEY):
+		ku.notification('Play next episode: nothing from Red Light is playing', 3000)
+		return False
+	ku.set_property(PROP_SKIP_EPISODE, 'true')
+	ku.logger('Red Light', 'Play next episode now: stopping the current episode')
+	ku.kodi_player().stop()
+	return True
 
 class RedLightPlayer(xbmc.Player):
 	def __init__ (self):
@@ -528,11 +543,17 @@ class RedLightPlayer(xbmc.Player):
 				except: pass
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
+			# #199 C7: request_skip_episode stopped this play to move on; count it as watched.
+			skip_requested = not playback_superseded and ku.get_property(PROP_SKIP_EPISODE) == 'true'
+			if skip_requested:
+				ku.clear_property(PROP_SKIP_EPISODE)
+				if not self.media_marked: self.media_watched_marker(force_watched=True)
 			marked_before_end = self.media_marked
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
 			self.clear_playback_properties(clear_navigation=False)
 			self._release_active_playback()
 			self._note_abnormal_end(playback_superseded, marked_before_end)
+			if skip_requested and not autoplay_stash_scheduled: self._play_next_after_seek_end(explicit=True)
 			self._log_playback_end()
 		except:
 			self._log_monitor_error()
@@ -1113,13 +1134,15 @@ class RedLightPlayer(xbmc.Player):
 		except: return False
 		return remaining > 0 and remaining <= self.random_continual_start_prep
 
-	def _play_next_after_seek_end(self):
+	def _play_next_after_seek_end(self, explicit=False):
 		"""#199: a skip to the end jumps over the start_prep window, so no next episode was prepared
 		and the natural-end hand-off has nothing to play. Work out the literal next episode the same
 		way the prep does and start it as a fresh play (mode=playback.media, as a Next Episodes row
 		does), so this play's own cleanup finishes independently."""
-		if getattr(self, 'media_type', None) != 'episode' or not getattr(self, 'autoplay_nextep', False): return
-		if getattr(self, '_nextep_prep_attempted', False): return
+		# explicit: the user asked for the next episode (#199 C7), so neither the autoplay setting
+		# nor an earlier prep (its stash was dropped when the play stopped) holds it back.
+		if getattr(self, 'media_type', None) != 'episode': return
+		if not explicit and (not getattr(self, 'autoplay_nextep', False) or getattr(self, '_nextep_prep_attempted', False)): return
 		try:
 			from modules.episode_tools import EpisodeTools
 			from modules.settings import playback_key
