@@ -378,6 +378,21 @@ class SavedListsRevalidate:
 # The name #162 shipped under.
 NextEpisodesRevalidate = SavedListsRevalidate
 
+class NextEpWidgetWarm:
+	"""#1: warm the first Next Episodes widget items after a real build (modules.nextep_warm). The widget
+	build only leaves a request in a window property; the scrape (folders only) and the reads run here, and
+	only while nothing is playing or being scraped, so they never compete with a real play."""
+	def run(self, monitor):
+		from modules import nextep_warm
+		player, warmed = kodi_utils.kodi_player(), {}
+		busy_props = ('redlight.sources_busy', 'redlight.resolve_busy', pause_services_prop)
+		while not monitor.abortRequested():
+			if monitor.waitForAbort(10) or kodi_utils.service_shutting_down(monitor): return
+			if not kodi_utils.get_property(nextep_warm.WIDGET_REQUEST_PROP): continue
+			if player.isPlayingVideo() or any(kodi_utils.get_property(p) == 'true' for p in busy_props): continue
+			try: nextep_warm.warm_widget_items(nextep_warm.take_widget_request(), warmed, monitor)
+			except Exception as e: kodi_utils.logger('NextEpWidgetWarm', str(e))
+
 class AutoStart:
 	def run(self, monitor):
 		kodi_utils.logger('Red Light', 'AutoStart Service Starting')
@@ -439,6 +454,7 @@ class RedLightMonitor(Monitor):
 		_start_daemon(lambda: PunchPlayMonitor().run(self))
 		_start_daemon(lambda: WidgetRefresher().run(self))
 		_start_daemon(lambda: SavedListsRevalidate().run(self))
+		_start_daemon(lambda: NextEpWidgetWarm().run(self))
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))
 		_start_daemon(lambda: ServiceExpiryAlerts().run(self))

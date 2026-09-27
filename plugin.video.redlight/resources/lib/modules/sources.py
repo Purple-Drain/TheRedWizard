@@ -2727,6 +2727,10 @@ class Sources():
 			self.playing_item = item
 			url = self._ensure_play_headers(preresolved['url'], item)
 			self._set_play_mime_hint(item, url)
+			# #1: logged before play, because player.run() blocks until the episode ends; the line after
+			# it counts the episode's runtime too (the 1417 s "stale" ages read on 25.09).
+			kodi_utils.logger('Red Light', 'Autoplay next episode: handing pre-resolved url to player (age %ss)' % round(
+				time.time() - preresolved.get('resolved_at', time.time()), 1))
 			player = RedLightPlayer()
 			player.run(url, self)
 			# #107: mirror the normal loop -- a mid-stream stall gets one re-resolve/reopen
@@ -2738,7 +2742,7 @@ class Sources():
 				url = self._resume_after_stall(item, url, player)
 			if self.playback_successful:
 				age = round(time.time() - preresolved.get('resolved_at', time.time()), 1)
-				kodi_utils.logger('Red Light', 'Autoplay next episode: played pre-resolved url (age %ss)' % age)
+				kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolved url playback finished (age at end %ss)' % age)
 				self._cleanup_offcloud_resolved_url(item, url)
 				self._cleanup_rd_resolved_url(item, url)
 				return True, url
@@ -3395,6 +3399,11 @@ class Sources():
 				self._decline_nextep_prep('duplicate file, no further episode')
 			return
 		preresolved = self._preresolve_nextep_candidate(results)
+		try:
+			from modules.nextep_warm import warm_end_of_episode
+			warm_end_of_episode(results, self.meta, preresolved)
+		except Exception as exc:
+			kodi_utils.logger('Red Light', 'NextEpWarm: end-of-episode warm failed: %s' % exc)
 		if stash_nextep_autoplay_results(results, self.meta, self.nextep_settings, self.params, preresolved=preresolved):
 			kodi_utils.logger('Red Light', 'Autoplay next episode scrape ready: %s S%02dE%02d (%s results)' % (
 				self.meta.get('title'), self.meta.get('season'), self.meta.get('episode'), len(results)))

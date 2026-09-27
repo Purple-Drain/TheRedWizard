@@ -448,6 +448,14 @@ def autoplay_preresolve_next_episode():
 	'''#1: resolve the next episode's top source during the last minutes of the current one.'''
 	return autoplay_next_episode() and get_setting('redlight.autoplay_preresolve_next_episode', 'true') == 'true'
 
+def nextep_warm_read():
+	'''#1: read the first MB of the next episode's file during the current one (zurg path or pre-resolved url).'''
+	return autoplay_next_episode() and get_setting('redlight.nextep_warm_read', 'true') == 'true'
+
+def nextep_widget_warm():
+	'''#1: warm the first Next Episodes widget items through the folders (zurg) scrapers only.'''
+	return get_setting('redlight.nextep_widget_warm', 'true') == 'true'
+
 def skip_intro_mode():
 	return int(get_setting('redlight.autoplay_skip_intro', '0'))
 
