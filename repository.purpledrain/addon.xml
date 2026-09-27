@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="repository.purpledrain" name="Purple Drain Fork Repo" version="1.3.0" provider-name="Purple-Drain">
-    <extension point="xbmc.addon.repository" name="Purple Drain Fork Repo">
+<addon id="repository.purpledrain" name="Purple Drain" version="1.3.1" provider-name="Purple-Drain">
+    <extension point="xbmc.addon.repository" name="Purple Drain">
         <dir>
             <info compressed="false">https://purple-drain.github.io/TheRedWizard/addons.xml</info>
             <checksum>https://purple-drain.github.io/TheRedWizard/addons.xml.md5</checksum>
@@ -23,8 +23,8 @@
         </dir>
     </extension>
     <extension point="xbmc.addon.metadata">
-        <summary lang="en">Purple-Drain fork add-ons: Redlight, Arctic Fuse 3 and beIN Sports Connect</summary>
-        <description lang="en">Serves plugin.video.redlight from the Purple-Drain fork (github.com/Purple-Drain/TheRedWizard), skin.arctic.fuse.3 from the Purple-Drain skin fork (github.com/Purple-Drain/skin.arctic.fuse.3), and plugin.video.beinsports.apac from the Purple-Drain beIN fork (github.com/Purple-Drain/plugin.video.beinsports.apac), so all three update from the forks instead of upstream's repositories.</description>
+        <summary lang="en">Purple-Drain add-ons: Redlight, Arctic Fuse 3, TMDb Helper and beIN Sports Connect</summary>
+        <description lang="en">Serves plugin.video.redlight from the Purple-Drain fork (github.com/Purple-Drain/TheRedWizard), skin.arctic.fuse.3 from the Purple-Drain skin fork (github.com/Purple-Drain/skin.arctic.fuse.3), plugin.video.beinsports.apac from the Purple-Drain beIN fork (github.com/Purple-Drain/plugin.video.beinsports.apac), and plugin.video.themoviedb.helper from the Purple-Drain TMDb Helper fork (github.com/Purple-Drain/plugin.video.themoviedb.helper), so all four update from the forks instead of upstream's repositories.</description>
         <platform>all</platform>
     </extension>
 </addon>
