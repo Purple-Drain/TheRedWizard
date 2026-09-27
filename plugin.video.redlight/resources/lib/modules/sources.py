@@ -515,6 +515,9 @@ class Sources():
 		self.filter_size_method = int(get_setting('redlight.results.filter_size_method', '0'))
 		self.media_type, self.tmdb_id = params_get('media_type'), params_get('tmdb_id')		
 		self.custom_title, self.custom_year = params_get('custom_title', None), params_get('custom_year', None)
+		# A None sent through a plugin URL arrives as the string 'None' (#1).
+		if self.custom_title in ('', 'None'): self.custom_title = None
+		if self.custom_year in ('', 'None'): self.custom_year = None
 		self.episode_group_label, self.episode_id = params_get('episode_group_label', ''), params_get('episode_id', None)
 		self.playcount, self.watch_count = params_get('playcount', None), params_get('watch_count', 1)
 		if self.media_type == 'episode':
