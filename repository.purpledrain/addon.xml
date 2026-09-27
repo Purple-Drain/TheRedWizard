@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="repository.purpledrain" name="Purple Drain Fork Repo" version="1.2.0" provider-name="Purple-Drain">
+<addon id="repository.purpledrain" name="Purple Drain Fork Repo" version="1.3.0" provider-name="Purple-Drain">
     <extension point="xbmc.addon.repository" name="Purple Drain Fork Repo">
         <dir>
             <info compressed="false">https://purple-drain.github.io/TheRedWizard/addons.xml</info>
@@ -15,6 +15,11 @@
             <info compressed="false">https://purple-drain.github.io/plugin.video.beinsports.apac/addons.xml</info>
             <checksum>https://purple-drain.github.io/plugin.video.beinsports.apac/addons.xml.md5</checksum>
             <datadir zip="true">https://purple-drain.github.io/plugin.video.beinsports.apac/</datadir>
+        </dir>
+        <dir>
+            <info compressed="false">https://purple-drain.github.io/plugin.video.themoviedb.helper/addons.xml</info>
+            <checksum>https://purple-drain.github.io/plugin.video.themoviedb.helper/addons.xml.md5</checksum>
+            <datadir zip="true">https://purple-drain.github.io/plugin.video.themoviedb.helper/</datadir>
         </dir>
     </extension>
     <extension point="xbmc.addon.metadata">
