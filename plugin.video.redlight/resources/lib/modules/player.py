@@ -58,6 +58,9 @@ _SEEK_END_WINDOW_SEC = 30
 # on each of the two requests a slow-but-streaming open needs. Setting: playback_open_timeout.
 _PLAYBACK_OPEN_TIMEOUT_SEC = 30
 _PLAYBACK_OPEN_TICK_MS = 50
+# #1 bug G: a stream that has played this long with a real duration counts as open even when
+# fullscreen never came up (the resolve dialog stayed on top of it).
+_OPEN_WITHOUT_FULLSCREEN_MS = 3000
 # Movies-only: fire stingers alert ~3 min before other alert sources would (typical 90% vs 95% gap on ~1 hr).
 _STINGER_EARLY_OFFSET_SEC = 180
 _NEXTEP_SUB_FETCH_DEFER_SEC = 45
@@ -325,6 +328,30 @@ class RedLightPlayer(xbmc.Player):
 			return True
 		return False
 
+	def _confirm_open(self, elapsed_ms):
+		"""The open succeeded once the video plays with a real duration in fullscreen. #1 bug G
+		(Shield 28.09.26 09:26): after a curl reconnect right at the start, fullscreen never came
+		up, the resolve dialog stayed over the playing video, and this loop waited on until the
+		service took the play as foreign (#143). Now, playing with a duration for
+		_OPEN_WITHOUT_FULLSCREEN_MS without fullscreen: bring fullscreen up and count it as open."""
+		try: total = self.getTotalTime()
+		except Exception: return
+		if total in ('0.0', '', 0.0, 0, None):
+			self._open_playing_since = None
+			return
+		if ku.get_visibility('Window.IsActive(fullscreenvideo)'):
+			self.playback_successful = True
+			return
+		since = getattr(self, '_open_playing_since', None)
+		if not isinstance(since, (int, float)):
+			self._open_playing_since = elapsed_ms
+			return
+		if elapsed_ms - since < _OPEN_WITHOUT_FULLSCREEN_MS: return
+		ku.logger('Red Light', 'Playback open: playing %.1fs without fullscreen; bringing it up and continuing (#1 bug G)' % ((elapsed_ms - since) / 1000.0))
+		try: ku.execute_builtin('ActivateWindow(fullscreenvideo)')
+		except Exception: pass
+		self.playback_successful = True
+
 	def _playback_open_timeout_ms(self):
 		try: return playback_open_timeout_ms(st.playback_open_timeout())
 		except Exception: return playback_open_timeout_ms(None)
@@ -372,6 +399,7 @@ class RedLightPlayer(xbmc.Player):
 
 	def check_playback_start(self):
 		elapsed_ms, timeout_ms = 0, self._playback_open_timeout_ms()
+		self._open_playing_since = None
 		while self.playback_successful is None:
 			ku.hide_busy_dialog()
 			if getattr(self, '_cb_stopped', False):
@@ -397,10 +425,7 @@ class RedLightPlayer(xbmc.Player):
 					self.safe_stop()
 					break
 				elif self.isPlayingVideo():
-					try:
-						if self.getTotalTime() not in ('0.0', '', 0.0, None) and ku.get_visibility('Window.IsActive(fullscreenvideo)'):
-							self.playback_successful = True
-					except: pass
+					self._confirm_open(elapsed_ms)
 			elif self.sources_object.progress_dialog.skip_resolved(): self.playback_successful = False
 			elif self.sources_object.progress_dialog.iscanceled() or self.kodi_monitor.abortRequested():
 				self.sources_object.cancel_all_playback = True
@@ -420,9 +445,7 @@ class RedLightPlayer(xbmc.Player):
 					self.playback_successful = False
 					self.safe_stop()
 					break
-				try:
-					if self.getTotalTime() not in ('0.0', '', 0.0, None) and ku.get_visibility('Window.IsActive(fullscreenvideo)'): self.playback_successful = True
-				except: pass
+				self._confirm_open(elapsed_ms)
 			elapsed_ms += _PLAYBACK_OPEN_TICK_MS
 			try:
 				if self.sources_object.progress_dialog:
