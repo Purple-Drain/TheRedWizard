@@ -272,6 +272,20 @@ class IntroSkipPrompt(BaseDialog):
 		self.closed = True
 		self.close()
 
+	def _skip_requested(self):
+		"""#1 (W-280926-3): the player's monitor is blocked in this modal, so a next-episode skip in
+		the intro window went unclaimed and fell back to the stop. Decline the intro skip, close, and
+		ack so request_skip_episode does not stop; the skip flag stays set for the monitor's next tick,
+		which claims it the usual way."""
+		from modules.kodi_utils import get_property, set_property, logger
+		if get_property('redlight.skip_episode_requested') != 'true': return False
+		set_property('redlight.skip_episode_ack', 'true')
+		self.selected = False
+		self.closed = True
+		logger('Red Light', 'Intro skip prompt: next-episode skip requested, closing')
+		self.close()
+		return True
+
 	def set_properties(self):
 		fanart, clearlogo = self.meta.get('fanart', ''), self.meta.get('clearlogo', '')
 		self.setProperty('mode', 'skip_intro')
@@ -294,6 +308,7 @@ class IntroSkipPrompt(BaseDialog):
 				self.sleep(1000)
 				if self.closed:
 					return
+				if self._skip_requested(): return
 				# #199: a skip to the end during the prompt ends playback; close now instead of holding
 				# the player's monitor (and the screen) for the rest of the countdown.
 				try:
