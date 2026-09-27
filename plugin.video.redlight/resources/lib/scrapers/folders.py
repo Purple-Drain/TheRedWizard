@@ -27,6 +27,8 @@ class source:
 		try:
 			if not self.folder_path: return source_utils.internal_results(self.scraper_name, self.sources)
 			self.scrape_deadline = time.time() + self._deadline_seconds()
+			# #329 timing: where a folders rung spends its time (listing, cache, thread start, join).
+			self._t = {'dirs': 0, 'hits': 0, 'list_ms': 0.0, 'spawn_ms': 0.0, 'join_ms': 0.0, 'threads': 0, 'start': time.time()}
 			filter_title = filter_by_name('folders')
 			self.media_type, title, self.year = info.get('media_type'), info.get('title'), int(info.get('year'))
 			self.season, self.episode = info.get('season'), info.get('episode')
@@ -38,6 +40,7 @@ class source:
 			self.aliases = source_utils.get_aliases_titles(info.get('aliases', []))
 			root = self._as_dir(self.folder_path)
 			self._scrape_directory(root, first_run=True, below_title=self._names_title(root))
+			self._log_timing()
 			if not self.scrape_results: return source_utils.internal_results(self.scraper_name, self.sources)
 			aliases = self.aliases
 			def _process():
@@ -89,8 +92,13 @@ class source:
 		key is unchanged, so delete_all_folderscrapers still clears it."""
 		string = 'FOLDERSCRAPER_%s_%s' % (self.scrape_provider, folder_name)
 		cached = main_cache.get(string)
-		if cached: return cached
+		t = getattr(self, '_t', None)
+		if cached:
+			if t is not None: t['hits'] += 1
+			return cached
+		started = time.time()
 		folder_files = self._make_dirs(folder_name)
+		if t is not None: t['list_ms'] += (time.time() - started) * 1000
 		if folder_files: main_cache.set(string, folder_files, expiration=4)
 		return folder_files
 
@@ -126,11 +134,28 @@ class source:
 		folder_results = []
 		scrape_results_append = self.scrape_results.append
 		folder_results_append = folder_results.append
+		t = getattr(self, '_t', None)
+		if t is not None: t['dirs'] += 1
 		folder_files = self._cached_listing(folder_name)
+		started = time.time()
 		folder_threads = list(make_thread_list(_process, folder_files))
+		if t is not None: t['spawn_ms'] += (time.time() - started) * 1000; t['threads'] += len(folder_threads)
+		started = time.time()
 		self._join_until_deadline(folder_threads, 'listing')
+		if t is not None: t['join_ms'] += (time.time() - started) * 1000
 		if not folder_results: return
 		return self._scraper_worker(folder_results)
+
+	def _log_timing(self):
+		"""#329: one line per folders scrape. spawn_ms includes make_thread_list's activeCount gate; list_ms is
+		uncached xbmcvfs.listdir time only; the ms totals sum across threads, so they can exceed the wall time."""
+		t = getattr(self, '_t', None)
+		if t is None: return
+		try:
+			from modules.kodi_utils import logger
+			logger('FoldersTiming', '%s dirs=%d cache_hits=%d list_ms=%d threads=%d spawn_ms=%d join_ms=%d results=%d wall=%.2fs' % (
+				self.scraper_name, t['dirs'], t['hits'], t['list_ms'], t['threads'], t['spawn_ms'], t['join_ms'], len(self.scrape_results), time.time() - t['start']))
+		except Exception: pass
 
 	def _deadline_seconds(self):
 		"""Same scrape budget the cloud scrapers give themselves (#112); this scraper never had
