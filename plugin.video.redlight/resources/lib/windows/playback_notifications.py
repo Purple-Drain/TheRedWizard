@@ -83,6 +83,20 @@ class NextEpisode(BaseDialog):
 		self.closed = True
 		self.close()
 
+	def _skip_requested(self):
+		"""#1 C410: the next-episode skip arrived while this dialog is up. The player's monitor is
+		blocked in this modal, so the dialog answers for it: Play, and tell request_skip_episode it was
+		claimed so it does not stop playback."""
+		from modules.kodi_utils import get_property, set_property, clear_property, logger
+		if get_property('redlight.skip_episode_requested') != 'true': return False
+		clear_property('redlight.skip_episode_requested')
+		set_property('redlight.skip_episode_ack', 'true')
+		self.selected = 'play'
+		self.closed = True
+		logger('Red Light', 'Next episode alert: skip requested, playing now')
+		self.close()
+		return True
+
 	def set_properties(self):
 		self.setProperty('mode', 'next_episode')
 		self.setProperty('thumb', self.get_thumb())
@@ -115,6 +129,7 @@ class NextEpisode(BaseDialog):
 		try:
 			if self._player_active():
 				while self._player_active() and not self.closed:
+					if self._skip_requested(): return
 					try:
 						total_time = self.player.getTotalTime()
 						remaining_time = max(0, round(total_time - self.player.getTime()))
