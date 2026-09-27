@@ -279,6 +279,11 @@ class IntroSkipPrompt(BaseDialog):
 				self.sleep(1000)
 				if self.closed:
 					return
+				# #199: a skip to the end during the prompt ends playback; close now instead of holding
+				# the player's monitor (and the screen) for the rest of the countdown.
+				try:
+					if not self.player.isPlayingVideo() and not self.player.isPlaying(): break
+				except: pass
 				if pause_timer == 0:
 					break
 				pause_timer -= 1
