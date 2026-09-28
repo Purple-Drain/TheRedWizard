@@ -1378,6 +1378,7 @@ class RedLightPlayer(xbmc.Player):
 	def _try_autoplay_early_stash_play(self):
 		if not self.autoplay_nextep or not getattr(self, '_nextep_close_wait', False):
 			return
+		if getattr(self, '_queued_real', None): return  # end-keep: Kodi flows on into the queued file
 		if not self._owns_active_playback():
 			return
 		if getattr(self, '_nextep_stash_play_scheduled', False) or not getattr(self, '_nextep_alert_shown', False):
@@ -1537,8 +1538,27 @@ class RedLightPlayer(xbmc.Player):
 		except Exception as exc:
 			ku.logger('Red Light', 'Queued next episode: resume seek failed: %s' % exc)
 
+	def _drop_queued_real(self, reason):
+		"""Take the real next file off the playlist, so the episode ends without flowing into it."""
+		queued = getattr(self, '_queued_real', None)
+		if not queued: return
+		self._queued_real = None
+		self._queued_next = False
+		try: ku.make_playlist('video').remove(queued['url'])
+		except Exception as exc: ku.logger('Red Light', 'Queued next episode: removal failed: %s' % exc)
+		self._log_nextep('Queued next episode: removed (%s)' % reason)
+
 	def _maybe_drop_queued_next(self):
 		if not getattr(self, '_queued_next', False): return
+		# #1 end-keep: a real queued file stays to the end, so a natural end flows straight into it
+		# (gapless autoplay, adopted like the Next key). It is removed only if the next episode is
+		# cancelled. The plain marker still comes off 20 s before the end.
+		if getattr(self, '_queued_real', None):
+			try:
+				from modules.sources import nextep_autoplay_cancelled
+				if nextep_autoplay_cancelled(): self._drop_queued_real('next episode cancelled')
+			except Exception: pass
+			return
 		try: remaining = float(self.getTotalTime()) - float(self.getTime())
 		except Exception: return
 		if not (0 < remaining <= _QUEUED_NEXT_DROP_SEC): return
@@ -1699,6 +1719,7 @@ class RedLightPlayer(xbmc.Player):
 			except:
 				pass
 			ku.clear_property(PROP_NEXTEP_PREP_SCHEDULED)
+			self._drop_queued_real('Next Up cancelled')
 			self._log_nextep('Autoplay next episode alert action: cancel')
 			return
 		if action == 'pause':
@@ -1712,6 +1733,13 @@ class RedLightPlayer(xbmc.Player):
 		if action != 'play':
 			return
 		self._log_nextep('Autoplay next episode alert action: play')
+		if getattr(self, '_queued_real', None):
+			# end-keep: move Kodi on to the queued file; the loop sees it and hands over (adopt).
+			try:
+				self.playnext()
+				return
+			except Exception as exc:
+				ku.logger('Red Light', 'Queued next episode: playnext failed, scheduling the stash: %s' % exc)
 		stash = take_nextep_autoplay_stash()
 		if not stash: return
 		try:

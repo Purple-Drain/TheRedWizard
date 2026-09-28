@@ -135,3 +135,22 @@ def test_adopting_schedule_ignores_the_preps_own_busy_flag(monkeypatch):
     assert sources_mod.schedule_nextep_stashed_play(stash, show_busy=False) is False
     assert sources_mod.schedule_nextep_stashed_play(stash, show_busy=False, adopting=True) is True
     assert len(calls) == 1
+
+
+def test_real_queued_file_stays_to_the_end(monkeypatch):
+    """end-keep: no 20 s drop for a real file, so a natural end flows into it."""
+    playlist = FakePlaylist(['a', TOP['url_dl']])
+    player, _, _ = _wire(monkeypatch, playlist)
+    player._queued_real = {'url': TOP['url_dl'], 'index': 1}
+    player.getTotalTime, player.getTime = (lambda: 1364.0), (lambda: 1350.0)
+    player._maybe_drop_queued_next()
+    assert playlist.items == ['a', TOP['url_dl']] and player._queued_real
+
+
+def test_cancel_removes_the_real_queued_file(monkeypatch):
+    playlist = FakePlaylist(['a', TOP['url_dl']])
+    player, _, _ = _wire(monkeypatch, playlist)
+    monkeypatch.setattr(sources_mod, 'nextep_autoplay_cancelled', lambda: True)
+    player._queued_real = {'url': TOP['url_dl'], 'index': 1}
+    player._maybe_drop_queued_next()
+    assert playlist.items == ['a'] and player._queued_real is None
