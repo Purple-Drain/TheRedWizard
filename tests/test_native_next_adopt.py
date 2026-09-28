@@ -42,7 +42,7 @@ def _wire(monkeypatch, playlist, stash=STASH):
     taken = []
     monkeypatch.setattr(sources_mod, 'take_nextep_autoplay_stash', lambda: taken.append(1) or dict(stash))
     scheduled = []
-    monkeypatch.setattr(sources_mod, 'schedule_nextep_stashed_play', lambda s, show_busy=None: scheduled.append(s) or True)
+    monkeypatch.setattr(sources_mod, 'schedule_nextep_stashed_play', lambda s, show_busy=None, adopting=False: scheduled.append((s, adopting)) and False or True)
     player = object.__new__(RedLightPlayer)
     player._queued_next, player._queued_real, player._advanced_to_queued = True, None, False
     player.autoplay_nextep, player._own_index = True, 0
@@ -75,7 +75,8 @@ def test_advance_hands_over_and_flags_the_adopt(monkeypatch):
     assert player._queued_real_advanced() is True
     assert player._hand_over_to_queued_real() is True
     assert props[player_mod.PROP_ADOPT_QUEUED] == 'true'
-    pre = scheduled[0]['preresolved']
+    assert scheduled[0][1] is True
+    pre = scheduled[0][0]['preresolved']
     assert pre['url'] == TOP['url_dl'] and pre['item_key'] == sources_mod.nextep_preresolve_item_key(TOP)
     assert time.time() - pre['resolved_at'] < 5
 
@@ -117,3 +118,20 @@ def test_adopted_play_counts_as_started_so_a_stop_is_a_stop(monkeypatch):
     monkeypatch.setattr(player_mod.xbmcgui, 'ListItem', lambda *a, **k: type('LI', (), {'setProperty': lambda self, k, v: None})())
     player._adopt_queued_play()
     assert player._cb_started is True
+
+
+def test_adopting_schedule_ignores_the_preps_own_busy_flag(monkeypatch):
+    """W-280926-8: the Next key came while the prep's warm read still held sources_busy."""
+    calls = []
+    monkeypatch.setattr(sources_mod, 'nextep_autoplay_cancelled', lambda: False)
+    monkeypatch.setattr(sources_mod, 'nextep_end_play_superseded', lambda *a: True)
+    monkeypatch.setattr(sources_mod, '_nextep_stash_play_in_flight', lambda: False)
+    monkeypatch.setattr(sources_mod, 'persist_nextep_play_stash', lambda s: True)
+    monkeypatch.setattr(sources_mod, '_set_nextep_stash_play_in_flight', lambda a: None)
+    monkeypatch.setattr(sources_mod.kodi_utils, 'logger', lambda *a: None)
+    monkeypatch.setattr(sources_mod.kodi_utils, 'run_plugin', lambda p, block=False: calls.append(p))
+    monkeypatch.setattr(sources_mod.settings, 'playback_key', lambda: 'media')
+    stash = {'meta': {'title': 'Friends', 'season': 2, 'episode': 3}}
+    assert sources_mod.schedule_nextep_stashed_play(stash, show_busy=False) is False
+    assert sources_mod.schedule_nextep_stashed_play(stash, show_busy=False, adopting=True) is True
+    assert len(calls) == 1
