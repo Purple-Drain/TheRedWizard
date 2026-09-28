@@ -1891,6 +1891,11 @@ class RedLightPlayer(xbmc.Player):
 			action = default_action if use_window else 'close'
 		if not action:
 			action = 'close'
+		if getattr(self, '_cb_stopped', False) and action == 'play':
+			# #1 (W-280926-14): the user pressed Stop while Next Up was up. The dialog then returned
+			# its default (Play) and the next episode started after a Stop. A Stop is a stop.
+			self._log_nextep('Autoplay next episode alert: playback was stopped, not playing on')
+			action = 'cancel'
 		if action == 'cancel':
 			try:
 				from modules.sources import mark_nextep_autoplay_cancelled
