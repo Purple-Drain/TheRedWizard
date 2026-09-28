@@ -9,13 +9,14 @@
             <left>20</left>
             <top>20</top>
             <height>160</height>
-            <!-- Soft panel (owner, 28.09.26): semi-transparent, feathered ~48 px past the dialog edges. -->
+            <!-- Panel (owner, 28.09.26): sized to the content (865 x 160 plus 16 px padding each side),
+                 rounded like AF3, near-opaque with a thin soft shadow (8 px, part of the texture). -->
             <control type="image">
-                <left>-20</left>
-                <top>-20</top>
-                <width>940</width>
-                <height>200</height>
-                <texture border="28">redlight_common/panel-soft.png</texture>
+                <left>-24</left>
+                <top>-24</top>
+                <width>913</width>
+                <height>208</height>
+                <texture border="32">redlight_common/panel-soft.png</texture>
             </control>
             <control type="image">
                 <width>284</width>
@@ -34,6 +35,28 @@
                 <texture>$INFO[Window.Property(clearlogo)]</texture>
                 <aspectratio>keep</aspectratio>
                 <animation effect="fade" end="80">WindowOpen</animation>
+            </control>
+            <!-- Ready badge: the next file is already queued, so Play is instant (#1). -->
+            <control type="group">
+                <visible>String.IsEqual(Window.Property(ready),true)</visible>
+                <control type="image">
+                    <left>8</left>
+                    <top>122</top>
+                    <width>92</width>
+                    <height>30</height>
+                    <texture colordiffuse="FF6B35C9" border="14">redlight_common/circle.png</texture>
+                </control>
+                <control type="label">
+                    <left>8</left>
+                    <top>122</top>
+                    <width>92</width>
+                    <height>30</height>
+                    <align>center</align>
+                    <aligny>center</aligny>
+                    <font>font10</font>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <label>[B]READY[/B]</label>
+                </control>
             </control>
             <!-- Episode Status -->
             <control type="group">
@@ -74,11 +97,21 @@
                 <left>275</left>
                 <!-- Autoplay -->
                 <control type="label">
-                    <visible>String.IsEqual(Window.Property(osd_mode),true)</visible>
+                    <visible>String.IsEqual(Window.Property(osd_mode),true) + !String.IsEqual(Window.Property(finding),true)</visible>
                     <left>80</left>
                     <aligny>center</aligny>
                     <height>40</height>
                     <label>[B]Next Episode Ready[/B]</label>
+                    <font>font14</font> <!-- REDLIGHT_33 -->
+                    <textcolor>FFFFFFFF</textcolor>
+                    <shadowcolor>FF000000</shadowcolor>
+                </control>
+                <control type="label">
+                    <visible>String.IsEqual(Window.Property(osd_mode),true) + String.IsEqual(Window.Property(finding),true)</visible>
+                    <left>80</left>
+                    <aligny>center</aligny>
+                    <height>40</height>
+                    <label>[B]Finding Source...[/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
                     <textcolor>FFFFFFFF</textcolor>
                     <shadowcolor>FF000000</shadowcolor>
@@ -163,21 +196,176 @@
                     <shadowcolor>FF000000</shadowcolor>
                 </control>
             </control>
+            <!-- Countdown line: time left before the dialog acts on its own (#1 redesign) -->
+            <control type="group">
+                <top>174</top>
+                <visible>!String.IsEmpty(Window.Property(countdown_pct))</visible>
+                <control type="image">
+                    <left>2</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),0)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>45</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),5)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>88</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),10)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>131</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),15)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>174</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),20)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>217</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),25)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>260</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),30)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>303</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),35)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>346</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),40)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>389</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),45)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>432</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),50)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>475</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),55)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>518</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),60)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>561</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),65)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>604</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),70)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>647</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),75)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>690</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),80)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>733</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),85)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>776</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),90)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+                <control type="image">
+                    <left>819</left>
+                    <width>43</width>
+                    <height>4</height>
+                    <visible>Integer.IsGreater(Window.Property(countdown_pct),95)</visible>
+                    <texture colordiffuse="FF6B35C9">redlight_common/white.png</texture>
+                </control>
+            </control>
             <!-- BODY - NEXT EPISODE -->
             <control type="group">
                 <visible>String.IsEqual(Window.Property(mode),next_episode)</visible>
                 <left>275</left>
-                <!-- Text Body -->
+                <!-- Text Body: SxxEyy + episode title, then the info line (#1 redesign) -->
                 <control type="label">
-                    <top>45</top>
+                    <top>40</top>
                     <left>35</left>
-                    <height>35</height>
-                    <width>auto</width>
-                    <align>center</align>
+                    <width>555</width>
+                    <height>30</height>
                     <aligny>center</aligny>
-                    <label>$INFO[Window.Property(episode_label)]</label>
+                    <label>[B]$INFO[Window.Property(ep_code)][/B]  $INFO[Window.Property(ep_title)]</label>
                     <font>font10</font> <!-- REDLIGHT_21 -->
                     <textcolor>FFFFFFFF</textcolor>
+                    <shadowcolor>FF000000</shadowcolor>
+                </control>
+                <control type="label">
+                    <top>68</top>
+                    <left>35</left>
+                    <width>555</width>
+                    <height>26</height>
+                    <aligny>center</aligny>
+                    <label>$INFO[Window.Property(show_title)]$INFO[Window.Property(info_line),  ·  ,]</label>
+                    <font>font10</font> <!-- REDLIGHT_21 -->
+                    <textcolor>FFD0D0D8</textcolor>
                     <shadowcolor>FF000000</shadowcolor>
                 </control>
                 <!-- Buttons -->
@@ -197,8 +385,8 @@
                         <label>Close</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -212,8 +400,8 @@
                         <label>Play</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -227,8 +415,8 @@
                         <label>Cancel</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -269,8 +457,8 @@
                         <label>Yes</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -284,8 +472,8 @@
                         <label>No</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -324,8 +512,8 @@
                         <label>Yes</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -339,8 +527,8 @@
                         <label>No</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -379,8 +567,8 @@
                         <label>Yes</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
@@ -394,8 +582,8 @@
                         <label>No</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
-                        <focusedcolor>FF1F2020</focusedcolor>
-                        <texturefocus colordiffuse="FFCCCCCC" border="30">redlight_common/circle.png</texturefocus>
+                        <focusedcolor>FFFFFFFF</focusedcolor>
+                        <texturefocus colordiffuse="FF6B35C9" border="30">redlight_common/circle.png</texturefocus>
                         <texturenofocus colordiffuse="FF4a4347" border="30">redlight_common/circle.png</texturenofocus>
                         <align>center</align>
                         <aligny>center</aligny>
