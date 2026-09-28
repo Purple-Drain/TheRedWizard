@@ -45,7 +45,9 @@ _NEXTEP_STASH_PLAY_IN_FLIGHT = False
 # #1: how long a background-prep pre-resolve stays usable at handoff. Longer than any
 # realistic gap between the prep running and the alert/stash play firing; past this the
 # resolved url is old enough that a fresh resolve is safer than risking an expired link.
-NEXTEP_PRERESOLVE_TTL_SEC = 900
+# #1: measured 27-28.09.26 (tools/debrid-link-ttl.sh): an RD unrestricted link still answered 206
+# at 4 h. 3 h keeps an hour of margin while covering a pre-resolve made early in a long episode.
+NEXTEP_PRERESOLVE_TTL_SEC = 3 * 3600
 
 _STALL_RESUME_REWIND_SEC = 5
 

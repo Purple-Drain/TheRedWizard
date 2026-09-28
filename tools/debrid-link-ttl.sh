@@ -13,7 +13,9 @@ log_dir="$HOME/debrid-link-ttl"; mkdir -p "$log_dir"; log="$log_dir/$label.log"
 start=$(date +%s)
 check() {
 	local code
-	code=$(curl -s -o /dev/null -w '%{http_code}' -r 0-0 --max-time 30 "$url" || echo 000)
+	# curl prints 000 itself on a timeout or connection failure and exits non-zero; appending another
+	# 000 on failure produced "000000"/"206000" lines. Keep curl's own code, ignore its exit status.
+	code=$(curl -s -o /dev/null -w '%{http_code}' -r 0-0 --max-time 30 "$url"; true)
 	echo "$(date -Is) label=$label age_s=$(( $(date +%s) - start )) http=$code" | tee -a "$log"
 }
 check
