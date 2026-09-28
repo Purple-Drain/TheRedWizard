@@ -574,6 +574,7 @@ class RedLightPlayer(xbmc.Player):
 					self._maybe_queue_real_next()
 					self._maybe_requeue_before_end()
 					self._update_nextep_ready_flag()
+					self._maybe_osd_nextup()
 					try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
 					except: ku.sleep(250); continue
 					if not self._valid_playback_duration(self.total_time, self.curr_time):
@@ -1413,6 +1414,7 @@ class RedLightPlayer(xbmc.Player):
 
 	def _should_show_autoplay_nextep_alert(self):
 		if not self.autoplay_nextep or not getattr(self, 'nextep_settings', None): return False
+		if getattr(self, '_osd_nextup_open', False): return False  # C428 dialog up; the alert waits a tick
 		if getattr(self, '_nextep_alert_shown', False): return False
 		if not self._owns_active_playback():
 			return False
@@ -1562,6 +1564,36 @@ class RedLightPlayer(xbmc.Player):
 		self._queued_real = {'url': url, 'index': marker_index}
 		self._log_nextep('Queued next episode: %s S%02dE%02d queued as its file, the Next key plays it directly' % (
 			meta.get('title', ''), season, episode))
+
+	def _maybe_osd_nextup(self):
+		"""#1 C428: with the OSD open and the next episode prepared, show Red Light's Next Up dialog
+		(OSD mode: no countdown, closes with the OSD). It runs on its own thread so this monitor, and
+		the skip claim, never wait on it (the pd.87 lesson). Play is a skip: the one jump path."""
+		osd = ku.get_visibility('Window.IsVisible(videoosd)')
+		if not osd:
+			self._osd_nextup_seen = False
+			return
+		if getattr(self, '_osd_nextup_seen', False) or getattr(self, '_osd_nextup_open', False): return
+		if not getattr(self, '_nextep_ready_shown', False) or getattr(self, '_nextep_alert_shown', False): return
+		if ku.get_property(PROP_SKIP_EPISODE) == 'true' or getattr(self, '_skip_prep_deadline', None): return
+		try:
+			from modules.sources import peek_nextep_autoplay_stash
+			stash = peek_nextep_autoplay_stash()
+			meta = dict((stash or {}).get('meta') or {})
+		except Exception: return
+		if not meta: return
+		self._osd_nextup_seen, self._osd_nextup_open = True, True
+		def _show():
+			try:
+				from windows.base_window import open_window
+				action = open_window(('windows.playback_notifications', 'NextEpisode'), 'playback_notifications.xml', meta=meta, default_action='close', osd_mode=True)
+				self._log_nextep('OSD Next Up: %s' % (action or 'close'))
+				if action == 'play': ku.set_property(PROP_SKIP_EPISODE, 'true')
+			except Exception as exc:
+				ku.logger('Red Light', 'OSD Next Up failed: %s' % exc)
+			finally:
+				self._osd_nextup_open = False
+		self._spawn(_show, name='osd_nextup', daemon=True)
 
 	def _update_nextep_ready_flag(self):
 		ready, label = False, ''

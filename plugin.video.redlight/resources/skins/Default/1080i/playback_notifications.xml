@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <window>
     <onload>Dialog.Close(fullscreeninfo,true)</onload>
-    <onload>Dialog.Close(videoosd,true)</onload>
+    <onload condition="!String.IsEqual(Window.Property(osd_mode),true)">Dialog.Close(videoosd,true)</onload>
     <animation effect="fade" end="100" time="600">WindowOpen</animation>
     <controls>
         <!-- No full-width darkening over the video (owner, 28.09.26): only the dialog's own panel. -->
@@ -9,10 +9,13 @@
             <left>20</left>
             <top>20</top>
             <height>160</height>
+            <!-- Soft panel (owner, 28.09.26): semi-transparent, feathered ~48 px past the dialog edges. -->
             <control type="image">
-                <width>900</width>
-                <height>160</height>
-                <texture colordiffuse="D8101014">redlight_common/white.png</texture>
+                <left>-48</left>
+                <top>-48</top>
+                <width>996</width>
+                <height>256</height>
+                <texture border="56">redlight_common/panel-soft.png</texture>
             </control>
             <control type="image">
                 <width>284</width>
@@ -70,7 +73,16 @@
                 <left>275</left>
                 <!-- Autoplay -->
                 <control type="label">
-                    <visible>String.IsEmpty(Window.Property(pause_timer))</visible>
+                    <visible>String.IsEqual(Window.Property(osd_mode),true)</visible>
+                    <left>80</left>
+                    <aligny>center</aligny>
+                    <height>40</height>
+                    <label>[B]Next Episode Ready[/B]</label>
+                    <font>font14</font> <!-- REDLIGHT_33 -->
+                    <textcolor>FFB7B4BB</textcolor>
+                </control>
+                <control type="label">
+                    <visible>String.IsEmpty(Window.Property(pause_timer)) + !String.IsEqual(Window.Property(osd_mode),true)</visible>
                     <left>80</left>
                     <aligny>center</aligny>
                     <height>40</height>

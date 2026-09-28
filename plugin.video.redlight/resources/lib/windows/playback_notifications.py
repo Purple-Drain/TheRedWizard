@@ -34,7 +34,11 @@ class NextEpisode(BaseDialog):
 		self.meta = kwargs.get('meta')
 		self.default_action = kwargs.get('default_action', 'cancel')
 		self.selected = self.default_action
+		# #1 C428: shown while the OSD is open and the next episode is prepared. No countdown, the OSD
+		# stays, and it closes when the OSD does; Cancel and Back only close it.
+		self.osd_mode = bool(kwargs.get('osd_mode'))
 		self.set_properties()
+		if self.osd_mode: self.setProperty('osd_mode', 'true')
 
 	def onInit(self):
 		# Buttons: 10 Close | 11 Play | 12 Cancel
@@ -57,6 +61,10 @@ class NextEpisode(BaseDialog):
 		return self.selected
 
 	def onAction(self, action):
+		if action in self.closing_actions and self.osd_mode:
+			self.selected, self.closed = 'close', True
+			self.close()
+			return
 		if action in self.closing_actions:
 			# Same rule as Close: abort only when default is Cancel; else Close (play at end).
 			self.selected = 'cancel' if self.default_action == 'cancel' else 'close'
@@ -71,6 +79,7 @@ class NextEpisode(BaseDialog):
 
 	def onClick(self, controlID):
 		self.selected = {10: 'close', 11: 'play', 12: 'cancel'}[controlID]
+		if self.osd_mode and self.selected == 'cancel': self.selected = 'close'
 		# When "When No Interaction" is Cancel, Close must also abort (same as Cancel).
 		if self.selected == 'close' and self.default_action == 'cancel':
 			self.selected = 'cancel'
@@ -138,6 +147,17 @@ class NextEpisode(BaseDialog):
 			if self._player_active():
 				start_position = self._playlist_position()
 				while self._player_active() and not self.closed:
+					if self.osd_mode:
+						# The player's monitor is free in this mode and claims a skip itself; only get out
+						# of the way when the OSD closes, a skip arrives or Kodi moves on.
+						from modules.kodi_utils import get_property
+						moved = start_position is not None and self._playlist_position() != start_position
+						if moved or get_property('redlight.skip_episode_requested') == 'true' or not get_visibility('Window.IsVisible(videoosd)'):
+							self.selected, self.closed = 'close', True
+							self.close()
+							return
+						self.sleep(300)
+						continue
 					if self._skip_requested(): return
 					if start_position is not None and self._playlist_position() != start_position:
 						# #1 C417: the Next key moved Kodi on to the queued file under this dialog.
