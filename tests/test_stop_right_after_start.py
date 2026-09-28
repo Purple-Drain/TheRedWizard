@@ -28,3 +28,16 @@ def test_confirmed_open_is_reported_before_monitor(monkeypatch):
     player._join_end_threads = lambda: None
     player.play_video('dav://x', 'obj')
     assert seen == [True]
+
+
+def test_marker_reached_during_open_is_a_failed_open(monkeypatch):
+    props = {'redlight.queued_next_hit': 'true'}
+    monkeypatch.setattr(player_mod.ku, 'get_property', lambda k: props.get(k, ''))
+    monkeypatch.setattr(player_mod.ku, 'clear_property', lambda k: props.pop(k, None))
+    monkeypatch.setattr(player_mod.ku, 'hide_busy_dialog', lambda: None)
+    monkeypatch.setattr(player_mod.ku, 'logger', lambda *a: None)
+    player = object.__new__(RedLightPlayer)
+    player.playback_successful, player._queued_next = None, True
+    player._playback_open_timeout_ms = lambda: 1000
+    player.check_playback_start()
+    assert player.playback_successful is False and 'redlight.queued_next_hit' not in props
