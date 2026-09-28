@@ -429,6 +429,15 @@ class RedLightPlayer(xbmc.Player):
 		self._open_playing_since = None
 		while self.playback_successful is None:
 			ku.hide_busy_dialog()
+			if getattr(self, '_queued_next', False) and ku.get_property(PROP_QUEUED_NEXT_HIT) == 'true':
+				# #1 (W-280926-13): the file never opened and Kodi moved on to the queued marker behind
+				# it. That is a failed open, not the Next key: try the next source now instead of
+				# waiting out the open timeout (37 s on the Shield).
+				ku.clear_property(PROP_QUEUED_NEXT_HIT)
+				self._queued_next = False
+				ku.logger('Red Light', 'Playback open: Kodi skipped past the file to the queued marker; trying the next source')
+				self.playback_successful = False
+				break
 			if getattr(self, '_cb_stopped', False):
 				# #1 bug F (28.09.26): Kodi only reports Stopped after this stream started, so it is a
 				# user Stop while the open was still settling, not a failed source. Treat it as a

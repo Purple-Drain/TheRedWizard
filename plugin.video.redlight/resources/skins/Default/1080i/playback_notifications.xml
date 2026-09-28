@@ -4,14 +4,16 @@
     <onload>Dialog.Close(videoosd,true)</onload>
     <animation effect="fade" end="100" time="600">WindowOpen</animation>
     <controls>
-        <control type="image">
-            <height>550</height>
-            <texture>redlight_common/dim-top.png</texture>
-        </control>
+        <!-- No full-width darkening over the video (owner, 28.09.26): only the dialog's own panel. -->
         <control type="group">
             <left>20</left>
             <top>20</top>
             <height>160</height>
+            <control type="image">
+                <width>900</width>
+                <height>160</height>
+                <texture colordiffuse="D8101014">redlight_common/white.png</texture>
+            </control>
             <control type="image">
                 <width>284</width>
                 <texture colordiffuse="FF000000" diffuse="redlight_diffuse/landscape_w284_h160.png">redlight_common/white.png</texture>
