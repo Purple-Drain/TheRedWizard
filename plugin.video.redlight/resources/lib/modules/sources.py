@@ -185,10 +185,12 @@ def consume_persisted_nextep_play_stash():
 		except: pass
 		return None
 
-def schedule_nextep_stashed_play(stash, show_busy=None):
+def schedule_nextep_stashed_play(stash, show_busy=None, adopting=False):
 	if not stash:
 		return False
-	if nextep_autoplay_cancelled() or nextep_end_play_superseded(stash.get('meta') if stash else None):
+	# adopting (#1 C417): Kodi already plays this episode, so a busy flag left by this very prep (its
+	# warm read, W-280926-8) is not a user taking over; only a real cancel stops the hand-over.
+	if nextep_autoplay_cancelled() or (not adopting and nextep_end_play_superseded(stash.get('meta') if stash else None)):
 		try:
 			kodi_utils.logger('Red Light', 'Autoplay next episode play: skipped schedule (superseded by user playback)')
 		except:

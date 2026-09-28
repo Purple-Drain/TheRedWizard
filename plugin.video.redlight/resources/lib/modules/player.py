@@ -1486,7 +1486,8 @@ class RedLightPlayer(xbmc.Player):
 			top = (stash.get('results') or [None])[0]
 			stash['preresolved'] = {'url': queued.get('url'), 'item_key': nextep_preresolve_item_key(top), 'resolved_at': time.time()}
 			ku.set_property(PROP_ADOPT_QUEUED, 'true')
-			if schedule_nextep_stashed_play(stash, show_busy=False): return True
+			if schedule_nextep_stashed_play(stash, show_busy=False, adopting=True): return True
+			ku.logger('Red Light', 'Queued next episode: adopt hand-over was refused; the episode plays on without Red Light')
 			ku.clear_property(PROP_ADOPT_QUEUED)
 		except Exception as exc:
 			ku.logger('Red Light', 'Queued next episode: adopt hand-over failed: %s' % exc)
