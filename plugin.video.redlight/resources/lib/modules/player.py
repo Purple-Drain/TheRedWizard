@@ -1574,19 +1574,31 @@ class RedLightPlayer(xbmc.Player):
 			self._osd_nextup_seen = False
 			return
 		if getattr(self, '_osd_nextup_seen', False) or getattr(self, '_osd_nextup_open', False): return
-		if not getattr(self, '_nextep_ready_shown', False) or getattr(self, '_nextep_alert_shown', False): return
+		if getattr(self, '_nextep_alert_shown', False): return
 		if ku.get_property(PROP_SKIP_EPISODE) == 'true' or getattr(self, '_skip_prep_deadline', None): return
+		# Not in the first seconds of a play, and never over the Skip Intro prompt.
+		try:
+			if float(self.curr_time) < 10: return
+		except Exception: return
+		if getattr(self, '_intro_skip_active', False) and not getattr(self, '_intro_skip_done', False): return
+		finding = False
 		try:
 			from modules.sources import peek_nextep_autoplay_stash
 			stash = peek_nextep_autoplay_stash()
 			meta = dict((stash or {}).get('meta') or {})
 		except Exception: return
-		if not meta: return
+		if not meta:
+			# Nothing prepared yet but the prep is running: show the dialog in its Finding Source state.
+			if ku.get_property(PROP_NEXTEP_PENDING) != 'true': return
+			finding, meta = True, self._next_meta_guess()
+			if not meta: return
+		ready, info_line = bool(getattr(self, '_queued_real', None)), self._nextup_info_line(stash)
 		self._osd_nextup_seen, self._osd_nextup_open = True, True
 		def _show():
 			try:
 				from windows.base_window import open_window
-				action = open_window(('windows.playback_notifications', 'NextEpisode'), 'playback_notifications.xml', meta=meta, default_action='close', osd_mode=True)
+				action = open_window(('windows.playback_notifications', 'NextEpisode'), 'playback_notifications.xml', meta=meta, default_action='close', osd_mode=True,
+					ready=ready, info_line=info_line, finding=finding)
 				self._log_nextep('OSD Next Up: %s' % (action or 'close'))
 				if action == 'play': ku.set_property(PROP_SKIP_EPISODE, 'true')
 			except Exception as exc:
@@ -1594,6 +1606,29 @@ class RedLightPlayer(xbmc.Player):
 			finally:
 				self._osd_nextup_open = False
 		self._spawn(_show, name='osd_nextup', daemon=True)
+
+	def _next_meta_guess(self):
+		"""Title and SxxEyy for the Finding Source state, before the prep has stashed the real meta."""
+		try:
+			meta = dict(self.meta)
+			meta.update({'season': int(self.meta_get('season')), 'episode': int(self.meta_get('episode')) + 1, 'ep_name': ''})
+			return meta
+		except Exception: return None
+
+	@staticmethod
+	def _nextup_info_line(stash):
+		"""'4K DV · 22 min' from the stash's top result and the episode's runtime."""
+		try:
+			top = ((stash or {}).get('results') or [{}])[0]
+			parts = [top.get('quality') or '']
+			extra = (top.get('extraInfo') or '').upper()
+			for tag in ('DV', 'HDR10+', 'HDR'):
+				if tag in extra.replace('DOLBY VISION', 'DV').split(' | ') or (' %s ' % tag) in (' %s ' % extra.replace('|', ' ')):
+					parts.append(tag); break
+			duration = int(((stash or {}).get('meta') or {}).get('duration') or 0)
+			if duration: parts.append('%d min' % round(duration / 60.0))
+			return '  ·  '.join(p for p in parts if p)
+		except Exception: return ''
 
 	def _update_nextep_ready_flag(self):
 		ready, label = False, ''
@@ -1914,7 +1949,8 @@ class RedLightPlayer(xbmc.Player):
 		if use_window:
 			from windows.base_window import open_window
 			try:
-				action = open_window(('windows.playback_notifications', 'NextEpisode'), 'playback_notifications.xml', meta=dialog_meta, default_action=default_action)
+				action = open_window(('windows.playback_notifications', 'NextEpisode'), 'playback_notifications.xml', meta=dialog_meta, default_action=default_action,
+					ready=bool(getattr(self, '_queued_real', None)), info_line=self._nextup_info_line(stash))
 			except:
 				action = 'cancel'
 		else:

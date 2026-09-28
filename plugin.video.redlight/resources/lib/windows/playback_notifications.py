@@ -39,6 +39,11 @@ class NextEpisode(BaseDialog):
 		self.osd_mode = bool(kwargs.get('osd_mode'))
 		self.set_properties()
 		if self.osd_mode: self.setProperty('osd_mode', 'true')
+		# #1 redesign: Ready badge, info line, Finding Source state, countdown line.
+		if kwargs.get('ready'): self.setProperty('ready', 'true')
+		if kwargs.get('info_line'): self.setProperty('info_line', kwargs.get('info_line'))
+		if kwargs.get('finding'): self.setProperty('finding', 'true')
+		self.countdown_total = None
 
 	def onInit(self):
 		# Buttons: 10 Close | 11 Play | 12 Cancel
@@ -120,6 +125,9 @@ class NextEpisode(BaseDialog):
 		self.setProperty('thumb', self.get_thumb())
 		self.setProperty('clearlogo', self.meta.get('clearlogo', ''))
 		self.setProperty('episode_label', '%s[B] | [/B]%02dx%02d[B] | [/B]%s' % (self.meta['title'], self.meta['season'], self.meta['episode'], self.meta['ep_name']))
+		self.setProperty('ep_code', 'S%02dE%02d' % (int(self.meta['season']), int(self.meta['episode'])))
+		self.setProperty('ep_title', self.meta.get('ep_name', '') or '')
+		self.setProperty('show_title', self.meta.get('title', '') or '')
 		self.setProperty('pause_timer', '')
 		self.setProperty('nextep_remaining', '')
 		status_label, status_highlight = self.episode_status_dict[self.meta.get('episode_type', '')]
@@ -169,6 +177,9 @@ class NextEpisode(BaseDialog):
 						total_time = self.player.getTotalTime()
 						remaining_time = max(0, round(total_time - self.player.getTime()))
 						self.setProperty('nextep_remaining', self._format_clock(remaining_time))
+						# Countdown line: share of the alert window left before the default action.
+						if self.countdown_total is None: self.countdown_total = max(1, remaining_time)
+						self.setProperty('countdown_pct', str(int(100 * remaining_time / self.countdown_total)))
 						if self.selected == 'pause' and remaining_time <= 10:
 							try: self.player.pause()
 							except: pass
