@@ -1221,6 +1221,11 @@ def flatten_episodes():
 def nextep_method():
 	return int(get_setting('redlight.nextep.method', '0'))
 
+def nextep_prep_early():
+	"""#1: prepare the next episode about a minute into the current one (True, default) or about
+	85 s before its end (False, the old timing)."""
+	return get_setting('redlight.nextep.prep_timing', '0') == '0'
+
 def nextep_adopt_resume():
 	"""#1 C420: an episode reached with the Next key (played straight from its queued file) resumes
 	from its bookmark (True, default) or starts over (False). There is no Resume? prompt there."""
