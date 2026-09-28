@@ -1321,7 +1321,7 @@ def default_settings():
 {'setting_id': 'nextep.prep_timing', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Early', '1': 'Near the End'}},
 {'setting_id': 'nextep.adopt_resume', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'nextep.rewatch_mode', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'First Unwatched', '1': 'Continue From the Rewatch'}},
-{'setting_id': 'nextep.sort_type', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Recently Watched', '1': 'Airdate', '2': 'Title'}},
+{'setting_id': 'nextep.sort_type', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Recently Watched', '1': 'Airdate', '2': 'Title', '3': 'Recently Updated'}},
 {'setting_id': 'nextep.sort_order', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Descending', '1': 'Ascending'}},
 {'setting_id': 'nextep.limit_history', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'nextep.limit', 'setting_type': 'action', 'setting_default': '20', 'min_value': '1', 'max_value': '200'},

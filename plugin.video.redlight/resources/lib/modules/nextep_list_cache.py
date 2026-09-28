@@ -117,6 +117,8 @@ def cache_key(is_external, anime=False):
 		try:
 			from modules.rewatch_cursor import state_token
 			values.append(('rewatch', state_token()))
+			from modules.show_touch import state_token as touch_token
+			values.append(('touch', touch_token()))
 		except Exception: pass
 		dated = settings.nextep_include_airdate() or settings.nextep_airing_today() or settings.nextep_include_unaired()
 		return _digest((values, state, str(get_datetime()) if dated else '', bool(anime), bool(is_external)))
