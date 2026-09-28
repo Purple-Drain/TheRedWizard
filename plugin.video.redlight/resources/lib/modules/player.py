@@ -1711,6 +1711,21 @@ class RedLightPlayer(xbmc.Player):
 		return True
 
 	def _skip_hand_over(self):
+		if getattr(self, '_queued_real', None):
+			# The next file is already queued (#1): step Kodi's playlist onto it (a playlist step, not a
+			# chapter step) and let the loop adopt it, with no resolve screen. The stash play below
+			# stays the fallback for when nothing is queued.
+			try:
+				if not self.media_marked: self.media_watched_marker(force_watched=True)
+				ku.clear_property(PROP_SKIP_EPISODE)
+				ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
+				self._skip_prep_deadline = None
+				ku.clear_property(PROP_SKIP_PREP_WAITING)
+				self.playnext()
+				self._log_nextep('Play next episode now: moving Kodi on to the queued file')
+				return True
+			except Exception as exc:
+				ku.logger('Red Light', 'Play next episode now: playnext failed, using the stash play: %s' % exc)
 		try:
 			from modules.sources import nextep_end_play_superseded, schedule_nextep_stashed_play, take_nextep_autoplay_stash
 			if nextep_end_play_superseded(): return False

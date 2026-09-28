@@ -203,3 +203,16 @@ def test_autoplay_off_skip_prepares_the_autoplay_way(monkeypatch):
     assert player.autoplay_nextep is True and player.autoscrape_nextep is False
     assert calls == {'prep': 1, 'stop': 0}
     assert props[player_mod.PROP_SKIP_EPISODE_ACK] == 'true'
+
+
+def test_skip_with_a_queued_file_steps_the_playlist(monkeypatch):
+    """With the real next file queued, the skip moves Kodi on (adopt), no stash play or dialog."""
+    props = Props({player_mod.PROP_SKIP_EPISODE: 'true'})
+    scheduled = _wire(monkeypatch, props, {'meta': {}})
+    player, marks = _player(monkeypatch)
+    player._queued_real = {'url': 'dav://x', 'index': 1}
+    stepped = []
+    player.playnext = lambda: stepped.append(1)
+    assert player._try_skip_to_stash() is True
+    assert stepped == [1] and scheduled == [] and marks == [True]
+    assert props[player_mod.PROP_SKIP_EPISODE_ACK] == 'true'
