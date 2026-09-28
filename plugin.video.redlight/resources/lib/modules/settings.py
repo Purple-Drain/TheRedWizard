@@ -1262,7 +1262,7 @@ def nextep_include_unaired():
 	return get_setting('redlight.nextep.include_unaired', 'false') == 'true'
 
 def nextep_sort_key():
-	return {0: 'last_played', 1: 'first_aired', 2: 'name'}[int(get_setting('redlight.nextep.sort_type', '0'))]
+	return {0: 'last_played', 1: 'first_aired', 2: 'name', 3: 'updated'}[int(get_setting('redlight.nextep.sort_type', '0'))]
 
 def nextep_sort_direction():
 	return int(get_setting('redlight.nextep.sort_order', '0')) == 0

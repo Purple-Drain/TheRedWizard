@@ -45,11 +45,19 @@ def _save(data):
 		return False
 
 
+def _touch(tmdb_id):
+	try:
+		from modules.show_touch import touch
+		touch(tmdb_id)
+	except Exception: pass
+
+
 def get(tmdb_id, now=None):
 	return load(now).get(str(tmdb_id))
 
 
 def set_cursor(tmdb_id, season, episode, show_self=False, now=None):
+	_touch(tmdb_id)
 	data = load(now)
 	data[str(tmdb_id)] = {'season': int(season), 'episode': int(episode), 'show_self': bool(show_self),
 		'at': time.time() if now is None else now}
@@ -57,6 +65,7 @@ def set_cursor(tmdb_id, season, episode, show_self=False, now=None):
 
 
 def clear(tmdb_id):
+	_touch(tmdb_id)
 	data = load()
 	if data.pop(str(tmdb_id), None) is None: return False
 	return _save(data)

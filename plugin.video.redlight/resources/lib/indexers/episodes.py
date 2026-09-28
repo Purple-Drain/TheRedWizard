@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import calendar
 import sys
 import time
 from caches.widget_cache import widget_cache
@@ -554,7 +555,8 @@ def build_single_episode(list_type, params={}):
 				})
 			listitem = render_episode_row(row, make_listitem, kodi_actor)
 			item_list_append({'list_items': (play_params, listitem, False), 'row': row, 'first_aired': premiered, 'name': '%s - %sx%s' % (title, str(display_season), str_episode_zfill2),
-							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched')})
+							'unaired': unaired, 'last_played': ep_data_get('last_played', resinsert), 'sort_order': _position, 'unwatched': ep_data_get('unwatched'),
+							'tmdb_id': tmdb_id})
 		except Exception as e:
 			# Silent drops blank calendars/next-ep lists; log so meta/InfoTag failures are visible.
 			try: kodi_utils.logger('Red Light', 'build_single_episode item failed (%s): %s' % (list_type, e))
@@ -723,6 +725,20 @@ def build_single_episode(list_type, params={}):
 		kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s negative / %s miss, %.1fs'
 			% (list_type, len(data), len(item_list), len(nextep_hits), len(nextep_negative_hits),
 			len(data) - len(nextep_hits) - len(nextep_negative_hits), time.time() - build_started))
+		touched = {}
+		if sort_key == 'updated':
+			# #1 "Recently Updated": the later of the last watched row and the last watched-state change.
+			try:
+				from modules.show_touch import load as load_touch
+				touched = load_touch()
+			except Exception: touched = {}
+			for i in item_list:
+				try:
+					dt = jsondate_to_datetime(i['last_played'], resformat)
+					# Tracker rows are UTC ('...Z'); Red Light's own watched rows are local time.
+					played = calendar.timegm(dt.timetuple()) if resformat.endswith('Z') else dt.timestamp()
+				except Exception: played = 0.0
+				i['updated'] = max(played, touched.get(str(i.get('tmdb_id')), 0.0))
 		def func(function):
 			if sort_key == 'name': return title_key(function, ignore_articles)
 			elif sort_key == 'last_played': return jsondate_to_datetime(function, resformat)
@@ -732,7 +748,7 @@ def build_single_episode(list_type, params={}):
 									key=lambda i: func(i[sort_key]), reverse=sort_direction)
 			item_list = [i for i in item_list if not i in airing_today]
 		else: airing_today = []
-		if sort_key == 'last_played':
+		if sort_key in ('last_played', 'updated'):
 			unwatched = sorted([i for i in item_list if i['unwatched']], key=lambda i: title_key(i['name'], ignore_articles))
 			item_list = sorted([i for i in item_list if not i['unwatched']], key=lambda i: func(i[sort_key]), reverse=sort_direction) + unwatched
 		else: item_list = sorted(item_list, key=lambda i: func(i[sort_key]), reverse=sort_direction)

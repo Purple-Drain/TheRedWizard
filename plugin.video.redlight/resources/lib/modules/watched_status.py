@@ -659,7 +659,14 @@ def mark_movie(params):
 	refresh_container(refresh)
 	if not from_playback: notification('Success')
 
+def _touch_show(tmdb_id):
+	try:
+		from modules.show_touch import touch
+		touch(tmdb_id)
+	except Exception: pass
+
 def mark_tvshow(params):
+	_touch_show(params.get('tmdb_id'))  # #1 Recently Updated sort
 	title, action, tmdb_id = params.get('title', ''), params.get('action'), params.get('tmdb_id')
 	try: tvdb_id = int(params.get('tvdb_id', '0'))
 	except: tvdb_id = 0
@@ -701,6 +708,7 @@ def mark_tvshow(params):
 	notification('Success')
 
 def mark_season(params):
+	_touch_show(params.get('tmdb_id'))  # #1 Recently Updated sort
 	season = int(params.get('season'))
 	if season == 0: return notification('Failed')
 	insert_list = []
@@ -740,6 +748,7 @@ def mark_season(params):
 	notification('Success')
 
 def mark_episode(params):
+	_touch_show(params.get('tmdb_id'))  # #1 Recently Updated sort
 	season, episode, title = int(params.get('season')), int(params.get('episode')), params.get('title')
 	if season == 0: return notification('Failed')
 	action, media_type = params.get('action'), 'episode'
@@ -773,6 +782,7 @@ def mark_episode(params):
 	if not from_playback: notification('Success')
 
 def unmark_previous_episode(params):
+	_touch_show(params.get('tmdb_id'))  # #1 Recently Updated sort
 	try:
 		season, episode = int(params.get('season')), int(params.get('episode'))
 		if episode == 1:
