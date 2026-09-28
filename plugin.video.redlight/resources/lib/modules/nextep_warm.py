@@ -33,6 +33,15 @@ WIDGET_REQUEST_PROP = 'redlight.nextep_widget_warm_request'
 LOG_FILE, LOG_KEEP = 'nextep_warm.log', 2000
 
 
+NETWORK_SCHEMES = ('dav://', 'davs://', 'smb://', 'nfs://', 'http://', 'https://', 'ftp://', 'ftps://', 'sftp://', 'upnp://')
+
+
+def is_network_path(path):
+	'''A warm read only helps a file reached over the network (a WebDAV folder such as zurg, a share, a
+	debrid url). A local disk path has nothing to warm, so it is skipped (owner, 28.09.26).'''
+	return isinstance(path, str) and path.lower().startswith(NETWORK_SCHEMES)
+
+
 def warm_read(path, max_bytes=WARM_BYTES, deadline_s=WARM_DEADLINE_SEC):
 	"""Read up to max_bytes from path. Returns (bytes_read, ms, error). Never raises."""
 	started, got, err = time.time(), 0, ''
@@ -99,6 +108,7 @@ def warm_end_of_episode(results, meta, preresolved=None):
 	if not settings.nextep_warm_read():
 		return log_summary('episode_end', meta, kind, None, 'setting off')
 	if kind == 'zurg':
+		if not is_network_path(top.get('url_dl')): return log_summary('episode_end', meta, kind, None, 'local folder, nothing to warm')
 		return log_summary('episode_end', meta, kind, warm_read(top.get('url_dl')))
 	if kind == 'cloud' and preresolved and preresolved.get('url'):
 		warm = warm_read(preresolved['url'])
@@ -174,5 +184,9 @@ def warm_widget_items(urls, warmed, monitor=None, idle=None):
 			log_summary('widget', meta, 'nozurg', None, 'no folders hit')
 			continue
 		if not still_idle(): return
+		if not is_network_path(results[0].get('url_dl')):
+			log_summary('widget', meta, 'zurg', None, 'local folder, nothing to warm')
+			warmed[key] = time.time()
+			continue
 		log_summary('widget', meta, 'zurg', warm_read(results[0].get('url_dl')))
 		warmed[key] = time.time()

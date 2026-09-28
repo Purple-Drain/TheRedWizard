@@ -1391,7 +1391,7 @@
                           <property name="setting_label">Prepare Next Episode</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.prep_timing_name)]</property>
-                          <property name="setting_description">Early (default): find and warm up the next episode about a minute into the current one, so Next, skip and autoplay are ready at once. Near the End: the old timing, about 85 seconds before the end.</property>
+                          <property name="setting_description">Early (default): about 20 seconds into the current episode, look for the next one in your folder sources and queue it; if none has it, check the debrid services about a minute in. So Next, skip and autoplay are ready almost at once. Near the End: the old timing, about 85 seconds before the end.</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=nextep.prep_timing)</onclick>
                       </item>
                       <item>
@@ -4233,7 +4233,7 @@
                           <property name="setting_label">    - Warm Up Next Episode</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_warm_read)]</property>
-                          <property name="setting_description">Read the first few MB of the next episode's file during the current one, so zurg and the debrid CDN have it ready when it starts</property>
+                          <property name="setting_description">Reads the first few MB of the next episode's file ahead of time, so a network share (WebDAV, SMB, debrid folders) or a debrid link opens faster. Skipped for local folders, which open instantly</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep_warm_read)</onclick>
                       </item>
                       <item>
@@ -4241,7 +4241,7 @@
                           <property name="setting_label">Warm Up Next Episodes Widget</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_widget_warm)]</property>
-                          <property name="setting_description">When the Next Episodes widget is rebuilt, look up its first 3 episodes in your folder sources (zurg) and read the start of each file, so pressing play starts faster. No debrid service is contacted</property>
+                          <property name="setting_description">When the Next Episodes widget is rebuilt, look up its first 3 episodes in your folder sources (any folder you've added) and read the first few MB of each file, so a network share (WebDAV, SMB, debrid folders) opens faster. Skipped for local folders, which open instantly. No debrid service is contacted</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep_widget_warm)</onclick>
                       </item>
                       <item>
