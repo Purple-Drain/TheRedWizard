@@ -554,6 +554,7 @@ class RedLightPlayer(xbmc.Player):
 					self._try_skip_to_stash()
 					self._maybe_drop_queued_next()
 					self._maybe_queue_real_next()
+					self._maybe_requeue_before_end()
 					try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
 					except: ku.sleep(250); continue
 					if not self._valid_playback_duration(self.total_time, self.curr_time):
@@ -1503,7 +1504,8 @@ class RedLightPlayer(xbmc.Player):
 		that plays as is: a zurg/folders path, or a fresh pre-resolve. The stash stays in place, so
 		the Next Up dialog and the natural-end hand-off are unchanged; the marker drop 20 s before the
 		end removes this item the same way."""
-		if not getattr(self, '_queued_next', False) or getattr(self, '_queued_real', None): return
+		if getattr(self, '_queued_real', None): return
+		if not getattr(self, '_queued_next', False) and not getattr(self, '_force_queue', False): return
 		if not getattr(self, 'autoplay_nextep', False): return
 		try:
 			from modules.sources import nextep_autoplay_cancelled, peek_nextep_autoplay_stash, nextep_preresolve_is_fresh
@@ -1531,8 +1533,7 @@ class RedLightPlayer(xbmc.Player):
 			except Exception: pass
 			playlist = ku.make_playlist('video')
 			marker_index = self._own_playlist_index() + 1
-			if playlist.size() <= marker_index: return
-			playlist.remove(ku.build_url({'mode': QUEUED_NEXT_MODE}))
+			if playlist.size() > marker_index: playlist.remove(ku.build_url({'mode': QUEUED_NEXT_MODE}))
 			playlist.add(url, listitem, marker_index)
 		except Exception as exc:
 			ku.logger('Red Light', 'Queued next episode: real file swap failed: %s' % exc)
@@ -1540,6 +1541,20 @@ class RedLightPlayer(xbmc.Player):
 		self._queued_real = {'url': url, 'index': marker_index}
 		self._log_nextep('Queued next episode: %s S%02dE%02d queued as its file, the Next key plays it directly' % (
 			meta.get('title', ''), season, episode))
+
+	def _maybe_requeue_before_end(self):
+		"""By the near-end prep point the next file should be queued, so the natural end flows into it
+		like every other jump. If the stash's top pick could not be queued, re-prepare it once."""
+		if getattr(self, '_queued_real', None) or getattr(self, '_requeue_tried', False): return
+		if not getattr(self, 'autoplay_nextep', False) or ku.get_property(PROP_NEXTEP_PENDING) == 'true': return
+		try:
+			from modules.sources import peek_nextep_autoplay_stash
+			if not peek_nextep_autoplay_stash(): return
+			remaining = float(self.total_time) - float(self.curr_time)
+		except Exception: return
+		start_prep = getattr(self, 'start_prep', None)
+		if start_prep is None or remaining > start_prep: return
+		self._requeue_for_preresolve('near the end')
 
 	def _queued_real_advanced(self):
 		"""Kodi moved onto the real next file this play queued (the Next key)."""
@@ -1710,7 +1725,47 @@ class RedLightPlayer(xbmc.Player):
 		self._log_nextep('Play next episode now: preparing the next episode while this one plays')
 		return True
 
+	def _step_to_queued(self, why):
+		"""#1 pd.98: the one way every jump moves on. Kodi steps its playlist onto the queued file (not
+		a chapter step), the loop sees it and the next Red Light play adopts it. No resolve screen;
+		one small toast while the file opens."""
+		queued = self._queued_real or {}
+		try:
+			from modules.sources import peek_nextep_autoplay_stash
+			meta = (peek_nextep_autoplay_stash() or {}).get('meta') or {}
+			ku.notification('Next: %s S%02dE%02d' % (meta.get('title', ''), int(meta.get('season', 0) or 0), int(meta.get('episode', 0) or 0)), 2500)
+		except Exception: pass
+		self.playnext()
+		self._log_nextep('Play next episode now: moving Kodi on to the queued file (%s)' % why)
+
+	def _requeue_for_preresolve(self, reason):
+		"""The stash's top pick is a debrid item with no pre-resolve (an early prep skips it), so it
+		cannot be queued as a file. Run the full prep once more (with the pre-resolve) while this
+		episode plays, so it can be queued; the caller waits for it."""
+		if getattr(self, '_requeue_tried', False): return False
+		self._requeue_tried = True
+		try:
+			from modules.sources import take_nextep_autoplay_stash
+			take_nextep_autoplay_stash(clear_only=True)
+		except Exception: return False
+		self._nextep_early_prep = False
+		self._early_stage2 = True
+		self._nextep_prep_attempted = False
+		self._log_nextep('Next episode: re-preparing with a pre-resolve so it can be queued (%s)' % reason)
+		self._schedule_next_ep()
+		return True
+
 	def _skip_hand_over(self):
+		if not getattr(self, '_queued_real', None):
+			self._force_queue = True
+			self._maybe_queue_real_next()
+		if not getattr(self, '_queued_real', None) and self._requeue_for_preresolve('skip'):
+			# Keep playing and wait for the re-prep, exactly like an on-demand skip prep.
+			ku.clear_property(PROP_SKIP_EPISODE)
+			ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
+			self._skip_prep_deadline = time.time() + _SKIP_PREP_WAIT_SEC
+			ku.set_property(PROP_SKIP_PREP_WAITING, 'true')
+			return True
 		if getattr(self, '_queued_real', None):
 			# The next file is already queued (#1): step Kodi's playlist onto it (a playlist step, not a
 			# chapter step) and let the loop adopt it, with no resolve screen. The stash play below
@@ -1721,8 +1776,7 @@ class RedLightPlayer(xbmc.Player):
 				ku.set_property(PROP_SKIP_EPISODE_ACK, 'true')
 				self._skip_prep_deadline = None
 				ku.clear_property(PROP_SKIP_PREP_WAITING)
-				self.playnext()
-				self._log_nextep('Play next episode now: moving Kodi on to the queued file')
+				self._step_to_queued('skip')
 				return True
 			except Exception as exc:
 				ku.logger('Red Light', 'Play next episode now: playnext failed, using the stash play: %s' % exc)
@@ -1817,13 +1871,10 @@ class RedLightPlayer(xbmc.Player):
 		if action != 'play':
 			return
 		self._log_nextep('Autoplay next episode alert action: play')
-		if getattr(self, '_queued_real', None):
-			# end-keep: move Kodi on to the queued file; the loop sees it and hands over (adopt).
-			try:
-				self.playnext()
-				return
-			except Exception as exc:
-				ku.logger('Red Light', 'Queued next episode: playnext failed, scheduling the stash: %s' % exc)
+		if self.media_type == 'episode' and getattr(self, 'autoplay_nextep', False):
+			# pd.98: Next Up's Play is a skip like any other; the next tick runs the one jump path.
+			ku.set_property(PROP_SKIP_EPISODE, 'true')
+			return
 		stash = take_nextep_autoplay_stash()
 		if not stash: return
 		try:
