@@ -32,6 +32,10 @@ PROP_SKIP_EPISODE_ACK = 'redlight.skip_episode_ack'
 _SKIP_ACK_WAIT_MS = 2000
 # #1 C410: how long a claimed skip waits for its on-demand prep before stopping the old way.
 _SKIP_PREP_WAIT_SEC = 30
+# #1 early prep: the next episode is prepared this far into the current one (and no sooner than the
+# intro prompt is done and 10 s after the last seek), instead of about 85 s before the end.
+_EARLY_PREP_SEC = 60
+_EARLY_PREP_SEEK_QUIET_SEC = 10
 # Set while a claimed skip waits for its prep; the prep then skips the warm read so it stashes sooner.
 PROP_SKIP_PREP_WAITING = 'redlight.skip_prep_waiting'
 _NEXTEP_NATURAL_END_SEC = 15
@@ -1186,7 +1190,24 @@ class RedLightPlayer(xbmc.Player):
 		# prep point to reach, and reading the attribute raised on every play's first tick.
 		start_prep = getattr(self, 'start_prep', None)
 		if start_prep is None: return False
-		return remaining > 0 and remaining <= start_prep
+		if remaining > 0 and remaining <= start_prep: return True
+		return self._early_prep_due(remaining, start_prep)
+
+	def _early_prep_due(self, remaining, start_prep):
+		"""#1: prepare the next episode early (setting Prepare Next Episode: Early, the default), once
+		this one is settled: _EARLY_PREP_SEC in, the Skip Intro prompt answered or not coming, and no
+		seek in the last _EARLY_PREP_SEEK_QUIET_SEC. It is the same prep as near the end (folders
+		first, then cloud, a pre-resolve only for a non-folders top pick, the 2 MB warm read), just
+		sooner, so every jump and the Next Up hand-off find it ready. Nothing is marked watched."""
+		if not self.autoplay_nextep or not st.nextep_prep_early(): return False
+		try: curr = float(self.curr_time)
+		except Exception: return False
+		if curr < _EARLY_PREP_SEC or remaining <= start_prep: return False
+		if getattr(self, '_intro_skip_active', False) and not getattr(self, '_intro_skip_done', False): return False
+		last_seek = getattr(self, '_last_seek', None)
+		if isinstance(last_seek, tuple) and time.time() - last_seek[0] < _EARLY_PREP_SEEK_QUIET_SEC: return False
+		self._nextep_early_prep = True
+		return True
 
 	def _nextep_play_type(self):
 		return 'autoplay_nextep' if self.autoplay_nextep else 'autoscrape_nextep'
@@ -1287,10 +1308,12 @@ class RedLightPlayer(xbmc.Player):
 		ku.set_property(PROP_NEXTEP_PENDING, 'true')
 		meta = dict(self.meta) if getattr(self, 'meta', None) else {}
 		nextep_settings = dict(self.nextep_settings) if getattr(self, 'nextep_settings', None) else None
+		early = getattr(self, '_nextep_early_prep', False)
+		if early and nextep_settings is not None: nextep_settings['early_prep'] = True
 		def _work():
 			try:
 				from modules.episode_tools import EpisodeTools
-				if not self.media_marked:
+				if not early and not self.media_marked:
 					try: self.media_watched_marker(force_watched=True)
 					except: pass
 				EpisodeTools(meta, nextep_settings).auto_nextep()

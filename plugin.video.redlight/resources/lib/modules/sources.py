@@ -3451,6 +3451,11 @@ class Sources():
 		results either way and gets a normal resolve at handoff."""
 		if not settings.autoplay_preresolve_next_episode():
 			return None
+		if (getattr(self, 'nextep_settings', None) or {}).get('early_prep'):
+			# Early prep (#1): the current episode may not be finished, so no debrid unrestrict now
+			# (an unplayed RD/TorBox resolve is clutter). The hand-off resolves as usual.
+			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (early prep)')
+			return None
 		playable = [i for i in results if 'Uncached' not in i.get('cache_provider', '')]
 		if not playable:
 			kodi_utils.logger('Red Light', 'Autoplay next episode: pre-resolve skipped (no playable candidate)')
