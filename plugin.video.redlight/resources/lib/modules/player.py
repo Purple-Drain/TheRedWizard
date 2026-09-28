@@ -258,6 +258,11 @@ class RedLightPlayer(xbmc.Player):
 		return alive
 
 	def run(self, url=None, obj=None):
+		# #1 C426: every hand-off to the player ends a quiet start; the sources window never shows now.
+		try:
+			dialog = getattr(obj, 'progress_dialog', None)
+			if dialog is not None and hasattr(type(dialog), 'suppress') and not dialog.materialized: dialog.suppress()
+		except Exception: pass
 		ku.hide_busy_dialog()
 		self.clear_playback_properties(clear_navigation=False)
 		if not url:
