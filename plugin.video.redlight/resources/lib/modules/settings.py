@@ -1221,6 +1221,13 @@ def flatten_episodes():
 def nextep_method():
 	return int(get_setting('redlight.nextep.method', '0'))
 
+def quiet_start_ms():
+	"""#1 C426: how long a play waits, with only a toast, before showing the sources window. 0 shows
+	the window at once, as before. A source found (and handed to the player) within this time
+	starts the video with no window at all."""
+	try: return max(0, int(get_setting('redlight.playback.quiet_start_ms', '1000')))
+	except Exception: return 1000
+
 def nextep_prep_early():
 	"""#1: prepare the next episode about a minute into the current one (True, default) or about
 	85 s before its end (False, the old timing)."""

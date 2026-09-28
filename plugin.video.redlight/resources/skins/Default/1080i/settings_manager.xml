@@ -1396,6 +1396,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
+                          <property name="setting_label">Show Sources Window After</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.playback.quiet_start_ms_name)]</property>
+                          <property name="setting_description">Any play (widget, list or next episode): if the source is found within this time, the video starts with no scraping or resolve window, just a small Finding source toast. The window only appears if the search is still running. Off shows it at once.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=playback.quiet_start_ms)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Sort Type</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.sort_type_name)]</property>
