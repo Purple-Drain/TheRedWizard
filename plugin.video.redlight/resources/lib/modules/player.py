@@ -42,6 +42,9 @@ QUEUED_NEXT_MODE = 'playback.queued_next'
 # Set by the marker's own plugin call. Kodi drops the marker as unplayable and ends the playlist, so
 # by the end handling its position is gone; this property is what survives (#199 C6, 28.09.26).
 PROP_QUEUED_NEXT_HIT = 'redlight.queued_next_hit'
+# #1 C417: set by an episode whose Next key moved Kodi onto the real next file queued behind it; the
+# stash play it schedules then adopts that already-playing file instead of opening it again.
+PROP_ADOPT_QUEUED = 'redlight.adopt_queued'
 # A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
 # measured against the time still to play; the player callbacks tell a user Stop apart.
@@ -268,9 +271,12 @@ class RedLightPlayer(xbmc.Player):
 		ku.volume_checker()
 		ku.set_property(PROP_PLAY_OPENING, 'true')
 		self._queued_next = False
+		self._queued_real = None
+		self._advanced_to_queued = False
 		ku.clear_property(PROP_QUEUED_NEXT_HIT)
 		listitem = self.make_listing()
-		if not self._play_with_queued_next(listitem): self.play(self.url, listitem)
+		adopted = self._adopt_queued_play()
+		if not adopted and not self._play_with_queued_next(listitem): self.play(self.url, listitem)
 		if self.is_generic:
 			self.check_playback_start_generic()
 			if self.playback_successful:
@@ -289,6 +295,7 @@ class RedLightPlayer(xbmc.Player):
 				except:
 					pass
 				self._register_active_playback()
+				if adopted: self._adopt_resume_seek()
 				# Confirmed playback only, so failed resolves don't create entries. No-op unless
 				# the user turned the playback log on.
 				try:
@@ -515,6 +522,8 @@ class RedLightPlayer(xbmc.Player):
 				except:
 					self.showSubtitles(True)
 			while self.isPlayingVideo():
+				# #1 C417: first, so Kodi's switch to the queued file is never read as a takeover.
+				if self._queued_real_advanced(): break
 				if not self._owns_active_playback():
 					playback_superseded = True
 					break
@@ -533,6 +542,7 @@ class RedLightPlayer(xbmc.Player):
 					ku.sleep(_monitor_sleep_ms)
 					self._try_skip_to_stash()
 					self._maybe_drop_queued_next()
+					self._maybe_queue_real_next()
 					try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
 					except: ku.sleep(250); continue
 					if not self._valid_playback_duration(self.total_time, self.curr_time):
@@ -598,7 +608,16 @@ class RedLightPlayer(xbmc.Player):
 			except:
 				pass
 			autoplay_stash_scheduled = False
-			if not playback_superseded and self.autoplay_nextep:
+			# #1 C417: Kodi may drop out of "playing" for a moment while it switches to the queued
+			# file; give the playlist position up to 2 s to settle before reading this as an end.
+			if getattr(self, '_queued_real', None) and not self._queued_real_advanced():
+				for _ in range(20):
+					ku.sleep(100)
+					if self._queued_real_advanced(): break
+			if self._queued_real_advanced():
+				playback_superseded = False
+				autoplay_stash_scheduled = self._hand_over_to_queued_real()
+			elif not playback_superseded and self.autoplay_nextep:
 				try:
 					from modules.sources import clear_nextep_autoplay_stash, clear_orphan_nextep_play_stash, nextep_autoplay_cancelled, nextep_end_play_superseded, peek_nextep_autoplay_stash, schedule_nextep_stashed_play, take_nextep_autoplay_stash
 					if nextep_autoplay_cancelled() or nextep_end_play_superseded():
@@ -622,7 +641,7 @@ class RedLightPlayer(xbmc.Player):
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
 			# #199 C6: the Next key moved Kodi's playlist onto the queued marker, a skip like C7's.
-			if not playback_superseded and not natural_end and self._queued_next_taken():
+			if not playback_superseded and not natural_end and not getattr(self, '_advanced_to_queued', False) and self._queued_next_taken():
 				ku.set_property(PROP_SKIP_EPISODE, 'true')
 				self._log_nextep('Play next episode now: Next key, moving on')
 			# #199 C7: request_skip_episode stopped this play to move on; count it as watched.
@@ -630,6 +649,8 @@ class RedLightPlayer(xbmc.Player):
 			if skip_requested:
 				ku.clear_property(PROP_SKIP_EPISODE)
 				if not self.media_marked: self.media_watched_marker(force_watched=True)
+			# #1 C417: the Next key moved on to the queued file; this episode counts as watched.
+			if getattr(self, '_advanced_to_queued', False) and not self.media_marked: self.media_watched_marker(force_watched=True)
 			marked_before_end = self.media_marked
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
 			self.clear_playback_properties(clear_navigation=False)
@@ -1384,6 +1405,7 @@ class RedLightPlayer(xbmc.Player):
 			marker.setProperty('IsPlayable', 'true')
 			playlist.add(ku.build_url({'mode': QUEUED_NEXT_MODE}), marker)
 			self.play(playlist)
+			self._own_index = 0
 		except Exception as exc:
 			ku.logger('Red Light', 'Queued next episode: playlist play failed, playing alone: %s' % exc)
 			try: ku.clear_video_playlist()
@@ -1391,6 +1413,119 @@ class RedLightPlayer(xbmc.Player):
 			return False
 		self._queued_next = True
 		return True
+
+	def _own_playlist_index(self):
+		idx = getattr(self, '_own_index', None)
+		return idx if isinstance(idx, int) else 0
+
+	def _maybe_queue_real_next(self):
+		"""#1 C417: once the next episode is stashed, swap the queued marker for its real file, so the
+		remote's Next key makes Kodi play it straight away (no stop, no home screen). Only for a file
+		that plays as is: a zurg/folders path, or a fresh pre-resolve. The stash stays in place, so
+		the Next Up dialog and the natural-end hand-off are unchanged; the marker drop 20 s before the
+		end removes this item the same way."""
+		if not getattr(self, '_queued_next', False) or getattr(self, '_queued_real', None): return
+		if not getattr(self, 'autoplay_nextep', False): return
+		try:
+			from modules.sources import nextep_autoplay_cancelled, peek_nextep_autoplay_stash, nextep_preresolve_is_fresh
+			if nextep_autoplay_cancelled(): return
+			stash = peek_nextep_autoplay_stash()
+			if not stash or not stash.get('results'): return
+			top = stash['results'][0]
+			preresolved = stash.get('preresolved')
+			if preresolved and nextep_preresolve_is_fresh(preresolved, top): url = preresolved['url']
+			elif top.get('scrape_provider') == 'folders' and top.get('url_dl'): url = top['url_dl']
+			else: return
+			meta = stash.get('meta') or {}
+			season, episode = int(meta.get('season', 0) or 0), int(meta.get('episode', 0) or 0)
+			listitem = xbmcgui.ListItem(label='%s - %sx%02d' % (meta.get('title', ''), season, episode), offscreen=True)
+			try:
+				tag = listitem.getVideoInfoTag()
+				tag.setMediaType('episode')
+				tag.setTvShowTitle(meta.get('title', '') or '')
+				tag.setTitle(meta.get('ep_name', '') or '')
+				tag.setSeason(season)
+				tag.setEpisode(episode)
+				listitem.setArt({'poster': meta.get('poster', ''), 'fanart': meta.get('fanart', ''), 'thumb': meta.get('ep_thumb') or meta.get('fanart', '')})
+				# Kodi resumes by file name; Red Light decides resume itself (C420 seek after adopt).
+				self._disable_kodi_url_resume(listitem)
+			except Exception: pass
+			playlist = ku.make_playlist('video')
+			marker_index = self._own_playlist_index() + 1
+			if playlist.size() <= marker_index: return
+			playlist.remove(ku.build_url({'mode': QUEUED_NEXT_MODE}))
+			playlist.add(url, listitem, marker_index)
+		except Exception as exc:
+			ku.logger('Red Light', 'Queued next episode: real file swap failed: %s' % exc)
+			return
+		self._queued_real = {'url': url, 'index': marker_index}
+		self._log_nextep('Queued next episode: %s S%02dE%02d queued as its file, the Next key plays it directly' % (
+			meta.get('title', ''), season, episode))
+
+	def _queued_real_advanced(self):
+		"""Kodi moved onto the real next file this play queued (the Next key)."""
+		if getattr(self, '_advanced_to_queued', False): return True
+		queued = getattr(self, '_queued_real', None)
+		if not queued: return False
+		try: moved = ku.make_playlist('video').getposition() == queued['index']
+		except Exception: return False
+		if moved:
+			self._advanced_to_queued = True
+			self._log_nextep('Play next episode now: Next key, Kodi is playing the queued file')
+		return moved
+
+	def _hand_over_to_queued_real(self):
+		"""Kodi already plays the next episode. Schedule its stash play, which adopts that file as a
+		normal Red Light play (ownership, intro skip, Next Up and the prep after it, subtitles, the
+		rewatch cursor) instead of opening it again."""
+		try:
+			from modules.sources import nextep_preresolve_item_key, schedule_nextep_stashed_play, take_nextep_autoplay_stash
+			stash = take_nextep_autoplay_stash()
+			if not stash: return False
+			queued = self._queued_real or {}
+			top = (stash.get('results') or [None])[0]
+			stash['preresolved'] = {'url': queued.get('url'), 'item_key': nextep_preresolve_item_key(top), 'resolved_at': time.time()}
+			ku.set_property(PROP_ADOPT_QUEUED, 'true')
+			if schedule_nextep_stashed_play(stash, show_busy=False): return True
+			ku.clear_property(PROP_ADOPT_QUEUED)
+		except Exception as exc:
+			ku.logger('Red Light', 'Queued next episode: adopt hand-over failed: %s' % exc)
+			ku.clear_property(PROP_ADOPT_QUEUED)
+		return False
+
+	def _adopt_queued_play(self):
+		"""The stash play for an episode Kodi is already playing (see _hand_over_to_queued_real): skip
+		the open, put a marker behind it for the Next key, and let the open check confirm."""
+		if ku.get_property(PROP_ADOPT_QUEUED) != 'true': return False
+		ku.clear_property(PROP_ADOPT_QUEUED)
+		if self.is_generic or getattr(self, 'media_type', None) != 'episode': return False
+		try:
+			if not self.isPlayingVideo(): return False
+			playlist = ku.make_playlist('video')
+			self._own_index = playlist.getposition()
+			marker = xbmcgui.ListItem(label='Next episode', offscreen=True)
+			marker.setProperty('IsPlayable', 'true')
+			playlist.add(ku.build_url({'mode': QUEUED_NEXT_MODE}), marker)
+		except Exception as exc:
+			ku.logger('Red Light', 'Queued next episode: adopt failed, opening normally: %s' % exc)
+			return False
+		self._queued_next = True
+		# Kodi sent this file's AV-start before this player existed; without it a user Stop would
+		# read as a stall and reopen the episode (_note_abnormal_end).
+		self._cb_started = True
+		self._log_nextep('Queued next episode: adopted the playing file as this Red Light play')
+		return True
+
+	def _adopt_resume_seek(self):
+		try: percent = float(getattr(self.sources_object, 'playback_percent', 0) or 0)
+		except Exception: percent = 0.0
+		if percent <= 0: return
+		try:
+			target = float(self.getTotalTime()) * percent / 100.0
+			if target > 5: self.seekTime(target)
+			self._log_nextep('Queued next episode: resumed at %.0f%% (%.0fs)' % (percent, target))
+		except Exception as exc:
+			ku.logger('Red Light', 'Queued next episode: resume seek failed: %s' % exc)
 
 	def _maybe_drop_queued_next(self):
 		if not getattr(self, '_queued_next', False): return
@@ -1400,7 +1535,10 @@ class RedLightPlayer(xbmc.Player):
 		self._queued_next = False
 		try:
 			playlist = ku.make_playlist('video')
-			if playlist.size() > 1: playlist.remove(ku.build_url({'mode': QUEUED_NEXT_MODE}))
+			queued = getattr(self, '_queued_real', None)
+			self._queued_real = None
+			if playlist.size() > self._own_playlist_index() + 1:
+				playlist.remove(queued['url'] if queued else ku.build_url({'mode': QUEUED_NEXT_MODE}))
 		except Exception as exc:
 			ku.logger('Red Light', 'Queued next episode: marker removal failed: %s' % exc)
 
@@ -1410,7 +1548,7 @@ class RedLightPlayer(xbmc.Player):
 		if ku.get_property(PROP_QUEUED_NEXT_HIT) == 'true':
 			ku.clear_property(PROP_QUEUED_NEXT_HIT)
 			return True
-		try: return ku.make_playlist('video').getposition() == 1
+		try: return ku.make_playlist('video').getposition() == self._own_playlist_index() + 1
 		except Exception: return False
 
 	def _note_rewatch(self):

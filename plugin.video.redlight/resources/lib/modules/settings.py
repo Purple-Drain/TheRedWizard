@@ -1221,6 +1221,11 @@ def flatten_episodes():
 def nextep_method():
 	return int(get_setting('redlight.nextep.method', '0'))
 
+def nextep_adopt_resume():
+	"""#1 C420: an episode reached with the Next key (played straight from its queued file) resumes
+	from its bookmark (True, default) or starts over (False). There is no Resume? prompt there."""
+	return get_setting('redlight.nextep.adopt_resume', 'true') == 'true'
+
 def nextep_rewatch_continue():
 	"""#1 C407: after starting an already watched episode, Next Episodes continues from it (True)
 	or walks on to the first unwatched episode as before (False, the default)."""
