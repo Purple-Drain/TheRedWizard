@@ -4233,7 +4233,7 @@
                           <property name="setting_label">    - Warm Up Next Episode</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_warm_read)]</property>
-                          <property name="setting_description">Read the first few MB of the next episode's file during the current one, so zurg and the debrid CDN have it ready when it starts</property>
+                          <property name="setting_description">Read the first few MB of the next episode's file during the current one, so a network folder source or debrid link has it ready when it starts. Folder sources are any folders you've added (local or network share); local folders are skipped, as there is nothing to warm</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep_warm_read)</onclick>
                       </item>
                       <item>
@@ -4241,7 +4241,7 @@
                           <property name="setting_label">Warm Up Next Episodes Widget</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep_widget_warm)]</property>
-                          <property name="setting_description">When the Next Episodes widget is rebuilt, look up its first 3 episodes in your folder sources (zurg) and read the start of each file, so pressing play starts faster. No debrid service is contacted</property>
+                          <property name="setting_description">When the Next Episodes widget is rebuilt, look up its first 3 episodes in your folder sources (any folder you've added, local or network share) and read the start of each file on a network folder, so pressing play starts faster. No debrid service is contacted</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep_widget_warm)</onclick>
                       </item>
                       <item>
