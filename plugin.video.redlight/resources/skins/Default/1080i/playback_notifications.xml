@@ -11,11 +11,11 @@
             <height>160</height>
             <!-- Soft panel (owner, 28.09.26): semi-transparent, feathered ~48 px past the dialog edges. -->
             <control type="image">
-                <left>-48</left>
-                <top>-48</top>
-                <width>996</width>
-                <height>256</height>
-                <texture border="56">redlight_common/panel-soft.png</texture>
+                <left>-32</left>
+                <top>-32</top>
+                <width>964</width>
+                <height>224</height>
+                <texture border="40">redlight_common/panel-soft.png</texture>
             </control>
             <control type="image">
                 <width>284</width>
@@ -79,7 +79,7 @@
                     <height>40</height>
                     <label>[B]Next Episode Ready[/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
                 <control type="label">
                     <visible>String.IsEmpty(Window.Property(pause_timer)) + !String.IsEqual(Window.Property(osd_mode),true)</visible>
@@ -88,7 +88,7 @@
                     <height>40</height>
                     <label>[B]Next Episode In $INFO[Window.Property(nextep_remaining)][/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
                 <!-- Waiting For Input -->
                 <control type="label">
@@ -98,7 +98,7 @@
                     <height>40</height>
                     <label>[B]Waiting for Input $INFO[Window.Property(pause_timer)][/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
             </control>
             <!-- HEADING - STILL WATCHING -->
@@ -112,7 +112,7 @@
                     <height>40</height>
                     <label>[B]$INFO[Window.Property(still_watching_heading)]...$INFO[Window.Property(pause_timer)][/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
             </control>
             <!-- HEADING - AUTOSCRAPE CONFIRM -->
@@ -125,7 +125,7 @@
                     <height>40</height>
                     <label>[B]$INFO[Window.Property(still_watching_heading)]...$INFO[Window.Property(pause_timer)][/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
             </control>
             <!-- HEADING - SKIP INTRO -->
@@ -138,7 +138,7 @@
                     <height>40</height>
                     <label>[B]$INFO[Window.Property(still_watching_heading)]...$INFO[Window.Property(pause_timer)][/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
             </control>
             <!-- HEADING - STINGER -->
@@ -152,7 +152,7 @@
                     <height>40</height>
                     <label>[B]Keep Watching During Credits....[/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
             </control>
             <!-- BODY - NEXT EPISODE -->
@@ -169,7 +169,7 @@
                     <aligny>center</aligny>
                     <label>$INFO[Window.Property(episode_label)]</label>
                     <font>font10</font> <!-- REDLIGHT_21 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
                 <!-- Buttons -->
                 <control type="grouplist">
@@ -240,7 +240,7 @@
                     <aligny>center</aligny>
                     <label>$INFO[Window.Property(episode_label)]</label>
                     <font>font10</font> <!-- REDLIGHT_21 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
                 <!-- Buttons -->
                 <control type="grouplist">
@@ -295,7 +295,7 @@
                     <aligny>center</aligny>
                     <label>$INFO[Window.Property(episode_label)]</label>
                     <font>font10</font> <!-- REDLIGHT_21 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
                 <control type="grouplist">
                     <left>30</left>
@@ -349,7 +349,7 @@
                     <aligny>center</aligny>
                     <label>$INFO[Window.Property(episode_label)]</label>
                     <font>font10</font> <!-- REDLIGHT_21 -->
-                    <textcolor>FFB7B4BB</textcolor>
+                    <textcolor>FFFFFFFF</textcolor>
                 </control>
                 <control type="grouplist">
                     <left>30</left>
@@ -415,7 +415,7 @@
                         <aligny>center</aligny>
                         <label>During Credits Stinger</label>
                         <font>font14</font> <!-- REDLIGHT_33 -->
-                        <textcolor>FFB7B4BB</textcolor>
+                        <textcolor>FFFFFFFF</textcolor>
                     </control>
                     <control type="image" id="201">
                         <top>40</top>
@@ -436,7 +436,7 @@
                         <aligny>center</aligny>
                         <label>After Credits Stinger</label>
                         <font>font14</font> <!-- REDLIGHT_33 -->
-                        <textcolor>FFB7B4BB</textcolor>
+                        <textcolor>FFFFFFFF</textcolor>
                     </control>
                 </control>
             </control>

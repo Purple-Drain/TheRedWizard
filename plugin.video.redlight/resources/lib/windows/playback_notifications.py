@@ -43,7 +43,8 @@ class NextEpisode(BaseDialog):
 	def onInit(self):
 		# Buttons: 10 Close | 11 Play | 12 Cancel
 		focus_map = {'play': 11, 'cancel': 12, 'pause': 10, 'close': 10}
-		self.setFocusId(focus_map.get(self.selected, 12))
+		# OSD mode (C428): OK on the remote should play, so focus Play; Back still just closes.
+		self.setFocusId(11 if self.osd_mode else focus_map.get(self.selected, 12))
 		try:
 			from modules.kodi_utils import logger
 			logger('Red Light', 'Next episode alert open: default=%s focus=%s (back=cancel)' % (
