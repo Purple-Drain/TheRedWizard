@@ -668,6 +668,12 @@ class Sources():
 						if not self._can_continue_full_scrape(): self.prescrape = False
 			if self._user_cancelled_scrape():
 				return self._finish_scrape_cancel()
+			if not results and self._nextep_folders_only():
+				# Early prep stage 1 (#1): folders only, no cloud or external scrape. The player runs
+				# stage 2 (the full prep) later when this finds nothing.
+				kodi_utils.set_property('redlight.nextep_stage1_miss', 'true')
+				kodi_utils.logger('Red Light', 'Autoplay next episode: early prep stage 1 found no folder hit, stage 2 later')
+				return
 			if not results:
 				if self.check_prescrape_ran and self._can_continue_full_scrape():
 					self._kill_progress_dialog(join_timeout=1.0)
@@ -752,7 +758,7 @@ class Sources():
 			if settings.check_prescrape_sources('folders', self.media_type):
 				self.append_folder_scrapers(folder_scrapers)
 				folder_prescrape = True
-		other_scrapers = self.internal_sources(True)
+		other_scrapers = [] if self._nextep_folders_only() else self.internal_sources(True)
 		if not (self.prescrape_scrapers or folder_scrapers or other_scrapers) and not folder_prescrape: return []
 		started = time.time()
 		def _start(scrapers):
@@ -816,6 +822,9 @@ class Sources():
 		if self.background: self._join_prescrape_threads(max_wait)
 		else: self.scrapers_dialog(max_wait)
 
+	def _nextep_folders_only(self):
+		return bool(self.background and (getattr(self, 'nextep_settings', None) or {}).get('folders_only'))
+
 	def _folders_first_enabled(self):
 		"""Folders-first prescrape (#149), foreground autoplay only: in background next-episode prep
 		nobody is waiting, so a head start could only make the prep later."""
@@ -877,7 +886,7 @@ class Sources():
 			if settings.check_prescrape_sources('folders', self.media_type):
 				self.append_folder_scrapers(folder_scrapers)
 				folder_prescrape = True
-		other_scrapers = self.internal_sources(True)
+		other_scrapers = [] if self._nextep_folders_only() else self.internal_sources(True)
 		self.folders_only_skipped = []
 		if not (self.prescrape_scrapers or folder_scrapers or other_scrapers) and not folder_prescrape:
 			return []
@@ -3430,7 +3439,10 @@ class Sources():
 				from modules.nextep_warm import warm_end_of_episode
 				# A skip is waiting on this stash: the busy flag held through the read delayed its
 				# hand-over by the read's ~3 s (#1, W-280926-2), so hand over first and skip the warm.
-				if kodi_utils.get_property('redlight.skip_prep_waiting') == 'true':
+				if (getattr(self, 'nextep_settings', None) or {}).get('early_prep'):
+					# Early prep (#1): the player does the warm read about a minute in instead.
+					kodi_utils.logger('Red Light', 'NextEpWarm: deferred, early prep')
+				elif kodi_utils.get_property('redlight.skip_prep_waiting') == 'true':
 					kodi_utils.logger('Red Light', 'NextEpWarm: skipped, a next-episode skip is waiting')
 				elif warm_end_of_episode(results, self.meta, preresolved) == 'preresolved_dead':
 					stash = _NEXTEP_AUTOPLAY_STASH.get(_nextep_stash_key(self.meta))

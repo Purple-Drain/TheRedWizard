@@ -34,7 +34,9 @@ _SKIP_ACK_WAIT_MS = 2000
 _SKIP_PREP_WAIT_SEC = 30
 # #1 early prep: the next episode is prepared this far into the current one (and no sooner than the
 # intro prompt is done and 10 s after the last seek), instead of about 85 s before the end.
-_EARLY_PREP_SEC = 60
+_EARLY_PREP_SEC = 20
+# Stage 2 (cloud rungs when stage 1's folders-only look found nothing) and the deferred warm read.
+_EARLY_STAGE2_SEC = 60
 _EARLY_PREP_SEEK_QUIET_SEC = 10
 # Set while a claimed skip waits for its prep; the prep then skips the warm read so it stashes sooner.
 PROP_SKIP_PREP_WAITING = 'redlight.skip_prep_waiting'
@@ -585,6 +587,8 @@ class RedLightPlayer(xbmc.Player):
 								if _nextep_remaining > 0: ku.set_property('redlight.nextep_remaining', str(_nextep_remaining))
 							except: pass
 							if self._should_prep_next_ep(): self._schedule_next_ep()
+							else: self._maybe_early_stage2()
+							self._maybe_early_warm()
 							self._try_autoplay_nextep_alert()
 							self._try_autoplay_early_stash_play()
 							self._try_autoscrape_nextep_ready_notify()
@@ -1193,6 +1197,45 @@ class RedLightPlayer(xbmc.Player):
 		if remaining > 0 and remaining <= start_prep: return True
 		return self._early_prep_due(remaining, start_prep)
 
+	def _maybe_early_stage2(self):
+		"""Early prep stage 2: stage 1 (folders only) found nothing, so about a minute in run the full
+		prep (cloud rungs too). Still no pre-resolve and nothing marked watched."""
+		if not getattr(self, '_nextep_early_prep', False) or getattr(self, '_early_stage2', False): return
+		if ku.get_property('redlight.nextep_stage1_miss') != 'true': return
+		if ku.get_property(PROP_NEXTEP_PENDING) == 'true': return
+		try:
+			if float(self.curr_time) < _EARLY_STAGE2_SEC: return
+			remaining = float(self.total_time) - float(self.curr_time)
+		except Exception: return
+		if remaining <= (getattr(self, 'start_prep', None) or 0): return
+		self._early_stage2 = True
+		self._nextep_prep_attempted = False
+		self._log_nextep('Next episode early prep: stage 2 (folders found nothing)')
+		self._schedule_next_ep()
+
+	def _maybe_early_warm(self):
+		"""The 2 MB warm read an early prep deferred: about a minute in, for a network file only."""
+		if not getattr(self, '_nextep_early_prep', False) or getattr(self, '_early_warm_done', False): return
+		queued = getattr(self, '_queued_real', None)
+		if not queued: return
+		try:
+			if float(self.curr_time) < _EARLY_STAGE2_SEC: return
+		except Exception: return
+		self._early_warm_done = True
+		url = queued.get('url')
+		def _warm():
+			try:
+				from modules import nextep_warm
+				if not nextep_warm.settings.nextep_warm_read(): return
+				if not nextep_warm.is_network_path(url):
+					ku.logger('Red Light', 'NextEpWarm: early, local folder, nothing to warm')
+					return
+				got, ms, err = nextep_warm.warm_read(url)
+				ku.logger('Red Light', 'NextEpWarm: origin=early warm=%s bytes=%s ms=%s%s' % ('ok' if got else 'fail', got, ms, (' err=%s' % err) if err else ''))
+			except Exception as exc:
+				ku.logger('Red Light', 'NextEpWarm: early warm failed: %s' % exc)
+		self._spawn(_warm, name='nextep_early_warm', daemon=True)
+
 	def _early_prep_due(self, remaining, start_prep):
 		"""#1: prepare the next episode early (setting Prepare Next Episode: Early, the default), once
 		this one is settled: _EARLY_PREP_SEC in, the Skip Intro prompt answered or not coming, and no
@@ -1203,7 +1246,6 @@ class RedLightPlayer(xbmc.Player):
 		try: curr = float(self.curr_time)
 		except Exception: return False
 		if curr < _EARLY_PREP_SEC or remaining <= start_prep: return False
-		if getattr(self, '_intro_skip_active', False) and not getattr(self, '_intro_skip_done', False): return False
 		last_seek = getattr(self, '_last_seek', None)
 		if isinstance(last_seek, tuple) and time.time() - last_seek[0] < _EARLY_PREP_SEEK_QUIET_SEC: return False
 		self._nextep_early_prep = True
@@ -1309,7 +1351,11 @@ class RedLightPlayer(xbmc.Player):
 		meta = dict(self.meta) if getattr(self, 'meta', None) else {}
 		nextep_settings = dict(self.nextep_settings) if getattr(self, 'nextep_settings', None) else None
 		early = getattr(self, '_nextep_early_prep', False)
-		if early and nextep_settings is not None: nextep_settings['early_prep'] = True
+		if early and nextep_settings is not None:
+			nextep_settings['early_prep'] = True
+			# Stage 1 is the folders-only look (cached listing, no debrid API); stage 2 is full.
+			nextep_settings['folders_only'] = not getattr(self, '_early_stage2', False)
+			ku.clear_property('redlight.nextep_stage1_miss')
 		def _work():
 			try:
 				from modules.episode_tools import EpisodeTools
