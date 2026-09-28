@@ -375,8 +375,15 @@ class _DeferredProgress:
 	"""#1 C426: stands in for the SourcesPlayback window for the first quiet_start_ms of a play. It
 	records what the window would show and creates the real one only if the search or resolve is
 	still running when the delay ends. When the source is known quickly (a folders hit, a prepared
-	episode) the play starts with no scraping or resolve window, only a small toast."""
-	_DEFAULTS = {'iscanceled': False, 'skip_resolved': False}
+	episode) the play starts with no scraping or resolve window, only a small toast. The player
+	suppresses it at hand-off (RedLightPlayer.run), and close() or suppress() win over a timer that
+	is creating the window at that moment."""
+	# SourcesPlayback's methods; anything else read before the window exists is a plain value.
+	_METHODS = frozenset(('iscanceled', 'skip_resolved', 'reset_is_cancelled', 'enable_scraper', 'enable_resolver',
+		'enable_resume', 'busy_spinner', 'set_scraper_properties', 'set_resolver_properties', 'set_resume_properties',
+		'update_scraper', 'update_resolver'))
+	_RETURNS = {'iscanceled': False, 'skip_resolved': False}
+	_VALUES = {'is_canceled': False, 'resume_choice': None, 'window_mode': None}
 
 	def __init__(self, sources_ref, delay_ms):
 		object.__setattr__(self, '_s', sources_ref)
@@ -388,21 +395,39 @@ class _DeferredProgress:
 		object.__setattr__(self, '_lock', Lock())
 		Thread(target=self._timer, args=(delay_ms,), name='quiet_start', daemon=True).start()
 
+	def _done(self):
+		return self._closed or self._suppressed or self._real is not None
+
 	def _timer(self, delay_ms):
-		kodi_utils.sleep(int(delay_ms))
+		waited = 0
+		while waited < int(delay_ms):
+			if self._done(): return
+			kodi_utils.sleep(100)
+			waited += 100
 		self.materialize('search still running after %d ms' % int(delay_ms))
 
 	def materialize(self, reason=''):
 		with self._lock:
-			if self._real is not None or self._closed or self._suppressed: return self._real
+			if self._done(): return self._real
 			real = create_window(('windows.sources', 'SourcesPlayback'), 'sources_playback.xml', meta=self._s.meta, sources_ref=self._s)
-			for k, v in self._attrs.items():
-				try: setattr(real, k, v)
-				except Exception: pass
 			thread = Thread(target=real.run, name='resolve_progress_dialog')
 			thread.start()
 			object.__setattr__(self, '_real', real)
 			self._s.progress_thread = thread
+		# Same wait as _make_progress_dialog, so the replay lands after the window's onInit.
+		for _ in range(40):
+			try:
+				if kodi_utils.get_property('redlight.scrape.ready') == 'true': break
+			except Exception: pass
+			kodi_utils.sleep(50)
+		with self._lock:
+			if self._closed or self._suppressed:
+				try: real.close()
+				except Exception: pass
+				return None
+			for k, v in self._attrs.items():
+				try: setattr(real, k, v)
+				except Exception: pass
 			for name, (args, kwargs) in list(self._calls.items()):
 				try: getattr(real, name)(*args, **kwargs)
 				except Exception: pass
@@ -412,41 +437,48 @@ class _DeferredProgress:
 
 	def suppress(self):
 		"""The source is chosen and handed to the player: never show the window for this play."""
-		object.__setattr__(self, '_suppressed', True)
+		with self._lock:
+			object.__setattr__(self, '_suppressed', True)
 
 	@property
 	def materialized(self): return self._real is not None
 
 	def close(self):
-		object.__setattr__(self, '_closed', True)
-		if self._real is not None:
-			try: self._real.close()
+		with self._lock:
+			object.__setattr__(self, '_closed', True)
+			real = self._real
+		if real is not None:
+			try: real.close()
 			except Exception: pass
 
 	def __bool__(self): return True
 
 	def __setattr__(self, name, value):
 		self._attrs[name] = value
-		if self._real is not None:
-			try: setattr(self._real, name, value)
+		real = self._real
+		if real is not None:
+			try: setattr(real, name, value)
 			except Exception: pass
 
 	def __getattr__(self, name):
 		real = object.__getattribute__(self, '_real')
 		if real is not None: return getattr(real, name)
-		if name in self._attrs: return self._attrs[name]
-		if name == 'resume_choice': return None
+		attrs = object.__getattribute__(self, '_attrs')
+		if name in attrs: return attrs[name]
 		if name == 'enable_resume':
 			# The resume question needs the window now.
 			def _resume(*args, **kwargs):
 				real = self.materialize('resume prompt')
 				return real.enable_resume(*args, **kwargs) if real is not None else None
 			return _resume
-		default = self._DEFAULTS.get(name)
-		def _record(*args, **kwargs):
-			self._calls[name] = (args, kwargs)
-			return default
-		return _record
+		if name in self._METHODS:
+			default = self._RETURNS.get(name)
+			def _record(*args, **kwargs):
+				self._calls[name] = (args, kwargs)
+				return default
+			return _record
+		if name in self._VALUES: return self._VALUES[name]
+		raise AttributeError(name)
 
 
 class Sources():
@@ -3033,8 +3065,6 @@ class Sources():
 							elif self.background:
 								self._wait_player_idle(max_ms=2000, light=True)
 							self._set_play_mime_hint(item, url)
-							if isinstance(self.progress_dialog, _DeferredProgress) and not self.progress_dialog.materialized:
-								self.progress_dialog.suppress()
 							player.run(url, self)
 							if self.playback_successful and getattr(player, 'stall_position', None):
 								url = self._resume_after_stall(item, url, player)
