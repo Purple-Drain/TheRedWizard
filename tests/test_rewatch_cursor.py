@@ -54,3 +54,11 @@ def test_specials_and_bad_input_are_ignored(profile):
     assert rc.on_play_started(4608, 0, 1, True, True) is None
     assert rc.on_play_started(4608, None, 1, True, True) is None
     assert rc.load() == {}
+
+
+def test_menu_can_restore_an_automatic_cursor_quietly(profile, monkeypatch):
+    shown = []
+    monkeypatch.setattr(rc.kodi_utils, 'notification', lambda *a, **k: shown.append(a))
+    monkeypatch.setattr(rc.kodi_utils, 'kodi_refresh', lambda: None)
+    rc.menu({'action': 'set', 'tmdb_id': '1668', 'season': '2', 'episode': '5', 'show_self': 'false', 'quiet': 'true'})
+    assert rc.seed(1668) == (2, 5, False) and shown == []

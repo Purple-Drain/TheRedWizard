@@ -51,6 +51,10 @@ PROP_QUEUED_NEXT_HIT = 'redlight.queued_next_hit'
 # #1 C417: set by an episode whose Next key moved Kodi onto the real next file queued behind it; the
 # stash play it schedules then adopts that already-playing file instead of opening it again.
 PROP_ADOPT_QUEUED = 'redlight.adopt_queued'
+# #1 C418: for the skin's OSD "next episode ready" button. 'true' while the next episode is prepared
+# (a stash, not cancelled); the label is "S02E07 Title". The button runs the skip route.
+PROP_NEXTEP_READY = 'redlight.nextep_ready'
+PROP_NEXTEP_READY_LABEL = 'redlight.nextep_ready_label'
 # A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
 # measured against the time still to play; the player callbacks tell a user Stop apart.
@@ -555,6 +559,7 @@ class RedLightPlayer(xbmc.Player):
 					self._maybe_drop_queued_next()
 					self._maybe_queue_real_next()
 					self._maybe_requeue_before_end()
+					self._update_nextep_ready_flag()
 					try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
 					except: ku.sleep(250); continue
 					if not self._valid_playback_duration(self.total_time, self.curr_time):
@@ -672,6 +677,8 @@ class RedLightPlayer(xbmc.Player):
 			marked_before_end = self.media_marked
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
 			self.clear_playback_properties(clear_navigation=False)
+			ku.clear_property(PROP_NEXTEP_READY)
+			ku.clear_property(PROP_NEXTEP_READY_LABEL)
 			self._release_active_playback()
 			self._note_abnormal_end(playback_superseded, marked_before_end)
 			if skip_requested and not autoplay_stash_scheduled: self._play_next_after_seek_end(explicit=True)
@@ -1541,6 +1548,26 @@ class RedLightPlayer(xbmc.Player):
 		self._queued_real = {'url': url, 'index': marker_index}
 		self._log_nextep('Queued next episode: %s S%02dE%02d queued as its file, the Next key plays it directly' % (
 			meta.get('title', ''), season, episode))
+
+	def _update_nextep_ready_flag(self):
+		ready, label = False, ''
+		if self.media_type == 'episode' and getattr(self, 'autoplay_nextep', False):
+			try:
+				from modules.sources import nextep_autoplay_cancelled, peek_nextep_autoplay_stash
+				stash = None if nextep_autoplay_cancelled() else peek_nextep_autoplay_stash()
+				if stash:
+					meta = stash.get('meta') or {}
+					ready = True
+					label = 'S%02dE%02d %s' % (int(meta.get('season', 0) or 0), int(meta.get('episode', 0) or 0), meta.get('ep_name', '') or '')
+			except Exception: ready = False
+		if ready == getattr(self, '_nextep_ready_shown', False) and label == getattr(self, '_nextep_ready_label', ''): return
+		self._nextep_ready_shown, self._nextep_ready_label = ready, label
+		if ready:
+			ku.set_property(PROP_NEXTEP_READY_LABEL, label.strip())
+			ku.set_property(PROP_NEXTEP_READY, 'true')
+		else:
+			ku.clear_property(PROP_NEXTEP_READY)
+			ku.clear_property(PROP_NEXTEP_READY_LABEL)
 
 	def _maybe_requeue_before_end(self):
 		"""By the near-end prep point the next file should be queued, so the natural end flows into it

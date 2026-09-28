@@ -98,8 +98,10 @@ def menu(params):
 		clear(tmdb_id)
 		kodi_utils.notification('Rewatch stopped', 2500)
 	else:
-		set_cursor(tmdb_id, params.get('season'), params.get('episode'), show_self=True)
-		kodi_utils.notification('Next Episodes: rewatching from %sx%02d' % (params.get('season'), int(params.get('episode'))), 3000)
+		# show_self=false and quiet=true let a maintenance restore put back an automatic cursor exactly.
+		set_cursor(tmdb_id, params.get('season'), params.get('episode'), show_self=params.get('show_self', 'true') != 'false')
+		if params.get('quiet') != 'true':
+			kodi_utils.notification('Next Episodes: rewatching from %sx%02d' % (params.get('season'), int(params.get('episode'))), 3000)
 	kodi_utils.logger('Red Light', 'Rewatch cursor %s: tmdb=%s S%sE%s' % (params.get('action', 'set'), tmdb_id, params.get('season'), params.get('episode')))
 	try: kodi_utils.kodi_refresh()
 	except Exception: pass
