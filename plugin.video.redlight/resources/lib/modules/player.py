@@ -295,6 +295,11 @@ class RedLightPlayer(xbmc.Player):
 				except:
 					pass
 				self._register_active_playback()
+				# #1 bug H (28.09.26): the open is confirmed, so tell play_file now. It used to learn
+				# this only from the monitor loop's first tick (playback_close_dialogs), so a Stop
+				# during monitor()'s setup left it None and play_file opened the next source.
+				try: self.sources_object.playback_successful = True
+				except Exception: pass
 				if adopted: self._adopt_resume_seek()
 				# Confirmed playback only, so failed resolves don't create entries. No-op unless
 				# the user turned the playback log on.
@@ -586,6 +591,10 @@ class RedLightPlayer(xbmc.Player):
 				except Exception:
 					self._log_monitor_tick_error()
 				if not self.subs_searched: self.run_subtitles()
+			if not ensure_dialog_dead:
+				# Stopped before the loop's first tick (bug H): the resolve dialog is still up.
+				try: self.playback_close_dialogs()
+				except Exception: pass
 			natural_end = False
 			try:
 				_remaining = None
