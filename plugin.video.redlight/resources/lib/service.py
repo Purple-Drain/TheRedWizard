@@ -13,8 +13,28 @@ trakt_service_string = 'TraktMonitor Service Update %s - %s'
 trakt_success_line_dict = {'success': 'Trakt Update Performed', 'no account': '(Unauthorised) Trakt Update Performed'}
 update_string = 'Next Update in %s minutes...'
 
+_SERVICE_THREADS = []
+_STOP_JOIN_SEC = 8.0
+
 def _start_daemon(target):
-	Thread(target=target, daemon=True).start()
+	thread = Thread(target=target, daemon=True)
+	thread.start()
+	_SERVICE_THREADS.append(thread)
+	return thread
+
+def _join_service_threads(timeout=_STOP_JOIN_SEC):
+	"""#1 update freeze: when Kodi stops the service (an add-on update, disable or Kodi exit) the
+	sub-interpreter waits for every thread it started. Give them a bounded, shared time to see the
+	abort and return, and log any that do not, so a stuck one is named instead of hanging Kodi."""
+	import time as _time
+	deadline = _time.time() + timeout
+	for thread in list(_SERVICE_THREADS):
+		remaining = deadline - _time.time()
+		if remaining <= 0: break
+		try: thread.join(remaining)
+		except Exception: pass
+	alive = [t.name for t in _SERVICE_THREADS if t.is_alive()]
+	kodi_utils.logger('Red Light', 'Main Monitor Service stopped; threads still running: %s' % (', '.join(alive) or 'none'))
 
 class SetAddonConstants:
 	def run(self):
@@ -139,7 +159,8 @@ class TraktMonitor:
 		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
 		wait_for_abort(45)
 		while not monitor.abortRequested():
-			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			while (is_playing() or kodi_utils.get_property(pause_services_prop) == 'true') and not monitor.abortRequested(): wait_for_abort(10)
+			if monitor.abortRequested(): break
 			wait_time = 1800
 			try:
 				from caches.settings_cache import sync_kodi_profile_context
@@ -179,7 +200,8 @@ class SimklMonitor:
 		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
 		wait_for_abort(45)
 		while not monitor.abortRequested():
-			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			while (is_playing() or kodi_utils.get_property(pause_services_prop) == 'true') and not monitor.abortRequested(): wait_for_abort(10)
+			if monitor.abortRequested(): break
 			wait_time = 1800
 			try:
 				from caches.settings_cache import sync_kodi_profile_context
@@ -213,7 +235,8 @@ class MdblistMonitor:
 		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
 		wait_for_abort(60)
 		while not monitor.abortRequested():
-			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			while (is_playing() or kodi_utils.get_property(pause_services_prop) == 'true') and not monitor.abortRequested(): wait_for_abort(10)
+			if monitor.abortRequested(): break
 			wait_time = 1800
 			try:
 				from caches.settings_cache import sync_kodi_profile_context
@@ -249,7 +272,8 @@ class PunchPlayMonitor:
 		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
 		wait_for_abort(55)
 		while not monitor.abortRequested():
-			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			while (is_playing() or kodi_utils.get_property(pause_services_prop) == 'true') and not monitor.abortRequested(): wait_for_abort(10)
+			if monitor.abortRequested(): break
 			wait_time = 1800
 			try:
 				from caches.settings_cache import sync_kodi_profile_context
@@ -499,7 +523,7 @@ if __name__ == '__main__':
 						return True
 			except Exception:
 				pass
-			xbmc.sleep(1000)
+			if xbmc.Monitor().waitForAbort(1): return False
 			waited += 1
 		return False
 
@@ -509,8 +533,9 @@ if __name__ == '__main__':
 		except Exception:
 			pass
 
-	Thread(target=_am_trakt_startup, daemon=True).start()
+	_start_daemon(_am_trakt_startup)
 	# ----- AM Lite Trakt startup sync patch END -----
 	kodi_utils.logger('Red Light', 'Main Monitor Service Starting')
 	RedLightMonitor().waitForAbort()
+	_join_service_threads()
 	kodi_utils.logger('Red Light', 'Main Monitor Service Finished')
