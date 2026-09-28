@@ -1380,6 +1380,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
+                          <property name="setting_label">Next Key: Resume a Started Episode</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.adopt_resume)]</property>
+                          <property name="setting_description">When the remote's Next key moves straight on to the next episode and that episode has a saved position (a rewatch), resume from it. Off: start it from the beginning. There is no Resume prompt on this path.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.adopt_resume)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Sort Type</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.sort_type_name)]</property>

@@ -2777,7 +2777,10 @@ class Sources():
 			self._resolve_user_cancelled = False
 			self._resolve_failure = None
 			defer_stop_for_nextep = getattr(self, '_nextep_alert_handled', False) or (self.background and (self.autoplay_nextep or self.autoscrape_nextep or self.play_type == 'random_continual' or self.random_continual))
-			if not defer_stop_for_nextep:
+			# #1 C417: Kodi already plays this episode (the Next key reached its queued file); the
+			# player adopts it, so nothing here may stop it or ask about resuming over it.
+			adopting = kodi_utils.get_property('redlight.adopt_queued') == 'true'
+			if not defer_stop_for_nextep and not adopting:
 				self._stop_active_playback()
 			retry_easynews = settings.easynews_playback_method('retry')
 			retry_easynews_limit = settings.easynews_playback_method_retries()
@@ -2822,11 +2825,13 @@ class Sources():
 			if defer_stop_for_nextep:
 				if getattr(self, '_nextep_alert_handled', False) and not self.resolve_dialog_made and not use_preresolve:
 					self._make_resolve_dialog()
-				self._stop_active_playback(light=True)
+				if not adopting: self._stop_active_playback(light=True)
 			if not self.progress_dialog and not self.background and not use_preresolve:
 				self._make_progress_dialog()
 			if self._nextep_aio_en_fresh_start(source):
 				self.playback_percent = 0.0
+			elif adopting:
+				self.playback_percent = self._adopt_resume_percent()
 			else:
 				self.playback_percent = self.get_playback_percent()
 			if self.playback_percent == None:
@@ -3028,6 +3033,16 @@ class Sources():
 				self.playback_successful = True
 				self._kill_progress_dialog(join_timeout=1.0)
 		return url
+
+	def _adopt_resume_percent(self):
+		"""#1 C420: no Resume? dialog over an episode that is already playing. With the setting on
+		(default) a saved bookmark resumes; off, it starts over."""
+		try:
+			if not settings.nextep_adopt_resume(): return 0.0
+			percent = watched_status.get_progress_status_episode(watched_status.get_bookmarks_episode(self.tmdb_id, self.season), self.episode)
+			return float(percent) if percent else 0.0
+		except Exception:
+			return 0.0
 
 	def get_playback_percent(self):
 		if self.media_type == 'movie': percent = watched_status.get_progress_status_movie(watched_status.get_bookmarks_movie(), str(self.tmdb_id))

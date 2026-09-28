@@ -83,6 +83,14 @@ class NextEpisode(BaseDialog):
 		self.closed = True
 		self.close()
 
+	@staticmethod
+	def _playlist_position():
+		try:
+			import xbmc
+			return xbmc.PlayList(xbmc.PLAYLIST_VIDEO).getposition()
+		except Exception:
+			return None
+
 	def _skip_requested(self):
 		"""#1 C410: the next-episode skip arrived while this dialog is up. The player's monitor is
 		blocked in this modal, so the dialog answers for it: Play, and tell request_skip_episode it was
@@ -128,8 +136,14 @@ class NextEpisode(BaseDialog):
 	def monitor(self):
 		try:
 			if self._player_active():
+				start_position = self._playlist_position()
 				while self._player_active() and not self.closed:
 					if self._skip_requested(): return
+					if start_position is not None and self._playlist_position() != start_position:
+						# #1 C417: the Next key moved Kodi on to the queued file under this dialog.
+						self.selected, self.closed = 'close', True
+						self.close()
+						return
 					try:
 						total_time = self.player.getTotalTime()
 						remaining_time = max(0, round(total_time - self.player.getTime()))
