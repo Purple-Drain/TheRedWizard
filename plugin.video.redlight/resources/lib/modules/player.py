@@ -522,10 +522,11 @@ class RedLightPlayer(xbmc.Player):
 				except:
 					self.showSubtitles(True)
 			while self.isPlayingVideo():
+				# #1 C417: first, so Kodi's switch to the queued file is never read as a takeover.
+				if self._queued_real_advanced(): break
 				if not self._owns_active_playback():
 					playback_superseded = True
 					break
-				if self._queued_real_advanced(): break
 				try:
 					if not ensure_dialog_dead:
 						ensure_dialog_dead = True
@@ -607,7 +608,16 @@ class RedLightPlayer(xbmc.Player):
 			except:
 				pass
 			autoplay_stash_scheduled = False
-			if not playback_superseded and self.autoplay_nextep:
+			# #1 C417: Kodi may drop out of "playing" for a moment while it switches to the queued
+			# file; give the playlist position up to 2 s to settle before reading this as an end.
+			if getattr(self, '_queued_real', None) and not self._queued_real_advanced():
+				for _ in range(20):
+					ku.sleep(100)
+					if self._queued_real_advanced(): break
+			if self._queued_real_advanced():
+				playback_superseded = False
+				autoplay_stash_scheduled = self._hand_over_to_queued_real()
+			elif not playback_superseded and self.autoplay_nextep:
 				try:
 					from modules.sources import clear_nextep_autoplay_stash, clear_orphan_nextep_play_stash, nextep_autoplay_cancelled, nextep_end_play_superseded, peek_nextep_autoplay_stash, schedule_nextep_stashed_play, take_nextep_autoplay_stash
 					if nextep_autoplay_cancelled() or nextep_end_play_superseded():
@@ -619,8 +629,6 @@ class RedLightPlayer(xbmc.Player):
 							self._log_nextep('Autoplay next episode: skipped at episode end (superseded by user playback)')
 					elif getattr(self, '_nextep_stash_play_scheduled', False):
 						autoplay_stash_scheduled = True
-					elif self._queued_real_advanced():
-						autoplay_stash_scheduled = self._hand_over_to_queued_real()
 					elif getattr(self, '_nextep_alert_shown', False):
 						if peek_nextep_autoplay_stash():
 							stash = take_nextep_autoplay_stash()
@@ -1439,6 +1447,8 @@ class RedLightPlayer(xbmc.Player):
 				tag.setSeason(season)
 				tag.setEpisode(episode)
 				listitem.setArt({'poster': meta.get('poster', ''), 'fanart': meta.get('fanart', ''), 'thumb': meta.get('ep_thumb') or meta.get('fanart', '')})
+				# Kodi resumes by file name; Red Light decides resume itself (C420 seek after adopt).
+				self._disable_kodi_url_resume(listitem)
 			except Exception: pass
 			playlist = ku.make_playlist('video')
 			marker_index = self._own_playlist_index() + 1
@@ -1500,6 +1510,9 @@ class RedLightPlayer(xbmc.Player):
 			ku.logger('Red Light', 'Queued next episode: adopt failed, opening normally: %s' % exc)
 			return False
 		self._queued_next = True
+		# Kodi sent this file's AV-start before this player existed; without it a user Stop would
+		# read as a stall and reopen the episode (_note_abnormal_end).
+		self._cb_started = True
 		self._log_nextep('Queued next episode: adopted the playing file as this Red Light play')
 		return True
 

@@ -105,3 +105,15 @@ def test_marker_index_follows_the_adopted_position(monkeypatch):
     player._own_index = 1
     player._maybe_queue_real_next()
     assert playlist.items == ['a', 'b', TOP['url_dl']] and player._queued_real['index'] == 2
+
+
+def test_adopted_play_counts_as_started_so_a_stop_is_a_stop(monkeypatch):
+    playlist = FakePlaylist(['a', TOP['url_dl']], position=1)
+    player, props, _ = _wire(monkeypatch, playlist)
+    props[player_mod.PROP_ADOPT_QUEUED] = 'true'
+    player.is_generic, player.media_type, player._queued_next = False, 'episode', False
+    player._cb_started = False
+    player.isPlayingVideo = lambda: True
+    monkeypatch.setattr(player_mod.xbmcgui, 'ListItem', lambda *a, **k: type('LI', (), {'setProperty': lambda self, k, v: None})())
+    player._adopt_queued_play()
+    assert player._cb_started is True
