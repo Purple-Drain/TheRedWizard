@@ -372,12 +372,13 @@
                 <control type="grouplist">
                     <left>30</left>
                     <top>100</top>
-                    <width>530</width>
+                    <width>560</width>
                     <height>70</height>
                     <orientation>horizontal</orientation>
                     <itemgap>10</itemgap>
                     <control type="button" id="10">
-                        <description>Close</description>
+                        <description>Close (unused: Back hides the dialog)</description>
+                        <visible>false</visible>
                         <width>160</width>
                         <height>60</height>
                         <onleft>12</onleft>
@@ -393,11 +394,11 @@
                     </control>
                     <control type="button" id="11">
                         <description>Play</description>
-                        <width>160</width>
+                        <width>240</width>
                         <height>60</height>
-                        <onleft>10</onleft>
+                        <onleft>12</onleft>
                         <onright>12</onright>
-                        <label>Play</label>
+                        <label>$INFO[Window.Property(play_label)]</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
                         <focusedcolor>FFFFFFFF</focusedcolor>
@@ -407,12 +408,13 @@
                         <aligny>center</aligny>
                     </control>
                     <control type="button" id="12">
-                        <description>Cancel</description>
-                        <width>160</width>
+                        <description>Stop after this episode</description>
+                        <width>290</width>
                         <height>60</height>
+                        <visible>!String.IsEqual(Window.Property(osd_mode),true)</visible>
                         <onleft>11</onleft>
-                        <onright>10</onright>
-                        <label>Cancel</label>
+                        <onright>11</onright>
+                        <label>Stop After This Episode</label>
                         <font>font10</font> <!-- REDLIGHT_21 -->
                         <textcolor>FFCCCCCC</textcolor>
                         <focusedcolor>FFFFFFFF</focusedcolor>
@@ -421,6 +423,18 @@
                         <align>center</align>
                         <aligny>center</aligny>
                     </control>
+                </control>
+                <control type="label">
+                    <visible>String.IsEqual(Window.Property(osd_mode),true)</visible>
+                    <top>100</top>
+                    <left>290</left>
+                    <width>270</width>
+                    <height>60</height>
+                    <aligny>center</aligny>
+                    <font>font10</font>
+                    <textcolor>FFD0D0D8</textcolor>
+                    <shadowcolor>FF000000</shadowcolor>
+                    <label>Back to hide</label>
                 </control>
             </control>
             <!-- BODY - STILL WATCHING -->

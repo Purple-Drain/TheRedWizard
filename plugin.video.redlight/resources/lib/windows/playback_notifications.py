@@ -39,6 +39,8 @@ class NextEpisode(BaseDialog):
 		self.osd_mode = bool(kwargs.get('osd_mode'))
 		self.set_properties()
 		if self.osd_mode: self.setProperty('osd_mode', 'true')
+		# Say what the button does (owner: Close/Cancel were confusing). Back hides the dialog.
+		self.setProperty('play_label', '▶  Play Next' if self.osd_mode else '▶  Play Now')
 		# #1 redesign: Ready badge, info line, Finding Source state, countdown line.
 		if kwargs.get('ready'): self.setProperty('ready', 'true')
 		if kwargs.get('info_line'): self.setProperty('info_line', kwargs.get('info_line'))
@@ -47,7 +49,8 @@ class NextEpisode(BaseDialog):
 
 	def onInit(self):
 		# Buttons: 10 Close | 11 Play | 12 Cancel
-		focus_map = {'play': 11, 'cancel': 12, 'pause': 10, 'close': 10}
+		# Close (10) is hidden since the owner's review; Back does its job, so focus Play for it.
+		focus_map = {'play': 11, 'cancel': 12, 'pause': 11, 'close': 11}
 		# OSD mode (C428): OK on the remote should play, so focus Play; Back still just closes.
 		self.setFocusId(11 if self.osd_mode else focus_map.get(self.selected, 12))
 		try:
