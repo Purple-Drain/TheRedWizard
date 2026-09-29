@@ -1255,9 +1255,26 @@ class RedLightPlayer(xbmc.Player):
 					return
 				got, ms, err = nextep_warm.warm_read(url)
 				ku.logger('Red Light', 'NextEpWarm: origin=early warm=%s bytes=%s ms=%s%s' % ('ok' if got else 'fail', got, ms, (' err=%s' % err) if err else ''))
+				if not got: self._reprep_off_failed_provider(url)
 			except Exception as exc:
 				ku.logger('Red Light', 'NextEpWarm: early warm failed: %s' % exc)
 		self._spawn(_warm, name='nextep_early_warm', daemon=True)
+
+	def _reprep_off_failed_provider(self, url):
+		"""#1 C447: the queued file did not answer its warm read (an RD 503, a broken link). Re-prepare
+		now, preferring another provider, rather than find out at the jump."""
+		if getattr(self, '_avoid_family', None): return  # once per play
+		try:
+			from modules.sources import debrid_family, take_nextep_autoplay_stash
+			self._avoid_family = debrid_family({'url_dl': url})
+			self._drop_queued_real('warm read failed')
+			take_nextep_autoplay_stash(clear_only=True)
+		except Exception as exc:
+			ku.logger('Red Light', 'Next episode: re-prep after a failed warm read failed: %s' % exc)
+			return
+		self._nextep_early_prep, self._early_stage2, self._nextep_prep_attempted = True, True, False
+		self._log_nextep('Next episode: warm read failed on %s, preparing again with another provider' % self._avoid_family)
+		self._schedule_next_ep()
 
 	def _early_prep_due(self, remaining, start_prep):
 		"""#1: prepare the next episode early (setting Prepare Next Episode: Early, the default), once
@@ -1374,6 +1391,8 @@ class RedLightPlayer(xbmc.Player):
 		meta = dict(self.meta) if getattr(self, 'meta', None) else {}
 		nextep_settings = dict(self.nextep_settings) if getattr(self, 'nextep_settings', None) else None
 		early = getattr(self, '_nextep_early_prep', False)
+		if nextep_settings is not None and getattr(self, '_avoid_family', None):
+			nextep_settings['avoid_family'] = self._avoid_family
 		if early and nextep_settings is not None:
 			nextep_settings['early_prep'] = True
 			# Stage 1 is the folders-only look (cached listing, no debrid API); stage 2 is full.

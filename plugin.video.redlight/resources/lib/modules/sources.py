@@ -2,7 +2,9 @@
 import json
 import os
 import pickle
+import re
 import time
+from urllib.parse import unquote
 from threading import Thread, Lock, current_thread
 from windows.base_window import open_window, create_window
 from caches.settings_cache import get_setting
@@ -370,6 +372,40 @@ def clear_orphan_nextep_play_stash():
 	except:
 		pass
 	_set_nextep_stash_play_in_flight(False)
+
+_FAMILY_LABELS = {'rd': 'Real-Debrid', 'tb': 'TorBox', 'magic': 'zurg', 'local': 'local'}
+
+def debrid_family(item):
+	"""#1 C447: which service really serves a source. zurg exposes the same RD file as __realdebrid__
+	and (usually) __magic__, so a failing RD file is often still RD behind a different folder."""
+	try:
+		url = (item.get('url_dl') or item.get('id') or '').lower()
+		debrid = (item.get('debrid') or item.get('cache_provider') or item.get('scrape_provider') or '').lower()
+		if '__realdebrid__' in url or debrid.startswith('real') or debrid == 'rd_cloud': return 'rd'
+		if '__torbox__' in url or debrid.startswith('torbox') or debrid == 'tb_cloud': return 'tb'
+		if '__magic__' in url: return 'magic'
+		if url.startswith(('/', 'special://', 'smb://', 'nfs://')): return 'local'
+		return debrid or 'other'
+	except Exception:
+		return 'other'
+
+def _base_name(item):
+	try: return re.split(r'[\\/]', unquote(item.get('url_dl') or item.get('name') or ''))[-1].lower()
+	except Exception: return ''
+
+def failover_order(failed, remaining):
+	"""After a source fails, try other providers first: anything on the same service as the failed one
+	(including the same file under zurg's __magic__ folder) goes last, order otherwise unchanged."""
+	family, base = debrid_family(failed), _base_name(failed)
+	def same(item):
+		f = debrid_family(item)
+		return f == family or (f == 'magic' and _base_name(item) == base)
+	return [i for i in remaining if not same(i)] + [i for i in remaining if same(i)]
+
+def prefer_other_family(results, avoid):
+	if not avoid: return results
+	return [i for i in results if debrid_family(i) != avoid] + [i for i in results if debrid_family(i) == avoid]
+
 
 class _DeferredProgress:
 	"""#1 C426: stands in for the SourcesPlayback window for the first quiet_start_ms of a play. It
@@ -3078,6 +3114,15 @@ class Sources():
 						if count < len(items):
 							try: kodi_utils.close_dialog('okdialog')
 							except: pass
+							# #1 C447: a failed RD file is often the same RD file under __magic__; try another
+							# provider first, and say so instead of Kodi's generic failure dialog.
+							items[count:] = failover_order(item, items[count:])
+							nxt = items[count]
+							if debrid_family(nxt) != debrid_family(item):
+								try:
+									kodi_utils.notification('%s busy, trying %s' % (_FAMILY_LABELS.get(debrid_family(item), 'Source'),
+										_FAMILY_LABELS.get(debrid_family(nxt), 'another source')), 2500)
+								except: pass
 					except: pass
 					finally:
 						# Offcloud / RD: deferred cleanup after play/fail (must not invalidate play URL).
@@ -3547,6 +3592,11 @@ class Sources():
 			if not self._advance_past_duplicate_nextep():
 				self._decline_nextep_prep('duplicate file, no further episode')
 			return
+		avoid = (getattr(self, 'nextep_settings', None) or {}).get('avoid_family')
+		if avoid:
+			# C447: the early warm read of the last pick failed on this service; queue another one.
+			results = prefer_other_family(results, avoid)
+			kodi_utils.logger('Red Light', 'Autoplay next episode: preferring sources off %s after a failed warm read' % avoid)
 		preresolved = self._preresolve_nextep_candidate(results)
 		if stash_nextep_autoplay_results(results, self.meta, self.nextep_settings, self.params, preresolved=preresolved):
 			kodi_utils.logger('Red Light', 'Autoplay next episode scrape ready: %s S%02dE%02d (%s results)' % (
