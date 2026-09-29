@@ -154,3 +154,25 @@ def test_cancel_removes_the_real_queued_file(monkeypatch):
     player._queued_real = {'url': TOP['url_dl'], 'index': 1}
     player._maybe_drop_queued_next()
     assert playlist.items == ['a'] and player._queued_real is None
+
+
+def test_premature_eof_is_not_an_end(monkeypatch):
+    """C447: a broken stream 3 min in made Kodi move to the queued file; that is no natural end."""
+    playlist = FakePlaylist(['a', TOP['url_dl']], position=1)
+    player, _, _ = _wire(monkeypatch, playlist)
+    player._queued_real = {'url': TOP['url_dl'], 'index': 1}
+    player.total_time, player.curr_time, player._cb_ended = 1300.0, 180.0, True
+    stopped = []
+    player.stop = lambda: stopped.append(1)
+    assert player._queued_real_advanced() is False
+    assert player._premature_end and stopped == [1] and player._queued_real is None
+
+
+def test_natural_end_and_own_step_still_advance(monkeypatch):
+    for curr, stepping in ((1290.0, False), (200.0, True)):
+        playlist = FakePlaylist(['a', TOP['url_dl']], position=1)
+        player, _, _ = _wire(monkeypatch, playlist)
+        player._queued_real = {'url': TOP['url_dl'], 'index': 1}
+        player.total_time, player.curr_time, player._cb_ended = 1300.0, curr, True
+        player._stepping = stepping
+        assert player._queued_real_advanced() is True

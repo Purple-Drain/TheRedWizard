@@ -50,9 +50,30 @@ def test_user_stop_while_opening_cancels(monkeypatch):
     _props(monkeypatch)
     monkeypatch.setattr(player_mod.ku, 'hide_busy_dialog', lambda: None)
     player = object.__new__(RedLightPlayer)
-    player.playback_successful, player._cb_stopped = None, True
+    player.playback_successful, player._cb_stopped, player._cb_avstarted = None, True, True
     player._playback_open_timeout_ms = lambda: 1000
     player.sources_object = type('S', (), {'cancel_all_playback': False, '_resolve_user_cancelled': False})()
     player.check_playback_start()
     assert player.playback_successful is False
     assert player.sources_object.cancel_all_playback is True
+
+
+def test_stop_before_the_file_showed_is_a_failed_open(monkeypatch):
+    """C447 (Shield 10:16): a queued RD file answered 503, Kodi stopped it, and that was read as a
+    user Stop. Without an AV start it is a failed open, so the next source must be tried."""
+    _props(monkeypatch)
+    monkeypatch.setattr(player_mod.ku, 'hide_busy_dialog', lambda: None)
+    player = object.__new__(RedLightPlayer)
+    player.playback_successful, player._cb_stopped, player._cb_avstarted = None, True, False
+    player._playback_open_timeout_ms = lambda: 0
+    player._resolve_cancelled = lambda: False
+    player.isPlayingVideo = lambda: False
+    player._open_window_expired = lambda: setattr(player, 'playback_successful', False)
+    dlg = type('D', (), {'skip_resolved': lambda s: False, 'iscanceled': lambda s: False, 'update_resolver': lambda s, **k: None})()
+    player.sources_object = type('S', (), {'cancel_all_playback': False, '_resolve_user_cancelled': False, 'progress_dialog': dlg})()
+    player._dismiss_kodi_playback_error_dialog = lambda: False
+    player.kodi_monitor = type('M', (), {'abortRequested': lambda s: False})()
+    monkeypatch.setattr(player_mod.ku, 'sleep', lambda ms: None)
+    player.check_playback_start()
+    assert player.playback_successful is False
+    assert player.sources_object.cancel_all_playback is False
