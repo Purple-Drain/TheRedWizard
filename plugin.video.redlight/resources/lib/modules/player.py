@@ -35,6 +35,8 @@ _SKIP_PREP_WAIT_SEC = 30
 # #1 early prep: the next episode is prepared this far into the current one (and no sooner than the
 # intro prompt is done and 10 s after the last seek), instead of about 85 s before the end.
 _EARLY_PREP_SEC = 20
+# An 'end' this far before the real end is a broken stream (demuxer EOF), not the episode ending (C447).
+_PREMATURE_END_SEC = 300
 # Stage 2 (cloud rungs when stage 1's folders-only look found nothing) and the deferred warm read.
 _EARLY_STAGE2_SEC = 60
 _EARLY_PREP_SEEK_QUIET_SEC = 10
@@ -222,7 +224,7 @@ class RedLightPlayer(xbmc.Player):
 	# for the previous playback (Redlight's own stop before this open) arrives before our
 	# Started and is ignored, so the flags describe this player's stream only.
 	def onPlayBackStarted(self): self._cb_started = True
-	def onAVStarted(self): self._cb_started = True
+	def onAVStarted(self): self._cb_started = self._cb_avstarted = True
 	def onPlayBackStopped(self):
 		if self._cb_started: self._cb_stopped = True
 	def onPlayBackEnded(self):
@@ -438,7 +440,7 @@ class RedLightPlayer(xbmc.Player):
 				ku.logger('Red Light', 'Playback open: Kodi skipped past the file to the queued marker; trying the next source')
 				self.playback_successful = False
 				break
-			if getattr(self, '_cb_stopped', False):
+			if getattr(self, '_cb_stopped', False) and getattr(self, '_cb_avstarted', False) is True:
 				# #1 bug F (28.09.26): Kodi only reports Stopped after this stream started, so it is a
 				# user Stop while the open was still settling, not a failed source. Treat it as a
 				# cancel; before this the loop fell through and the next source was played.
@@ -758,7 +760,8 @@ class RedLightPlayer(xbmc.Player):
 		try:
 			nextep_handoff = bool(getattr(self, '_nextep_alert_shown', False) or getattr(self, '_nextep_stash_play_scheduled', False))
 			self.end_outcome = playback_end_outcome(stopped=self._cb_stopped, superseded=playback_superseded, nextep_handoff=nextep_handoff)
-			if self.is_generic or getattr(self, '_nextep_prep_attempted', False): return
+			# The early prep sets _nextep_prep_attempted about 20 s in; a premature end (C447) must still reopen.
+			if self.is_generic or (getattr(self, '_nextep_prep_attempted', False) and not getattr(self, '_premature_end', False)): return
 			cancelled = self.cancel_all_playback or self._resolve_cancelled()
 			curr, total = getattr(self, 'curr_time', None), getattr(self, 'total_time', None)
 			abnormal = abnormal_playback_end(curr, total, user_stopped=self._cb_stopped, superseded=playback_superseded, cancelled=cancelled, media_marked=marked_before_end)
@@ -1686,14 +1689,34 @@ class RedLightPlayer(xbmc.Player):
 	def _queued_real_advanced(self):
 		"""Kodi moved onto the real next file this play queued (the Next key)."""
 		if getattr(self, '_advanced_to_queued', False): return True
+		if getattr(self, '_premature_end', False): return False
 		queued = getattr(self, '_queued_real', None)
 		if not queued: return False
 		try: moved = ku.make_playlist('video').getposition() == queued['index']
 		except Exception: return False
-		if moved:
-			self._advanced_to_queued = True
-			self._log_nextep('Play next episode now: Next key, Kodi is playing the queued file')
-		return moved
+		if not moved: return False
+		try: remaining = float(self.total_time) - float(self.curr_time)
+		except Exception: remaining = None
+		if getattr(self, '_stepping', False):
+			why = 'skip or Next Up, Kodi is playing the queued file'
+		elif remaining is not None and remaining <= _NEXTEP_NATURAL_END_SEC * 2:
+			why = 'natural end, Kodi moved to the queued file'
+		elif getattr(self, '_cb_ended', False) and remaining is not None and remaining > _PREMATURE_END_SEC:
+			# C447 (Shield 29.09 10:15): the RD stream broke 3 minutes in, Kodi read the demuxer EOF
+			# as the end and moved on to the queued file. Not an end: take Kodi back off the queued
+			# file and let the stall handling reopen this episode at its position.
+			self._premature_end = True
+			ku.logger('Red Light', 'Playback ended %.0fs before the end (stream failure, not a natural end): '
+				'not moving on, reopening this episode' % remaining)
+			self._drop_queued_real('premature end')
+			try: self.stop()
+			except Exception: pass
+			return False
+		else:
+			why = 'Next key, Kodi is playing the queued file'
+		self._advanced_to_queued = True
+		self._log_nextep('Play next episode now: %s' % why)
+		return True
 
 	def _hand_over_to_queued_real(self):
 		"""Kodi already plays the next episode. Schedule its stash play, which adopts that file as a
@@ -1735,6 +1758,10 @@ class RedLightPlayer(xbmc.Player):
 		# Kodi sent this file's AV-start before this player existed; without it a user Stop would
 		# read as a stall and reopen the episode (_note_abnormal_end).
 		self._cb_started = True
+		# Only a file that is really showing counts as started for the Stop-vs-failure call (C447):
+		# a queued file still opening (an RD 503) that then stops is a failed open, not a user Stop.
+		try: self._cb_avstarted = float(self.getTotalTime() or 0) > 0 and float(self.getTime() or 0) > 0
+		except Exception: self._cb_avstarted = False
 		self._log_nextep('Queued next episode: adopted the playing file as this Red Light play')
 		return True
 
@@ -1862,6 +1889,7 @@ class RedLightPlayer(xbmc.Player):
 			meta = (peek_nextep_autoplay_stash() or {}).get('meta') or {}
 			ku.notification('Next: %s S%02dE%02d' % (meta.get('title', ''), int(meta.get('season', 0) or 0), int(meta.get('episode', 0) or 0)), 2500)
 		except Exception: pass
+		self._stepping = True
 		self.playnext()
 		self._log_nextep('Play next episode now: moving Kodi on to the queued file (%s)' % why)
 
