@@ -1667,7 +1667,7 @@ def default_settings():
 {'setting_id': 'tmdb.account_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'tmdb.session_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'tmdb.account_session_id', 'setting_type': 'string', 'setting_default': 'empty_setting'},
-{'setting_id': 'reuse_language_invoker', 'setting_type': 'string', 'setting_default': 'true'},
+{'setting_id': 'reuse_language_invoker', 'setting_type': 'string', 'setting_default': 'false'},
 {'setting_id': 'addon_icon_choice_name', 'setting_type': 'string', 'setting_default': 'icon.png'},
 {'setting_id': 'widget_refresh_timer_name', 'setting_type': 'string', 'setting_default': 'Off'},
 {'setting_id': 'mpaa_region_display_name', 'setting_type': 'string', 'setting_default': 'United States'},
