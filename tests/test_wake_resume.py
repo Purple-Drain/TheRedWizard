@@ -307,3 +307,30 @@ def test_schedule_adopt_marks_stash_for_no_resume(monkeypatch, env):
 def test_adopt_queued_prop_matches_player():
     from modules import player
     assert wake_resume.ADOPT_QUEUED_PROP == player.PROP_ADOPT_QUEUED
+
+
+# --- W-011026-1: Player.GetItem reports no file right after a wake -------------------------------
+
+def test_empty_file_is_retried_then_adopted(adopt_env, monkeypatch):
+    wake_resume.write_adopt_stash(_player(sources_object=_sources()))
+    answers = [{'file': ''}, {'file': ''}]
+    def rpc(r):
+        if r['method'] == 'Player.GetItem': return {'item': answers.pop(0) if answers else adopt_env.item}
+        return adopt_env._jsonrpc(r)
+    monkeypatch.setattr(kodi_utils, 'get_jsonrpc', rpc)
+    # two retry waits, then the grace wait, then the watch loop ends
+    watcher = adopt_env.watcher(waits=(False, False, False))
+    watcher.on_notification('Player.OnAVStart', json.dumps({'player': {'playerid': 1}}))
+    assert len(adopt_env.scheduled) == 1
+
+
+def test_empty_file_falls_back_to_infolabel(adopt_env, monkeypatch):
+    wake_resume.write_adopt_stash(_player(sources_object=_sources()))
+    def rpc(r):
+        if r['method'] == 'Player.GetItem': return {'item': {'file': ''}}
+        if r['method'] == 'XBMC.GetInfoLabels': return {'Player.FilenameAndPath': URL}
+        return adopt_env._jsonrpc(r)
+    monkeypatch.setattr(kodi_utils, 'get_jsonrpc', rpc)
+    watcher = adopt_env.watcher()
+    watcher.on_notification('Player.OnAVStart', json.dumps({'player': {'playerid': 1}}))
+    assert len(adopt_env.scheduled) == 1
