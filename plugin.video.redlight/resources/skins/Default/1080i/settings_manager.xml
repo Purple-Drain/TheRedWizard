@@ -1404,6 +1404,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
+                          <property name="setting_label">Next Episode Start</property>
+                          <property name="setting_type">action</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.handoff_mode_name)]</property>
+                          <property name="setting_description">A prepared next episode always starts with no scraping screen. When it is not prepared yet: Auto (default) shows the Finding source toast, then the scraping screen if the search is still running after the time above. Always Quiet shows only the toast. Always Show Scraping Screen shows it at once.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=nextep.handoff_mode)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Sort Type</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.sort_type_name)]</property>

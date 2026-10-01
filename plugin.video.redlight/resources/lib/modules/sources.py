@@ -407,6 +407,10 @@ def prefer_other_family(results, avoid):
 	return [i for i in results if debrid_family(i) != avoid] + [i for i in results if debrid_family(i) == avoid]
 
 
+# #247 Always Quiet: a delay no scrape reaches, so the window is never created.
+_QUIET_FOREVER_MS = 24 * 3600 * 1000
+
+
 class _DeferredProgress:
 	"""#1 C426: stands in for the SourcesPlayback window for the first quiet_start_ms of a play. It
 	records what the window would show and creates the real one only if the search or resolve is
@@ -2424,17 +2428,24 @@ class Sources():
 	def _reset_scrape_progress_counts(self):
 		self.sources_total = self.sources_4k = self.sources_1080p = self.sources_720p = self.sources_sd = 0
 
+	def _is_nextep_play(self):
+		params = getattr(self, 'params', None) or {}
+		return params.get('nextep_stash_play') == 'true' or getattr(self, 'play_type', None) == 'autoplay_nextep'
+
 	def _make_progress_dialog(self):
 		self._ensure_progress_dialog_dead()
 		self._reset_scrape_progress_counts()
 		kodi_utils.clear_scrape_progress_ui()
 		kodi_utils.sync_scrape_progress_ui(0, 0, 0, 0, 0, 0)
-		delay_ms = settings.quiet_start_ms()
+		# #247: a next-episode play follows the Next Episode Start setting; None means toast only.
+		delay_ms = settings.progress_quiet_delay_ms(self._is_nextep_play())
+		toast_ms = 5000 if delay_ms is None else max(1500, delay_ms + 500)
+		if delay_ms is None: delay_ms = _QUIET_FOREVER_MS
 		if delay_ms > 0 and not self.background and not getattr(self, '_quiet_start_used', False):
 			# #1 C426: once per play, a toast instead of the window; the window only if still busy.
 			self._quiet_start_used = True
 			self.progress_dialog, self.progress_thread = _DeferredProgress(self, delay_ms), None
-			try: kodi_utils.notification('Finding source...', max(1500, delay_ms + 500))
+			try: kodi_utils.notification('Finding source...', toast_ms)
 			except Exception: pass
 			return
 		self.progress_dialog = create_window(('windows.sources', 'SourcesPlayback'), 'sources_playback.xml', meta=self.meta, sources_ref=self)

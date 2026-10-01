@@ -1228,6 +1228,26 @@ def quiet_start_ms():
 	try: return max(0, int(get_setting('redlight.playback.quiet_start_ms', '1000')))
 	except Exception: return 1000
 
+NEXTEP_HANDOFF_AUTO, NEXTEP_HANDOFF_QUIET, NEXTEP_HANDOFF_SCREEN = 0, 1, 2
+
+def nextep_handoff_mode():
+	"""#247: how a next-episode play that is not already prepared starts. Auto (0, default): the
+	quiet_start_ms toast, then the scraping window if still busy. Always Quiet (1): toast only, never
+	the scraping window. Always Show Scraping Screen (2): the window at once. A prepared hand-off has
+	nothing to scrape and starts with no window in every mode."""
+	try: mode = int(get_setting('redlight.nextep.handoff_mode', '0'))
+	except Exception: return NEXTEP_HANDOFF_AUTO
+	return mode if mode in (NEXTEP_HANDOFF_AUTO, NEXTEP_HANDOFF_QUIET, NEXTEP_HANDOFF_SCREEN) else NEXTEP_HANDOFF_AUTO
+
+def progress_quiet_delay_ms(nextep, mode=None, quiet_ms=None):
+	"""#247: the quiet-start delay for one play. None means never create the scraping window."""
+	quiet_ms = quiet_start_ms() if quiet_ms is None else quiet_ms
+	if not nextep: return quiet_ms
+	mode = nextep_handoff_mode() if mode is None else mode
+	if mode == NEXTEP_HANDOFF_SCREEN: return 0
+	if mode == NEXTEP_HANDOFF_QUIET: return None
+	return quiet_ms
+
 def nextep_prep_early():
 	"""#1: prepare the next episode about a minute into the current one (True, default) or about
 	85 s before its end (False, the old timing)."""

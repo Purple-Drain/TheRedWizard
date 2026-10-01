@@ -1318,6 +1318,7 @@ def default_settings():
 #==================== Next Episodes
 {'setting_id': 'nextep.method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Last Aired', '1': 'Last Watched'}},
 {'setting_id': 'playback.quiet_start_ms', 'setting_type': 'action', 'setting_default': '1000', 'settings_options': {'0': 'Off (show at once)', '1000': '1 Second', '2000': '2 Seconds', '3000': '3 Seconds'}},
+{'setting_id': 'nextep.handoff_mode', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Auto', '1': 'Always Quiet', '2': 'Always Show Scraping Screen'}},
 {'setting_id': 'nextep.prep_timing', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Early', '1': 'Near the End'}},
 {'setting_id': 'nextep.adopt_resume', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'nextep.rewatch_mode', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'First Unwatched', '1': 'Continue From the Rewatch'}},
