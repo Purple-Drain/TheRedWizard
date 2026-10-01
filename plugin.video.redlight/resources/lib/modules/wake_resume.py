@@ -52,6 +52,9 @@ ADOPT_STASH_FILE = 'wake_adopt_stash.pkl'
 ADOPT_QUEUED_PROP = 'redlight.adopt_queued'
 # A skip seen this soon after System.OnWake is logged, since that is the case #143 is about.
 WAKE_LOG_WINDOW_SEC = 120
+# Player.GetItem can return an empty file for a few seconds after a wake (W-011026-1).
+FILE_RETRIES = 5
+FILE_RETRY_SEC = 2
 
 
 def _normalize_path(path):
@@ -210,8 +213,25 @@ class WakeResumeWatcher:
 			if self._just_woke(): ku.logger('Red Light', 'wake resume: not tracking, no Red Light play record (#143)')
 			return
 		item = self._playing_item(data)
+		if _normalize_path((item or {}).get('file')):
+			self._match_then_watch(session, record, item)
+		else:
+			# W-011026-1: right after a wake Player.GetItem can report no file yet; look again shortly.
+			self._start_thread(lambda: self._retry_match(session, record, data))
+
+	def _retry_match(self, session, record, data):
+		item = None
+		for _ in range(FILE_RETRIES):
+			if self._wait(FILE_RETRY_SEC): return
+			with self._lock:
+				if session != self._session: return
+			item = self._playing_item(data)
+			if _normalize_path((item or {}).get('file')): break
+		self._match_then_watch(session, record, item)
+
+	def _match_then_watch(self, session, record, item):
 		if not item_matches_record(item, record):
-			if self._just_woke(): ku.logger('Red Light', 'wake resume: not tracking, %s is not the last Red Light play %s (#143)' % (
+			if self._just_woke(): ku.logger('Red Light', 'wake resume: not tracking, playing [%s] is not the last Red Light play [%s] (#143)' % (
 				_normalize_path((item or {}).get('file'))[-80:], _normalize_path(record.get('url'))[-80:]))
 			return
 		self._start_thread(lambda: self._watch(session, record))
@@ -232,7 +252,12 @@ class WakeResumeWatcher:
 		try: player_id = int(info['player']['playerid'])
 		except Exception: player_id = _VIDEO_PLAYER_ID
 		result = _jsonrpc('Player.GetItem', {'playerid': player_id, 'properties': ['file', 'uniqueid', 'season', 'episode']}) or {}
-		return result.get('item')
+		item = result.get('item')
+		if not _normalize_path((item or {}).get('file')):
+			labels = _jsonrpc('XBMC.GetInfoLabels', {'labels': ['Player.FilenameAndPath']}) or {}
+			path = labels.get('Player.FilenameAndPath')
+			if path: item = dict(item or {}, file=path)
+		return item
 
 	def _current(self, session, tracked):
 		with self._lock:
