@@ -126,7 +126,14 @@ def _schedule_adopt(stash):
 	# Kodi already resumed at its own position; the adopted play must not seek again.
 	stash['params']['adopt_no_resume'] = 'true'
 	ku.set_property(ADOPT_QUEUED_PROP, 'true')
-	if schedule_nextep_stashed_play(stash, show_busy=False, adopting=True): return True
+	# The in-flight flag is a module global: the play runs (and clears it) in the plugin's own
+	# interpreter, so the service's copy would stay set and refuse every later adopt.
+	from modules.sources import _set_nextep_stash_play_in_flight
+	_set_nextep_stash_play_in_flight(False)
+	try:
+		if schedule_nextep_stashed_play(stash, show_busy=False, adopting=True): return True
+	finally:
+		_set_nextep_stash_play_in_flight(False)
 	ku.clear_property(ADOPT_QUEUED_PROP)
 	return False
 
