@@ -8,7 +8,7 @@ from modules.kodi_utils import external, get_property
 
 def sys_exit_check(mode='navigator.main'):
 	from caches.settings_cache import get_setting, is_directory_listing_mode
-	if get_setting('redlight.reuse_language_invoker', 'true') == 'false': return False
+	if get_setting('redlight.reuse_language_invoker', 'false') == 'false': return False
 	# First open still has external() true before Container.PluginName updates; never discard a built list.
 	if is_directory_listing_mode(mode): return False
 	if mode == 'open_settings': return False
