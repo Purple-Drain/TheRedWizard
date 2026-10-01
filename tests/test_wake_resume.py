@@ -304,6 +304,20 @@ def test_schedule_adopt_marks_stash_for_no_resume(monkeypatch, env):
     assert env.props[wake_resume.ADOPT_QUEUED_PROP] == 'true'
 
 
+def test_second_adopt_in_same_service_is_not_refused(monkeypatch, env):
+    """The real scheduler sets a module-global in-flight flag that only the plugin's interpreter clears;
+    the service must not carry it into the next wake (W-011026-2 refusal)."""
+    import modules.sources as sources
+    monkeypatch.setattr(sources, 'persist_nextep_play_stash', lambda stash: True)
+    monkeypatch.setattr(sources, 'nextep_autoplay_cancelled', lambda: False)
+    monkeypatch.setattr(sources.kodi_utils, 'execute_builtin', lambda *a, **k: None, raising=False)
+    sources._set_nextep_stash_play_in_flight(False)
+    for _ in range(2):
+        stash = {'url': URL, 'results': [dict(ITEM)], 'meta': {}, 'params': {}}
+        assert wake_resume._schedule_adopt(stash)
+    assert not sources._nextep_stash_play_in_flight()
+
+
 def test_adopt_queued_prop_matches_player():
     from modules import player
     assert wake_resume.ADOPT_QUEUED_PROP == player.PROP_ADOPT_QUEUED
