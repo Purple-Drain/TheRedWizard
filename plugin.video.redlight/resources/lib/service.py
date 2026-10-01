@@ -490,6 +490,7 @@ class RedLightMonitor(Monitor):
 		elif method in ('GUI.OnScreensaverDeactivated', 'System.OnWake'):
 			kodi_utils.clear_property(pause_services_prop)
 			kodi_utils.logger('OnNotificationActions', 'UNPAUSING Red Light Services Due to Device Awake')
+			if method == 'System.OnWake' and self.wake_resume: self.wake_resume.on_notification(method, data)
 		elif method in ('Player.OnAVStart', 'Player.OnStop'):
 			# A file Kodi resumed itself on wake has no RedLightPlayer behind it (#143).
 			if self.wake_resume: self.wake_resume.on_notification(method, data)

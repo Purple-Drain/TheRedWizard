@@ -3213,6 +3213,8 @@ class Sources():
 		(default) a saved bookmark resumes; off, it starts over."""
 		try:
 			if not settings.nextep_adopt_resume(): return 0.0
+			# #143: a wake resume is already at Kodi's own restored position.
+			if (getattr(self, 'params', None) or {}).get('adopt_no_resume') == 'true': return 0.0
 			percent = watched_status.get_progress_status_episode(watched_status.get_bookmarks_episode(self.tmdb_id, self.season), self.episode)
 			return float(percent) if percent else 0.0
 		except Exception:

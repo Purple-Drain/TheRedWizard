@@ -209,3 +209,101 @@ def test_write_record_skips_plays_with_nothing_to_mark(env, overrides):
 def test_active_playback_prop_matches_player():
     from modules import player
     assert wake_resume.ACTIVE_PLAYBACK_KEY_PROP == player.PROP_ACTIVE_PLAYBACK_KEY
+
+
+# --- adopt (#143, 01.10.26): the resumed episode becomes a Red Light play again -----------------
+
+ITEM = {'name': 'Seinfeld.S04E01.mkv', 'url_dl': URL, 'scrape_provider': 'folders', 'source': 'TB folder'}
+
+
+def _sources(**overrides):
+    base = dict(playing_item=dict(ITEM), meta={'tmdb_id': 1400, 'title': 'Seinfeld', 'season': 4, 'episode': 1},
+                params={'mode': 'playback.media', 'tmdb_id': '1400', 'season': '4', 'episode': '1',
+                        'nextep_stash_play': 'true', 'background': 'false', 'play_type': 'autoplay_nextep'},
+                nextep_settings={'num_episodes': 3})
+    base.update(overrides)
+    return types.SimpleNamespace(**base)
+
+
+@pytest.fixture
+def adopt_env(env, monkeypatch, tmp_path):
+    monkeypatch.setattr(kodi_utils, 'addon_profile', lambda: str(tmp_path))
+    monkeypatch.setattr(kodi_utils, 'clear_property', lambda k: env.props.pop(k, None))
+    env.scheduled = []
+    def schedule(stash):
+        env.scheduled.append(stash)
+        return True
+    monkeypatch.setattr(wake_resume, '_schedule_adopt', schedule)
+    return env
+
+
+def test_adopt_stash_round_trips_without_play_flags(adopt_env):
+    wake_resume.write_adopt_stash(_player(sources_object=_sources()))
+    stash = wake_resume.read_adopt_stash(RECORD)
+    assert stash['results'] == [ITEM] and stash['meta']['episode'] == 1
+    assert stash['nextep_settings'] == {'num_episodes': 3}
+    assert not {'nextep_stash_play', 'background', 'play_type'} & set(stash['params'])
+
+
+def test_adopt_stash_ignored_for_another_play(adopt_env):
+    wake_resume.write_adopt_stash(_player(sources_object=_sources(), url='dav://other/file.mkv'))
+    assert wake_resume.read_adopt_stash(RECORD) is None
+
+
+@pytest.mark.parametrize('overrides', [{'media_type': 'movie'}, {'is_generic': True}])
+def test_adopt_stash_only_for_episodes(adopt_env, tmp_path, overrides):
+    wake_resume.write_adopt_stash(_player(sources_object=_sources(), **overrides))
+    assert not (tmp_path / wake_resume.ADOPT_STASH_FILE).exists()
+
+
+def test_unclaimed_resume_is_adopted(adopt_env):
+    wake_resume.write_adopt_stash(_player(sources_object=_sources()))
+    watcher = adopt_env.watcher()
+    watcher.on_notification('Player.OnAVStart', json.dumps({'player': {'playerid': 1}}))
+    assert len(adopt_env.scheduled) == 1
+    assert adopt_env.scheduled[0]['results'] == [ITEM]
+    assert any('adopting Seinfeld S04E01' in line for line in adopt_env.logs)
+
+
+def test_resume_without_stash_still_tracks(adopt_env):
+    watcher = adopt_env.watcher()
+    watcher.on_notification('Player.OnAVStart', json.dumps({'player': {'playerid': 1}}))
+    assert adopt_env.scheduled == []
+    assert any('no adopt stash' in line for line in adopt_env.logs)
+    assert adopt_env.checkpoints
+
+
+def test_claimed_play_after_wake_logs_the_key(adopt_env):
+    adopt_env.props[wake_resume.ACTIVE_PLAYBACK_KEY_PROP] = 'stale-key'
+    watcher = adopt_env.watcher()
+    watcher.on_notification('System.OnWake', '{}')
+    watcher.on_notification('Player.OnAVStart', json.dumps({'player': {'playerid': 1}}))
+    assert adopt_env.scheduled == []
+    assert any('already claimed (active key stale-key)' in line for line in adopt_env.logs)
+
+
+def test_mismatch_after_wake_is_logged(adopt_env):
+    adopt_env.item = {'file': 'dav://x/y/Other.mkv'}
+    watcher = adopt_env.watcher()
+    watcher.on_notification('System.OnWake', '{}')
+    watcher.on_notification('Player.OnAVStart', json.dumps({'player': {'playerid': 1}}))
+    assert any('is not the last Red Light play' in line for line in adopt_env.logs)
+
+
+def test_schedule_adopt_marks_stash_for_no_resume(monkeypatch, env):
+    import modules.sources as sources
+    seen = []
+    monkeypatch.setattr(sources, 'schedule_nextep_stashed_play',
+                        lambda stash, show_busy=None, adopting=False: seen.append((stash, adopting)) or True)
+    stash = {'url': URL, 'results': [dict(ITEM)], 'meta': {}, 'params': {}}
+    assert wake_resume._schedule_adopt(stash)
+    assert seen[0][1] is True
+    assert stash['params']['adopt_no_resume'] == 'true'
+    assert stash['preresolved']['url'] == URL
+    assert stash['preresolved']['item_key'] == sources.nextep_preresolve_item_key(ITEM)
+    assert env.props[wake_resume.ADOPT_QUEUED_PROP] == 'true'
+
+
+def test_adopt_queued_prop_matches_player():
+    from modules import player
+    assert wake_resume.ADOPT_QUEUED_PROP == player.PROP_ADOPT_QUEUED
