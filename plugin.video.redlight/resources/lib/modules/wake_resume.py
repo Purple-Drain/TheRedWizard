@@ -21,10 +21,18 @@ what it calls:
 - On Player.OnStop with end=true: watched mark through the existing mark_episode()/mark_movie(),
   at most once per tracked play.
 
-Out of scope here: autoplay into the next episode on wake, relaunching through playback.media,
-intercepting RestorePlayerState. Those are #143's bigger slice.
+Adopt (#143, 01.10.26): for an episode, player.py also saves an adopt stash (the play's own
+source item, meta, params and next-episode settings) in the addon profile. When such a play is
+resumed outside Red Light, the watcher hands that stash to the same stash play the queued-next
+hand-over uses (sources.schedule_nextep_stashed_play with adopting=True), so a Red Light player
+adopts the playing file without reopening it: monitor, Next Up, next-episode prep and the queue all
+come back. The passive tracking below stays as the fallback when there is no stash or the adopt
+is refused.
 """
 import json
+import os
+import pickle
+import time
 from threading import Lock, Thread
 from modules import kodi_utils as ku
 
@@ -39,6 +47,11 @@ POLL_INTERVAL_SEC = 60
 WATCHED_PERCENT = 90
 CHECKPOINT_MIN_PERCENT = 5
 _VIDEO_PLAYER_ID = 1
+ADOPT_STASH_FILE = 'wake_adopt_stash.pkl'
+# Same value as player.PROP_ADOPT_QUEUED (not imported, so the service does not load player.py).
+ADOPT_QUEUED_PROP = 'redlight.adopt_queued'
+# A skip seen this soon after System.OnWake is logged, since that is the case #143 is about.
+WAKE_LOG_WINDOW_SEC = 120
 
 
 def _normalize_path(path):
@@ -63,6 +76,56 @@ def write_last_play_record(player):
 				'season': getattr(player, 'season', None), 'episode': getattr(player, 'episode', None)}
 		ku.set_property(LAST_PLAY_RECORD_PROP, json.dumps(record))
 	except Exception: pass
+
+
+def _adopt_stash_path():
+	profile = ku.addon_profile()
+	return os.path.join(profile, ADOPT_STASH_FILE) if profile else None
+
+
+def write_adopt_stash(player):
+	"""Called next to write_last_play_record(). Episodes only: the adopt path is the next-episode
+	stash play, which only adopts episodes."""
+	try:
+		if getattr(player, 'is_generic', False) or getattr(player, 'media_type', None) != 'episode': return
+		sources = getattr(player, 'sources_object', None)
+		item, url = getattr(sources, 'playing_item', None), getattr(player, 'url', None)
+		if not isinstance(item, dict) or not url: return
+		params = dict(getattr(sources, 'params', None) or {})
+		for key in ('background', 'nextep_stash_play', 'play_type', 'adopt_no_resume'): params.pop(key, None)
+		nextep_settings = getattr(sources, 'nextep_settings', None)
+		stash = {'url': url, 'results': [dict(item)], 'meta': dict(getattr(sources, 'meta', None) or {}),
+				'nextep_settings': dict(nextep_settings) if isinstance(nextep_settings, dict) else {},
+				'params': params, 'playing_release': ''}
+		path = _adopt_stash_path()
+		if not path: return
+		with open(path, 'wb') as handle: pickle.dump(stash, handle, protocol=2)
+	except Exception as e:
+		ku.logger('Red Light', 'wake resume: adopt stash not saved: %s' % e)
+
+
+def read_adopt_stash(record):
+	"""The saved stash, only when it belongs to the play the record names."""
+	try:
+		path = _adopt_stash_path()
+		if not path or not os.path.isfile(path): return None
+		with open(path, 'rb') as handle: stash = pickle.load(handle)
+		if _normalize_path(stash.get('url')) != _normalize_path(record.get('url')): return None
+		if not stash.get('results') or not stash.get('meta'): return None
+		return stash
+	except Exception:
+		return None
+
+
+def _schedule_adopt(stash):
+	from modules.sources import nextep_preresolve_item_key, schedule_nextep_stashed_play
+	stash['preresolved'] = {'url': stash['url'], 'item_key': nextep_preresolve_item_key(stash['results'][0]), 'resolved_at': time.time()}
+	# Kodi already resumed at its own position; the adopted play must not seek again.
+	stash['params']['adopt_no_resume'] = 'true'
+	ku.set_property(ADOPT_QUEUED_PROP, 'true')
+	if schedule_nextep_stashed_play(stash, show_busy=False, adopting=True): return True
+	ku.clear_property(ADOPT_QUEUED_PROP)
+	return False
 
 
 def read_last_play_record():
@@ -125,10 +188,15 @@ class WakeResumeWatcher:
 		self._lock = Lock()
 		self._session = 0
 		self._tracked = None
+		self._woke_at = 0.0
+
+	def _just_woke(self):
+		return time.time() - self._woke_at <= WAKE_LOG_WINDOW_SEC
 
 	def on_notification(self, method, data):
 		try:
-			if method == 'Player.OnAVStart': self.on_av_start(data)
+			if method == 'System.OnWake': self._woke_at = time.time()
+			elif method == 'Player.OnAVStart': self.on_av_start(data)
 			elif method == 'Player.OnStop': self.on_stop(data)
 		except Exception as e:
 			ku.logger('Red Light', 'wake resume: %s failed: %s' % (method, e))
@@ -138,9 +206,14 @@ class WakeResumeWatcher:
 			self._session += 1
 			session, self._tracked = self._session, None
 		record = read_last_play_record()
-		if not record: return
+		if not record:
+			if self._just_woke(): ku.logger('Red Light', 'wake resume: not tracking, no Red Light play record (#143)')
+			return
 		item = self._playing_item(data)
-		if not item_matches_record(item, record): return
+		if not item_matches_record(item, record):
+			if self._just_woke(): ku.logger('Red Light', 'wake resume: not tracking, %s is not the last Red Light play %s (#143)' % (
+				_normalize_path((item or {}).get('file'))[-80:], _normalize_path(record.get('url'))[-80:]))
+			return
 		self._start_thread(lambda: self._watch(session, record))
 
 	def on_stop(self, data):
@@ -169,9 +242,14 @@ class WakeResumeWatcher:
 		try:
 			if self._wait(CLAIM_GRACE_SEC): return
 			with self._lock:
-				if session != self._session or _claimed_by_redlight(): return
+				if session != self._session: return
+				if _claimed_by_redlight():
+					if self._just_woke(): ku.logger('Red Light', 'wake resume: %s already claimed (active key %s) (#143)' % (
+						_label(record), ku.get_property(ACTIVE_PLAYBACK_KEY_PROP)))
+					return
 				tracked = self._tracked = {'record': record, 'marked': False, 'point': 0.0}
 			ku.logger('Red Light', 'wake resume: %s is playing outside RedLightPlayer, tracking it (#143)' % _label(record))
+			self._try_adopt(record)
 			ticks_per_poll, tick = max(1, POLL_INTERVAL_SEC // CLAIM_CHECK_SEC), None
 			while self._current(session, tracked):
 				if _claimed_by_redlight():
@@ -185,6 +263,22 @@ class WakeResumeWatcher:
 				tick += 1
 		except Exception as e:
 			ku.logger('Red Light', 'wake resume: watch failed: %s' % e)
+
+	def _try_adopt(self, record):
+		if record.get('media_type') != 'episode': return False
+		stash = read_adopt_stash(record)
+		if not stash:
+			ku.logger('Red Light', 'wake resume: no adopt stash for %s, watched mark only (#143)' % _label(record))
+			return False
+		try:
+			if _schedule_adopt(stash):
+				ku.logger('Red Light', 'wake resume: adopting %s as a Red Light play (#143)' % _label(record))
+				return True
+			ku.logger('Red Light', 'wake resume: adopt refused for %s, watched mark only (#143)' % _label(record))
+		except Exception as e:
+			ku.logger('Red Light', 'wake resume: adopt failed: %s' % e)
+			ku.clear_property(ADOPT_QUEUED_PROP)
+		return False
 
 	def _poll(self, tracked):
 		props = _jsonrpc('Player.GetProperties', {'playerid': _VIDEO_PLAYER_ID, 'properties': ['time', 'totaltime']}) or {}
