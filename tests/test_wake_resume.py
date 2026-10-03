@@ -31,6 +31,7 @@ class Env:
         self.position = (600, 1380)
         monkeypatch.setattr(kodi_utils, 'get_property', lambda k: self.props.get(k, ''))
         monkeypatch.setattr(kodi_utils, 'set_property', lambda k, v: self.props.__setitem__(k, v))
+        monkeypatch.setattr(kodi_utils, 'clear_property', lambda k: self.props.pop(k, None))
         monkeypatch.setattr(kodi_utils, 'logger', lambda h, m: self.logs.append(m))
         monkeypatch.setattr(kodi_utils, 'get_jsonrpc', self._jsonrpc)
         monkeypatch.setattr(wake_resume, '_watched_functions', lambda: (
