@@ -43,7 +43,9 @@ NEXTEP_DUPLICATE_FILE_MAX_SKIPS = 5
 _NEXTEP_NATURAL_END_SEC = 15
 _NEXTEP_AUTOPLAY_STASH = {}
 _NEXTEP_PLAY_STASH_PATH = None
-_NEXTEP_STASH_PLAY_IN_FLIGHT = False
+PROP_NEXTEP_STASH_IN_FLIGHT = 'redlight.nextep_stash_play_in_flight'
+# A real stash resolve finishes (or fails) well inside this; older means a run died without clearing it.
+NEXTEP_STASH_IN_FLIGHT_STALE_SEC = 180
 # #1: how long a background-prep pre-resolve stays usable at handoff. Longer than any
 # realistic gap between the prep running and the alert/stash play firing; past this the
 # resolved url is old enough that a fresh resolve is safer than risking an expired link.
@@ -151,11 +153,27 @@ def stall_resume_percent(curr_time, total_time, rewind=_STALL_RESUME_REWIND_SEC)
 		return 0.0
 
 def _nextep_stash_play_in_flight():
-	return _NEXTEP_STASH_PLAY_IN_FLIGHT
+	"""The schedule (player, in the playing episode's plugin run) and the resolve (a new plugin run)
+	are separate Python interpreters, so a module global set in one was never cleared by the other
+	(optiplex-homelab#364, Seinfeld 03.10.26). The flag is a window property holding the time it was
+	set; one older than NEXTEP_STASH_IN_FLIGHT_STALE_SEC is treated as left over and cleared."""
+	raw = kodi_utils.get_property(PROP_NEXTEP_STASH_IN_FLIGHT)
+	if not raw:
+		return False
+	try:
+		age = time.time() - float(raw)
+	except (TypeError, ValueError):
+		age = NEXTEP_STASH_IN_FLIGHT_STALE_SEC + 1
+	if age > NEXTEP_STASH_IN_FLIGHT_STALE_SEC:
+		kodi_utils.clear_property(PROP_NEXTEP_STASH_IN_FLIGHT)
+		try: kodi_utils.logger('Red Light', 'Autoplay next episode: cleared stale in-flight flag (age %ds)' % int(age))
+		except: pass
+		return False
+	return True
 
 def _set_nextep_stash_play_in_flight(active):
-	global _NEXTEP_STASH_PLAY_IN_FLIGHT
-	_NEXTEP_STASH_PLAY_IN_FLIGHT = bool(active)
+	if active: kodi_utils.set_property(PROP_NEXTEP_STASH_IN_FLIGHT, str(time.time()))
+	else: kodi_utils.clear_property(PROP_NEXTEP_STASH_IN_FLIGHT)
 
 def _nextep_play_stash_path():
 	global _NEXTEP_PLAY_STASH_PATH
@@ -194,13 +212,13 @@ def schedule_nextep_stashed_play(stash, show_busy=None, adopting=False):
 	# warm read, W-280926-8) is not a user taking over; only a real cancel stops the hand-over.
 	if nextep_autoplay_cancelled() or (not adopting and nextep_end_play_superseded(stash.get('meta') if stash else None)):
 		try:
-			kodi_utils.logger('Red Light', 'Autoplay next episode play: skipped schedule (superseded by user playback)')
+			kodi_utils.logger('Red Light', 'Autoplay next episode play: skip case=%s, skipped schedule' % ('cancelled' if nextep_autoplay_cancelled() else 'superseded_by_user'))
 		except:
 			pass
 		return False
 	if _nextep_stash_play_in_flight():
 		try:
-			kodi_utils.logger('Red Light', 'Autoplay next episode play: skipped duplicate schedule (stash resolve in flight)')
+			kodi_utils.logger('Red Light', 'Autoplay next episode play: skip case=in_flight, skipped duplicate schedule (stash resolve in flight)')
 		except:
 			pass
 		return False
@@ -611,14 +629,14 @@ class Sources():
 		if params_get('nextep_stash_play') == 'true':
 			if _nextep_stash_play_in_flight() and not os.path.isfile(_nextep_play_stash_path()):
 				try:
-					kodi_utils.logger('Red Light', 'Autoplay next episode play: skipped duplicate stash resolve (already in flight)')
+					kodi_utils.logger('Red Light', 'Autoplay next episode play: skip case=resolve_in_flight, skipped duplicate stash resolve (already in flight)')
 				except:
 					pass
 				return
 			stash = consume_persisted_nextep_play_stash()
 			if not stash:
 				_set_nextep_stash_play_in_flight(False)
-				kodi_utils.logger('Red Light', 'Autoplay next episode play: no persisted stash')
+				kodi_utils.logger('Red Light', 'Autoplay next episode play: skip case=no_stash, no persisted stash')
 				return
 			self.params = dict(stash.get('params') or {})
 			self.params['background'] = 'false'
@@ -790,10 +808,14 @@ class Sources():
 			# Stale cancel from a prior resolve/nextep must not poison Download File / a new scrape.
 			kodi_utils.clear_property(PROP_RESOLVE_CANCEL)
 			if kodi_utils.get_property(PROP_RESOLVE_BUSY) == 'true' and not allow_concurrent:
+				if self.params.get('nextep_stash_play') == 'true':
+					kodi_utils.logger('Red Light', 'Autoplay next episode play: skip case=resolve_busy, get_sources refused')
 				if not self.background:
 					kodi_utils.notification('Resolve or playback in progress.', 2500)
 				return
 			if kodi_utils.get_property(PROP_SOURCES_BUSY) == 'true' and not allow_concurrent:
+				if self.params.get('nextep_stash_play') == 'true':
+					kodi_utils.logger('Red Light', 'Autoplay next episode play: skip case=sources_busy, get_sources refused')
 				if not self.background:
 					kodi_utils.notification('Source search already running.', 2500)
 				return
