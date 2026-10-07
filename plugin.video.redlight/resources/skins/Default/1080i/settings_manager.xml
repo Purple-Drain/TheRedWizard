@@ -3748,6 +3748,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(70)</visible>
+                          <property name="setting_label">Rank Uncached Results Below Cached</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.results.uncached_sort_last)]</property>
+                          <property name="setting_description">When enabled, every cached result lists before any uncached result that a provider's Include Uncached Results setting has added to the main list. Quality and Custom Sort preferences then order each group. Disable to sort included uncached results as if they were cached.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=results.uncached_sort_last)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(70)</visible>
                           <property name="setting_label">Uncached Results Minimum Seeders</property>
                           <property name="setting_type">numeric</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.results.uncached_min_seeders)]</property>

@@ -1248,9 +1248,10 @@ class Sources():
 			if not results or not self._pref_sort_should_run(): return
 			prefs = settings.preferred_filters()
 			scored = sum(1 for i in results if i.get('pref_includes', 0) > 0)
-			top = [(i.get('quality'), i.get('pref_includes', 0), i.get('scrape_provider'), (i.get('display_name') or i.get('name') or '')[:80]) for i in results[:15]]
-			kodi_utils.logger('CustomSort', '%s tmdb=%s ran=%s prefs=%s scored=%s/%s top=%s' % (
-				self.media_type, self.tmdb_id, pref_sort_ran, prefs, scored, len(results), top))
+			top = [(i.get('quality'), i.get('pref_includes', 0), i.get('scrape_provider'), i.get('cache_provider') or '', (i.get('display_name') or i.get('name') or '')[:80]) for i in results[:15]]
+			uncached = sum(1 for i in results if 'Uncached' in i.get('cache_provider', ''))
+			kodi_utils.logger('CustomSort', '%s tmdb=%s ran=%s prefs=%s scored=%s/%s uncached=%s uncached_last=%s top=%s' % (
+				self.media_type, self.tmdb_id, pref_sort_ran, prefs, scored, len(results), uncached, settings.uncached_sort_last(), top))
 		except: pass
 
 	def sort_results(self, results):
@@ -2291,6 +2292,12 @@ class Sources():
 		else: return 1
 
 	def _sort_uncached_results(self, results):
+		# media-stack #45 / #258: with Rank Uncached Results Below Cached on (the default), every cached row
+		# lists first and the included uncached rows keep their own order below them. Off restores the
+		# older interleaving, where an included provider's uncached rows sort as if they were cached.
+		if settings.uncached_sort_last():
+			uncached = [i for i in results if 'Uncached' in i.get('cache_provider', '')]
+			return [i for i in results if i not in uncached] + uncached
 		keep_in_sort = []
 		if settings.include_uncached_torbox():
 			keep_in_sort.append('TorBox')
