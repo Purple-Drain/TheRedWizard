@@ -946,6 +946,10 @@ def filter_by_name(scraper):
 	if get_property('fs_filterless_search') == 'true': return False
 	return get_setting('redlight.%s.title_filter' % scraper, 'false') == 'true'
 
+def uncached_sort_last():
+	# media-stack #45 / #258: cached rows of every provider list first, then the included uncached rows.
+	return get_setting('redlight.results.uncached_sort_last', 'true') == 'true'
+
 def uncached_min_seeders():
 	return int(get_setting('redlight.results.uncached_min_seeders', '0'))
 

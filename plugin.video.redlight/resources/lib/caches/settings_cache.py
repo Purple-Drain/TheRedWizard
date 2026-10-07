@@ -1568,6 +1568,7 @@ def default_settings():
 {'setting_id': 'results.size_unknown', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'results.size_sort_weighted', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'results.size_sort_direction', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Descending', '1': 'Ascending'}},
+{'setting_id': 'results.uncached_sort_last', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'results.uncached_min_seeders', 'setting_type': 'action', 'setting_default': '0', 'min_value': '0'},
 {'setting_id': 'results.limit_number_quality', 'setting_type': 'string', 'setting_default': '0'},
 {'setting_id': 'results.limit_number_total', 'setting_type': 'string', 'setting_default': '0'},
