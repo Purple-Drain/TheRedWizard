@@ -478,6 +478,15 @@ def skip_intro_auto_approved(play_type):
 def skip_intro_needs_prompt(play_type):
 	return skip_intro_mode() == 1 and skip_intro_enabled(play_type)
 
+def binge_skip_intro():
+	'''#260: play the intro on the first episode of a sitting, auto-skip it on the consecutive ones.'''
+	return get_setting('redlight.binge_skip_intro', 'false') == 'true'
+
+def binge_sitting_gap_sec():
+	'''#260: a new episode of the same show picked within this gap still counts as the same sitting.'''
+	try: return max(60, int(get_setting('redlight.binge_sitting_gap_min', '30')) * 60)
+	except: return 30 * 60
+
 def autoplay_skip_intro_mode():
 	return skip_intro_mode()
 

@@ -57,6 +57,9 @@ PROP_ADOPT_QUEUED = 'redlight.adopt_queued'
 # (a stash, not cancelled); the label is "S02E07 Title". The button runs the skip route.
 PROP_NEXTEP_READY = 'redlight.nextep_ready'
 PROP_NEXTEP_READY_LABEL = 'redlight.nextep_ready_label'
+# #260: '<tmdb_id>|<epoch>' of the last episode played or stopped; a same-show play inside the
+# sitting gap is a consecutive episode and gets its intro skipped without asking.
+PROP_BINGE_SITTING = 'redlight.binge_sitting'
 # A stream Kodi gives up on mid-play (#107: a TorBox range request left hanging past curl's
 # low-speed timeout) ends playback exactly the way the file ending does, so "early" is
 # measured against the time still to play; the player callbacks tell a user Stop apart.
@@ -544,6 +547,7 @@ class RedLightPlayer(xbmc.Player):
 			self._wetrakr_scrobble_start()
 			self._maybe_start_subtitle_alert_fetch()
 			self._maybe_start_introdb_alert_fetch()
+			self._note_binge_sitting()
 			self._intro_skip_fetch_started = False
 			if st.auto_enable_subs() and st.subtitles_source() == '0':
 				try:
@@ -698,6 +702,7 @@ class RedLightPlayer(xbmc.Player):
 			ku.clear_property(PROP_NEXTEP_READY_LABEL)
 			self._release_active_playback()
 			self._note_abnormal_end(playback_superseded, marked_before_end)
+			self._touch_binge_sitting()
 			if skip_requested and not autoplay_stash_scheduled: self._play_next_after_seek_end(explicit=True)
 			self._log_playback_end()
 		except:
@@ -2421,14 +2426,57 @@ class RedLightPlayer(xbmc.Player):
 			self._chapter_timing_logged = None
 			self._monitor_tick_errors = None
 
+	def _binge_sitting_key(self):
+		try:
+			if self.media_type != 'episode' or self.tmdb_id in (None, '', 'None', '0000000'): return None
+			return str(self.tmdb_id)
+		except: return None
+
+	def _note_binge_sitting(self):
+		'''#260: decide once per play whether this episode continues a sitting of the same show, then
+		record this play as the sitting's latest episode. Chain plays (autoplay, autoscrape, random
+		continual) always continue the sitting; a play the user picks continues it only when the
+		previous episode of the same show started or stopped inside the sitting gap.'''
+		self._binge_consecutive = False
+		key = self._binge_sitting_key()
+		if not key: return
+		play_type = getattr(self.sources_object, 'play_type', '')
+		prev = ku.get_property(PROP_BINGE_SITTING) or ''
+		prev_key, prev_ts = (prev.split('|', 1) + [''])[:2] if prev else ('', '')
+		gap = None
+		try:
+			if prev_key == key and prev_ts: gap = int(time.time() - float(prev_ts))
+		except: gap = None
+		if st._skip_intro_chain_play_type(play_type): self._binge_consecutive = True
+		elif gap is not None and 0 <= gap <= st.binge_sitting_gap_sec(): self._binge_consecutive = True
+		self._touch_binge_sitting()
+		if st.binge_skip_intro():
+			self._log_intro_skip('Binge intro skip: %s (prev=%s gap=%s limit=%ss)' % (
+				'consecutive episode, intro will be skipped' if self._binge_consecutive else 'first episode of the sitting, intro plays',
+				prev_key or '-', '%ss' % gap if gap is not None else '-', st.binge_sitting_gap_sec()))
+
+	def _touch_binge_sitting(self):
+		key = self._binge_sitting_key()
+		if not key: return
+		try: ku.set_property(PROP_BINGE_SITTING, '%s|%d' % (key, int(time.time())))
+		except: pass
+
 	def _start_intro_skip_fetch(self):
 		play_type = getattr(self.sources_object, 'play_type', '')
-		if not st.autoplay_skip_intro_enabled(play_type) or self.media_type != 'episode':
+		if self.media_type != 'episode':
+			return
+		binge = st.binge_skip_intro()
+		if binge:
+			# #260: the sitting decides, not the Skip Intro mode. First episode: the intro plays. After that:
+			# auto-skip, no prompt.
+			if not getattr(self, '_binge_consecutive', False):
+				return
+		elif not st.autoplay_skip_intro_enabled(play_type):
 			return
 		self._intro_skip_active = True
 		self._intro_skip_done = False
-		self._intro_skip_prompt_answered = False
-		self._intro_skip_approved = st.autoplay_skip_intro_auto(play_type)
+		self._intro_skip_prompt_answered = binge
+		self._intro_skip_approved = True if binge else st.autoplay_skip_intro_auto(play_type)
 		self._intro_skip_fetch_done = False
 		self._intro_skip_no_timing_logged = False
 		try:
