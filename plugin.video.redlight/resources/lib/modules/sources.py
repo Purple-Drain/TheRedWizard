@@ -3434,7 +3434,7 @@ class Sources():
 	def _prefetch_intro_segment_async(self):
 		if self.media_type != 'episode':
 			return
-		if not settings.skip_intro_enabled(self.play_type):
+		if not settings.skip_intro_enabled(self.play_type) and not settings.binge_skip_intro():
 			return
 		try:
 			from threading import Thread

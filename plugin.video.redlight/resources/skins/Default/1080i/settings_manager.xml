@@ -4191,6 +4191,23 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Skip Intro After The First Episode Of A Sitting</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.binge_skip_intro)]</property>
+                          <property name="setting_description">On: the first episode of a show you sit down to plays its intro; every consecutive episode of the same show (Autoplay / Autoscrape / Random Continual, or one you pick within the sitting gap below) skips the intro without asking. While On this replaces the Skip Intro mode above for episodes. Default Off.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=binge_skip_intro)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <visible>String.IsEqual(Window(10000).Property(redlight.binge_skip_intro),true)</visible>
+                          <property name="setting_label">    - Sitting Gap (Minutes)</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.binge_sitting_gap_min)]</property>
+                          <property name="setting_description">An episode of the same show started within this many minutes of the previous one starting or stopping still counts as the same sitting. Default 30</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=binge_sitting_gap_min)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false)</visible>
                           <property name="setting_label">Autoscrape Next Episode</property>
                           <property name="setting_type">boolean</property>
