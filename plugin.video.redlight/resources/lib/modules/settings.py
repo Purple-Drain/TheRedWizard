@@ -478,6 +478,14 @@ def skip_intro_auto_approved(play_type):
 def skip_intro_needs_prompt(play_type):
 	return skip_intro_mode() == 1 and skip_intro_enabled(play_type)
 
+def intro_skip_excluded_shows():
+	'''#263: TMDb ids of shows whose intro is never auto-skipped, set from the show Options menu.'''
+	return [i.strip() for i in get_setting('redlight.intro_skip_excluded_shows', '').split(',') if i.strip()]
+
+def intro_skip_excluded(tmdb_id):
+	if tmdb_id in (None, ''): return False
+	return str(tmdb_id) in intro_skip_excluded_shows()
+
 def binge_skip_intro():
 	'''#260: play the intro on the first episode of a sitting, auto-skip it on the consecutive ones.'''
 	return get_setting('redlight.binge_skip_intro', 'false') == 'true'

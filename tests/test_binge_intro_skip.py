@@ -94,3 +94,23 @@ def test_setting_off_leaves_the_skip_intro_mode_in_charge(monkeypatch):
     p2, _ = _setup(monkeypatch, binge=False, skip_mode=0)
     p2._note_binge_sitting()
     assert not _fetch_started(p2, monkeypatch)
+
+
+def test_excluded_show_never_skips_in_any_mode(monkeypatch):
+    """#263: a show on the never-auto-skip-intro list gets no skip and no prompt, binge or not."""
+    for binge, skip_mode in ((True, 0), (False, 1), (False, 2)):
+        p, props = _setup(monkeypatch, binge=binge, skip_mode=skip_mode, play_type='autoplay_nextep')
+        values = {'redlight.intro_skip_excluded_shows': '55,1400', 'redlight.binge_skip_intro': 'true' if binge else 'false',
+                  'redlight.autoplay_skip_intro': str(skip_mode), 'redlight.skip_intro_all_episodes': 'true'}
+        monkeypatch.setattr(st, 'get_setting', lambda k, d=None, v=values: v.get(k, d))
+        p._binge_consecutive = True
+        _fetch_started(p, monkeypatch)
+        assert not getattr(p, '_intro_skip_active', False)
+
+
+def test_other_show_still_skips(monkeypatch):
+    p, props = _setup(monkeypatch, binge=False, skip_mode=2, play_type='autoplay_nextep')
+    values = {'redlight.intro_skip_excluded_shows': '55', 'redlight.autoplay_skip_intro': '2', 'redlight.skip_intro_all_episodes': 'true'}
+    monkeypatch.setattr(st, 'get_setting', lambda k, d=None: values.get(k, d))
+    _fetch_started(p, monkeypatch)
+    assert p._intro_skip_active

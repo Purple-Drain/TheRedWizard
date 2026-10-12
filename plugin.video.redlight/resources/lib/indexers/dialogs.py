@@ -1342,6 +1342,19 @@ def lists_cache_duration_choice(params={}):
 	set_setting('lists_cache_duraton', choice['duration'])
 	set_setting('lists_cache_duraton_display_name', choice['name'])
 
+def toggle_intro_skip_excluded(tmdb_id, rootname=''):
+	'''#263: flip the show in or out of the never-auto-skip-intro list.'''
+	ids = settings.intro_skip_excluded_shows()
+	tmdb_id = str(tmdb_id)
+	if tmdb_id in ids:
+		ids = [i for i in ids if i != tmdb_id]
+		message = 'Intro will auto skip again for %s' % rootname
+	else:
+		ids.append(tmdb_id)
+		message = 'Intro will never auto skip for %s' % rootname
+	set_setting('intro_skip_excluded_shows', ','.join(ids))
+	kodi_utils.notification(message)
+
 def options_menu_choice(params, meta=None):
 	from caches.episode_groups_cache import episode_groups_cache
 	from modules.utils import get_datetime
@@ -1379,6 +1392,7 @@ def options_menu_choice(params, meta=None):
 	if menu_type == 'tvshow': listing_append(('Play Random', 'Based On %s' % rootname, 'random'))
 	if menu_type in ('tvshow', 'season'):
 		listing_append(('Assign an Episode Group to %s' % rootname, 'Currently %s' % episode_groups_cache.get(tmdb_id).get('name', 'None'), 'episode_group'))
+		listing_append(('Never Auto Skip Intro for %s' % rootname, 'Currently %s' % ('On' if settings.intro_skip_excluded(tmdb_id) else 'Off'), 'toggle_intro_skip_excluded'))
 	if menu_type in ('movie', 'episode') or menu_type in single_ep_list:
 		base_str1, base_str2, on_str, off_str = '%s%s', 'Currently: [B]%s[/B]', 'On', 'Off'
 		if settings.auto_play(content): autoplay_status, autoplay_toggle, quality_setting = on_str, 'false', 'autoplay_quality_%s' % content
@@ -1400,6 +1414,7 @@ def options_menu_choice(params, meta=None):
 		listing_append((base_str1 % ('', 'Enable Scrapers'), base_str2 % current_scrapers_status, 'enable_scrapers'))
 		if menu_type == 'episode' or menu_type in single_ep_list:
 			listing_append(('Assign an Episode Group to %s' % rootname, base_str2 % episode_groups_cache.get(tmdb_id).get('name', 'None'), 'episode_group'))
+			listing_append(('Never Auto Skip Intro for %s' % rootname, base_str2 % ('On' if settings.intro_skip_excluded(tmdb_id) else 'Off'), 'toggle_intro_skip_excluded'))
 	if not from_extras:
 		if menu_type in ('movie', 'tvshow'):
 			listing_append(('Re-Cache %s Info' % ('Movies' if menu_type == 'movie' else 'TV Shows'), 'Clear %s Cache' % rootname, 'clear_media_cache'))
@@ -1476,6 +1491,8 @@ def options_menu_choice(params, meta=None):
 		enable_scrapers_choice({'icon': poster})
 	elif choice == 'episode_group':
 		assign_episode_group_choice({'meta': meta, 'poster': poster})
+	elif choice == 'toggle_intro_skip_excluded':
+		toggle_intro_skip_excluded(tmdb_id, rootname)
 	options_menu_choice(params, meta=meta)
 
 def extras_menu_choice(params):
