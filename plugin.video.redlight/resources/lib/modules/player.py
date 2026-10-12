@@ -2465,6 +2465,9 @@ class RedLightPlayer(xbmc.Player):
 		play_type = getattr(self.sources_object, 'play_type', '')
 		if self.media_type != 'episode':
 			return
+		if st.intro_skip_excluded(self.tmdb_id):
+			# #263: the owner likes this show's intro, so no skip and no prompt in any mode.
+			return
 		binge = st.binge_skip_intro()
 		if binge:
 			# #260: the sitting decides, not the Skip Intro mode. First episode: the intro plays. After that:
