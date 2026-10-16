@@ -21,6 +21,9 @@ Two consumption paths for the same computation, both documented on the PR:
     playback.media route in-process (Sources().playback_prep(), the same call player_check()
     makes for playback.media) rather than issuing a second plugin invocation.
 
+A show with no watch history at all has no Next Episodes row; both routes then use S1E1 (#266).
+A show that has history but nothing next (fully watched) is unchanged: no row, no playback.
+
 Both accept &query=<show name> instead of &tmdb_id, resolved through the existing TMDb search
 (apis.tmdb_api.tmdb_tv_search) -- first result wins. Neither touches player.py or the
 play_file/resolve region of sources.py: playback still goes through Sources().playback_prep()
@@ -107,6 +110,36 @@ def _find_next_episode_row(tmdb_id):
 	return None
 
 
+def first_episode_row_params(tmdb_id):
+	"""playback.media params for S1E1 of tmdb_id, shaped like a Next Episodes widget row (#266).
+
+	Pure, so it is unit-tested directly. Season 1 (never season 0 specials), episode 1.
+	"""
+	return {'mode': 'playback.media', 'media_type': 'episode', 'tmdb_id': str(int(tmdb_id)),
+			'season': '1', 'episode': '1', 'playcount': '0', 'media': 'media'}
+
+
+def _has_watch_history(tmdb_id):
+	"""True when Red Light's watched database (for the active watched indicator) holds any
+	episode of this show. Decides "never started" (play S1E1) vs "fully watched" (do nothing).
+	"""
+	from modules import watched_status as ws
+	from modules.settings import watched_indicators
+	try:
+		return bool(ws.watched_info_episode(tmdb_id, ws.get_database(watched_indicators())))
+	except Exception:
+		return True  # unknown: fail closed, never restart a show from S1E1 on a read error
+
+
+def _first_episode_fallback(tmdb_id):
+	"""(play_url, row_params, title) for S1E1 when the show was never started, else None (#266)."""
+	if _has_watch_history(tmdb_id):
+		return None
+	from urllib.parse import urlencode
+	row_params = first_episode_row_params(tmdb_id)
+	return 'plugin://plugin.video.redlight/?' + urlencode(row_params), row_params, ''
+
+
 def _row_title(listitem):
 	try:
 		return listitem.getVideoInfoTag().getTitle() or listitem.getLabel()
@@ -134,8 +167,12 @@ def next_episode_info(params):
 		row = _find_next_episode_row(tmdb_id)
 		if row:
 			play_params, row_params, listitem = row
-			payload = next_episode_payload(int(row_params.get('season')), int(row_params.get('episode')),
-											_row_title(listitem), play_params)
+			title = _row_title(listitem)
+		else:
+			fallback = _first_episode_fallback(tmdb_id)
+			play_params, row_params, title = fallback if fallback else (None, None, '')
+		if row_params:
+			payload = next_episode_payload(int(row_params.get('season')), int(row_params.get('episode')), title, play_params)
 			found = True
 	body = json.dumps(payload)
 	kodi_utils.set_property(WINDOW_PROPERTY, body)
@@ -161,10 +198,14 @@ def playback_next_episode(params):
 		kodi_utils.ok_dialog('Red Light', 'Next episode: no tmdb_id and no matching &query show')
 		return False
 	row = _find_next_episode_row(tmdb_id)
-	if not row:
-		kodi_utils.ok_dialog('Red Light', 'Next episode: nothing next for this show')
-		return False
-	play_params, row_params, _listitem = row
+	if row:
+		play_params, row_params, _listitem = row
+	else:
+		fallback = _first_episode_fallback(tmdb_id)
+		if not fallback:
+			kodi_utils.ok_dialog('Red Light', 'Next episode: nothing next for this show')
+			return False
+		play_params, row_params, _title = fallback
 	from modules.sources import Sources
 	Sources().playback_prep(row_params)
 	return True
