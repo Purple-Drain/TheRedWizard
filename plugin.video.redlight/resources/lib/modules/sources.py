@@ -3028,6 +3028,9 @@ class Sources():
 				self._make_progress_dialog()
 			if self._nextep_aio_en_fresh_start(source):
 				self.playback_percent = 0.0
+			# #268: with Next Episode Resume off, any next-episode play (autoplay, Next key, Play # Episodes) starts at 0.
+			elif self._is_nextep_playback() and not settings.nextep_adopt_resume():
+				self.playback_percent = 0.0
 			elif adopting:
 				self.playback_percent = self._adopt_resume_percent()
 			else:
