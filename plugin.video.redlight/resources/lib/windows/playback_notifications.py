@@ -321,7 +321,7 @@ class IntroSkipPrompt(BaseDialog):
 			self.close()
 
 	def onClick(self, controlID):
-		self.selected = {10: True, 11: False}[controlID]
+		self.selected = {10: True, 11: False, 12: False}[controlID]
 		self.closed = True
 		self.close()
 

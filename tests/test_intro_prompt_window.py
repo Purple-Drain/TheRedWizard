@@ -84,3 +84,13 @@ def test_prompt_stays_up_through_the_intro_and_closes_when_it_ends():
     prompt.monitor()
     assert shown == ['  |  starts in 10 s', '  |  ends in 0:48', '  |  ends in 0:01']
     assert prompt.timed_out is True and closed == [1]
+
+
+def test_close_button_hides_the_prompt_like_no():
+    from windows.playback_notifications import IntroSkipPrompt
+    for control_id, expected in ((10, True), (11, False), (12, False)):
+        prompt = object.__new__(IntroSkipPrompt)
+        prompt.selected, prompt.closed, closed = None, False, []
+        prompt.close = lambda: closed.append(1)
+        prompt.onClick(control_id)
+        assert prompt.selected is expected and prompt.closed and closed == [1]
