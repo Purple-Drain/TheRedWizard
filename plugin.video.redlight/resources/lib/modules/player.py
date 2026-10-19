@@ -86,8 +86,8 @@ _NEXTEP_CLOSE_EARLY_PLAY_SEC = 4
 _NEXTEP_CLOSE_POLL_MS = 250
 _RESUME_CHECKPOINT_INTERVAL_SEC = 60
 _INTRO_SKIP_PROMPT_EARLY_SEC = 15
-_INTRO_SKIP_PROMPT_COUNTDOWN_SEC = 15
-_INTRO_SKIP_EARLY_START_SEC = 120
+# #272: the prompt opens this long before the intro starts and stays until it ends.
+_INTRO_SKIP_PROMPT_LEAD_SEC = 5
 _INTRO_SKIP_SETTLE_SEC = 4
 _INTRO_SKIP_SETTLE_MAX_WAIT_SEC = 12
 _INTRO_SKIP_SETTLE_JUMP_SEC = 20
@@ -2624,15 +2624,25 @@ class RedLightPlayer(xbmc.Player):
 		self._log_intro_skip('Intro skip (%s): %.1fs -> %.1fs' % (source, start_sec, end_sec))
 		return True
 
-	def _prompt_intro_skip(self):
-		if not self._player_is_active():
-			return False
-		try:
-			from windows.base_window import open_window
-			return open_window(('windows.playback_notifications', 'IntroSkipPrompt'), 'playback_notifications.xml',
-				meta=self.meta, countdown_sec=_INTRO_SKIP_PROMPT_COUNTDOWN_SEC)
-		except:
-			return False
+	def _prompt_intro_skip(self, start_sec, end_sec):
+		"""#272: the prompt runs on its own thread so this monitor keeps ticking (and can claim a
+		next-episode skip). Yes approves the skip, which the next tick performs once the intro starts;
+		No, Back or the intro ending without an answer closes the intro skip for this play."""
+		if not self._player_is_active(): return
+		def _show():
+			try:
+				from windows.base_window import open_window
+				choice = open_window(('windows.playback_notifications', 'IntroSkipPrompt'), 'playback_notifications.xml',
+					meta=self.meta, start_sec=start_sec, end_sec=end_sec)
+			except Exception as exc:
+				ku.logger('Red Light', 'Intro skip prompt failed: %s' % exc)
+				choice = False
+			if choice:
+				self._intro_skip_approved = True
+				return
+			self._intro_skip_done = True
+			self._log_intro_skip('Intro skip: timed out' if choice is None else 'Intro skip: declined')
+		self._spawn(_show, name='intro_skip_prompt', daemon=True)
 
 	def _maybe_apply_intro_skip(self):
 		if not getattr(self, '_intro_skip_active', False) or getattr(self, '_intro_skip_done', False):
@@ -2659,23 +2669,9 @@ class RedLightPlayer(xbmc.Player):
 			if not self._intro_skip_position_settled():
 				return
 			effective_curr = self._intro_effective_playhead()
-			should_prompt = (start_sec <= _INTRO_SKIP_EARLY_START_SEC and effective_curr <= _INTRO_SKIP_PROMPT_EARLY_SEC) or (effective_curr >= start_sec and effective_curr < end_sec)
-			if should_prompt:
-				choice = self._prompt_intro_skip()
+			if start_sec - _INTRO_SKIP_PROMPT_LEAD_SEC <= effective_curr < end_sec:
 				self._intro_skip_prompt_answered = True
-				if choice is None:
-					self._intro_skip_done = True
-					self._log_intro_skip('Intro skip: timed out')
-					return
-				if not choice:
-					self._intro_skip_done = True
-					self._log_intro_skip('Intro skip: declined')
-					return
-				self._intro_skip_approved = True
-				try:
-					curr = float(self.curr_time)
-				except:
-					return
+				self._prompt_intro_skip(start_sec, end_sec)
 		if not getattr(self, '_intro_skip_approved', False):
 			return
 		if self._intro_skip_past_segment(segment):
