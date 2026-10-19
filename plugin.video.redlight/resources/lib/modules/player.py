@@ -2321,7 +2321,7 @@ class RedLightPlayer(xbmc.Player):
 		try:
 			from apis.intro_skip_api import resolve_credits_start_sec
 			duration = float(self.total_time) if self.total_time else None
-			start_sec = resolve_credits_start_sec(self.tmdb_id, self.imdb_id, self.season, self.episode, duration)
+			start_sec = resolve_credits_start_sec(self.tmdb_id, self.imdb_id, self.season, self.episode, duration, premiered=self.meta_get('premiered'))
 		except:
 			start_sec = None
 		setattr(self, cache_attr, start_sec)
@@ -2501,7 +2501,7 @@ class RedLightPlayer(xbmc.Player):
 				try:
 					if total not in (None, '', 0, 0.0): duration = float(total)
 				except: pass
-				segment = resolve_intro_segment(self.tmdb_id, self.imdb_id, self.season, self.episode, duration)
+				segment = resolve_intro_segment(self.tmdb_id, self.imdb_id, self.season, self.episode, duration, premiered=self.meta_get('premiered'))
 				if segment and not getattr(self, '_intro_skip_segment', None):
 					self._intro_skip_segment = segment
 			except: pass
@@ -2548,7 +2548,11 @@ class RedLightPlayer(xbmc.Player):
 			return
 		self._intro_skip_no_timing_logged = True
 		self._intro_skip_done = True
-		self._log_intro_skip('Intro skip: no timing (api miss, chapters rejected)')
+		try:
+			from apis.intro_skip_api import lookup_status
+			why = lookup_status(self.tmdb_id, self.imdb_id, self.season, self.episode)
+		except Exception: why = 'unknown'
+		self._log_intro_skip('Intro skip: no timing (%s, chapters rejected)' % why)
 
 	def _intro_resume_sec(self):
 		if self.playback_percent and float(self.playback_percent) > 0:

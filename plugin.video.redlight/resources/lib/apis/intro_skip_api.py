@@ -9,6 +9,56 @@ _API_TIMEOUT = 6
 _MIN_SEGMENT_SEC = 10
 _MIN_END_SEC = 15
 _MAX_SEGMENT_SEC = 600
+# #270: an empty answer is rechecked daily while the episode is new (community timings arrive within
+# days of air); only an older episode keeps the long life. A failed request is never cached.
+_EMPTY_CACHE_HOURS = 24
+_OLD_EPISODE_DAYS = 30
+_status = {}
+
+
+class _LookupFailed(Exception):
+	pass
+
+
+def _failure(exc):
+	if isinstance(exc, requests.exceptions.Timeout): return 'timeout'
+	if isinstance(exc, _LookupFailed): return str(exc)
+	return 'error %s' % type(exc).__name__
+
+
+def _get_json(url, params):
+	'''One provider request. 404 is a clean "no data"; any other failure raises _LookupFailed.'''
+	try:
+		response = requests.get(url, params=params, timeout=_API_TIMEOUT)
+	except Exception as exc:
+		raise _LookupFailed(_failure(exc))
+	if response.status_code == 404:
+		return None
+	if response.status_code != 200:
+		raise _LookupFailed('HTTP %s' % response.status_code)
+	try:
+		return response.json()
+	except Exception:
+		raise _LookupFailed('bad JSON')
+
+
+def _empty_cache_hours(premiered=None):
+	'''24 h for a new or unknown-age episode, the long life once it is older than _OLD_EPISODE_DAYS.'''
+	try:
+		import datetime
+		aired = datetime.datetime.strptime(str(premiered)[:10], '%Y-%m-%d').date()
+		if (datetime.date.today() - aired).days > _OLD_EPISODE_DAYS:
+			return _CACHE_HOURS
+	except Exception:
+		pass
+	return _EMPTY_CACHE_HOURS
+
+
+def lookup_status(tmdb_id, imdb_id, season, episode):
+	'''Why the last intro lookup for this episode found nothing, for the "no timing" log line.'''
+	try: key = _intro_cache_key(tmdb_id, imdb_id, int(season), int(episode))
+	except Exception: return 'unknown'
+	return _status.get(key, 'cached miss')
 
 
 def _intro_cache_key(tmdb_id, imdb_id, season, episode):
@@ -50,7 +100,7 @@ def prefetch_credits_start(tmdb_id, imdb_id, season, episode, duration_sec=None)
 		pass
 
 
-def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None):
+def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None, premiered=None):
 	try:
 		season, episode = int(season), int(episode)
 	except:
@@ -65,16 +115,24 @@ def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None):
 			segment['source'] = cached.get('source', 'introdb')
 			return segment
 		main_cache.set(cache_key, '', expiration=_CACHE_HOURS)
-	segment = None
+	segment, failures = None, []
 	if tmdb_id not in (None, '', 'None', '0000000'):
-		segment = _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec)
+		segment = _attempt(_fetch_theintrodb_intro, failures, tmdb_id, season, episode, duration_sec)
 	if not segment and imdb_id not in (None, '', 'None', 'tt0000000'):
-		segment = _fetch_introdb_intro(imdb_id, season, episode)
-	main_cache.set(cache_key, segment or '', expiration=_CACHE_HOURS)
+		segment = _attempt(_fetch_introdb_intro, failures, imdb_id, season, episode)
+	if segment:
+		_status[cache_key] = 'found'
+		main_cache.set(cache_key, segment, expiration=_CACHE_HOURS)
+	elif failures:
+		# #270: a failed request is not "no intro"; leave it uncached so the next play asks again.
+		_status[cache_key] = 'api error (%s)' % ', '.join(failures)
+	else:
+		_status[cache_key] = 'api miss'
+		main_cache.set(cache_key, '', expiration=_empty_cache_hours(premiered))
 	return segment
 
 
-def resolve_credits_start_sec(tmdb_id, imdb_id, season, episode, duration_sec=None):
+def resolve_credits_start_sec(tmdb_id, imdb_id, season, episode, duration_sec=None, premiered=None):
 	try:
 		season, episode = int(season), int(episode)
 	except:
@@ -83,13 +141,24 @@ def resolve_credits_start_sec(tmdb_id, imdb_id, season, episode, duration_sec=No
 	cached = main_cache.get(cache_key)
 	if cached is not None:
 		return cached or None
-	start_sec = None
+	start_sec, failures = None, []
 	if tmdb_id not in (None, '', 'None', '0000000'):
-		start_sec = _fetch_theintrodb_credits(tmdb_id, season, episode, duration_sec)
+		start_sec = _attempt(_fetch_theintrodb_credits, failures, tmdb_id, season, episode, duration_sec)
 	if start_sec is None and imdb_id not in (None, '', 'None', 'tt0000000'):
-		start_sec = _fetch_introdb_outro(imdb_id, season, episode, duration_sec)
-	main_cache.set(cache_key, start_sec if start_sec is not None else '', expiration=_CACHE_HOURS)
+		start_sec = _attempt(_fetch_introdb_outro, failures, imdb_id, season, episode, duration_sec)
+	if start_sec is not None:
+		main_cache.set(cache_key, start_sec, expiration=_CACHE_HOURS)
+	elif not failures:
+		main_cache.set(cache_key, '', expiration=_empty_cache_hours(premiered))
 	return start_sec
+
+
+def _attempt(fetch, failures, *args):
+	try:
+		return fetch(*args)
+	except _LookupFailed as exc:
+		failures.append(str(exc))
+		return None
 
 
 def _valid_start_sec(start_sec, duration_sec=None):
@@ -161,10 +230,9 @@ def _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec=None):
 				params['durationMs'] = int(float(duration_sec) * 1000)
 			except:
 				pass
-		response = requests.get(THEINTRODB_URL, params=params, timeout=_API_TIMEOUT)
-		if response.status_code != 200:
+		data = _get_json(THEINTRODB_URL, params)
+		if not data:
 			return None
-		data = response.json()
 		intro_list = data.get('intro') or []
 		if not intro_list:
 			return None
@@ -173,6 +241,8 @@ def _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec=None):
 		if segment:
 			segment['source'] = 'theintrodb'
 		return segment
+	except _LookupFailed:
+		raise
 	except:
 		return None
 
@@ -180,10 +250,9 @@ def _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec=None):
 def _fetch_introdb_intro(imdb_id, season, episode):
 	try:
 		params = {'imdb_id': str(imdb_id), 'season': season, 'episode': episode, 'segment_type': 'intro'}
-		response = requests.get(INTRODB_URL, params=params, timeout=_API_TIMEOUT)
-		if response.status_code != 200:
+		data = _get_json(INTRODB_URL, params)
+		if not data:
 			return None
-		data = response.json()
 		intro = data.get('intro')
 		if not intro or not isinstance(intro, dict):
 			return None
@@ -193,6 +262,8 @@ def _fetch_introdb_intro(imdb_id, season, episode):
 		if segment:
 			segment['source'] = 'introdb'
 		return segment
+	except _LookupFailed:
+		raise
 	except:
 		return None
 
@@ -200,12 +271,14 @@ def _fetch_introdb_intro(imdb_id, season, episode):
 def _fetch_introdb_outro(imdb_id, season, episode, duration_sec=None):
 	try:
 		params = {'imdb_id': str(imdb_id), 'season': season, 'episode': episode}
-		response = requests.get(INTRODB_URL, params=params, timeout=_API_TIMEOUT)
-		if response.status_code != 200:
+		data = _get_json(INTRODB_URL, params)
+		if not data:
 			return None
-		outro = response.json().get('outro') or {}
+		outro = data.get('outro') or {}
 		start_sec = _parse_start_value(outro.get('start_sec', outro.get('start_ms')))
 		return _valid_start_sec(start_sec, duration_sec)
+	except _LookupFailed:
+		raise
 	except:
 		return None
 
@@ -218,15 +291,17 @@ def _fetch_theintrodb_credits(tmdb_id, season, episode, duration_sec=None):
 				params['durationMs'] = int(float(duration_sec) * 1000)
 			except:
 				pass
-		response = requests.get(THEINTRODB_URL, params=params, timeout=_API_TIMEOUT)
-		if response.status_code != 200:
+		data = _get_json(THEINTRODB_URL, params)
+		if not data:
 			return None
-		credits_list = response.json().get('credits') or []
+		credits_list = data.get('credits') or []
 		if not credits_list:
 			return None
 		entry = credits_list[0]
 		if entry.get('start_ms') is None:
 			return None
 		return _valid_start_sec(int(entry['start_ms']) / 1000.0, duration_sec)
+	except _LookupFailed:
+		raise
 	except:
 		return None
