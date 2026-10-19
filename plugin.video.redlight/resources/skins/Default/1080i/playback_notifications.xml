@@ -175,7 +175,7 @@
                     <left>80</left>
                     <aligny>center</aligny>
                     <height>40</height>
-                    <label>[B]$INFO[Window.Property(still_watching_heading)]...$INFO[Window.Property(pause_timer)][/B]</label>
+                    <label>[B]$INFO[Window.Property(still_watching_heading)]$INFO[Window.Property(pause_timer)][/B]</label>
                     <font>font14</font> <!-- REDLIGHT_33 -->
                     <textcolor>FFFFFFFF</textcolor>
                     <shadowcolor>FF000000</shadowcolor>

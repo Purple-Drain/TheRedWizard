@@ -286,14 +286,18 @@ class StillWatching(BaseDialog):
 			self.close()
 
 class IntroSkipPrompt(BaseDialog):
+	"""#272: shown from a few seconds before the intro until it ends. No countdown. It runs on its own
+	thread (player.py), so the player's monitor is never blocked; Back or No hides it for good."""
 	def __init__(self, *args, **kwargs):
 		BaseDialog.__init__(self, *args)
 		self.closed = False
 		self.selected = False
 		self.timed_out = False
 		self.meta = kwargs.get('meta')
-		try: self.countdown_sec = max(5, int(kwargs.get('countdown_sec', 15)))
-		except: self.countdown_sec = 15
+		try: self.start_sec = float(kwargs.get('start_sec', 0))
+		except: self.start_sec = 0.0
+		try: self.end_sec = float(kwargs.get('end_sec', 0))
+		except: self.end_sec = 0.0
 		self.set_properties()
 
 	def onInit(self):
@@ -321,20 +325,6 @@ class IntroSkipPrompt(BaseDialog):
 		self.closed = True
 		self.close()
 
-	def _skip_requested(self):
-		"""#1 (W-280926-3): the player's monitor is blocked in this modal, so a next-episode skip in
-		the intro window went unclaimed and fell back to the stop. Decline the intro skip, close, and
-		ack so request_skip_episode does not stop; the skip flag stays set for the monitor's next tick,
-		which claims it the usual way."""
-		from modules.kodi_utils import get_property, set_property, logger
-		if get_property('redlight.skip_episode_requested') != 'true': return False
-		set_property('redlight.skip_episode_ack', 'true')
-		self.selected = False
-		self.closed = True
-		logger('Red Light', 'Intro skip prompt: next-episode skip requested, closing')
-		self.close()
-		return True
-
 	def set_properties(self):
 		fanart, clearlogo = self.meta.get('fanart', ''), self.meta.get('clearlogo', '')
 		self.setProperty('mode', 'skip_intro')
@@ -349,23 +339,27 @@ class IntroSkipPrompt(BaseDialog):
 		self.setProperty('still_watching_heading', 'Skip Intro?')
 		self.setProperty('pause_timer', '')
 
+	def _status_text(self, curr):
+		if curr < self.start_sec: return '  |  starts in %d s' % max(1, int(round(self.start_sec - curr)))
+		remaining = max(0, int(self.end_sec - curr))
+		return '  |  ends in %d:%02d' % divmod(remaining, 60)
+
 	def monitor(self):
-		pause_timer = self.countdown_sec
+		from modules.kodi_utils import get_property, logger
 		try:
-			while not self.closed and pause_timer >= 0:
-				self.setProperty('pause_timer', '%02d %s' % (pause_timer, 'seconds' if pause_timer > 1 else 'second'))
-				self.sleep(1000)
-				if self.closed:
+			while not self.closed:
+				# The player's monitor is free in this mode and claims a next-episode skip itself; only
+				# get out of the way.
+				if get_property('redlight.skip_episode_requested') == 'true':
+					logger('Red Light', 'Intro skip prompt: next-episode skip requested, closing')
+					self.selected, self.closed = False, True
+					self.close()
 					return
-				if self._skip_requested(): return
-				# #199: a skip to the end during the prompt ends playback; close now instead of holding
-				# the player's monitor (and the screen) for the rest of the countdown.
-				try:
-					if not self.player.isPlayingVideo() and not self.player.isPlaying(): break
-				except: pass
-				if pause_timer == 0:
-					break
-				pause_timer -= 1
+				if not self.player.isPlayingVideo() and not self.player.isPlaying(): break
+				curr = float(self.player.getTime())
+				if self.end_sec and curr >= self.end_sec: break
+				self.setProperty('pause_timer', self._status_text(curr))
+				self.sleep(500)
 		except:
 			pass
 		if not self.closed:

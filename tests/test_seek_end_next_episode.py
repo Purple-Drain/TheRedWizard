@@ -94,7 +94,7 @@ def test_intro_prompt_closes_once_playback_stops():
     """#199: the prompt held the monitor for its whole countdown after a skip ended playback."""
     from windows.playback_notifications import IntroSkipPrompt
     prompt = object.__new__(IntroSkipPrompt)
-    prompt.closed, prompt.timed_out, prompt.countdown_sec = False, False, 15
+    prompt.closed, prompt.timed_out, prompt.start_sec, prompt.end_sec = False, False, 60.0, 110.0
     ticks = []
     prompt.setProperty = lambda *a: None
     prompt.sleep = lambda ms: ticks.append(ms)
@@ -102,7 +102,7 @@ def test_intro_prompt_closes_once_playback_stops():
     prompt.player = type('P', (), {'isPlayingVideo': lambda self: False, 'isPlaying': lambda self: False})()
     prompt.monitor()
     assert prompt.timed_out is True
-    assert len(ticks) == 1
+    assert ticks == []
 
 
 # #199 C7: 'play next episode now' (mode=playback.skip_episode).
