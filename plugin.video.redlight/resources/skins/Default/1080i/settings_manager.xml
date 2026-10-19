@@ -1380,14 +1380,6 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
-                          <property name="setting_label">Next Episode: Resume a Started Episode</property>
-                          <property name="setting_type">boolean</property>
-                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.adopt_resume)]</property>
-                          <property name="setting_description">When the remote's Next key moves straight on to the next episode and that episode has a saved position (a rewatch), resume from it. Off: start it from the beginning. There is no Resume prompt on this path.</property>
-                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.adopt_resume)</onclick>
-                      </item>
-                      <item>
-                          <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Next Up On The OSD</property>
                           <property name="setting_type">boolean</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.osd_dialog)]</property>
@@ -4345,6 +4337,14 @@
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.autoplay_alert_timing_name)]</property>
                           <property name="setting_description">Choose when to show the Next Episode alert. Uses the percentage above, chapter markers, IntroDB Info (TheIntroDB credits then IntroDB outro), or Subtitles Info when a SubMaker manifest URL and/or OpenSubtitles account is configured under Subtitles below. Subtitles Info follows cues in the subtitle file (not the on-screen credits roll), so timing can vary by episode. Falls back to Playback Percentage when unavailable</property>
                           <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_from_list&amp;setting_id=autoplay_alert_timing)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Next Episode: Resume a Started Episode</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.adopt_resume)]</property>
+                          <property name="setting_description">When Red Light moves on to the next episode (autoplay, the remote's Next key, or Play # Episodes) and that episode has a saved position (a rewatch), resume from it. Off: start it from the beginning. A play started from a widget or menu keeps its own resume behaviour. There is no Resume prompt on this path.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.adopt_resume)</onclick>
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
