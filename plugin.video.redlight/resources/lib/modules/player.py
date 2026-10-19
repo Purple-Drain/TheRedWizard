@@ -88,6 +88,8 @@ _RESUME_CHECKPOINT_INTERVAL_SEC = 60
 _INTRO_SKIP_PROMPT_EARLY_SEC = 15
 # #272: the prompt opens this long before the intro starts and stays until it ends.
 _INTRO_SKIP_PROMPT_LEAD_SEC = 5
+# #265: a jump shorter than this is skipped; the intro is nearly over anyway.
+_INTRO_SKIP_MIN_JUMP_SEC = 3
 _INTRO_SKIP_SETTLE_SEC = 4
 _INTRO_SKIP_SETTLE_MAX_WAIT_SEC = 12
 _INTRO_SKIP_SETTLE_JUMP_SEC = 20
@@ -2599,29 +2601,31 @@ class RedLightPlayer(xbmc.Player):
 		except: pass
 		return False
 
-	def _execute_intro_skip_seek(self, start_sec, end_sec, source):
+	def _execute_intro_skip_seek(self, start_sec, end_sec, source, target_sec=None):
+		"""#265: target_sec is where the seek lands (end_sec less the Keep At The End seconds)."""
+		if target_sec is None: target_sec = end_sec
 		if not self._player_is_active():
 			self._log_intro_skip('Intro skip failed: player inactive')
 			return False
-		if not self.seek(end_sec, False):
+		if not self.seek(target_sec, False):
 			self._log_intro_skip('Intro skip failed: seek rejected')
 			return False
 		try:
 			ku.sleep(400)
 			actual = float(self.getTime())
-			if abs(actual - end_sec) > 8:
-				if not self.seek(end_sec, False):
-					self._log_intro_skip('Intro skip failed: seek did not stick (at %.1fs, wanted %.1fs)' % (actual, end_sec))
+			if abs(actual - target_sec) > 8:
+				if not self.seek(target_sec, False):
+					self._log_intro_skip('Intro skip failed: seek did not stick (at %.1fs, wanted %.1fs)' % (actual, target_sec))
 					return False
 				ku.sleep(400)
 				actual = float(self.getTime())
-				if abs(actual - end_sec) > 8:
-					self._log_intro_skip('Intro skip failed: seek did not stick (at %.1fs, wanted %.1fs)' % (actual, end_sec))
+				if abs(actual - target_sec) > 8:
+					self._log_intro_skip('Intro skip failed: seek did not stick (at %.1fs, wanted %.1fs)' % (actual, target_sec))
 					return False
 		except Exception as exc:
 			self._log_intro_skip('Intro skip failed: seek verify (%s)' % exc)
 			return False
-		self._log_intro_skip('Intro skip (%s): %.1fs -> %.1fs' % (source, start_sec, end_sec))
+		self._log_intro_skip('Intro skip (%s): %.1fs -> %.1fs (intro %.1fs to %.1fs)' % (source, actual, target_sec, start_sec, end_sec))
 		return True
 
 	def _prompt_intro_skip(self, start_sec, end_sec):
@@ -2678,14 +2682,20 @@ class RedLightPlayer(xbmc.Player):
 			self._log_intro_skip('Intro skip missed: past grace window')
 			self._intro_skip_done = True
 			return
-		if curr < start_sec:
+		# #265: let the first seconds of the intro play, and land before its end, not on a hard cut.
+		if curr < start_sec + st.intro_skip_keep_start_sec():
 			return
 		if curr >= end_sec:
 			self._intro_skip_done = True
 			self._log_intro_skip('Intro skip: already past intro (%.1fs >= %.1fs)' % (curr, end_sec))
 			return
+		target_sec = max(end_sec - st.intro_skip_keep_end_sec(), start_sec)
+		if target_sec - curr < _INTRO_SKIP_MIN_JUMP_SEC:
+			self._intro_skip_done = True
+			self._log_intro_skip('Intro skip: %.1fs left to the landing point, not worth a jump' % (target_sec - curr))
+			return
 		try:
-			if self._execute_intro_skip_seek(start_sec, end_sec, segment.get('source', '?')):
+			if self._execute_intro_skip_seek(start_sec, end_sec, segment.get('source', '?'), target_sec):
 				self._intro_skip_done = True
 		except Exception as exc:
 			self._log_intro_skip('Intro skip failed: %s' % exc)

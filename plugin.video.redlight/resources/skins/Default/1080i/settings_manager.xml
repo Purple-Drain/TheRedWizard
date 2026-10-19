@@ -4216,6 +4216,22 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Skip Intro: Keep Seconds At The Start</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.intro_skip_keep_start)]</property>
+                          <property name="setting_description">An intro skip waits this many seconds into the intro before it jumps, so the start of the theme still plays. 0 jumps the moment the intro begins. 0 to 15. Default 2</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=intro_skip_keep_start)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
+                          <property name="setting_label">Skip Intro: Keep Seconds At The End</property>
+                          <property name="setting_type">numeric</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.intro_skip_keep_end)]</property>
+                          <property name="setting_description">An intro skip lands this many seconds before the intro ends, so the closing bars play instead of a hard cut into the episode. 0 lands right at the end. 0 to 15. Default 5</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_numeric&amp;setting_id=intro_skip_keep_end)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(80)</visible>
                           <visible>String.IsEqual(Window(10000).Property(redlight.auto_play_episode),false)</visible>
                           <property name="setting_label">Autoscrape Next Episode</property>
                           <property name="setting_type">boolean</property>
