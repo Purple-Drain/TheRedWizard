@@ -1637,6 +1637,8 @@ def default_settings():
 {'setting_id': 'binge_skip_intro', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'intro_skip_excluded_shows', 'setting_type': 'string', 'setting_default': ''},
 {'setting_id': 'binge_sitting_gap_min', 'setting_type': 'action', 'setting_default': '30', 'min_value': '1', 'max_value': '720'},
+{'setting_id': 'intro_skip_keep_start', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0', 'max_value': '15'},
+{'setting_id': 'intro_skip_keep_end', 'setting_type': 'action', 'setting_default': '5', 'min_value': '0', 'max_value': '15'},
 {'setting_id': 'autoplay_watching_check', 'setting_type': 'action', 'setting_default': '3', 'min_value': '0', 'max_value': '5'},
 {'setting_id': 'autoscrape_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoscrape_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
