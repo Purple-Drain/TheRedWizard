@@ -2,11 +2,13 @@
 """#1 C428: Red Light's Next Up dialog on OSD open, without blocking the monitor."""
 import modules.sources as sources_mod
 from modules import player as player_mod
+from modules import settings as st
 from modules.player import RedLightPlayer
 
 
-def _player(monkeypatch, osd=True, ready=True, props=None):
+def _player(monkeypatch, osd=True, ready=True, props=None, setting='true'):
     props = {} if props is None else props
+    monkeypatch.setattr(st, 'get_setting', lambda k, d=None: setting if k == 'redlight.nextep.osd_dialog' else d)
     monkeypatch.setattr(player_mod.ku, 'get_visibility', lambda c: osd)
     monkeypatch.setattr(player_mod.ku, 'get_property', lambda k: props.get(k, ''))
     monkeypatch.setattr(player_mod.ku, 'logger', lambda *a: None)
@@ -31,6 +33,14 @@ def test_opens_once_per_osd_opening_on_its_own_thread(monkeypatch):
     monkeypatch.setattr(player_mod.ku, 'get_visibility', lambda c: True)
     p._maybe_osd_nextup()
     assert spawned == ['osd_nextup', 'osd_nextup']
+
+
+def test_off_by_default_so_the_osd_keeps_its_focus(monkeypatch):
+    p, spawned = _player(monkeypatch, setting='false')
+    p._maybe_osd_nextup()
+    assert spawned == []
+    monkeypatch.setattr(st, 'get_setting', lambda k, d=None: d)
+    assert st.nextep_osd_dialog() is False
 
 
 def test_not_without_a_prepared_episode_or_during_a_skip(monkeypatch):

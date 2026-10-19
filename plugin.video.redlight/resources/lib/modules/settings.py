@@ -1291,6 +1291,11 @@ def nextep_adopt_resume():
 	from its bookmark (True, default) or starts over (False). There is no Resume? prompt there."""
 	return get_setting('redlight.nextep.adopt_resume', 'true') == 'true'
 
+def nextep_osd_dialog():
+	'''#277: show Red Light's own "next episode ready" pop-up over the OSD (True) or leave the OSD to the
+	skin's next-episode button (False, default). The pop-up is a separate window and takes focus.'''
+	return get_setting('redlight.nextep.osd_dialog', 'false') == 'true'
+
 def nextep_rewatch_continue():
 	"""#1 C407: after starting an already watched episode, Next Episodes continues from it (True)
 	or walks on to the first unwatched episode as before (False, the default)."""

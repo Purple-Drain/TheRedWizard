@@ -1388,6 +1388,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(40)</visible>
+                          <property name="setting_label">Next Up On The OSD</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.osd_dialog)]</property>
+                          <property name="setting_description">On: opening the playback OSD while the next episode is ready also opens Red Light's Next Up pop-up over it, which takes remote focus from the OSD controls. Off: nothing pops up, and the skin's own next-episode button in the OSD (Arctic Fuse 3: Show Next Episode Button) is the way to jump. Default Off</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=nextep.osd_dialog)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(40)</visible>
                           <property name="setting_label">Prepare Next Episode</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.nextep.prep_timing_name)]</property>
