@@ -1602,6 +1602,8 @@ class RedLightPlayer(xbmc.Player):
 		if not osd:
 			self._osd_nextup_seen = False
 			return
+		# #277: off by default, the pop-up is a separate window and takes focus from the OSD controls.
+		if not st.nextep_osd_dialog(): return
 		if getattr(self, '_osd_nextup_seen', False) or getattr(self, '_osd_nextup_open', False): return
 		if getattr(self, '_nextep_alert_shown', False): return
 		if ku.get_property(PROP_SKIP_EPISODE) == 'true' or getattr(self, '_skip_prep_deadline', None): return
