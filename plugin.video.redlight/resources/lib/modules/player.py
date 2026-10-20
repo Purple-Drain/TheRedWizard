@@ -382,6 +382,14 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if elapsed_ms - since < _OPEN_WITHOUT_FULLSCREEN_MS: return
 		ku.logger('Red Light', 'Playback open: playing %.1fs without fullscreen; bringing it up and continuing (#1 bug G)' % ((elapsed_ms - since) / 1000.0))
+		# media-stack #52: a sources window still up now is stale (the video is playing) and, being
+		# modal, makes Kodi refuse the fullscreen activation below.
+		try:
+			if ku.get_visibility('Window.IsVisible(sources_playback.xml)'):
+				ku.logger('Red Light', 'Playback open: closing a stale sources window before fullscreen (media-stack #52)')
+				ku.close_dialog('sources_playback.xml')
+				ku.sleep(150)
+		except Exception: pass
 		try: ku.execute_builtin('ActivateWindow(fullscreenvideo)')
 		except Exception: pass
 		self.playback_successful = True

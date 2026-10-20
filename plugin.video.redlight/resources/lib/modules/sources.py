@@ -471,7 +471,16 @@ class _DeferredProgress:
 			thread = Thread(target=real.run, name='resolve_progress_dialog')
 			thread.start()
 			object.__setattr__(self, '_real', real)
-			self._s.progress_thread = thread
+			# media-stack #52: only the sources object's current dialog may claim its thread slot;
+			# a stale one overwriting it sent the later kill to join the wrong thread.
+			stale = self._s.progress_dialog is not self
+			if not stale: self._s.progress_thread = thread
+		if stale:
+			try: real.close()
+			except Exception: pass
+			try: kodi_utils.logger('Red Light', 'Quiet start: closed a stale sources window (media-stack #52)')
+			except Exception: pass
+			return None
 		# Same wait as _make_progress_dialog, so the replay lands after the window's onInit.
 		for _ in range(40):
 			try:
@@ -2443,14 +2452,17 @@ class Sources():
 		kodi_utils.hide_busy_dialog()
 
 	def _ensure_progress_dialog_dead(self, join_timeout=2.0):
+		# media-stack #52: close whatever dialog is held, thread or not. A quiet-start
+		# _DeferredProgress has no thread until its timer fires; skipping it left the timer
+		# running to open a window nothing referenced, which then blocked fullscreen.
+		try:
+			if self.progress_dialog:
+				self.progress_dialog.is_canceled = True
+				self.progress_dialog.close()
+		except:
+			pass
 		thread = self.progress_thread
 		if thread and thread.is_alive():
-			try:
-				if self.progress_dialog:
-					self.progress_dialog.is_canceled = True
-					self.progress_dialog.close()
-			except:
-				pass
 			join_bounded([thread], join_timeout, 'resolve_progress_dialog')
 		self.progress_dialog, self.progress_thread = None, None
 
