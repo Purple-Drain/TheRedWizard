@@ -18,7 +18,9 @@ def _proxy(monkeypatch):
     monkeypatch.setattr(sources_mod.kodi_utils, 'logger', lambda *a: None)
     monkeypatch.setattr(sources_mod, 'Thread', lambda target=None, args=(), name=None, daemon=None: type('T', (), {'start': lambda self: None})())
     s = type('S', (), {'meta': {}, 'progress_thread': None})()
-    return sources_mod._DeferredProgress(s, 1000), windows
+    # As _make_progress_dialog does: the placeholder is the sources object's current dialog.
+    s.progress_dialog = sources_mod._DeferredProgress(s, 1000)
+    return s.progress_dialog, windows
 
 
 def test_records_until_shown_then_replays(monkeypatch):
