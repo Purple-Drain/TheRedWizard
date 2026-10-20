@@ -9,6 +9,7 @@ from threading import Thread
 from apis.trakt_api import make_trakt_slug
 from caches.settings_cache import get_setting
 from modules import kodi_utils as ku, settings as st, watched_status as ws
+from modules import progress_windows
 from modules.thread_tools import TrackedThreads, log_live_threads
 # logger = ku.logger
 
@@ -382,6 +383,18 @@ class RedLightPlayer(xbmc.Player):
 			return
 		if elapsed_ms - since < _OPEN_WITHOUT_FULLSCREEN_MS: return
 		ku.logger('Red Light', 'Playback open: playing %.1fs without fullscreen; bringing it up and continuing (#1 bug G)' % ((elapsed_ms - since) / 1000.0))
+		# media-stack #52: a sources window still up now is stale (the video is playing) and, being
+		# modal, makes Kodi refuse the fullscreen activation below.
+		try:
+			left = progress_windows.open_count()
+			if left or ku.get_visibility('Window.IsVisible(sources_playback.xml)'):
+				ku.logger('Red Light', 'Playback open: closing %d stale sources window(s) before fullscreen (media-stack #52)' % left)
+				progress_windows.close_all(2.0)
+				if ku.get_visibility('Window.IsVisible(sources_playback.xml)'):
+					ku.logger('Red Light', 'Playback open: sources window still up, closing all dialogs (media-stack #52)')
+					ku.close_all_dialog()
+				ku.sleep(150)
+		except Exception: pass
 		try: ku.execute_builtin('ActivateWindow(fullscreenvideo)')
 		except Exception: pass
 		self.playback_successful = True
