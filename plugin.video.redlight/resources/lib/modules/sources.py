@@ -12,6 +12,7 @@ from scrapers import external, folders
 from modules import debrid, kodi_utils, settings, metadata, watched_status
 from modules.player import RedLightPlayer
 from modules.thread_tools import StopFlag, join_bounded, log_live_threads
+from modules import progress_windows
 from modules.source_utils import get_cache_expiry, make_alias_dict, include_exclude_filters, get_file_info, release_info_format, audio_lang_choices, matches_english_or_untagged, \
 								_normalize_release_title
 from modules.utils import clean_file_name, string_to_float, safe_string, remove_accents, get_datetime, append_module_to_syspath, manual_function_import
@@ -470,6 +471,7 @@ class _DeferredProgress:
 			real = create_window(('windows.sources', 'SourcesPlayback'), 'sources_playback.xml', meta=self._s.meta, sources_ref=self._s)
 			thread = Thread(target=real.run, name='resolve_progress_dialog')
 			thread.start()
+			progress_windows.register(real, thread)
 			object.__setattr__(self, '_real', real)
 			# media-stack #52: only the sources object's current dialog may claim its thread slot;
 			# a stale one overwriting it sent the later kill to join the wrong thread.
@@ -2464,6 +2466,8 @@ class Sources():
 		thread = self.progress_thread
 		if thread and thread.is_alive():
 			join_bounded([thread], join_timeout, 'resolve_progress_dialog')
+		# media-stack #52: and any earlier window whose close Kodi dropped before it was up.
+		progress_windows.close_all(join_timeout)
 		self.progress_dialog, self.progress_thread = None, None
 
 	def _reset_scrape_progress_counts(self):
@@ -2492,6 +2496,7 @@ class Sources():
 		self.progress_dialog = create_window(('windows.sources', 'SourcesPlayback'), 'sources_playback.xml', meta=self.meta, sources_ref=self)
 		self.progress_thread = Thread(target=self.progress_dialog.run, name='resolve_progress_dialog')
 		self.progress_thread.start()
+		progress_windows.register(self.progress_dialog, self.progress_thread)
 		for _ in range(40):
 			try:
 				if kodi_utils.get_property('redlight.scrape.ready') == 'true':
@@ -2684,6 +2689,8 @@ class Sources():
 					kodi_utils.close_all_dialog()
 				except:
 					pass
+		# media-stack #52: earlier windows whose close was dropped before they were up.
+		progress_windows.close_all(join_timeout)
 		if close_overlays:
 			self._force_close_sources_overlay_windows()
 		self.progress_dialog, self.progress_thread = None, None

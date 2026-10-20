@@ -1,6 +1,6 @@
 """media-stack #52: the quiet-start sources window must never outlive the play that made it.
 
-Standalone, no Kodi: python3 tests/test_progress_dialog_leak.py
+Run with pytest (tests/conftest.py puts the add-on's lib on the path).
 Pulls _DeferredProgress and Sources._ensure_progress_dialog_dead out of sources.py with ast and
 runs them against stub windows, so the real code is what is tested.
 """
@@ -9,6 +9,8 @@ import os
 import threading
 import time
 import types
+
+from modules import progress_windows
 
 SRC = os.path.join(os.path.dirname(__file__), '..', 'plugin.video.redlight', 'resources', 'lib', 'modules', 'sources.py')
 
@@ -32,7 +34,7 @@ def load():
 	src_cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Sources')
 	meth = next(n for n in src_cls.body if isinstance(n, ast.FunctionDef) and n.name == '_ensure_progress_dialog_dead')
 	ku = types.SimpleNamespace(sleep=lambda ms: time.sleep(ms / 1000.0), get_property=lambda k: 'true', logger=lambda *a: None)
-	ns = {'Thread': threading.Thread, 'Lock': threading.Lock, 'kodi_utils': ku,
+	ns = {'progress_windows': progress_windows, 'Thread': threading.Thread, 'Lock': threading.Lock, 'kodi_utils': ku,
 		'create_window': lambda *a, **k: FakeWindow(),
 		'join_bounded': lambda threads, t, name: [x.join(t) for x in threads if x]}
 	exec(compile(ast.Module(body=[cls, meth], type_ignores=[]), SRC, 'exec'), ns)
