@@ -6,6 +6,7 @@ from apis.premiumize_api import PremiumizeAPI
 from apis.alldebrid_api import AllDebridAPI
 from apis.torbox_api import TorBoxAPI
 from apis.offcloud_api import OffcloudAPI
+from modules.native_torrents import NATIVE_TORRENT_SCRAPERS
 from modules.source_utils import get_external_cache_status
 from modules.utils import chunks
 from modules.kodi_utils import show_busy_dialog, hide_busy_dialog, notification
@@ -32,6 +33,8 @@ def normalize_debrid_provider(provider):
 		return provider
 	if provider.startswith('Uncached '):
 		provider = provider[9:]
+	elif provider.startswith('Unchecked '):
+		provider = provider[10:]
 	aliases = {
 		'offcloud': 'Offcloud',
 		'oc_cloud': 'Offcloud',
@@ -291,26 +294,36 @@ def AD_check(hash_list, cached_hashes, data, active_debrid):
 def PM_check(hash_list, cached_hashes):
 	expires = 24
 	cached_hashes, unchecked_hashes = cached_check(hash_list, cached_hashes, 'pm')
-	if unchecked_hashes:
-		results = PremiumizeAPI().check_cache(unchecked_hashes)
-		if results:
-			cached_append = cached_hashes.append
-			process_list = []
-			process_append = process_list.append
-			try:
-				results = results['response']
-				for c, h in enumerate(unchecked_hashes):
-					cached = 'False'
-					try:
-						if results[c] is True:
-							cached_append(h)
-							cached = 'True'
-					except: pass
-					process_append((h, cached))
-			except:
-				for i in unchecked_hashes: process_append((i, 'False'))
-		else: process_list, expires  = [(h, 'False') for h in unchecked_hashes], 2
-		add_to_local_cache(process_list, 'pm', expires)
+	if not unchecked_hashes:
+		return cached_hashes
+	api = PremiumizeAPI()
+	cached_append = cached_hashes.append
+	process_list = []
+	try:
+		for offset in range(0, len(unchecked_hashes), 50):
+			chunk = unchecked_hashes[offset:offset + 50]
+			results = api.check_cache(chunk)
+			if not results:
+				raise RuntimeError('empty Premiumize cache check response')
+			responses = results['response']
+			for c, h in enumerate(chunk):
+				cached = 'False'
+				try:
+					if responses[c] is True:
+						cached_append(h)
+						cached = 'True'
+				except Exception:
+					pass
+				process_list.append((h, cached))
+	except Exception as e:
+		try:
+			from modules.kodi_utils import logger
+			logger('DebridCacheCheck', 'provider=Premiumize.me incomplete=%s hashes=%d done=%d' % (
+				type(e).__name__, len(unchecked_hashes), len(process_list)))
+		except Exception:
+			pass
+		return None
+	add_to_local_cache(process_list, 'pm', expires)
 	return cached_hashes
 
 def _tb_cached_hash_set(api_response):
@@ -334,48 +347,227 @@ def _tb_cached_hash_set(api_response):
 
 def OC_check(hash_list, cached_hashes):
 	cached_hashes, unchecked_hashes = cached_check(hash_list, cached_hashes, 'oc')
-	if unchecked_hashes:
+	if not unchecked_hashes:
+		return cached_hashes
+	try:
 		results = OffcloudAPI().check_cache(unchecked_hashes)
-		if results:
-			cached_append = cached_hashes.append
-			process_list = []
-			process_append = process_list.append
-			try:
-				results = results['cachedItems']
-				for h in unchecked_hashes:
-					cached = 'False'
-					if h in results:
-						cached_append(h)
-						cached = 'True'
-					process_append((h, cached))
-			except Exception:
-				for i in unchecked_hashes: process_append((i, 'False'))
-			add_to_local_cache(process_list, 'oc')
+		if not results:
+			raise RuntimeError('empty Offcloud cache check response')
+		cached_items = results['cachedItems']
+		cached_append = cached_hashes.append
+		process_list = []
+		for h in unchecked_hashes:
+			cached = 'False'
+			if h in cached_items:
+				cached_append(h)
+				cached = 'True'
+			process_list.append((h, cached))
+	except Exception as e:
+		try:
+			from modules.kodi_utils import logger
+			logger('DebridCacheCheck', 'provider=Offcloud incomplete=%s hashes=%d' % (type(e).__name__, len(unchecked_hashes)))
+		except Exception:
+			pass
+		return None
+	add_to_local_cache(process_list, 'oc')
 	return cached_hashes
 
 def TB_check(hash_list, cached_hashes):
 	expires = 24
 	cached_hashes, unchecked_hashes = cached_check(hash_list, cached_hashes, 'tb')
-	if unchecked_hashes:
-		cached_append = cached_hashes.append
-		process_list = []
-		process_append = process_list.append
-		cached_set = set()
-		api = TorBoxAPI()
+	if not unchecked_hashes:
+		return cached_hashes
+	cached_append = cached_hashes.append
+	process_list = []
+	cached_set = set()
+	api = TorBoxAPI()
+	try:
+		for offset in range(0, len(unchecked_hashes), 100):
+			chunk = unchecked_hashes[offset:offset + 100]
+			results = api.check_cache(chunk)
+			if results:
+				cached_set.update(_tb_cached_hash_set(results))
+			elif results is None:
+				raise RuntimeError('empty TorBox cache check response')
+		for h in unchecked_hashes:
+			h_lower = str(h).lower()
+			if h_lower in cached_set:
+				cached_append(h)
+				process_list.append((h, 'True'))
+			else:
+				process_list.append((h, 'False'))
+	except Exception as e:
 		try:
-			for offset in range(0, len(unchecked_hashes), 100):
-				chunk = unchecked_hashes[offset:offset + 100]
-				results = api.check_cache(chunk)
-				if results:
-					cached_set.update(_tb_cached_hash_set(results))
-			for h in unchecked_hashes:
-				h_lower = str(h).lower()
-				if h_lower in cached_set:
-					cached_append(h)
-					process_append((h, 'True'))
-				else:
-					process_append((h, 'False'))
-		except:
-			for i in unchecked_hashes: process_append((i, 'False'))
-		add_to_local_cache(process_list, 'tb', expires)
+			from modules.kodi_utils import logger
+			logger('DebridCacheCheck', 'provider=TorBox incomplete=%s hashes=%d' % (type(e).__name__, len(unchecked_hashes)))
+		except Exception:
+			pass
+		return None
+	add_to_local_cache(process_list, 'tb', expires)
 	return cached_hashes
+
+_DEBRID_RUNNERS = {
+	'Real-Debrid': ('Real-Debrid', RD_check),
+	'Premiumize.me': ('Premiumize.me', PM_check),
+	'AllDebrid': ('AllDebrid', AD_check),
+	'Offcloud': ('Offcloud', OC_check),
+	'TorBox': ('TorBox', TB_check),
+}
+
+
+def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=None, background=True, progress_dialog=None):
+	'''Stamp internal torrent hash rows with per-debrid cache_provider. Other rows pass through.'''
+	from threading import Thread, Lock
+	from time import time as _time
+	from modules.settings import debrid_cache_check
+	from modules.kodi_utils import logger, get_property, clear_property, sleep, kodi_monitor
+
+	if not results:
+		return results
+	native, rest = [], []
+	for item in results:
+		if item.get('scrape_provider') in NATIVE_TORRENT_SCRAPERS and item.get('hash') and not item.get('cache_provider'):
+			native.append(item)
+		else:
+			rest.append(item)
+	if not native:
+		return results
+	active_debrid = list(active_debrid or [])
+	if not active_debrid:
+		return rest
+
+	def _cache_check_enabled(provider):
+		if cache_check_override is not None:
+			return cache_check_override
+		return debrid_cache_check(provider)
+
+	def _is_unchecked_row(item):
+		return str(item.get('cache_provider', '')).startswith('Unchecked ')
+
+	hash_list, unique_hashes, unique_urls = [], set(), set()
+	deduped = []
+	for item in native:
+		try:
+			url = (item.get('url') or '').lower()
+			info_hash = str(item.get('hash') or '').lower()
+			item['hash'] = info_hash
+			if url in unique_urls:
+				continue
+			unique_urls.add(url)
+			if len(info_hash) != 40 or info_hash in unique_hashes:
+				continue
+			unique_hashes.add(info_hash)
+			hash_list.append(info_hash)
+			deduped.append(item)
+		except Exception:
+			deduped.append(item)
+	if not deduped:
+		return rest
+	native = deduped
+	cached_hashes = query_local_cache(hash_list)
+	providers_needing_api = [p for p in active_debrid if _cache_check_enabled(p)]
+	final_results, frozen_providers, final_lock = [], set(), Lock()
+	monitor = kodi_monitor() if progress_dialog and not background else None
+
+	def _unchecked_batch(provider, reason):
+		try:
+			logger('DebridCacheCheck', 'native fallback=unchecked provider=%s reason=%s total=%d' % (provider, reason, len(native)))
+		except Exception:
+			pass
+		return [dict(i, **{'cache_provider': 'Unchecked %s' % provider, 'debrid': provider}) for i in native]
+
+	def _commit(provider, batch):
+		with final_lock:
+			if provider in frozen_providers:
+				return
+			existing = [i for i in final_results if i.get('debrid') == provider]
+			if existing:
+				existing_unverified = all(_is_unchecked_row(i) for i in existing)
+				new_verified = batch and not all(_is_unchecked_row(i) for i in batch)
+				if existing_unverified and new_verified:
+					final_results[:] = [i for i in final_results if i.get('debrid') != provider]
+					final_results.extend(batch)
+				return
+			final_results.extend(batch)
+
+	def _process_cache_check(provider, function):
+		incomplete, cached = False, []
+		try:
+			if _cache_check_enabled(provider):
+				if provider in ('Real-Debrid', 'AllDebrid'):
+					cached = function(hash_list, cached_hashes, data or {}, active_debrid)
+				else:
+					cached = function(hash_list, cached_hashes)
+				if cached is None:
+					incomplete, cached = True, []
+			else:
+				cached = hash_list
+		except Exception as e:
+			incomplete, cached = True, []
+			try:
+				logger('DebridCacheCheck', 'native provider=%s thread=%s' % (provider, type(e).__name__))
+			except Exception:
+				pass
+		api_blocked = get_property('redlight.debrid_cache_api_error') if provider == 'AllDebrid' else ''
+		if api_blocked:
+			clear_property('redlight.debrid_cache_api_error')
+			batch = _unchecked_batch(provider, api_blocked)
+		elif incomplete:
+			batch = _unchecked_batch(provider, 'incomplete_check')
+		else:
+			cached_set = set(str(i).lower() for i in cached)
+			batch = [dict(i, **{'cache_provider': provider if i.get('hash', '').lower() in cached_set else 'Uncached %s' % provider, 'debrid': provider}) for i in native]
+		_commit(provider, batch)
+
+	if not providers_needing_api:
+		for provider in active_debrid:
+			final_results.extend([dict(i, **{'cache_provider': provider, 'debrid': provider}) for i in native])
+		return rest + final_results
+
+	debrid_check_threads = [Thread(target=_process_cache_check, args=_DEBRID_RUNNERS[item], name=item) for item in providers_needing_api]
+	hash_budget = max(0, len(hash_list))
+	debrid_timeout = max(45, min(240, 30 + (hash_budget // 25) * 8))
+	debrid_deadline = _time() + debrid_timeout
+	for provider in active_debrid:
+		if provider in providers_needing_api:
+			continue
+		final_results.extend([dict(i, **{'cache_provider': provider, 'debrid': provider}) for i in native])
+	[i.start() for i in debrid_check_threads]
+	if progress_dialog and not background:
+		start_time = _time()
+		try:
+			progress_dialog.reset_is_cancelled()
+		except Exception:
+			pass
+		while not progress_dialog.iscanceled() and not (monitor and monitor.abortRequested()):
+			remaining = [x.getName() for x in debrid_check_threads if x.is_alive()]
+			percent = min(100, int((max((_time() - start_time), 0) / float(debrid_timeout)) * 100))
+			try:
+				progress_dialog.update_scraper(0, 0, 0, 0, len(final_results) or len(native), ', '.join(remaining).upper(), percent)
+			except Exception:
+				pass
+			if not remaining or _time() >= debrid_deadline:
+				break
+			sleep(100)
+	for thread in debrid_check_threads:
+		thread.join(timeout=max(0.0, debrid_deadline - _time()))
+	grace = _time() + 2.0
+	for thread in debrid_check_threads:
+		if thread.is_alive():
+			thread.join(timeout=max(0.0, grace - _time()))
+	with final_lock:
+		present = set(i.get('debrid') for i in final_results if i.get('debrid'))
+		for provider in providers_needing_api:
+			if provider not in present:
+				final_results.extend(_unchecked_batch(provider, 'incomplete_check'))
+		frozen_providers.update(providers_needing_api)
+	try:
+		uncached = sum(1 for i in final_results if str(i.get('cache_provider', '')).startswith('Uncached '))
+		unchecked = sum(1 for i in final_results if str(i.get('cache_provider', '')).startswith('Unchecked '))
+		cached = len(final_results) - uncached - unchecked
+		logger('DebridCacheCheck', 'native enabled=%s providers=%s total=%d cached=%d uncached=%d unchecked=%d' % (
+			bool(providers_needing_api), ','.join(providers_needing_api) or 'none', len(final_results), cached, uncached, unchecked))
+	except Exception:
+		pass
+	return rest + final_results
+

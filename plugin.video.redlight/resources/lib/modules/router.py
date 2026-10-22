@@ -156,6 +156,9 @@ def routing(sys):
 		elif mode == 'build_simkl_calendar':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.simkl', params)
+		elif mode == 'build_simkl_public_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.simkl_public', params)
 		elif mode == 'build_mdbl_next_up':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist_next', params)
@@ -397,7 +400,10 @@ def routing(sys):
 		from modules.saved_lists import forget_all
 		forget_all()
 		from modules.kodi_utils import refresh_widgets
-		return refresh_widgets(params.get('silent', 'false') == 'true', params.get('reload_skin', 'false') == 'true')
+		return refresh_widgets(
+			params.get('silent', 'false') == 'true',
+			params.get('reload_skin', 'false') == 'true',
+			params.get('defer_browsing', 'false') == 'true')
 	elif mode == 'person_data_dialog':
 		from indexers.people import person_data_dialog
 		return person_data_dialog(params)

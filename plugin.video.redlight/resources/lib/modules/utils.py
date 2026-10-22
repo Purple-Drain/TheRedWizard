@@ -32,26 +32,61 @@ class TaskPool:
 					else: target(*args)
 				except Exception as e: logger('thread queue error', str(e))
 
+	def _worker_count(self, _max_size, list_len):
+		workers = max(1, min(int(_max_size or 1), int(list_len or 1)))
+		# Soft throttle when many widget/plugin invokers already hold threads
+		# (AF3 / Skin Variables home refresh — "can't start new thread").
+		try:
+			busy = activeCount()
+			if busy >= 48: workers = 1
+			elif busy >= 32: workers = min(workers, 2)
+			elif busy >= 24: workers = min(workers, 4)
+		except: pass
+		return workers
+
+	def _start_workers(self, _target, db_name, workers):
+		threads = []
+		for _ in range(workers):
+			thread = Thread(target=self._thread_target, args=(self._queue, _target, db_name))
+			try:
+				thread.start()
+				threads.append(thread)
+			except RuntimeError:
+				# OS/Kodi thread limit — keep workers already started; they still drain the queue.
+				break
+		if not threads:
+			# No spare threads: process on the calling invoker so lists/widgets still populate.
+			try: self._thread_target(self._queue, _target, db_name)
+			except Exception as e: logger('TaskPool sync fallback', str(e))
+		return threads
+
 	def tasks(self, _target, _list, _max_size=20, db_name=None):
 		if not _list: return []
 		if not isinstance(_list[0], tuple): _list = [(i,) for i in _list]
 		[self._queue.put(tag) for tag in _list]
-		threads = [Thread(target=self._thread_target, args=(self._queue, _target, db_name)) for i in range(_max_size)]
-		[i.start() for i in threads]
-		return threads
+		return self._start_workers(_target, db_name, self._worker_count(_max_size, len(_list)))
 
 	def tasks_enumerate(self, _target, _list, _max_size=20, db_name=None):
+		if not _list: return []
 		[self._queue.put((p, tag)) for p, tag in enumerate(_list, 1)]
-		threads = [Thread(target=self._thread_target, args=(self._queue, _target, db_name)) for i in range(_max_size)]
-		[i.start() for i in threads]
-		return threads
+		return self._start_workers(_target, db_name, self._worker_count(_max_size, len(_list)))
 
 def make_thread_list(_target, _list):
 	_max_threads = max_threads()
 	for item in _list:
 		while activeCount() > _max_threads: sleep(1)
 		threaded_object = Thread(target=_target, args=(item,))
-		threaded_object.start()
+		try:
+			threaded_object.start()
+		except RuntimeError:
+			for _ in range(50):
+				if activeCount() <= max(2, _max_threads // 2): break
+				sleep(20)
+			try: threaded_object.start()
+			except RuntimeError:
+				try: _target(item)
+				except Exception as e: logger('make_thread_list sync fallback', str(e))
+				continue
 		yield threaded_object
 
 def make_thread_list_enumerate(_target, _list):
@@ -59,7 +94,17 @@ def make_thread_list_enumerate(_target, _list):
 	for count, item in enumerate(_list):
 		while activeCount() > _max_threads: sleep(1)
 		threaded_object = Thread(target=_target, args=(count, item))
-		threaded_object.start()
+		try:
+			threaded_object.start()
+		except RuntimeError:
+			for _ in range(50):
+				if activeCount() <= max(2, _max_threads // 2): break
+				sleep(20)
+			try: threaded_object.start()
+			except RuntimeError:
+				try: _target(count, item)
+				except Exception as e: logger('make_thread_list_enumerate sync fallback', str(e))
+				continue
 		yield threaded_object
 
 def change_image_resolution(image, replace_res):
@@ -123,6 +168,40 @@ def adjust_premiered_date(orig_date, adjust_hours):
 	adjusted_datetime = datetime_object + timedelta(hours=adjust_hours)
 	adjusted_string = adjusted_datetime.strftime('%Y-%m-%d')
 	return adjusted_datetime.date(), adjusted_string
+
+def parse_calendar_air_datetime(service_first_aired):
+	"""Parse ISO calendar timestamp; return None for date-only / invalid."""
+	fa = str(service_first_aired or '').strip()
+	if not fa or 'T' not in fa: return None
+	normalized = fa[:-1] + '+00:00' if fa.endswith('Z') else fa
+	try: return datetime.fromisoformat(normalized)
+	except Exception: pass
+	try: return datetime_workaround(fa, '%Y-%m-%dT%H:%M:%S.%fZ')
+	except Exception: pass
+	try: return datetime_workaround(fa.split('.')[0].rstrip('Z'), '%Y-%m-%dT%H:%M:%S')
+	except Exception: return None
+
+def calendar_service_local_date(service_first_aired, utc_offset_hours=None):
+	"""Local calendar day for a service first_aired (ISO timestamp or date-only).
+
+	ISO timestamps apply UTC (+/-) hours. Date-only values keep their calendar day.
+	Returns (date, 'YYYY-MM-DD') or (None, None).
+	"""
+	fa = str(service_first_aired or '').strip()
+	if not fa: return None, None
+	dt = parse_calendar_air_datetime(fa)
+	if dt is not None:
+		if utc_offset_hours is None:
+			from modules.settings import datetime_utc_offset
+			utc_offset_hours = datetime_utc_offset()
+		adjusted = dt + timedelta(hours=utc_offset_hours)
+		return adjusted.date(), adjusted.strftime('%Y-%m-%d')
+	day = fa.split('T')[0][:10]
+	try: return date.fromisoformat(day), day
+	except Exception:
+		d = jsondate_to_datetime(day, '%Y-%m-%d', remove_time=True)
+		if d is not None: return d, day
+	return None, None
 
 def make_day(today, date, date_format='%Y-%m-%d', use_words=True, include_date=False):
 	try: formatted = date.strftime(date_format)

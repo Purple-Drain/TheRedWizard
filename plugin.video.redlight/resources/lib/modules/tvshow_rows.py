@@ -25,5 +25,7 @@ def render_tvshow_row(row, make_listitem, kodi_actor):
 	info_tag.setTrailer(info['trailer']), info_tag.setPremiered(info['premiered'])
 	info_tag.setTvShowStatus(info['status']), info_tag.setRating(info['rating'])
 	info_tag.setCast([kodi_actor(name=i['name'], role=i['role'], thumbnail=i['thumbnail']) for i in row['cast']])
+	try: info_tag.setResumePoint(0.0)
+	except: pass
 	listitem.setProperties(row['properties'])
 	return listitem

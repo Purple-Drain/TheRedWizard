@@ -7,7 +7,7 @@ from importlib import import_module
 from caches.base_cache import connect_database, database
 from caches.trakt_cache import clear_trakt_collection_watchlist_data
 from caches.widget_cache import widget_cache
-from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, logger
+from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, logger, translate_path, get_property, set_property, clear_property
 from modules.utils import get_datetime, adjust_premiered_date, sort_for_article, TaskPool
 from modules import metadata, settings
 # from modules.kodi_utils import logger
@@ -410,10 +410,21 @@ def get_bookmarks_movie(watched_db=None):
 	except: info = {}
 	return info
 
+def meaningful_progress_percent(resume_point):
+	"""Return rounded percent string only when progress is >1% (In Progress shelf threshold).
+
+	Providers can leave a 0%/≤1% playback row after reset; string '0' is truthy in Python
+	and would still show Red Light's Resume / Start over prompt.
+	"""
+	try:
+		percent = float(resume_point)
+		if percent > 1: return str(round(percent))
+	except: pass
+	return None
+
 def get_progress_status_movie(progress_info, media_id):
-	try: percent = str(round(float(progress_info[media_id]['resume_point'])))
-	except: percent = None
-	return percent
+	try: return meaningful_progress_percent(progress_info[media_id]['resume_point'])
+	except: return None
 
 def watched_info_tvshow(watched_db=None):
 	if not watched_db: watched_db = get_database()
@@ -509,23 +520,76 @@ def get_bookmarks_all_episode(media_id, total_seasons, watched_db=None):
 	return all_seasons_info
 
 def get_progress_status_episode(progress_info, episode):
-	try: percent = str(round(float(progress_info[episode]['resume_point'])))
-	except: percent = None
-	return percent
+	try: return meaningful_progress_percent(progress_info[episode]['resume_point'])
+	except: return None
 
 def get_progress_status_all_episode(progress_info, season, episode):
-	try: percent = str(round(float(progress_info[season][episode]['resume_point'])))
-	except: percent = None
-	return percent
+	try: return meaningful_progress_percent(progress_info[season][episode]['resume_point'])
+	except: return None
 
 def get_resume_seconds(progress, duration):
 	return float(int(float(progress)/100 * duration))
 
+def apply_listitem_progress(info_tag, set_properties, progress, duration, is_external=False):
+	"""Expose progress to skins without making the row Kodi-resumable.
+
+	Never set a non-zero InfoTag resume on directory listitems. Also force
+	resume to 0 so Kodi does not treat the row as resumable from a stale
+	MyVideos bookmark for the same plugin:// path (that dialog runs before
+	the plugin is invoked — skipping setResumePoint alone is not enough).
+	WatchedProgress keeps skin bars; Red Light's source dialog is the resume prompt.
+	"""
+	try: info_tag.setResumePoint(0.0)
+	except: pass
+	if not meaningful_progress_percent(progress): return
+	set_properties({'WatchedProgress': progress})
+
 def clear_local_bookmarks():
+	"""Remove Kodi MyVideos bookmarks for Red Light plugin paths.
+
+	Kodi stores resume by filename for plugin:// URLs (via setResolvedUrl) and can
+	show Resume / Start over on the home widget before scrape. Clear every non-empty
+	MyVideos*.db — the version map alone can miss the live DB (e.g. empty 124 vs 131).
+	"""
+	import os
+	db_dir = translate_path('special://profile/Database')
+	paths = set()
 	try:
-		dbcon = database.connect(get_video_database_path())
-		file_ids = dbcon.execute("SELECT idFile FROM files WHERE strFilename LIKE 'plugin.video.redlight%'").fetchall()
-		for i in ('bookmark', 'streamdetails', 'files'): dbcon.executemany("DELETE FROM %s WHERE idFile=?" % i, file_ids)
+		paths.add(get_video_database_path())
+	except Exception:
+		pass
+	try:
+		for name in os.listdir(db_dir):
+			if name.startswith('MyVideos') and name.endswith('.db'):
+				path = os.path.join(db_dir, name)
+				try:
+					if os.path.getsize(path) > 0: paths.add(path)
+				except Exception:
+					pass
+	except Exception:
+		pass
+	for path in paths:
+		try:
+			dbcon = database.connect(path)
+			try:
+				file_ids = dbcon.execute(
+					"SELECT idFile FROM files WHERE strFilename LIKE '%plugin.video.redlight%'").fetchall()
+			except Exception:
+				dbcon.close()
+				continue
+			if file_ids:
+				for i in ('bookmark', 'streamdetails', 'files'):
+					try: dbcon.executemany("DELETE FROM %s WHERE idFile=?" % i, file_ids)
+					except Exception: pass
+				try: dbcon.commit()
+				except Exception: pass
+			dbcon.close()
+		except Exception:
+			pass
+
+def clear_listitem_kodi_resume(info_tag):
+	"""Force directory rows non-resumable for Kodi's native prompt."""
+	try: info_tag.setResumePoint(0.0)
 	except: pass
 
 def _write_local_progress(watched_indicators, media_type, tmdb_id, season, episode, resume_point, curr_time, title):
@@ -593,7 +657,8 @@ def batch_erase_bookmark(watched_indicators, insert_list, action):
 		watched_db.executemany('DELETE FROM progress where db_type = ? and media_id = ? and season = ? and episode = ?', modified_list)
 	except: pass
 
-def set_bookmark(params):
+def set_bookmark(params, remote=True):
+	'''Write resume progress. remote=False writes local DB only (playback stop path).'''
 	try:
 		media_type, tmdb_id, curr_time, total_time = params.get('media_type'), params.get('tmdb_id'), params.get('curr_time'), params.get('total_time')
 		refresh = False if params.get('from_playback', 'false') == 'true' else True
@@ -602,6 +667,8 @@ def set_bookmark(params):
 		resume_point = round(adjusted_current_time/float(total_time)*100,1)
 		watched_indicators = settings.watched_indicators()
 		_write_local_progress(watched_indicators, media_type, tmdb_id, season, episode, resume_point, curr_time, title)
+		if not remote:
+			return
 		if watched_indicators == 1 and trakt_official_status(media_type):
 			trakt_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_trakt=False)
 		elif watched_indicators == 2 and simkl_official_status(media_type):
@@ -654,6 +721,7 @@ def mark_movie(params):
 		if from_playback and punchplay_official_status(media_type) == False: sleep(1000)
 		elif not punchplay_watched_status_mark(action, 'movie', tmdb_id, title=title, year=params.get('year')) and not from_playback:
 			return notification('Error')
+	_arm_provider_list_sync_skip(watched_indicators)
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, title=title)
 	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
@@ -702,6 +770,7 @@ def mark_tvshow(params):
 			episode_date, premiered = adjust_premiered_date(ep['premiered'], settings.date_offset())
 			if episode_date and current_date < episode_date: continue
 			insert_append(make_batch_insert(action, 'episode', tmdb_id, season_number, ep_number, last_played, title))
+	_arm_provider_list_sync_skip(watched_indicators)
 	batch_watched_status_mark(watched_indicators, insert_list, action)
 	progress_backround.close()
 	refresh_container()
@@ -742,6 +811,7 @@ def mark_season(params):
 		if episode_date and current_date < episode_date: continue
 		progress_backround.update(int(float(count) / float(len(ep_data)) * 100), '[B]Please Wait..[/B]', display)
 		insert_append(make_batch_insert(action, 'episode', tmdb_id, season_number, ep_number, last_played, title))
+	_arm_provider_list_sync_skip(watched_indicators)
 	batch_watched_status_mark(watched_indicators, insert_list, action)
 	progress_backround.close()
 	refresh_container()
@@ -775,6 +845,7 @@ def mark_episode(params):
 				action, media_type, tmdb_id, tvdb_id, season, episode, title=title, year=params.get('year')
 				) and not from_playback:
 			return notification('Error')
+	_arm_provider_list_sync_skip(watched_indicators)
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, season, episode, title)
 	update_hidden_progress(tmdb_id)
 	_schedule_playback_widget_refresh(from_playback)
@@ -793,6 +864,12 @@ def unmark_previous_episode(params):
 		return mark_episode(params)
 	except: notification('Error')
 
+def _invalidate_nextep_list_cache():
+	# Soft no-op: activity_token already changes on mark watched / progress writes.
+	# Hard-deleting packets forced a full Next Episodes rebuild and blocked incremental
+	# reuse of clean show rows from the stale payload.
+	return
+
 def watched_status_mark(watched_indicators, media_type='', media_id='', action='', season='', episode='', title=''):
 	try:
 		last_played = get_last_played_value(watched_indicators)
@@ -802,6 +879,7 @@ def watched_status_mark(watched_indicators, media_type='', media_id='', action='
 		elif action == 'mark_as_unwatched':
 			dbcon.execute('DELETE FROM watched WHERE (db_type = ? and media_id = ? and season = ? and episode = ?)', (media_type, media_id, season, episode))
 		erase_bookmark(media_type, media_id, season, episode)
+		if media_type == 'episode': _invalidate_nextep_list_cache()
 		# if media_type == 'episode': clear_cache_watched_tvshow_status()
 	except: notification('Error')
 
@@ -813,6 +891,7 @@ def batch_watched_status_mark(watched_indicators, insert_list, action):
 		elif action == 'mark_as_unwatched':
 			dbcon.executemany('DELETE FROM watched WHERE (db_type = ? and media_id = ? and season = ? and episode = ?)', insert_list)
 		batch_erase_bookmark(watched_indicators, insert_list, action)
+		_invalidate_nextep_list_cache()
 		# clear_cache_watched_tvshow_status()
 	except: notification('Error')
 
@@ -1032,6 +1111,33 @@ def _movie_progress_list(dbcon):
 	data = dbcon.execute('SELECT media_id, title, last_played, resume_point FROM progress WHERE db_type = ?', ('movie',)).fetchall()
 	return [{'media_id': i[0], 'title': i[1], 'last_played': i[2]} for i in data if i[0] and float(i[3] or 0) > 1]
 
+_LIST_SYNC_SKIP_PROPS = {
+	1: 'redlight.trakt_skip_list_sync',
+	2: 'redlight.simkl_skip_list_sync',
+	3: 'redlight.mdblist_skip_list_sync',
+	4: 'redlight.punchplay_skip_list_sync',
+}
+
+def _arm_provider_list_sync_skip(watched_indicators):
+	# Local watched/progress is already written. Next list open would see a
+	# last_activities change and block on a cloud pull (MDBList: full sync/watched).
+	prop = _LIST_SYNC_SKIP_PROPS.get(watched_indicators)
+	if not prop: return
+	try: set_property(prop, 'true')
+	except: pass
+
+def _consume_provider_list_sync_skip(watched_indicators):
+	prop = _LIST_SYNC_SKIP_PROPS.get(watched_indicators)
+	if not prop: return False
+	try:
+		if get_property(prop) == 'true':
+			clear_property(prop)
+			try: logger('Red Light', 'skip provider list sync after mark (indicators=%s)' % watched_indicators)
+			except: pass
+			return True
+	except: pass
+	return False
+
 def _refresh_trakt_movie_progress():
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
@@ -1045,14 +1151,33 @@ def _refresh_simkl_tvshow_watched():
 	# Activity-gated (same as SimklMonitor / TV show lists) — skip full watched pull when unchanged.
 	try:
 		if settings.watched_indicators() != 2 or not settings.simkl_user_active(): return
+		if _consume_provider_list_sync_skip(2): return
 		from apis.simkl_api import simkl_sync_activities
 		simkl_sync_activities()
+	except: pass
+
+def _refresh_simkl_progress():
+	# Activity-gated playback refresh — parity with Trakt/MDBList/PunchPlay on In Progress open.
+	try:
+		if settings.watched_indicators() != 2 or not settings.simkl_user_active(): return
+		if _consume_provider_list_sync_skip(2): return
+		from apis.simkl_api import simkl_sync_activities
+		simkl_sync_activities()
+	except: pass
+
+def _purge_negligible_progress(dbcon):
+	# Drop leftover ≤1% rows so local DB matches In Progress / resume thresholds.
+	try: dbcon.execute('DELETE FROM progress WHERE CAST(resume_point AS FLOAT) <= 1')
 	except: pass
 
 def _refresh_mdblist_watched():
 	# Activity-gated (same as MDBListMonitor / TV show lists) — skip full watched pull when unchanged.
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
+		# Set by mdblist_watched_status_mark / _arm_provider_list_sync_skip so
+		# Container.Refresh after mark/unmark does not block on a full paginated
+		# sync/watched while DialogBusy is up.
+		if _consume_provider_list_sync_skip(3): return
 		from apis.mdblist_api import mdblist_sync_activities
 		mdblist_sync_activities()
 	except: pass
@@ -1063,6 +1188,7 @@ def _refresh_mdblist_tvshow_watched():
 def _refresh_mdblist_movie_progress():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
+		if _consume_provider_list_sync_skip(3): return
 		from apis.mdblist_api import mdblist_sync_activities
 		mdblist_sync_activities()
 	except: pass
@@ -1070,6 +1196,7 @@ def _refresh_mdblist_movie_progress():
 def _refresh_mdblist_episode_progress():
 	try:
 		if settings.watched_indicators() != 3 or not settings.mdblist_user_active(): return
+		if _consume_provider_list_sync_skip(3): return
 		from apis.mdblist_api import mdblist_sync_activities
 		mdblist_sync_activities()
 	except: pass
@@ -1080,10 +1207,7 @@ def _refresh_punchplay_watched():
 		if settings.watched_indicators() != 4 or not settings.punchplay_user_active(): return
 		# Set by punchplay_watched_status_mark so Container.Refresh after mark/unmark does not
 		# block on a full history rebuild while DialogBusy is up.
-		from modules.kodi_utils import get_property, clear_property
-		if get_property('redlight.punchplay_skip_list_sync') == 'true':
-			clear_property('redlight.punchplay_skip_list_sync')
-			return
+		if _consume_provider_list_sync_skip(4): return
 		from apis.punchplay_api import punchplay_sync_activities
 		punchplay_sync_activities()
 	except: pass
@@ -1109,12 +1233,15 @@ def _refresh_trakt_episode_progress():
 	except: pass
 
 def _refresh_trakt_tvshow_watched():
+	# Activity-gated (same as Simkl/MDBList/PunchPlay / TraktMonitor) — skip full
+	# sync/watched/shows pull when Trakt activities say nothing changed.
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
+		if _consume_provider_list_sync_skip(1): return
 		from modules.kodi_utils import boot_trakt_list_refresh_allowed
 		if not boot_trakt_list_refresh_allowed(): return
-		from apis.trakt_api import trakt_indicators_tv
-		trakt_indicators_tv()
+		from apis.trakt_api import trakt_sync_activities
+		trakt_sync_activities()
 	except: pass
 
 def _episode_progress_list(dbcon):
@@ -1127,6 +1254,7 @@ def _sort_progress_list(data):
 	return sorted(data, key=lambda x: x['last_played'], reverse=True)
 
 def get_in_progress_movies(dummy_arg, page_no):
+	clear_local_bookmarks()
 	watched_indicators = settings.watched_indicators()
 	dbcon = get_database(watched_indicators)
 	data = _movie_progress_list(dbcon)
@@ -1135,6 +1263,11 @@ def get_in_progress_movies(dummy_arg, page_no):
 		_refresh_trakt_movie_progress()
 		data = _movie_progress_list(dbcon)
 		if data: source = 'trakt'
+	elif watched_indicators == 2 and settings.simkl_user_active():
+		_refresh_simkl_progress()
+		_purge_negligible_progress(dbcon)
+		data = _movie_progress_list(dbcon)
+		if data: source = 'simkl'
 	elif watched_indicators == 3 and settings.mdblist_user_active():
 		_refresh_mdblist_movie_progress()
 		data = _movie_progress_list(dbcon)
@@ -1143,11 +1276,15 @@ def get_in_progress_movies(dummy_arg, page_no):
 		_refresh_punchplay_progress()
 		data = _movie_progress_list(dbcon)
 		if data: source = 'punchplay'
+	else:
+		_purge_negligible_progress(dbcon)
+		data = _movie_progress_list(dbcon)
 	logger('Red Light', 'get_in_progress_movies: %s item(s) from %s' % (len(data), source))
 	return _sort_progress_list(data)
 
 def get_in_progress_tvshows(dummy_arg, page_no):
 	started = time.time()
+	clear_local_bookmarks()
 	source = 'local'
 	if settings.watched_indicators() == 1 and settings.trakt_user_active():
 		_refresh_trakt_tvshow_watched()
@@ -1189,14 +1326,29 @@ def get_in_progress_tvshow_ids(watched_db=None):
 		return set()
 
 def get_in_progress_episodes():
+	clear_local_bookmarks()
 	watched_indicators = settings.watched_indicators()
 	dbcon = get_database(watched_indicators)
 	episode_list = _episode_progress_list(dbcon)
 	source = 'local'
-	if watched_indicators == 1 and settings.trakt_user_active():
+	_skip_sync = False
+	try:
+		from modules.kodi_utils import playback_list_sync_skip_recent
+		_skip_sync = playback_list_sync_skip_recent()
+	except: pass
+	if _skip_sync:
+		_purge_negligible_progress(dbcon)
+		episode_list = _episode_progress_list(dbcon)
+		logger('Red Light', 'get_in_progress_episodes: %s item(s) from local (skip provider sync)' % len(episode_list))
+	elif watched_indicators == 1 and settings.trakt_user_active():
 		_refresh_trakt_episode_progress()
 		episode_list = _episode_progress_list(dbcon)
 		if episode_list: source = 'trakt'
+	elif watched_indicators == 2 and settings.simkl_user_active():
+		_refresh_simkl_progress()
+		_purge_negligible_progress(dbcon)
+		episode_list = _episode_progress_list(dbcon)
+		if episode_list: source = 'simkl'
 	elif watched_indicators == 3 and settings.mdblist_user_active():
 		_refresh_mdblist_episode_progress()
 		episode_list = _episode_progress_list(dbcon)
@@ -1205,7 +1357,11 @@ def get_in_progress_episodes():
 		_refresh_punchplay_progress()
 		episode_list = _episode_progress_list(dbcon)
 		if episode_list: source = 'punchplay'
-	logger('Red Light', 'get_in_progress_episodes: %s item(s) from %s' % (len(episode_list), source))
+	else:
+		_purge_negligible_progress(dbcon)
+		episode_list = _episode_progress_list(dbcon)
+	if not _skip_sync:
+		logger('Red Light', 'get_in_progress_episodes: %s item(s) from %s' % (len(episode_list), source))
 	if settings.lists_sort_order('progress') == 0: episode_list = sort_for_article(episode_list, 'title', settings.ignore_articles())
 	else: episode_list.sort(key=lambda k: k['date'], reverse=True)
 	return episode_list
