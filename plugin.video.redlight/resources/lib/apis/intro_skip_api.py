@@ -13,6 +13,9 @@ _MAX_SEGMENT_SEC = 600
 # days of air); only an older episode keeps the long life. A failed request is never cached.
 _EMPTY_CACHE_HOURS = 24
 _OLD_EPISODE_DAYS = 30
+# #282: a credits marker whose credits end leaves more than this much file after it belongs to a
+# shorter cut of the episode; a short tail (preview, logo, black) stays under it.
+_CUT_MISMATCH_GAP_SEC = 120
 _status = {}
 
 
@@ -132,7 +135,10 @@ def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None, 
 	return segment
 
 
-def resolve_credits_start_sec(tmdb_id, imdb_id, season, episode, duration_sec=None, premiered=None):
+def resolve_credits_segment(tmdb_id, imdb_id, season, episode, duration_sec=None, premiered=None):
+	'''The credits marker as stored: {'start_sec', 'end_sec'} (end_sec None when the provider has none),
+	or None. The cache is per episode, not per file, so the fit against the playing file is done by the
+	caller through credits_start_for_duration() (#282).'''
 	try:
 		season, episode = int(season), int(episode)
 	except:
@@ -140,16 +146,56 @@ def resolve_credits_start_sec(tmdb_id, imdb_id, season, episode, duration_sec=No
 	cache_key = _outro_cache_key(tmdb_id, imdb_id, season, episode)
 	cached = main_cache.get(cache_key)
 	if cached is not None:
-		return cached or None
-	start_sec, failures = None, []
+		if not cached:
+			return None
+		if isinstance(cached, dict):
+			return cached
+		return {'start_sec': cached, 'end_sec': None}  # value cached before #282
+	segment, failures = None, []
 	if tmdb_id not in (None, '', 'None', '0000000'):
-		start_sec = _attempt(_fetch_theintrodb_credits, failures, tmdb_id, season, episode, duration_sec)
-	if start_sec is None and imdb_id not in (None, '', 'None', 'tt0000000'):
-		start_sec = _attempt(_fetch_introdb_outro, failures, imdb_id, season, episode, duration_sec)
-	if start_sec is not None:
-		main_cache.set(cache_key, start_sec, expiration=_CACHE_HOURS)
+		segment = _attempt(_fetch_theintrodb_credits, failures, tmdb_id, season, episode, duration_sec)
+	if segment is None and imdb_id not in (None, '', 'None', 'tt0000000'):
+		segment = _attempt(_fetch_introdb_outro, failures, imdb_id, season, episode, duration_sec)
+	if segment is not None:
+		main_cache.set(cache_key, segment, expiration=_CACHE_HOURS)
 	elif not failures:
 		main_cache.set(cache_key, '', expiration=_empty_cache_hours(premiered))
+	return segment
+
+
+def credits_start_for_duration(segment, duration_sec, gap_sec=None):
+	'''Fit a credits marker to the file playing. Returns (start_sec, shifted_from).
+
+	#282: introdb.app holds one marker per episode and takes no duration, so a longer cut
+	(a Director's Cut, 1562 s against a 1274 s broadcast cut) gets the broadcast marker and the
+	next-episode prompt fires minutes early. Credits sit at the end of any cut, so when the
+	marker's credits end leaves more than gap_sec of file after it, the marker is re-anchored to
+	the end of this file, keeping its credits length. A marker with no end (TheIntroDB credits
+	carry end_ms null, and it is already asked with the duration) is returned as is.'''
+	if not segment:
+		return None, None
+	start_sec = segment.get('start_sec')
+	if start_sec is None:
+		return None, None
+	end_sec = segment.get('end_sec')
+	if gap_sec is None:
+		gap_sec = _CUT_MISMATCH_GAP_SEC
+	try:
+		start_sec = float(start_sec)
+		total = float(duration_sec) if duration_sec else None
+		end_sec = float(end_sec) if end_sec is not None else None
+	except:
+		return start_sec, None
+	if total is None or total <= 60 or end_sec is None or end_sec < start_sec:
+		return start_sec, None
+	if total - end_sec <= gap_sec:
+		return start_sec, None
+	return total - (end_sec - start_sec), start_sec
+
+
+def resolve_credits_start_sec(tmdb_id, imdb_id, season, episode, duration_sec=None, premiered=None):
+	segment = resolve_credits_segment(tmdb_id, imdb_id, season, episode, duration_sec, premiered)
+	start_sec, _ = credits_start_for_duration(segment, duration_sec)
 	return start_sec
 
 
@@ -276,7 +322,13 @@ def _fetch_introdb_outro(imdb_id, season, episode, duration_sec=None):
 			return None
 		outro = data.get('outro') or {}
 		start_sec = _parse_start_value(outro.get('start_sec', outro.get('start_ms')))
-		return _valid_start_sec(start_sec, duration_sec)
+		start_sec = _valid_start_sec(start_sec, duration_sec)
+		if start_sec is None:
+			return None
+		end_sec = _parse_start_value(outro.get('end_sec', outro.get('end_ms')))
+		if end_sec is not None and end_sec < start_sec:
+			end_sec = None
+		return {'start_sec': start_sec, 'end_sec': end_sec}
 	except _LookupFailed:
 		raise
 	except:
@@ -300,7 +352,14 @@ def _fetch_theintrodb_credits(tmdb_id, season, episode, duration_sec=None):
 		entry = credits_list[0]
 		if entry.get('start_ms') is None:
 			return None
-		return _valid_start_sec(int(entry['start_ms']) / 1000.0, duration_sec)
+		start_sec = _valid_start_sec(int(entry['start_ms']) / 1000.0, duration_sec)
+		if start_sec is None:
+			return None
+		end_sec = None
+		if entry.get('end_ms') is not None:
+			try: end_sec = int(entry['end_ms']) / 1000.0
+			except: end_sec = None
+		return {'start_sec': start_sec, 'end_sec': end_sec}
 	except _LookupFailed:
 		raise
 	except:

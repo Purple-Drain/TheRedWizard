@@ -2148,7 +2148,7 @@ class RedLightPlayer(xbmc.Player):
 				self.nextep_settings['outro_start'] = outro_start
 		credits_log = ' credits_entry=%ss' % credits_entry if credits_entry is not None else ''
 		outro_start = self.nextep_settings.get('outro_start')
-		outro_log = ' outro_start=%.1fs' % outro_start if outro_start is not None else ''
+		outro_log = self._outro_start_log(outro_start)
 		play_n_log = ' play_n=%s' % play_n_remaining if play_n_remaining else ''
 		self._log_nextep('Next episode timing: play_type=%s alert=%s source=%s pop_at=%ss pipeline=%ss start_prep=%ss total=%ss%s%s%s' % (
 			play_type, nextep_settings.get('alert_timing'), timing_source, pop_at, pipeline, self.start_prep, round(float(self.total_time)), credits_log, outro_log, play_n_log))
@@ -2334,12 +2334,15 @@ class RedLightPlayer(xbmc.Player):
 			if cached != '__unset__':
 				return cached
 		try:
-			from apis.intro_skip_api import resolve_credits_start_sec
+			from apis.intro_skip_api import resolve_credits_segment, credits_start_for_duration
 			duration = float(self.total_time) if self.total_time else None
-			start_sec = resolve_credits_start_sec(self.tmdb_id, self.imdb_id, self.season, self.episode, duration, premiered=self.meta_get('premiered'))
+			segment = resolve_credits_segment(self.tmdb_id, self.imdb_id, self.season, self.episode, duration, premiered=self.meta_get('premiered'))
+			# #282: fit the per-episode marker to this file; a longer cut gets it re-anchored to the end.
+			start_sec, shifted_from = credits_start_for_duration(segment, duration)
 		except:
-			start_sec = None
+			start_sec, shifted_from = None, None
 		setattr(self, cache_attr, start_sec)
+		self._outro_credits_shifted_from = shifted_from
 		return start_sec
 
 	def _outro_credits_pop_at(self, fetch=False):
@@ -2368,8 +2371,14 @@ class RedLightPlayer(xbmc.Player):
 		self.nextep_settings['window_time'] = pop_at
 		self.nextep_settings['pipeline_headroom'] = pipeline
 		self.nextep_settings['outro_start'] = outro_start
-		outro_log = ' outro_start=%.1fs' % outro_start if outro_start is not None else ''
+		outro_log = self._outro_start_log(outro_start)
 		self._log_nextep('Next episode timing refreshed (introdb): pop_at=%ss start_prep=%ss%s' % (pop_at, start_prep, outro_log))
+
+	def _outro_start_log(self, outro_start):
+		if outro_start is None: return ''
+		shifted_from = getattr(self, '_outro_credits_shifted_from', None)
+		if shifted_from is None: return ' outro_start=%.1fs' % outro_start
+		return ' outro_start=%.1fs (re-anchored from %.1fs, marker is for a shorter cut)' % (outro_start, shifted_from)
 
 	def _stinger_early_percentage(self, trigger_pct):
 		try:
@@ -2440,6 +2449,7 @@ class RedLightPlayer(xbmc.Player):
 			self._intro_skip_last_curr = None
 			self._intro_skip_settle_ready = False
 			self._outro_credits_start_cached = '__unset__'
+			self._outro_credits_shifted_from = None
 			self._chapter_timing_logged = None
 			self._monitor_tick_errors = None
 
