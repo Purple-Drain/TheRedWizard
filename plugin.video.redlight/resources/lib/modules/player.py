@@ -2511,7 +2511,7 @@ class RedLightPlayer(xbmc.Player):
 		self._intro_skip_no_timing_logged = False
 		try:
 			from apis.intro_skip_api import peek_intro_segment_cache
-			cached = peek_intro_segment_cache(self.tmdb_id, self.imdb_id, self.season, self.episode)
+			cached = peek_intro_segment_cache(self.tmdb_id, self.imdb_id, self.season, self.episode, getattr(self, 'total_time', None) or None)
 			if cached != '__miss__':
 				self._intro_skip_fetch_done = True
 				if cached:
