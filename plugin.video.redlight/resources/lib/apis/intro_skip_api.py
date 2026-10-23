@@ -16,6 +16,9 @@ _OLD_EPISODE_DAYS = 30
 # #282: a credits marker whose credits end leaves more than this much file after it belongs to a
 # shorter cut of the episode; a short tail (preview, logo, black) stays under it.
 _CUT_MISMATCH_GAP_SEC = 120
+# Same test for a marker with no credits end, measured from the credits start: wider, so a show
+# with long credits keeps its marker, while a cut 4 min longer still trips it.
+_CUT_MISMATCH_GAP_NO_END_SEC = 180
 # #283: TheIntroDB v4 matches the closest cut within 5 minutes of duration_ms. Cached markers are keyed
 # by the file's length to the minute, so two cuts of one episode do not share an entry.
 _CUT_MATCH_SEC = 300
@@ -181,7 +184,8 @@ def resolve_credits_segment(tmdb_id, imdb_id, season, episode, duration_sec=None
 			return None
 		if isinstance(cached, dict):
 			return cached
-		return {'start_sec': cached, 'end_sec': None}  # value cached before #282
+		# A bare number was cached before pd.129 (an episode prefetched during the previous play),
+		# so it has no end for the fit check: fetch again (#282, S04E21).
 	segment, failures = None, []
 	if tmdb_id not in (None, '', 'None', '0000000'):
 		segment = _attempt(_fetch_theintrodb_credits, failures, tmdb_id, season, episode, duration_sec)
@@ -202,7 +206,8 @@ def credits_start_for_duration(segment, duration_sec, gap_sec=None):
 	next-episode prompt fires minutes early. Credits sit at the end of any cut, so when the
 	marker's credits end leaves more than gap_sec of file after it, the marker is re-anchored to
 	the end of this file, keeping its credits length. A marker with no end (TheIntroDB credits
-	carry end_ms null, and it is already asked with the duration) is returned as is.'''
+	carry end_ms null) is measured from its start with the wider _CUT_MISMATCH_GAP_NO_END_SEC,
+	since the credits length is unknown, and re-anchored to the end with no credits length.'''
 	if not segment:
 		return None, None
 	start_sec = segment.get('start_sec')
@@ -217,8 +222,12 @@ def credits_start_for_duration(segment, duration_sec, gap_sec=None):
 		end_sec = float(end_sec) if end_sec is not None else None
 	except:
 		return start_sec, None
-	if total is None or total <= 60 or end_sec is None or end_sec < start_sec:
+	if total is None or total <= 60:
 		return start_sec, None
+	if end_sec is None or end_sec < start_sec:
+		if total - start_sec <= _CUT_MISMATCH_GAP_NO_END_SEC:
+			return start_sec, None
+		return total, start_sec
 	if total - end_sec <= gap_sec:
 		return start_sec, None
 	return total - (end_sec - start_sec), start_sec
