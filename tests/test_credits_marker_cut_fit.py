@@ -63,7 +63,7 @@ def test_one_cached_marker_serves_both_cuts(monkeypatch):
     cache = _setup(monkeypatch, lambda *a, **k: Response(200, INTRODB_APP))
     assert api.resolve_credits_start_sec('', 'tt1266020', 4, 20, 1562) == 1556.0
     # #283 keys the entry by the file's length; the fit still happens at use time.
-    assert cache.store[api._outro_cache_key('', 'tt1266020', 4, 20, 1562)] == {'start_sec': 1262.0, 'end_sec': 1268.0}
+    assert cache.store[api._outro_cache_key('', 'tt1266020', 4, 20)] == {'start_sec': 1262.0, 'end_sec': 1268.0}
     assert api.resolve_credits_start_sec('', 'tt1266020', 4, 20, 1274) == 1262.0
 
 
@@ -86,3 +86,22 @@ def test_theintrodb_credits_keep_their_null_end(monkeypatch):
     _setup(monkeypatch, lambda *a, **k: Response(200, {'credits': [{'start_ms': 1321000, 'end_ms': None}]}))
     segment = api.resolve_credits_segment('1668', '', 4, 9, 1334)
     assert (segment['start_sec'], segment['end_sec']) == (1321.0, None)
+    assert api.resolve_credits_segment('1668', '', 4, 9, 1334) == {'start_sec': 1321.0, 'end_sec': None}
+
+
+def test_theintrodb_marker_is_kept_per_cut(monkeypatch):
+    # #283: a marker from a known cut is filed under the file's length; another cut asks again.
+    cache = _setup(monkeypatch, lambda *a, **k: Response(200, {'group_duration_ms': 1562000, 'credits': [{'start_ms': 1500000, 'end_ms': None}]}))
+    assert api.resolve_credits_segment('8592', '', 4, 20, 1562)['start_sec'] == 1500.0
+    assert api._outro_cache_key('8592', '', 4, 20, 1562) in cache.store
+    assert api._outro_cache_key('8592', '', 4, 20) not in cache.store
+    monkeypatch.setattr(api.requests, 'get', lambda *a, **k: Response(503))
+    assert api.resolve_credits_segment('8592', '', 4, 20, 1274) is None  # other cut, not served the 1562 s marker
+
+
+def test_length_free_prefetch_serves_a_file_of_the_same_cut(monkeypatch):
+    cache = _setup(monkeypatch, lambda *a, **k: Response(200, {'group_duration_ms': 1562000, 'credits': [{'start_ms': 1500000, 'end_ms': None}]}))
+    cache.store[api._outro_cache_key('8592', '', 4, 20)] = {'start_sec': 1500.0, 'end_sec': None, 'cut_duration_sec': 1562.0}
+    monkeypatch.setattr(api.requests, 'get', lambda *a, **k: Response(503))
+    assert api.resolve_credits_segment('8592', '', 4, 20, 1560)['start_sec'] == 1500.0
+    assert api.resolve_credits_segment('8592', '', 4, 20, 1200) is None  # 362 s off the prefetched cut
