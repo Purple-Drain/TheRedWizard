@@ -6,9 +6,9 @@ from threading import Thread, Lock
 from caches.external_cache import external_cache
 from caches.settings_cache import get_setting
 from modules import kodi_utils, source_utils
-from modules.debrid import RD_check, AD_check, OC_check, TB_check, PM_check, query_local_cache
-from modules.settings import debrid_cache_check, max_threads
-from modules.utils import clean_file_name
+from modules.debrid import RD_check, AD_check, OC_check, TB_check, PM_check, query_local_cache, pick_unique_torrent_rows
+from modules.settings import debrid_cache_check, debrid_cache_check_supported, max_threads
+from modules.utils import format_display_name
 # logger = kodi_utils.logger
 
 _INTERNAL_PROGRESS_LABELS = {
@@ -22,18 +22,23 @@ _INTERNAL_PROGRESS_LABELS = {
 	'tb_cloud': 'TB Cloud',
 	'folders': 'Folders',
 	'comet': 'Comet',
+	'mediafusion': 'MediaFusion',
 	'torrentio': 'Torrentio',
 	'torz': 'StremThru Torz',
+	'zilean': 'Zilean',
 	'nyaa': 'Nyaa (Anime)',
 	'animetosho': 'AnimeTosho (Anime)',
+	'piratebay': 'PirateBay',
+	'torrentdownloads': 'Torrent Downloads',
 }
 
 class source:
-	def __init__(self, meta, source_dict, active_debrid, cache_check_override, internal_scrapers, prescrape_sources, progress_dialog, disabled_ext_ignored=False, cloud_scrapers=None, external_orchestration=None):
+	def __init__(self, meta, source_dict, active_debrid, cache_check_override, internal_scrapers, prescrape_sources, progress_dialog, disabled_ext_ignored=False, cloud_scrapers=None, external_orchestration=None, defer_cache_check=False):
 		self.monitor = kodi_utils.kodi_monitor()
 		self.scrape_provider = 'external'
 		self.progress_dialog = progress_dialog
 		self.cache_check_override = cache_check_override
+		self.defer_cache_check = defer_cache_check
 		self.meta = meta
 		self.background = self.meta.get('background', False)
 		self.active_debrid = active_debrid
@@ -127,10 +132,12 @@ class source:
 			return
 		def _background():
 			kodi_utils.sleep(1500)
-			end_time = time.time() + self.timeout
+			started = time.time()
+			end_time = started + self.timeout
 			while time.time() < end_time:
 				alive_threads = [x for x in self.threads if x.is_alive()]
 				len_alive_threads = len(alive_threads)
+				self._note_progress_row(alive_threads, self.timeout, started)
 				kodi_utils.sleep(1000)
 				if len_alive_threads <= 5: return
 				if len(self.sources) >= 100 * len_alive_threads: return
@@ -140,13 +147,23 @@ class source:
 		else:
 			self._prepare_episode_source_dict()
 			Thread(target=self.process_episode_threads).start()
-		if self.background: _background()
+		# Loading Screen Background leaves progress_dialog unset. Wait the same way as a background scrape.
+		if self.background or not self.progress_dialog: _background()
 		else: _scraperDialog()
 		if self._scrape_was_cancelled():
 			return []
 		current_results = list(self.sources)
 		if current_results: return self.process_results(current_results)
 		return []
+
+	def _note_progress_row(self, alive_threads, timeout, started):
+		if not kodi_utils.loading_background_active(): return
+		try:
+			names = ', '.join(thread.getName() for thread in alive_threads).upper()
+			percent = min(99, int((max(time.time() - started, 0) / float(timeout)) * 100))
+			kodi_utils.update_loading_background(percent, names or 'Red Light loading...')
+		except Exception:
+			pass
 
 	def _scrape_was_cancelled(self):
 		try:
@@ -275,10 +292,12 @@ class source:
 				except: pass
 		def _background():
 			kodi_utils.sleep(1500)
-			end_time = time.time() + batch_timeout
+			started = time.time()
+			end_time = started + batch_timeout
 			while time.time() < end_time:
 				alive_threads = [x for x in self.threads if x.is_alive()]
 				len_alive_threads = len(alive_threads)
+				self._note_progress_row(alive_threads, batch_timeout, started)
 				kodi_utils.sleep(1000)
 				if len_alive_threads <= 5: return
 				if len(self.sources) >= 100 * len_alive_threads: return
@@ -290,7 +309,7 @@ class source:
 		else:
 			self._prepare_episode_source_dict()
 			Thread(target=self.process_episode_threads).start()
-		if self.background: _background()
+		if self.background or not self.progress_dialog: _background()
 		else: _scraperDialog()
 
 	def _source_entry(self, item):
@@ -375,7 +394,10 @@ class source:
 			external_cache.set(cache_key, self.media_type, self.tmdb_id, self.title, self.year, s_check, e_check, sources, expiry_hours)
 		if sources:
 			if pack == 'Season': sources = [i for i in sources if not 'episode_start' in i or i['episode_start'] <= self.episode <= i['episode_end']]
-			elif pack == 'Show': sources = [i for i in sources if i['last_season'] >= self.season]
+			elif pack == 'Show':
+				sources = [i for i in sources if i['last_season'] >= self.season]
+				if not source_utils.show_has_ended(self.meta):
+					sources = [i for i in sources if source_utils.release_covers_season(i.get('name') or '', self.season)]
 			if not self.background: self.process_quality_count(sources)
 			self.sources.extend(sources)
 		del module
@@ -383,24 +405,11 @@ class source:
 	def process_results(self, results):
 		if self._scrape_was_cancelled():
 			return []
-		def _process_duplicates(all_results):
-			unique_urls, unique_hashes = set(), set()
-			unique_urls_add, unique_hashes_add = unique_urls.add, unique_hashes.add
-			for provider in all_results:
-				try:
-					url = provider['url'].lower()
-					if url not in unique_urls:
-						unique_urls_add(url)
-						if 'hash' in provider:
-							_hash = provider['hash']
-							if len(_hash) == 40 and _hash not in unique_hashes:
-								unique_hashes_add(provider['hash'])
-								yield provider
-						else: yield provider
-				except: yield provider
 		final_lock = Lock()
 		frozen_providers = set()
 		def _debrid_api_check_enabled(provider):
+			if not debrid_cache_check_supported(provider):
+				return False
 			if self.cache_check_override is not None:
 				return self.cache_check_override
 			return debrid_cache_check(provider)
@@ -515,9 +524,16 @@ class source:
 					bool(providers_needing_api), ','.join(providers_needing_api) or 'none', len(final_results), cached, uncached, unchecked))
 			except: pass
 		try:
+			results = pick_unique_torrent_rows(results)
+			if self.defer_cache_check:
+				for i in results:
+					try:
+						if i.get('hash'):
+							i['hash'] = str(i['hash']).lower()
+					except: pass
+				return results
 			if not self.background and self.all_internal_sources: self.process_quality_count_final(self.all_internal_sources)
 			final_results = []
-			results = list(_process_duplicates(results))
 			hash_list = list(set([i['hash'].lower() for i in results if i.get('hash') and len(i['hash']) == 40]))
 			cached_hashes = query_local_cache(hash_list)
 			providers_needing_api = [p for p in self.active_debrid if _debrid_api_check_enabled(p)]
@@ -539,13 +555,18 @@ class source:
 				if not self.background:
 					self.process_quality_count_final(results)
 				final_results.extend([dict(i, **{'cache_provider': provider, 'debrid': provider}) for i in results])
-			if len(providers_needing_api) == 1 and not self.background:
+			if len(providers_needing_api) == 1 and not self.background and self.progress_dialog:
 				debrid_check_threads[0].start()
 				_debrid_check_dialog(debrid_deadline)
 				debrid_check_threads[0].join(timeout=max(0.0, debrid_deadline - time.time()))
 			else:
 				[i.start() for i in debrid_check_threads]
-				if self.background:
+				if self.background or not self.progress_dialog:
+					if kodi_utils.loading_background_active() and not self.background:
+						started = time.time()
+						while any(thread.is_alive() for thread in debrid_check_threads) and time.time() < debrid_deadline:
+							self._note_progress_row([thread for thread in debrid_check_threads if thread.is_alive()], debrid_timeout, started)
+							kodi_utils.sleep(200)
 					for thread in debrid_check_threads:
 						thread.join(timeout=max(0.0, debrid_deadline - time.time()))
 				else:
@@ -570,7 +591,7 @@ class source:
 					if 'hash' in i:
 						_hash = i_get('hash').lower()
 						i['hash'] = str(_hash)
-					display_name = clean_file_name(source_utils.normalize(i['name'].replace('html', ' ').replace('+', ' ').replace('-', ' ')))
+					display_name = format_display_name(source_utils.normalize(i['name']))
 					if 'name_info' in i: quality, extraInfo = source_utils.get_file_info(name_info=i_get('name_info'))
 					else: quality, extraInfo = source_utils.get_file_info(url=i_get('url'))
 					try:

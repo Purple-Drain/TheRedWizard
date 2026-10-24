@@ -44,7 +44,7 @@ class MenuEditor:
 
 	def remove(self):
 		if self._is_settings_public_calendar():
-			return kodi_utils.notification('Turn off Show Public Calendar in Settings > Single Episode Lists > Calendars.', 4000)
+			return kodi_utils.notification('Turn off Show Public Calendars in Settings > Single Episode Lists > Calendars.', 4000)
 		if not kodi_utils.confirm_dialog(): return kodi_utils.notification('Cancelled', 1500)
 		list_items = navigator_cache.currently_used_list(self.active_list)
 		if len(list_items) == 1: return kodi_utils.notification('Cancelled', 1500)
@@ -56,7 +56,7 @@ class MenuEditor:
 		optional = navigator_cache.optional_menus.get(self.active_list) or []
 		item = next((dict(i) for i in optional if i.get('mode') == 'build_simkl_public_calendar'), None)
 		if not item:
-			item = {'name': 'Public Calendar', 'mode': 'build_simkl_public_calendar', 'iconImage': 'calender'}
+			item = {'name': 'Simkl Calendar', 'mode': 'build_simkl_public_calendar', 'iconImage': 'calender'}
 		if self.active_list == 'TVShowList' and not item.get('feeds'):
 			from modules import settings as s
 			item['feeds'] = 'all' if s.public_calendar_include_anime() else 'tv'
@@ -64,15 +64,36 @@ class MenuEditor:
 			item['feeds'] = 'anime'
 		return item
 
-	def _focused_is_public_calendar(self):
-		if self.name == 'Public Calendar': return True
+	def _focused_matches(self, mode, name):
+		if self.name == name: return True
 		stored = navigator_cache.currently_used_list(self.active_list) or []
-		if stored and 0 <= self.position < len(stored) and stored[self.position].get('mode') == 'build_simkl_public_calendar':
+		if stored and 0 <= self.position < len(stored) and stored[self.position].get('mode') == mode:
 			return True
 		try:
 			item = self._get_menu_item(kodi_utils.get_infolabel('ListItem.FileNameAndPath'))
-			return item.get('mode') == 'build_simkl_public_calendar' or item.get('name') == 'Public Calendar'
+			return item.get('mode') == mode or item.get('name') == name
 		except: return False
+
+	def _focused_is_simkl_public_calendar(self):
+		return self._focused_matches('build_simkl_public_calendar', 'Simkl Calendar')
+
+	def _focused_is_wetrakr_calendar(self):
+		return self._focused_matches('build_wetrakr_public_calendar', 'WeTrakr Calendar')
+
+	def _focused_is_public_calendar(self):
+		return self._focused_is_simkl_public_calendar() or self._focused_is_wetrakr_calendar()
+
+	def _pin_focused_calendar(self, list_items, item, mode):
+		if self._menu_has_item(list_items, item):
+			if self.position < 0 or self.position >= len(list_items):
+				for idx, row in enumerate(list_items):
+					if row.get('mode') == mode:
+						self.position = idx
+						break
+			return list_items
+		list_items.append(item)
+		self.position = len(list_items) - 1
+		return list_items
 
 	def _is_settings_public_calendar(self):
 		if self.active_list not in ('TVShowList', 'AnimeList'): return False
@@ -82,6 +103,9 @@ class MenuEditor:
 
 	def _materialize_injected_public_calendar(self, list_items):
 		list_items = list(list_items or [])
+		if self.active_list == 'TVShowList' and self._focused_is_wetrakr_calendar():
+			item = {'name': 'WeTrakr Calendar', 'mode': 'build_wetrakr_public_calendar', 'iconImage': 'calender'}
+			return self._pin_focused_calendar(list_items, item, 'build_wetrakr_public_calendar')
 		item = self._public_calendar_item()
 		if self._menu_has_item(list_items, item):
 			if self.position < 0 or self.position >= len(list_items):
@@ -90,7 +114,7 @@ class MenuEditor:
 						self.position = idx
 						break
 			return list_items
-		if not self._focused_is_public_calendar(): return list_items
+		if not self._focused_is_simkl_public_calendar(): return list_items
 		list_items.append(item)
 		self.position = len(list_items) - 1
 		return list_items
@@ -106,7 +130,9 @@ class MenuEditor:
 		navigator_cache.set_list(self.active_list, 'default', contents)
 		kodi_utils.notification('Success', 1500)
 		kodi_utils.sleep(500)
-		kodi_utils.container_update(kodi_utils.build_folder_url({'mode': 'navigator.main', 'action': self.active_list}))
+		# Refresh in place. Container.Update stacked a second copy of this menu, so Back
+		# showed the previous (pre-restore) listing until you left and re-entered.
+		self._refresh_menu()
 
 	def reload(self):
 		default, edited = navigator_cache.get_main_lists(self.active_list)
@@ -355,7 +381,7 @@ class MenuEditor:
 		default_list_items, edited = navigator_cache.get_main_lists(self.active_list)
 		current = edited if edited else navigator_cache.without_optional_extras(self.active_list, default_list_items)
 		stock_removed = [i for i in (default_list_items or []) if not self._menu_has_item(current, i)
-			and i.get('mode') != 'build_simkl_public_calendar' and not i.get('nextep_sort')]
+			and i.get('mode') not in ('build_simkl_public_calendar', 'build_wetrakr_public_calendar') and not i.get('nextep_sort')]
 		removed = [i for i in stock_removed if i.get('name') not in {x.get('name') for x in (navigator_cache.optional_menus.get(self.active_list) or [])}]
 		for item in navigator_cache.get_opted_optional(self.active_list):
 			if not self._menu_has_item(current, item) and not self._menu_has_item(removed, item):

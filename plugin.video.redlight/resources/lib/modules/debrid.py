@@ -10,7 +10,7 @@ from modules.native_torrents import NATIVE_TORRENT_SCRAPERS
 from modules.source_utils import get_external_cache_status
 from modules.utils import chunks
 from modules.kodi_utils import show_busy_dialog, hide_busy_dialog, notification
-from modules.settings import enabled_debrids_check
+from modules.settings import enabled_debrids_check, prefer_internal_scrapers
 # from modules.kodi_utils import logger
 
 def debrid_enabled():
@@ -174,8 +174,16 @@ def _normalize_hash_list(hash_list):
 
 def cached_check(hash_list, cached_hashes, debrid):
 	hash_list = _normalize_hash_list(hash_list)
-	cached_list = [i[0].lower() for i in cached_hashes if i[1] == debrid and i[2] == 'True']
-	unchecked_list = [i for i in hash_list if not any(h[0].lower() == i and h[1] == debrid and h[2] == 'True' for h in cached_hashes)]
+	cached_set, known = set(), set()
+	for row in (cached_hashes or []):
+		if row[1] != debrid:
+			continue
+		info_hash = str(row[0]).lower()
+		known.add(info_hash)
+		if row[2] == 'True':
+			cached_set.add(info_hash)
+	cached_list = [h for h in hash_list if h in cached_set]
+	unchecked_list = [h for h in hash_list if h not in known]
 	return cached_list, unchecked_list
 
 def RD_check(hash_list, cached_hashes, data, active_debrid):
@@ -300,8 +308,8 @@ def PM_check(hash_list, cached_hashes):
 	cached_append = cached_hashes.append
 	process_list = []
 	try:
-		for offset in range(0, len(unchecked_hashes), 50):
-			chunk = unchecked_hashes[offset:offset + 50]
+		for offset in range(0, len(unchecked_hashes), 100):
+			chunk = unchecked_hashes[offset:offset + 100]
 			results = api.check_cache(chunk)
 			if not results:
 				raise RuntimeError('empty Premiumize cache check response')
@@ -414,29 +422,163 @@ _DEBRID_RUNNERS = {
 	'TorBox': ('TorBox', TB_check),
 }
 
+_TORRENT_SCRAPE_PROVIDERS = frozenset(('external',) + NATIVE_TORRENT_SCRAPERS)
+
+
+_QUALITY_PREF = {'4K': 5, '1080p': 4, '720p': 3, 'SD': 2, 'SCR': 1, 'CAM': 1, 'TELE': 1}
+
+
+def _torrent_cache_rank(item):
+	cp = str(item.get('cache_provider') or '')
+	if cp.startswith('Uncached '):
+		return 0
+	if cp.startswith('Unchecked '):
+		return 1
+	if item.get('debrid') or (cp and cp.lower() != 'none'):
+		return 2
+	return 1
+
+
+def _torrent_keep_score(item, prefer_internal):
+	'''Higher wins. Cached, then Internal/External pref, then a real size, then larger size, then name.'''
+	is_native = 1 if item.get('scrape_provider') in NATIVE_TORRENT_SCRAPERS else 0
+	native_pref = is_native if prefer_internal else (1 - is_native)
+	try:
+		size = float(item.get('size') or 0)
+	except Exception:
+		size = 0.0
+	if size < 0:
+		size = 0.0
+	name = str(item.get('display_name') or item.get('name') or '')
+	provider = str(item.get('provider') or '').lower()
+	quality = _QUALITY_PREF.get(item.get('quality'), 0)
+	return (_torrent_cache_rank(item), native_pref, 1 if size > 0 else 0, size, quality, len(name), name.lower(), provider)
+
+
+def pick_unique_torrent_rows(results, prefer_internal=None):
+	'''One torrent row per info hash. Prefers a sized/named copy over whichever site answered first.'''
+	if not results:
+		return results
+	if prefer_internal is None:
+		prefer_internal = prefer_internal_scrapers()
+	best = {}
+	for item in results:
+		if item.get('scrape_provider') not in _TORRENT_SCRAPE_PROVIDERS:
+			continue
+		info_hash = str(item.get('hash') or '').lower()
+		if len(info_hash) != 40:
+			continue
+		item['hash'] = info_hash
+		score = _torrent_keep_score(item, prefer_internal)
+		prev = best.get(info_hash)
+		if prev is None or score > prev[0]:
+			best[info_hash] = (score, item)
+	collapsed, emitted_hashes, unique_urls = [], set(), set()
+	for item in results:
+		if item.get('scrape_provider') not in _TORRENT_SCRAPE_PROVIDERS:
+			collapsed.append(item)
+			continue
+		info_hash = str(item.get('hash') or '').lower()
+		if len(info_hash) != 40:
+			url = (item.get('url') or '').lower()
+			if url:
+				if url in unique_urls:
+					continue
+				unique_urls.add(url)
+			collapsed.append(item)
+			continue
+		if info_hash in emitted_hashes:
+			continue
+		winner = best.get(info_hash, (None, item))[1]
+		url = (winner.get('url') or '').lower()
+		if url:
+			if url in unique_urls:
+				continue
+			unique_urls.add(url)
+		emitted_hashes.add(info_hash)
+		collapsed.append(winner)
+	return collapsed
+
+
+def _scraper_quality_counts(items):
+	sd = p720 = p1080 = p4k = 0
+	for i in items:
+		q = i.get('quality')
+		if q == '4K':
+			p4k += 1
+		elif q == '1080p':
+			p1080 += 1
+		elif q == '720p':
+			p720 += 1
+		elif q in ('SD', 'CAM', 'TELE', 'SYNC'):
+			sd += 1
+	return sd, p720, p1080, p4k
+
+
+def collapse_duplicate_torrent_hashes(results, prefer_internal=None):
+	'''Keep one Internal/External torrent row per (info hash, debrid). Cached wins; pack label unless Prefer Internal Scrapers.'''
+	if not results:
+		return results
+	if prefer_internal is None:
+		prefer_internal = prefer_internal_scrapers()
+	best = {}
+	for idx, item in enumerate(results):
+		if item.get('scrape_provider') not in _TORRENT_SCRAPE_PROVIDERS:
+			continue
+		info_hash = str(item.get('hash') or '').lower()
+		if len(info_hash) != 40:
+			continue
+		key = (info_hash, item.get('debrid') or '')
+		score = _torrent_keep_score(item, prefer_internal)
+		prev = best.get(key)
+		if prev is None or score > prev[0]:
+			best[key] = (score, idx, item)
+	keep_idx = {entry[1] for entry in best.values()}
+	collapsed = []
+	for idx, item in enumerate(results):
+		if item.get('scrape_provider') not in _TORRENT_SCRAPE_PROVIDERS or len(str(item.get('hash') or '').lower()) != 40:
+			collapsed.append(item)
+			continue
+		if idx in keep_idx:
+			collapsed.append(item)
+	try:
+		dropped = len(results) - len(collapsed)
+		if dropped:
+			from modules.kodi_utils import logger
+			logger('TorrentHashDedupe', 'dropped=%d kept=%d' % (dropped, len(collapsed)))
+	except Exception:
+		pass
+	return collapsed
+
 
 def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=None, background=True, progress_dialog=None):
-	'''Stamp internal torrent hash rows with per-debrid cache_provider. Other rows pass through.'''
+	'''Stamp unstamped torrent rows (Internal and/or External) with per-debrid cache_provider.'''
 	from threading import Thread, Lock
 	from time import time as _time
-	from modules.settings import debrid_cache_check
+	from modules.settings import debrid_cache_check, debrid_cache_check_supported
 	from modules.kodi_utils import logger, get_property, clear_property, sleep, kodi_monitor
 
 	if not results:
 		return results
 	native, rest = [], []
 	for item in results:
-		if item.get('scrape_provider') in NATIVE_TORRENT_SCRAPERS and item.get('hash') and not item.get('cache_provider'):
+		if item.get('scrape_provider') in _TORRENT_SCRAPE_PROVIDERS and item.get('hash') and not item.get('cache_provider'):
 			native.append(item)
 		else:
 			rest.append(item)
 	if not native:
 		return results
+	if prefer_internal_scrapers():
+		native.sort(key=lambda i: 0 if i.get('scrape_provider') in NATIVE_TORRENT_SCRAPERS else 1)
+	else:
+		native.sort(key=lambda i: 1 if i.get('scrape_provider') in NATIVE_TORRENT_SCRAPERS else 0)
 	active_debrid = list(active_debrid or [])
 	if not active_debrid:
 		return rest
 
 	def _cache_check_enabled(provider):
+		if not debrid_cache_check_supported(provider):
+			return False
 		if cache_check_override is not None:
 			return cache_check_override
 		return debrid_cache_check(provider)
@@ -444,26 +586,28 @@ def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=
 	def _is_unchecked_row(item):
 		return str(item.get('cache_provider', '')).startswith('Unchecked ')
 
-	hash_list, unique_hashes, unique_urls = [], set(), set()
-	deduped = []
+	before = len(native)
+	native = pick_unique_torrent_rows(native)
+	hash_list, deduped = [], []
 	for item in native:
 		try:
-			url = (item.get('url') or '').lower()
 			info_hash = str(item.get('hash') or '').lower()
 			item['hash'] = info_hash
-			if url in unique_urls:
+			if len(info_hash) != 40:
+				deduped.append(item)
 				continue
-			unique_urls.add(url)
-			if len(info_hash) != 40 or info_hash in unique_hashes:
-				continue
-			unique_hashes.add(info_hash)
 			hash_list.append(info_hash)
 			deduped.append(item)
 		except Exception:
 			deduped.append(item)
 	if not deduped:
 		return rest
+	try:
+		logger('TorrentHashDedupe', 'stamp dropped=%d kept=%d' % (before - len(deduped), len(deduped)))
+	except Exception:
+		pass
 	native = deduped
+	cache_started = _time()
 	cached_hashes = query_local_cache(hash_list)
 	providers_needing_api = [p for p in active_debrid if _cache_check_enabled(p)]
 	final_results, frozen_providers, final_lock = [], set(), Lock()
@@ -471,7 +615,7 @@ def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=
 
 	def _unchecked_batch(provider, reason):
 		try:
-			logger('DebridCacheCheck', 'native fallback=unchecked provider=%s reason=%s total=%d' % (provider, reason, len(native)))
+			logger('DebridCacheCheck', 'torrent fallback=unchecked provider=%s reason=%s total=%d' % (provider, reason, len(native)))
 		except Exception:
 			pass
 		return [dict(i, **{'cache_provider': 'Unchecked %s' % provider, 'debrid': provider}) for i in native]
@@ -505,7 +649,7 @@ def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=
 		except Exception as e:
 			incomplete, cached = True, []
 			try:
-				logger('DebridCacheCheck', 'native provider=%s thread=%s' % (provider, type(e).__name__))
+				logger('DebridCacheCheck', 'torrent provider=%s thread=%s' % (provider, type(e).__name__))
 			except Exception:
 				pass
 		api_blocked = get_property('redlight.debrid_cache_api_error') if provider == 'AllDebrid' else ''
@@ -541,9 +685,16 @@ def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=
 			pass
 		while not progress_dialog.iscanceled() and not (monitor and monitor.abortRequested()):
 			remaining = [x.getName() for x in debrid_check_threads if x.is_alive()]
-			percent = min(100, int((max((_time() - start_time), 0) / float(debrid_timeout)) * 100))
+			elapsed = max((_time() - start_time), 0)
+			if not remaining:
+				percent = 90
+			else:
+				percent = min(89, 50 + int(min(elapsed, 8.0) / 8.0 * 39))
 			try:
-				progress_dialog.update_scraper(0, 0, 0, 0, len(final_results) or len(native), ', '.join(remaining).upper(), percent)
+				with final_lock:
+					shown = list(final_results) if final_results else native
+				sd, p720, p1080, p4k = _scraper_quality_counts(shown)
+				progress_dialog.update_scraper(sd, p720, p1080, p4k, len(shown), ', '.join(remaining).upper(), percent)
 			except Exception:
 				pass
 			if not remaining or _time() >= debrid_deadline:
@@ -565,8 +716,8 @@ def stamp_torrent_cache(results, active_debrid, cache_check_override=None, data=
 		uncached = sum(1 for i in final_results if str(i.get('cache_provider', '')).startswith('Uncached '))
 		unchecked = sum(1 for i in final_results if str(i.get('cache_provider', '')).startswith('Unchecked '))
 		cached = len(final_results) - uncached - unchecked
-		logger('DebridCacheCheck', 'native enabled=%s providers=%s total=%d cached=%d uncached=%d unchecked=%d' % (
-			bool(providers_needing_api), ','.join(providers_needing_api) or 'none', len(final_results), cached, uncached, unchecked))
+		logger('DebridCacheCheck', 'torrent enabled=%s providers=%s total=%d cached=%d uncached=%d unchecked=%d elapsed=%.2fs' % (
+			bool(providers_needing_api), ','.join(providers_needing_api) or 'none', len(final_results), cached, uncached, unchecked, _time() - cache_started))
 	except Exception:
 		pass
 	return rest + final_results

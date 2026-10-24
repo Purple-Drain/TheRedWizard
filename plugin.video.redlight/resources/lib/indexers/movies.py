@@ -16,6 +16,8 @@ class Movies:
 	trakt_main = ('trakt_movies_trending', 'trakt_movies_trending_recent', 'trakt_movies_most_favorited', 'trakt_movies_top10_boxoffice')
 	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites')
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
+	wetrakr_personal = ('wetrakr_plantowatch', 'wetrakr_watching', 'wetrakr_waiting', 'wetrakr_playing',
+		'wetrakr_paused', 'wetrakr_watched', 'wetrakr_dropped', 'wetrakr_favorites')
 	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
 		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
 	mdblist_personal = ('mdblist_watchlist', 'mdblist_collection')
@@ -37,6 +39,7 @@ class Movies:
 		self.paginate_start = int(self.params_get('paginate_start', '0'))
 		self.append = self.items.append
 		self.movieset_list_active = False
+		self.last_played_by_id = {}
 
 	def fetch_list(self):
 		handle = int(sys.argv[1])
@@ -71,6 +74,7 @@ class Movies:
 				data = function('movie', page_no)
 				data, total_pages = self.paginate_list(data, page_no)
 				self.list = [i['media_id'] for i in data]
+				self.last_played_by_id = {str(i['media_id']): i.get('last_played') for i in data}
 				if total_pages > 2: self.total_pages = total_pages
 				if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 			elif self.action in self.most_watched:
@@ -100,7 +104,7 @@ class Movies:
 				try:
 					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 				except: pass
-			elif self.action in self.simkl_personal:
+			elif self.action in self.simkl_personal or self.action in self.wetrakr_personal:
 				self.id_type = 'trakt_dict'
 				data = function('movies', page_no)
 				data, total_pages = self.paginate_list(data, page_no)
@@ -118,10 +122,41 @@ class Movies:
 				try:
 					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 				except: pass
+			elif self.action in ('wetrakr_calendar', 'wetrakr_calendar_personal'):
+				self.id_type = 'trakt_dict'
+				from apis.wetrakr_api import wetrakr_movie_calendar
+				data = wetrakr_movie_calendar('following' if self.action == 'wetrakr_calendar_personal' else 'discover')
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
+			elif self.action in ('wetrakr_trending', 'wetrakr_popular', 'wetrakr_toprated', 'wetrakr_search', 'wetrakr_public_list'):
+				self.id_type = 'trakt_dict'
+				from apis.wetrakr_api import wetrakr_feed
+				data, total_pages = wetrakr_feed(self.action, 'movies', page_no, self.params_get('query') or self.params_get('key_id'), self.params_get('list_id'))
+				self.list = [i['media_ids'] for i in data]
+				if total_pages > page_no:
+					self.new_page = {'new_page': str(page_no + 1)}
+					for key in ('query', 'key_id', 'list_id'):
+						if self.params_get(key): self.new_page[key] = self.params_get(key)
+			elif self.action == 'wetrakr_user_list':
+				self.id_type = 'trakt_dict'
+				from apis.wetrakr_api import wetrakr_list_items
+				data = wetrakr_list_items(self.params_get('list_id'), 'movies')
+				from modules import list_sort
+				data = list_sort.sort_user_list(data, 'wetrakr.list:%s' % self.params_get('list_id'), 'wetrakr')
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
 			elif self.action == 'punchplay_user_list':
 				self.id_type = 'trakt_dict'
 				from apis.punchplay_api import punchplay_list_items
 				data = punchplay_list_items(self.params_get('list_id'), 'movies')
+				from modules import list_sort
+				data = list_sort.sort_user_list(data, 'punchplay.list:%s' % self.params_get('list_id'))
 				data, total_pages = self.paginate_list(data, page_no)
 				self.list = [i['media_ids'] for i in data]
 				try:
@@ -195,7 +230,7 @@ class Movies:
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
 		kodi_utils.set_content(handle, 'movies')
 		kodi_utils.set_category(handle, self.category_name)
-		kodi_utils.end_directory(handle, cacheToDisc=False if self.is_external or self.action in self.mdblist_personal else True)
+		kodi_utils.end_directory(handle, cacheToDisc=False)
 		if not self.is_external:
 			if self.params_get('refreshed') == 'true': kodi_utils.sleep(1000)
 			kodi_utils.set_view_mode('view.movies', 'movies', self.is_external)
@@ -214,10 +249,7 @@ class Movies:
 			title, year = meta_get('title'), meta_get('year') or '2050'
 			tmdb_id, imdb_id = meta_get('tmdb_id'), meta_get('imdb_id')
 			str_tmdb_id = str(tmdb_id)
-			if self.rpdb_api_key:
-				try: poster = meta_get('rpdb_poster') % self.rpdb_api_key + self.rpdb_format
-				except: poster = meta_get('poster') or self.poster_empty
-			else: poster = meta_get('poster') or self.poster_empty
+			poster = settings.rpdb_poster(self.rpdb_api_key, self.rpdb_format, meta_get('rpdb_poster'), meta_get('poster') or self.poster_empty)
 			fanart = meta_get('fanart') or self.fanart_empty
 			clearlogo, landscape = meta_get('clearlogo') or '', meta_get('landscape') or meta_get('fanart') or ''
 			thumb = poster or landscape or fanart
@@ -241,12 +273,26 @@ class Movies:
 										'name': 'More Like This based on %s' % title})
 			browse_similar_params = self.build_url({'mode': 'build_movie_list', 'action': 'ai_similar', 'is_external': self.is_external,
 										'key_id': 'movie|%s' % tmdb_id, 'name': 'Similar based on %s' % title})
-			browse_in_trakt_list_params, trakt_manager_params = '', ''
+			browse_in_trakt_list_params, browse_in_mdblist_list_params = '', ''
+			browse_in_punchplay_list_params, browse_in_simkl_list_params, browse_in_wetrakr_list_params = '', '', ''
+			trakt_manager_params = ''
 			if settings.trakt_user_active():
 				browse_in_trakt_list_params = self.build_url({'mode': 'trakt.list.in_trakt_lists', 'media_type': 'movie', 'imdb_id': imdb_id, 'is_external': self.is_external,
 										'category_name': '%s In Trakt Lists' % title})
 				trakt_manager_params = self.build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
 													'title': title, 'icon': poster})
+			if settings.mdblist_user_active():
+				browse_in_mdblist_list_params = self.build_url({'mode': 'mdblist.in_mdblist_lists', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'is_external': self.is_external,
+										'category_name': '%s In MDBList Lists' % title})
+			if settings.punchplay_user_active():
+				browse_in_punchplay_list_params = self.build_url({'mode': 'punchplay.list.in_punchplay_lists', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'is_external': self.is_external,
+										'category_name': '%s In PunchPlay Lists' % title})
+			if settings.simkl_user_active():
+				browse_in_simkl_list_params = self.build_url({'mode': 'simkl.list.in_simkl_lists', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None',
+										'is_external': self.is_external, 'category_name': '%s In Simkl Lists' % title})
+			if settings.wetrakr_lists_active():
+				browse_in_wetrakr_list_params = self.build_url({'mode': 'wetrakr.in_wetrakr_lists', 'media_type': 'movie', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'is_external': self.is_external,
+										'category_name': '%s In WeTrakr Lists' % title})
 			simkl_manager_params = ''
 			if settings.simkl_user_active():
 				simkl_manager_params = self.build_url({'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
@@ -293,12 +339,21 @@ class Movies:
 			cm_append(['related', ('[B]Browse Related[/B]', self.window_command % browse_related_params)])
 			cm_append(['more_like_this', ('[B]Browse More Like This[/B]', self.window_command % browse_more_like_this_params)])
 			if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
-			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
+			wetrakr_manager_params = ''
+			if settings.wetrakr_lists_active():
+				wetrakr_manager_params = self.build_url({'mode': 'wetrakr_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': 'None', 'media_type': 'movie',
+														'title': title, 'icon': poster})
+			if browse_in_mdblist_list_params: cm_append(['in_mdblist_list', ('[B]In MDBList Lists[/B]', self.window_command % browse_in_mdblist_list_params)])
 			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+			if browse_in_punchplay_list_params: cm_append(['in_punchplay_list', ('[B]In PunchPlay Lists[/B]', self.window_command % browse_in_punchplay_list_params)])
 			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
+			if browse_in_simkl_list_params: cm_append(['in_simkl_list', ('[B]In Simkl Lists[/B]', self.window_command % browse_in_simkl_list_params)])
 			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
 			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
+			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
 			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
+			if browse_in_wetrakr_list_params: cm_append(['in_wetrakr_list', ('[B]In WeTrakr Lists[/B]', self.window_command % browse_in_wetrakr_list_params)])
+			if wetrakr_manager_params: cm_append(['wetrakr_manager', ('[B]WeTrakr Lists Manager[/B]', 'RunPlugin(%s)' % wetrakr_manager_params)])
 			settings.append_list_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'movie', tmdb_id, imdb_id, 'None', title, poster)
 			cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
 			cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
@@ -317,7 +372,7 @@ class Movies:
 				cm.extend([['refresh', ('[B]Refresh Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'refresh_widgets'}))],
 						['reload', ('[B]Reload Widgets[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'kodi_refresh'}))]])
 			cm = self.context_menu(cm)
-			info_tag = listitem.getVideoInfoTag(True)
+			info_tag = listitem.getVideoInfoTag()
 			info_tag.setMediaType('movie'), info_tag.setTitle(title), info_tag.setOriginalTitle(meta_get('original_title')), info_tag.setGenres(meta_get('genre'))
 			info_tag.setDuration(duration), info_tag.setPlaycount(playcount), info_tag.setPlot(meta_get('plot'))
 			info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str_tmdb_id}), info_tag.setIMDBNumber(imdb_id), info_tag.setPremiered(premiered)
@@ -332,6 +387,7 @@ class Movies:
 			except: pass
 			if progress:
 				watched_status.apply_listitem_progress(info_tag, set_properties, progress, duration, self.is_external)
+			watched_status.apply_listitem_last_played(info_tag, self.last_played_by_id.get(str_tmdb_id))
 			listitem.setLabel(title)
 			listitem.addContextMenuItems(cm)
 			listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'landscape': landscape, 'thumb': thumb})
@@ -347,6 +403,7 @@ class Movies:
 				'redlight.browse_similar_params': browse_similar_params,
 				'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
 				'redlight.trakt_manager_params': trakt_manager_params,
+				'redlight.wetrakr_manager_params': wetrakr_manager_params,
 				'redlight.simkl_manager_params': simkl_manager_params,
 				'redlight.punchplay_manager_params': punchplay_manager_params,
 				'redlight.mdblist_manager_params': mdblist_manager_params,

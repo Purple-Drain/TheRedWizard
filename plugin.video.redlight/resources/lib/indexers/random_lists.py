@@ -42,7 +42,8 @@ def _build_random_list_name_lookup():
 		navigator_cache.random_movie_lists(), navigator_cache.random_tvshow_lists(), navigator_cache.random_anime_lists(),
 		navigator_cache.random_because_you_watched_lists(), navigator_cache.random_tmdb_lists(), navigator_cache.random_personal_lists(),
 		navigator_cache.random_mdblist_lists(), navigator_cache.random_trakt_lists_personal(), navigator_cache.random_trakt_lists_public(),
-		navigator_cache.random_simkl_lists(),
+		navigator_cache.random_simkl_lists(), navigator_cache.random_punchplay_lists(),
+		navigator_cache.random_wetrakr_lists_personal(), navigator_cache.random_wetrakr_lists_public(),
 		)
 	for items in sources:
 		for item in items:
@@ -80,6 +81,9 @@ class RandomLists():
 	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
 		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
 	mdblist_personal = ('mdblist_watchlist', 'mdblist_collection')
+	wetrakr_personal = ('wetrakr_plantowatch', 'wetrakr_watching', 'wetrakr_waiting', 'wetrakr_playing',
+		'wetrakr_paused', 'wetrakr_watched', 'wetrakr_dropped', 'wetrakr_favorites')
+	wetrakr_feeds = ('wetrakr_trending', 'wetrakr_popular', 'wetrakr_toprated')
 
 	def __init__(self, params):
 		self.database = RandomWidgets()
@@ -111,11 +115,16 @@ class RandomLists():
 		if self.action in self.simkl_personal: return self.random_simkl_personal()
 		if self.action in self.punchplay_personal: return self.random_punchplay_personal()
 		if self.action in self.mdblist_personal: return self.random_mdblist_personal()
+		if self.action in self.wetrakr_personal: return self.random_simkl_personal()
+		if self.action in self.wetrakr_feeds: return self.random_wetrakr_feed()
 		if self.action == 'because_you_watched': return self.random_because_you_watched()
 		if self.mode == 'build_trakt_lists': return self.random_trakt_lists()
 		if self.mode == 'build_personal_lists': return self.random_personal_lists()
 		if self.mode == 'build_tmdb_lists': return self.random_tmdb_lists()
 		if self.mode == 'build_mdblist_lists': return self.random_mdblist_lists()
+		if self.mode == 'build_wetrakr_lists': return self.random_wetrakr_lists()
+		if self.mode == 'build_wetrakr_lists_contents': return self.wetrakr_lists_contents()
+		if self.mode == 'build_wetrakr_public_contents': return self.wetrakr_public_contents()
 		if self.mode == 'build_trakt_lists_contents': return self.trakt_lists_contents()
 		if self.mode == 'build_personal_lists_contents': return self.personal_lists_contents()
 		if self.mode == 'build_tmdb_lists_contents': return self.tmdb_lists_contents()
@@ -252,6 +261,37 @@ class RandomLists():
 
 	def random_punchplay_personal(self):
 		return self.random_simkl_personal()
+
+	def random_mdblist_personal(self):
+		media_kind = 'movies' if self.menu_type in ('movie', 'movies') else 'shows'
+		cache_key = '%s_%s' % (media_kind, self.action)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			data = self.get_function()(media_kind, None)
+			if isinstance(data, tuple): data = data[0]
+			self.random_results = [i for i in (data or []) if isinstance(i, dict)]
+			if paginate(self.is_external):
+				random_list = random.sample(self.random_results, min(len(self.random_results), page_limit(self.is_external))) if self.random_results else []
+			else:
+				random_list = random.sample(self.random_results, len(self.random_results)) if self.random_results else []
+			if cache_to_memory: set_persistent_content(self.database, cache_key, random_list)
+		if self.action == 'mdblist_watchlist':
+			self.params['id_type'] = 'tmdb_id'
+			picked = []
+			for i in random_list:
+				tmdb_id = i.get('id') or i.get('tmdb') or (i.get('ids') or {}).get('tmdb')
+				if not tmdb_id: continue
+				try: picked.append(int(tmdb_id))
+				except: pass
+			self.params['list'] = picked
+		else:
+			self.params['id_type'] = 'trakt_dict'
+			self.params['list'] = [
+				{'tmdb': i['id'], 'imdb': i.get('imdb_id') or i.get('imdb') or '', 'tvdb': i.get('tvdb_id') or ''}
+				for i in random_list if isinstance(i, dict) and i.get('id')]
+		self.list_items = self.function(self.params).worker()
+		self.category_name = self.base_list_name or ''
+		self.make_directory()
 
 	def random_because_you_watched(self):
 		from apis.tmdb_api import tmdb_movies_recommendations, tmdb_tv_recommendations
@@ -555,6 +595,110 @@ class RandomLists():
 		self.list_items = self.function(self.params).worker()
 		self.category_name = self.params_get('category_name', None) or self.base_list_name or ''
 		self.make_directory()
+
+	def _sample_mixed(self, rows):
+		rows = [dict(row) for row in (rows or []) if isinstance(row, dict) and row.get('media_ids') and row.get('type') in ('movie', 'show')]
+		if not rows: return []
+		random.shuffle(rows)
+		if paginate(self.is_external): rows = random.sample(rows, min(len(rows), page_limit(self.is_external)))
+		for index, row in enumerate(rows): row['order'] = index
+		return rows
+
+	def _wetrakr_mixed_directory(self, rows, list_name):
+		from threading import Lock, Thread
+		movies = [(row.get('order', 0), row.get('media_ids')) for row in rows if row.get('type') == 'movie']
+		shows = [(row.get('order', 0), row.get('media_ids')) for row in rows if row.get('type') == 'show']
+		content = 'movies' if len(movies) >= len(shows) else 'tvshows'
+		built, built_lock = [], Lock()
+
+		def _process(cls, media):
+			made = cls({'list': media, 'id_type': 'trakt_dict', 'custom_order': 'true'}).worker()
+			with built_lock: built.extend(made or [])
+
+		threads = []
+		for cls, media in ((Movies, movies), (TVShows, shows)):
+			if not media: continue
+			thread = Thread(target=_process, args=(cls, media))
+			thread.start()
+			threads.append(thread)
+		for thread in threads: thread.join()
+		built.sort(key=lambda item: item[1])
+		self.list_items = [item[0] for item in built]
+		self.view_mode, self.content_type = 'view.%s' % content, content
+		self.category_name = list_name or ''
+		self.make_directory()
+
+	def random_wetrakr_feed(self):
+		from apis.wetrakr_api import wetrakr_feed
+		media_kind = 'movies' if self.menu_type in ('movie', 'movies') else 'shows'
+		cache_key = self._random_cache_key('%s_%s' % (media_kind, self.action))
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			gathered = []
+			for page in self.get_sample():
+				batch, _pages = wetrakr_feed(self.action, media_kind, page)
+				gathered.extend([row for row in (batch or []) if isinstance(row, dict) and row.get('media_ids')])
+			if not gathered: random_list = []
+			elif paginate(self.is_external): random_list = random.sample(gathered, min(len(gathered), page_limit(self.is_external)))
+			else: random_list = random.sample(gathered, min(len(gathered), self._random_sample_count()))
+			if cache_to_memory: set_persistent_content(self.database, cache_key, random_list)
+		self.params['list'] = [row['media_ids'] for row in random_list if isinstance(row, dict) and row.get('media_ids')]
+		self.params['id_type'] = 'trakt_dict'
+		self.list_items = self.function(self.params).worker()
+		self._trim_filled_random_items()
+		self.category_name = self.base_list_name or ''
+		self.make_directory()
+
+	def _wetrakr_catalogue(self, list_type):
+		if list_type == 'my_lists':
+			from apis.wetrakr_api import wetrakr_get_lists
+			return [row for row in (wetrakr_get_lists() or []) if isinstance(row, dict) and row.get('id')]
+		from apis.wetrakr_api import wetrakr_public_lists
+		kind = 'latest' if list_type == 'latest' else 'trending'
+		rows, _pages = wetrakr_public_lists(kind, None, 1)
+		return [row for row in (rows or []) if isinstance(row, dict) and row.get('id')]
+
+	def _wetrakr_list_rows(self, list_type, list_id):
+		if list_type == 'my_lists':
+			from apis.wetrakr_api import wetrakr_mixed_list_items
+			return wetrakr_mixed_list_items(list_id)
+		from apis.wetrakr_api import wetrakr_public_mixed_list_items
+		return wetrakr_public_mixed_list_items(list_id)
+
+	def random_wetrakr_lists(self):
+		list_type = self.params.get('list_type') or 'my_lists'
+		label = {'my_lists': 'WeTrakr My Lists', 'latest': 'WeTrakr Latest Lists'}.get(list_type, 'WeTrakr Trending Lists')
+		cache_key = self._random_cache_key('wetrakr_pick_%s' % list_type)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			catalogue = self._wetrakr_catalogue(list_type)
+			if not catalogue: return self._empty_random_lists('No %s' % label)
+			chosen = random.choice(catalogue)
+			list_name = chosen.get('name') or 'List'
+			rows = self._sample_mixed(self._wetrakr_list_rows(list_type, chosen.get('id')))
+			random_list = {'name': list_name, 'result': rows}
+			if cache_to_memory: set_persistent_content(self.database, cache_key, random_list)
+		self._wetrakr_mixed_directory(random_list.get('result') or [], random_list.get('name') or label)
+
+	def wetrakr_lists_contents(self):
+		list_id, list_name = self.params_get('list_id'), self.params.get('list_name') or 'List'
+		cache_key = self._random_cache_key('wetrakr_my_%s' % list_id)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			rows = self._sample_mixed(self._wetrakr_list_rows('my_lists', list_id))
+			random_list = {'name': list_name, 'result': rows}
+			if cache_to_memory: set_persistent_content(self.database, cache_key, random_list)
+		self._wetrakr_mixed_directory(random_list.get('result') or [], self.base_list_name or random_list.get('name') or list_name)
+
+	def wetrakr_public_contents(self):
+		list_id, list_name = self.params_get('list_id'), self.params.get('list_name') or 'List'
+		cache_key = self._random_cache_key('wetrakr_public_%s' % list_id)
+		random_list, cache_to_memory = get_persistent_content(self.database, cache_key, self.is_external)
+		if not random_list:
+			rows = self._sample_mixed(self._wetrakr_list_rows('trending', list_id))
+			random_list = {'name': list_name, 'result': rows}
+			if cache_to_memory: set_persistent_content(self.database, cache_key, random_list)
+		self._wetrakr_mixed_directory(random_list.get('result') or [], self.base_list_name or random_list.get('name') or list_name)
 
 	def make_directory(self, next_page_params={}):
 		kodi_utils.add_items(self.handle, self.list_items)

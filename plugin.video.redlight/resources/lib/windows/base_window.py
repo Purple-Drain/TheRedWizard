@@ -9,6 +9,8 @@ from caches.settings_cache import get_setting, set_setting, restore_setting_defa
 from modules.utils import manual_function_import
 # logger = kodi_utils.logger
 
+WINDOW_PLAYER_START_TIMEOUT = 20
+
 def open_window(import_info, skin_xml, **kwargs):
 	'''
 	import_info: ('module', 'function')
@@ -94,41 +96,47 @@ def window_manager(obj):
 	kodi_utils.hide_busy_dialog()
 
 def window_player(obj):
-	def monitor():
-		timer = 0
-		while not kodi_utils.get_property('redlight.window_loaded') == 'true' and timer <= 5:
-			kodi_utils.sleep(50)
-			timer += 0.05
-		kodi_utils.hide_busy_dialog()
-		obj.close()
-		kodi_utils.clear_property('redlight.window_loaded')
-
 	def runner(params):
 		try:
 			mode = params['mode']
 			if mode == 'extras_menu_choice':
 				from indexers.dialogs import extras_menu_choice
-				extras_menu_choice(params)
+				reopen = dict(params)
+				reopen['stacked'] = 'true'
+				extras_menu_choice(reopen)
 			else:
 				from indexers.people import person_data_dialog
 				person_data_dialog(params)
-		except: close()
+		except: obj.close()
 	try:
 		window_player_url = obj.window_player_url
+		if not window_player_url:
+			return kodi_utils.notification('No trailer available')
 		if 'plugin.video.youtube' in window_player_url:
 			if not kodi_utils.addon_installed('plugin.video.youtube') or not kodi_utils.addon_enabled('plugin.video.youtube'):
 				return kodi_utils.notification('Youtube Plugin needed for playback')
 		kodi_utils.clear_property('redlight.window_loaded')
 		current_params = obj.current_params
 		player = kodi_utils.kodi_player()
+		abort_monitor = kodi_utils.kodi_monitor()
 		player.play(window_player_url)
-		kodi_utils.sleep(2000)
-		while not player.isPlayingVideo(): kodi_utils.sleep(100)
+		waited = 0.0
+		while not player.isPlayingVideo():
+			if abort_monitor.waitForAbort(0.1): return
+			waited += 0.1
+			if waited >= WINDOW_PLAYER_START_TIMEOUT:
+				try:
+					if player.isPlaying() or player.isPlayingVideo(): player.stop()
+				except: pass
+				kodi_utils.hide_busy_dialog()
+				return kodi_utils.notification('Trailer failed to play')
+		# Close this extras for the trailer. Reopen it once after playback —
+		# a monitor thread racing close/open stacked a second extras.xml.
 		obj.close()
-		while player.isPlayingVideo(): kodi_utils.sleep(100)
+		while player.isPlayingVideo():
+			if abort_monitor.waitForAbort(0.1): return
+		if abort_monitor.waitForAbort(0.3): return
 		kodi_utils.show_busy_dialog()
-		kodi_utils.sleep(1000)
-		Thread(target=monitor).start()
 		runner(current_params)
 	except: obj.close()
 	kodi_utils.hide_busy_dialog()
@@ -465,6 +473,15 @@ class ExtrasUtils:
 				                    <aspectratio>keep</aspectratio>
 				                    <texture diffuse="redlight_diffuse/poster-50.png" background="true">$INFO[ListItem.Property(thumbnail)]</texture>
 				                </control>
+				                <control type="image">
+				                    <left>176</left>
+				                    <top>16</top>
+				                    <width>40</width>
+				                    <height>40</height>
+				                    <aspectratio>keep</aspectratio>
+				                    <texture>OverlayWatched.png</texture>
+				                    <visible>String.IsEqual(ListItem.Property(watched),true)</visible>
+				                </control>
 				            </itemlayout>
 				            <focusedlayout height="360" width="236">
 				                <control type="image">
@@ -487,6 +504,15 @@ class ExtrasUtils:
 				                    <width max="220">auto</width>
 				                    <aspectratio>keep</aspectratio>
 				                    <texture diffuse="redlight_diffuse/poster-50.png" background="true">$INFO[ListItem.Property(thumbnail)]</texture>
+				                </control>
+				                <control type="image">
+				                    <left>176</left>
+				                    <top>16</top>
+				                    <width>40</width>
+				                    <height>40</height>
+				                    <aspectratio>keep</aspectratio>
+				                    <texture>OverlayWatched.png</texture>
+				                    <visible>String.IsEqual(ListItem.Property(watched),true)</visible>
 				                </control>
 				            </focusedlayout>
 				        </control>
@@ -1332,6 +1358,15 @@ class ExtrasUtils:
                                     <aspectratio>keep</aspectratio>
                                     <texture diffuse="redlight_diffuse/poster-50.png" background="true">$INFO[ListItem.Property(thumbnail)]</texture>
                                 </control>
+                                <control type="image">
+                                    <left>176</left>
+                                    <top>16</top>
+                                    <width>40</width>
+                                    <height>40</height>
+                                    <aspectratio>keep</aspectratio>
+                                    <texture>OverlayWatched.png</texture>
+                                    <visible>String.IsEqual(ListItem.Property(watched),true)</visible>
+                                </control>
                             </itemlayout>
                             <focusedlayout height="360" width="236">
                                 <control type="image">
@@ -1354,6 +1389,15 @@ class ExtrasUtils:
                                     <width max="220">auto</width>
                                     <aspectratio>keep</aspectratio>
                                     <texture diffuse="redlight_diffuse/poster-50.png" background="true">$INFO[ListItem.Property(thumbnail)]</texture>
+                                </control>
+                                <control type="image">
+                                    <left>176</left>
+                                    <top>16</top>
+                                    <width>40</width>
+                                    <height>40</height>
+                                    <aspectratio>keep</aspectratio>
+                                    <texture>OverlayWatched.png</texture>
+                                    <visible>String.IsEqual(ListItem.Property(watched),true)</visible>
                                 </control>
                             </focusedlayout>
                         </control>

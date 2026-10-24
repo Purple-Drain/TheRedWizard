@@ -207,10 +207,40 @@ TMDB = {
 	}
 }
 
+USER_LIST = {
+	'capabilities': ('title', 'release_date', 'random', 'default'),
+	'fields': {
+		'title': lambda i: i.get('title') or '',
+		'release_date': lambda i: i.get('release_date') or i.get('released') or i.get('year') or MISSING_DATE,
+		'default': lambda i: (i.get('order') is None, _safe_int(i.get('order'), 0)),
+	}
+}
+
+# Own lists only. Status shelves stay on USER_LIST: those rows have no created date.
+WETRAKR = {
+	'capabilities': ('title', 'date_added', 'release_date', 'random', 'default'),
+	'fields': {
+		'title': lambda i: i.get('title') or '',
+		'date_added': lambda i: i.get('date_added') or '',
+		'release_date': lambda i: i.get('release_date') or i.get('released') or i.get('year') or MISSING_DATE,
+		'default': lambda i: (i.get('order') is None, _safe_int(i.get('order'), 0)),
+	}
+}
+
+# Same fields as Trakt Watchlist/Library so Content > List Sort Order does not lose a choice.
+PUNCHPLAY = {
+	'capabilities': ('title', 'date_added', 'release_date', 'random'),
+	'fields': {
+		'title': lambda i: i.get('title'),
+		'date_added': lambda i: i.get('collected_at') or '',
+		'release_date': lambda i: i.get('released') or MISSING_DATE,
+	}
+}
+
 ADAPTERS = {
 	'trakt_sync': TRAKT_SYNC, 'trakt_list': TRAKT_LIST, 'simkl': SIMKL,
 	'mdblist_watchlist': MDBLIST_WATCHLIST, 'mdblist_collection': MDBLIST_COLLECTION,
-	'personal': PERSONAL, 'tmdb': TMDB
+	'personal': PERSONAL, 'tmdb': TMDB, 'user_list': USER_LIST, 'wetrakr': WETRAKR, 'punchplay': PUNCHPLAY
 }
 
 
@@ -226,7 +256,7 @@ DEFAULT_SETTING_IDS = {'movies': 'redlight.sort.default.movies', 'shows': 'redli
 # can pass a media type. resolve() consults DEFAULT_SETTING_IDS only when normalize_media_type()
 # returns non-empty, so a mixed list - a Trakt user list, a TMDb list, a personal list - never sees
 # the global default no matter what the picker offers.
-DEFAULT_GOVERNED_ADAPTERS = ('trakt_sync', 'simkl', 'mdblist_watchlist', 'mdblist_collection')
+DEFAULT_GOVERNED_ADAPTERS = ('trakt_sync', 'simkl', 'mdblist_watchlist', 'mdblist_collection', 'punchplay')
 
 
 def default_field_choices():
@@ -460,3 +490,20 @@ def sort_source(data, list_key, media_type, adapter_name, fallback=None):
 	except Exception:
 		articles = False
 	return apply(data, spec, adapter, ignore_articles=articles)
+
+
+def sort_user_list(rows, list_key, adapter_name='user_list'):
+	"""Sort one MDBList, Simkl, PunchPlay, or WeTrakr user list. Default keeps the site's own order."""
+	rows = sort_source(rows, list_key, None, adapter_name, fallback='default:asc') or []
+	for index, row in enumerate(rows):
+		if not isinstance(row, dict): continue
+		row['order'] = index
+		row['custom_order'] = index
+	return rows
+
+
+def custom_sort_context(build_url, list_key):
+	"""Context menu pair matching Trakt and TMDb Set Custom Sort."""
+	return ('[B]Set Custom Sort[/B]', 'RunPlugin(%s)' % build_url({
+		'mode': 'list_sort_override_choice', 'list_key': list_key, 'adapter': 'user_list', 'fallback': 'default:asc'
+	}))

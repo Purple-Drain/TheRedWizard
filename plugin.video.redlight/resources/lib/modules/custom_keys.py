@@ -69,6 +69,10 @@ def punchplay_manager():
 	params = get_params('punchplay_manager_params')
 	if params: dialogs.punchplay_manager_choice(params)
 
+def wetrakr_manager():
+	params = get_params('wetrakr_manager_params')
+	if params: dialogs.wetrakr_manager_choice(params)
+
 def personal_manager():
 	params = get_params('personal_manager_params')
 	if params: dialogs.personallists_manager_choice(params)

@@ -334,6 +334,41 @@ class NavigatorCache:
 			{'mode': 'random.build_tvshow_list', 'action': 'punchplay_watching', 'is_anime_list': 'true', 'name': 'Random PunchPlay Anime Watching', 'iconImage': 'anime', 'random': 'true'},
 				]
 
+	def random_wetrakr_lists_personal(self):
+		return [
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_plantowatch', 'name': 'Random WeTrakr Movie Plan to Watch', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_plantowatch', 'name': 'Random WeTrakr TV Show Plan to Watch', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_watching', 'name': 'Random WeTrakr TV Show Watching', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_waiting', 'name': 'Random WeTrakr TV Show Waiting', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_playing', 'name': 'Random WeTrakr Movie Playing', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_paused', 'name': 'Random WeTrakr TV Show Paused', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_watched', 'name': 'Random WeTrakr Movie Watched', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_watched', 'name': 'Random WeTrakr TV Show Watched', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_dropped', 'name': 'Random WeTrakr Movie Dropped', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_dropped', 'name': 'Random WeTrakr TV Show Dropped', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_favorites', 'name': 'Random WeTrakr Movie Favorites', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_favorites', 'name': 'Random WeTrakr TV Show Favorites', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'navigator.wetrakr_my_lists', 'category_name': 'Random Shuffled WeTrakr My Lists (All)', 'name': 'Random Shuffled WeTrakr My Lists (All)',
+			'iconImage': 'wetrakr', 'random': 'true', 'shuffle': 'true'},
+			{'mode': 'random.build_wetrakr_lists', 'list_type': 'my_lists', 'name': 'Random WeTrakr My Lists (Single)', 'iconImage': 'wetrakr', 'random': 'true'},
+				]
+
+	def random_wetrakr_lists_public(self):
+		return [
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_trending', 'name': 'Random WeTrakr Trending Movies', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_trending', 'name': 'Random WeTrakr Trending TV Shows', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_popular', 'name': 'Random WeTrakr Popular Movies', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_popular', 'name': 'Random WeTrakr Popular TV Shows', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'random.build_movie_list', 'action': 'wetrakr_toprated', 'name': 'Random WeTrakr Top Rated Movies', 'iconImage': 'movies', 'random': 'true'},
+			{'mode': 'random.build_tvshow_list', 'action': 'wetrakr_toprated', 'name': 'Random WeTrakr Top Rated TV Shows', 'iconImage': 'tv', 'random': 'true'},
+			{'mode': 'navigator.wetrakr_public_lists', 'list_kind': 'trending', 'category_name': 'Random Trending WeTrakr Lists',
+			'name': 'Random Shuffled WeTrakr Trending Lists (All)', 'iconImage': 'wetrakr', 'random': 'true', 'shuffle': 'true'},
+			{'mode': 'random.build_wetrakr_lists', 'list_type': 'trending', 'name': 'Random WeTrakr Trending Lists (Single)', 'iconImage': 'wetrakr', 'random': 'true'},
+			{'mode': 'navigator.wetrakr_public_lists', 'list_kind': 'latest', 'category_name': 'Random Latest WeTrakr Lists',
+			'name': 'Random Shuffled WeTrakr Latest Lists (All)', 'iconImage': 'wetrakr', 'random': 'true', 'shuffle': 'true'},
+			{'mode': 'random.build_wetrakr_lists', 'list_type': 'latest', 'name': 'Random WeTrakr Latest Lists (Single)', 'iconImage': 'wetrakr', 'random': 'true'},
+				]
+
 def migrate_my_content_nav_mode():
 	"""Rewrite stored menus that still use navigator.my_content to navigator.my_lists."""
 	nc = NavigatorCache()

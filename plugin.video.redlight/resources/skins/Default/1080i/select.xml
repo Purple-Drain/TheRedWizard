@@ -19,16 +19,30 @@
                 <control type="group">
                     <visible>!String.IsEqual(Window().Property(narrow_window),true)</visible>
                     <control type="image">
+                        <visible>!Integer.IsEqual(Container(2025).NumItems,5) + !Integer.IsEqual(Container(2025).NumItems,6)</visible>
                         <width>1298</width>
                         <height>803</height>
+                        <texture colordiffuse="$INFO[Window(10000).Property(redlight.window_theme)]" border="30">redlight_common/circle.png</texture>
+                    </control>
+                    <control type="image">
+                        <visible>Integer.IsEqual(Container(2025).NumItems,5) | Integer.IsEqual(Container(2025).NumItems,6)</visible>
+                        <width>1298</width>
+                        <height>713</height>
                         <texture colordiffuse="$INFO[Window(10000).Property(redlight.window_theme)]" border="30">redlight_common/circle.png</texture>
                     </control>
                 </control>
                 <control type="group">
                     <visible>String.IsEqual(Window().Property(narrow_window),true)</visible>
                     <control type="image">
+                        <visible>!Integer.IsEqual(Container(2025).NumItems,5) + !Integer.IsEqual(Container(2025).NumItems,6)</visible>
                         <width>778</width>
                         <height>803</height>
+                        <texture colordiffuse="$INFO[Window(10000).Property(redlight.window_theme)]" border="30">redlight_common/circle.png</texture>
+                    </control>
+                    <control type="image">
+                        <visible>Integer.IsEqual(Container(2025).NumItems,5) | Integer.IsEqual(Container(2025).NumItems,6)</visible>
+                        <width>778</width>
+                        <height>713</height>
                         <texture colordiffuse="$INFO[Window(10000).Property(redlight.window_theme)]" border="30">redlight_common/circle.png</texture>
                     </control>
                 </control>
@@ -67,7 +81,7 @@
                 </control>
                 <control type="group">
                     <control type="image">
-                        <visible>String.IsEqual(Window().Property(multi_choice),false)</visible>
+                        <visible>String.IsEqual(Window().Property(multi_choice),false) + !Integer.IsEqual(Container(2025).NumItems,5) + !Integer.IsEqual(Container(2025).NumItems,6)</visible>
                         <left>770</left>
                         <top>65</top>
                         <height>720</height>
@@ -77,7 +91,18 @@
                         <fadetime>100</fadetime>
                     </control>
                     <control type="image">
+                        <visible>String.IsEqual(Window().Property(multi_choice),false) + [Integer.IsEqual(Container(2025).NumItems,5) | Integer.IsEqual(Container(2025).NumItems,6)]</visible>
+                        <left>770</left>
+                        <top>65</top>
+                        <height>630</height>
+                        <width>500</width>
+                        <aspectratio aligny="bottom">keep</aspectratio>
+                        <texture diffuse="redlight_diffuse/poster_large_w217_h320.png">$INFO[Container(2025).ListItem.Property(icon)]</texture>
+                        <fadetime>100</fadetime>
+                    </control>
+                    <control type="image">
                         <visible>String.IsEqual(Window().Property(multi_choice),true)</visible>
+                        <animation effect="slide" end="0,-90" time="0" condition="Integer.IsEqual(Container(2025).NumItems,5) | Integer.IsEqual(Container(2025).NumItems,6)">Conditional</animation>
                         <left>820</left>
                         <top>370</top>
                         <height>400</height>

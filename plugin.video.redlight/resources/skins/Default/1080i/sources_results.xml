@@ -197,7 +197,7 @@
                                 <textcolor>FF9c9a9b</textcolor>
                                 <align>center</align>
                                 <aligny>center</aligny>
-                                <label>[B]RUN EXTERNAL SCRAPER SEARCH[/B]</label>
+                                <label>[B]RUN SCRAPER SEARCH[/B]</label>
                                 <scroll>false</scroll>
                                 <visible>!String.IsEmpty(ListItem.Property(perform_full_search))</visible>
                             </control>
@@ -358,7 +358,7 @@
                                     <textcolor>FF1F2020</textcolor>
                                     <align>center</align>
                                     <aligny>center</aligny>
-                                    <label>[B]RUN EXTERNAL SCRAPER SEARCH[/B]</label>
+                                    <label>[B]RUN SCRAPER SEARCH[/B]</label>
                                 </control>
                             </control>
                         </control>
@@ -526,7 +526,7 @@
                                 <textcolor>FF9c9a9b</textcolor>
                                 <align>center</align>
                                 <aligny>center</aligny>
-                                <label>[B]RUN EXTERNAL SCRAPER SEARCH[/B]</label>
+                                <label>[B]RUN SCRAPER SEARCH[/B]</label>
                                 <scroll>false</scroll>
                                 <visible>!String.IsEmpty(ListItem.Property(perform_full_search))</visible>
                             </control>
@@ -687,7 +687,7 @@
                                     <textcolor>FF1F2020</textcolor>
                                     <align>center</align>
                                     <aligny>center</aligny>
-                                    <label>[B]RUN EXTERNAL SCRAPER SEARCH[/B]</label>
+                                    <label>[B]RUN SCRAPER SEARCH[/B]</label>
                                     <scroll>false</scroll>
                                     <visible>!String.IsEmpty(ListItem.Property(perform_full_search))</visible>
                                 </control>
@@ -847,7 +847,7 @@
                                 <textcolor>FF9c9a9b</textcolor>
                                 <align>left</align>
                                 <aligny>center</aligny>
-                                <label>[B]RUN EXTERNAL SCRAPER SEARCH[/B]</label>
+                                <label>[B]RUN SCRAPER SEARCH[/B]</label>
                                 <scroll>false</scroll>
                             </control>
                         </control>
@@ -983,7 +983,7 @@
                                     <textcolor>FF1F2020</textcolor>
                                     <align>left</align>
                                     <aligny>center</aligny>
-                                    <label>[B]RUN EXTERNAL SCRAPER SEARCH[/B]</label>
+                                    <label>[B]RUN SCRAPER SEARCH[/B]</label>
                                 </control>
                             </control>
                         </control>

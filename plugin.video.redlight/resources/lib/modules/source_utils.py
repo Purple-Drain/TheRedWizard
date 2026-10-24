@@ -17,6 +17,29 @@ def extras():
 	return ('sample', 'extra', 'extras', 'deleted', 'unused', 'footage', 'inside', 'blooper', 'bloopers',
 			'making.of', 'feature', 'featurette', 'behind.the.scenes', 'trailer')
 
+def junk_name_tokens():
+	# Fenom/Gears dump-and-group names, minus quality tags that eat ordinary WEB/HDTV rips.
+	# extras() already drops sample/trailer. Match on release_info_format (dotted).
+	return (
+		'400p.octopus', '720p.octopus', '1080p.octopus', 'alexfilm', 'amedia', 'audiobook',
+		'baibako', 'bigsinema', 'bonus.disc', 'casstudio.tv', 'courage.bambey',
+		'.cbr', '.cbz', 'coldfilm', 'dilnix', 'dutchreleaseteam', 'e.book.collection',
+		'empire.minutemen', 'eniahd', '.exe', 'exkinoray', 'extras.only',
+		'gears.media', 'gearsmedia', 'good.people', 'gostfilm', 'hamsterstudio', 'hdrezka',
+		'hurtom', 'idea.film', 'ideafilm', 'jaskier', 'kapatejl6',
+		'kerob', 'kinokopilka', 'kravec', 'kuraj.bambey', 'lakefilm', 'lostfilm',
+		'megapeer', 'minutemen.empire', 'newstudio', 'omskbird', '.ost.',
+		'paravozik', 'profix.media', 'rifftrax', 'soundtrack', 'subtitle.only',
+		'sunshinestudio', 'teaser', 'tumbler.studio', 'ultradox', 'viruseproject',
+		'vostfr', 'vo.stfr', 'wish666',
+	)
+
+def has_junk_release_name(file_name):
+	name_info = release_info_format(file_name or '')
+	if not name_info:
+		return False
+	return any(token in name_info for token in junk_name_tokens())
+
 def unwanted_tags():
 	return (
 'tamilrockers.com', 'www.tamilrockers.com', 'www.tamilrockers.ws', 'www.tamilrockers.pl', 'www-tamilrockers-cl', 'www.tamilrockers.cl', 'www.tamilrockers.li',
@@ -53,6 +76,116 @@ ENG_OR_UNTAGGED_FILTER = ('ENGLISH OR UNTAGGED', 'ENG-OR-UNTAGGED')
 def foreign_audio_lang_tags():
 	return frozenset(tag for _, tag, _ in audio_lang_choices() if tag != 'ENG')
 
+# Words and 3-letter codes match anywhere in the dotted name.
+# 2-letter codes are dotted so ".en." is not found inside "french". ".uk." is left out (UK in a title).
+# A 2-letter code between the quality and the source is a release group (1080p.iT.WEB-DL), not audio.
+# The same code only marking subtitles (364.nl.sub) is not audio. ".it." at the end of H.265-iT is the group.
+# A 2-letter code between ordinary title words (de in "final de", it in a sentence) is not audio.
+_FOREIGN_AUDIO_WORDS = (
+	'arabic', 'bengali', 'bgaudio', 'castellano', 'chinese', 'dublado', 'dutch', 'finnish', 'french', 'german', 'greek',
+	'hebrew', 'hindi', 'indonesian', 'italian', 'japanese', 'korean', 'latino', 'pldub', 'polish', 'portuguese', 'russian',
+	'spanish', 'swedish', 'tamil', 'telugu', 'truefrench', 'truespanish', 'turkish', 'vostfr',
+)
+_FOREIGN_AUDIO_CODES = (
+	'.ara.', '.ces.', '.chi.', '.chs.', '.cze.', '.dan.', '.deu.', '.dut.', '.ell.', '.esl.',
+	'.esp.', '.fin.', '.fra.', '.fre.', '.frn.', '.ger.', '.gre.', '.heb.', '.hin.',
+	'.hun.', '.ita.', '.jap.', '.jpn.', '.kor.', '.lat.', '.nld.',
+	'.nor.', '.pol.', '.por.', '.rus.', '.spa.', '.swe.', '.tur.',
+	'.ukr.', '.vff.', '.vfq.', '.vie.', '.zho.',
+)
+_FOREIGN_AUDIO_SHORT_CODES = (
+	'de', 'es', 'fi', 'fr', 'he', 'hi', 'it', 'ja', 'ko', 'nl', 'pl', 'pt', 'ru', 'sv', 'tr', 'vi', 'zh',
+)
+_SHORT_CODE_RES = re.compile(r'^\d{3,4}p$')
+_SHORT_CODE_GAP = frozenset((
+	'hdr', 'hdr10', 'dv', 'dovi', 'sdr', '10bit', '8bit', '12bit', 'hybrid', 'repack', 'proper', 'rerip', 'extended',
+))
+_SHORT_CODE_SOURCE = frozenset((
+	'web', 'webrip', 'webdl', 'bluray', 'blu', 'bdrip', 'brrip', 'hdtv', 'hdrip',
+	'dvdrip', 'dvd', 'hdcam', 'cam', 'camrip', 'hdts', 'telesync', 'webhd', 'remux',
+))
+_SHORT_CODE_SUB = frozenset(('sub', 'subs', 'subtitle', 'subbed', 'subtitles'))
+_SHORT_CODE_CODEC = frozenset(('x264', 'x265', 'h264', 'h265', '264', '265', 'xvid', 'hevc', 'av1', 'divx'))
+_SHORT_CODE_EXT = frozenset(('mkv', 'mp4', 'avi', 'm4v', 'ts', 'wmv', 'mpg', 'mpeg', 'iso', 'mov'))
+_SHORT_CODE_DUB = frozenset(('dub', 'dubbed', 'dubbing', 'audio', 'dual'))
+_SHORT_CODE_YEAR = re.compile(r'^(?:19|20)\d{2}$')
+_ENGLISH_OR_MULTI = ('.eng.', '.en.', '.english.', '.ingles.', '.multi.')
+# "Ing" in Lat-Cast-Ing is English. "1TamilMV.ing" is a site, so Ing only counts beside another language.
+_ENGLISH_ING_NEIGHBORS = frozenset((
+	'lat', 'latino', 'cast', 'castellano', 'esp', 'spa', 'spanish', 'es',
+	'fr', 'fra', 'fre', 'french', 'ita', 'italian', 'por', 'pt', 'portuguese',
+	'pl', 'polish', 'de', 'ger', 'german', 'rus', 'ru', 'russian', 'ukr',
+	'hin', 'hindi', 'tam', 'tamil', 'hun', 'kor', 'jpn', 'jap',
+))
+
+def _dotted_release_name(name):
+	text = re.sub(r'[^a-z0-9]+', '.', (name or '').lower()).strip('.')
+	if not text: return ''
+	return '.%s.' % text
+
+def _resolution_before(text, index):
+	before = text[:index].strip('.')
+	while before:
+		piece = before.rsplit('.', 1)[-1]
+		if _SHORT_CODE_RES.match(piece): return True
+		if piece not in _SHORT_CODE_GAP: return False
+		cut = before.rfind('.')
+		if cut < 0: return False
+		before = before[:cut]
+	return False
+
+def _short_code_tag(token):
+	if not token: return False
+	if token in _SHORT_CODE_GAP or token in _SHORT_CODE_SOURCE or token in _SHORT_CODE_CODEC: return True
+	if token in _SHORT_CODE_EXT or token in _SHORT_CODE_DUB: return True
+	if _SHORT_CODE_RES.match(token) or _SHORT_CODE_YEAR.match(token): return True
+	return False
+
+def _short_code_is_audio(text, code):
+	"""True when this 2-letter code marks audio, not a release group, a subtitle tag, or a title word."""
+	token = '.%s.' % code
+	start = 0
+	while True:
+		index = text.find(token, start)
+		if index < 0: return False
+		nxt = text[index + len(token):].split('.', 1)[0]
+		prev = text[:index].strip('.').rsplit('.', 1)[-1]
+		if nxt in _SHORT_CODE_SUB:
+			start = index + len(token)
+			continue
+		if _resolution_before(text, index) and nxt in _SHORT_CODE_SOURCE:
+			start = index + len(token)
+			continue
+		rest = [part for part in text[index + len(token):].split('.') if part]
+		if len(rest) <= 1 and (not rest or rest[0] in _SHORT_CODE_EXT):
+			if prev in _SHORT_CODE_CODEC:
+				start = index + len(token)
+				continue
+		if not (_short_code_tag(prev) or _short_code_tag(nxt)):
+			start = index + len(token)
+			continue
+		return True
+
+def _ing_means_english(text):
+	token = '.ing.'
+	start = 0
+	while True:
+		index = text.find(token, start)
+		if index < 0: return False
+		prev = text[:index].strip('.').rsplit('.', 1)[-1]
+		nxt = text[index + len(token):].split('.', 1)[0]
+		if prev in _ENGLISH_ING_NEIGHBORS or nxt in _ENGLISH_ING_NEIGHBORS: return True
+		start = index + len(token)
+
+def foreign_single_audio(name):
+	"""True when the filename is one non-English language and not English or multi."""
+	text = _dotted_release_name(name)
+	if not text: return False
+	if any(token in text for token in _ENGLISH_OR_MULTI) or _ing_means_english(text): return False
+	if any(word in text for word in _FOREIGN_AUDIO_WORDS): return True
+	if any(code in text for code in _FOREIGN_AUDIO_CODES): return True
+	return any(('.%s.' % code) in text and _short_code_is_audio(text, code) for code in _FOREIGN_AUDIO_SHORT_CODES)
+
 def matches_english_or_untagged(tags):
 	# ENG tag, or no other audio-language tag (plain English rips are usually untagged).
 	tag_set = set()
@@ -72,14 +205,14 @@ def audio_lang_filter_entries():
 def source_filters():
 	return (
 ('PACK', 'PACK'), ('DOLBY VISION', '[B]D/VISION[/B]'), ('HIGH DYNAMIC RANGE (HDR)', '[B]HDR[/B]'), ('IMAX', 'IMAX'), ('HYBRID', '[B]HYBRID[/B]'), ('AV1', '[B]AV1[/B]'),
-('HEVC (X265)', '[B]HEVC[/B]'), ('REMUX', 'REMUX'), ('BLURAY', 'BLURAY'), ('AI ENHANCED/UPSCALED', '[B]AI ENHANCED/UPSCALED[/B]'), ('SDR', 'SDR'), ('3D', '[B]3D[/B]'),
+('HEVC (X265)', '[B]HEVC[/B]'), ('MP4', 'MP4'), ('MKV', 'MKV'), ('REMUX', 'REMUX'), ('BLURAY', 'BLURAY'), ('AI ENHANCED/UPSCALED', '[B]AI ENHANCED/UPSCALED[/B]'), ('SDR', 'SDR'), ('3D', '[B]3D[/B]'),
 ('DOLBY ATMOS', 'ATMOS'), ('DOLBY TRUEHD', 'TRUEHD'), ('DOLBY DIGITAL EX', 'DD-EX'), ('DOLBY DIGITAL PLUS', 'DD+'), ('DOLBY DIGITAL', 'DD'),
 ('DTS-HD MASTER AUDIO', 'DTS-HD MA'), ('DTS-X', 'DTS-X'), ('DTS-HD', 'DTS-HD'), ('DTS', 'DTS'), ('AAC', 'AAC'), ('OPUS', 'OPUS'), ('MP3', 'MP3'), ('8CH AUDIO', '8CH'),
 ('7CH AUDIO', '7CH'), ('6CH AUDIO', '6CH'), ('2CH AUDIO', '2CH'), ('DVD SOURCE', 'DVD'), ('WEB SOURCE', 'WEB'),
 ('SUBTITLES', 'SUBS'), ('MULTIPLE LANGUAGES', 'MULTI-LANG')) + audio_lang_filter_entries()
 
 def include_exclude_filters():
-	return {'hevc': 'HEVC', '3d': '3D', 'hdr': 'HDR', 'dv': 'D/VISION', 'av1': 'AV1', 'enhanced_upscaled': 'AI ENHANCED/UPSCALED', 'hybrid': 'HYBRID'}
+	return {'hevc': 'HEVC', '3d': '3D', 'hdr': 'HDR', 'dv': 'D/VISION', 'av1': 'AV1', 'enhanced_upscaled': 'AI ENHANCED/UPSCALED', 'hybrid': 'HYBRID', 'mp4': 'MP4'}
 
 def get_aliases_titles(aliases):
 	try: result = [i['title'] for i in aliases]
@@ -155,15 +288,50 @@ def normalize(title):
 	"""Same accent-fold as modules.utils.normalize (single implementation)."""
 	return _utils_normalize(title)
 
+def _season_fully_aired(meta, season):
+	adjust_hours, current_date = date_offset(), get_datetime()
+	episodes_data = episodes_meta(season, meta)
+	if not episodes_data: return False
+	aired = [adjust_premiered_date(i['premiered'], adjust_hours)[0] for i in episodes_data]
+	if None in aired: return False
+	return all(i <= current_date for i in aired)
+
+def show_has_ended(meta):
+	try: return (meta.get('extra_info') or {}).get('status') in ('Ended', 'Canceled')
+	except Exception: return False
+
+def release_covers_season(release_title, season):
+	"""True when the name has this season, or a range that includes it (S04, S01-S04)."""
+	if not release_title: return False
+	try: season_i = int(season)
+	except (TypeError, ValueError): return False
+	dotted = _utils_normalize(release_title).lower().replace(' ', '.')
+	covered = set()
+	for match in re.finditer(r'(?:seasons?)[.\s_-]*(\d{1,2})[.\s_-]*(?:to|through|-)[.\s_-]*(\d{1,2})(?!\d)', dotted):
+		start, end = int(match.group(1)), int(match.group(2))
+		if start > end: start, end = end, start
+		covered.update(range(start, end + 1))
+	for match in re.finditer(r's(\d{1,2})[._-]+s(\d{1,2})(?!\d)', dotted):
+		start, end = int(match.group(1)), int(match.group(2))
+		if start > end: start, end = end, start
+		covered.update(range(start, end + 1))
+	for match in re.finditer(r'(?:^|[.\s_-])(?:s|season)[.\s_-]*(\d{1,2})(?!\d)', dotted):
+		rest = dotted[match.end():match.end() + 3]
+		if re.match(r'[.\s_-]*e\d', rest): continue
+		covered.add(int(match.group(1)))
+	return season_i in covered
+
 def pack_enable_check(meta, season, episode):
+	"""(season_packs, show_packs).
+
+	Ended or canceled: both on. This season fully aired: both on (Slow Horses S4
+	while S6 is still airing). This season still has unaired episodes: both off.
+	A show pack on a running show still has to name this season.
+	"""
 	try:
-		status = meta['extra_info']['status']
-		if status in ('Ended', 'Canceled'): return True, True
-		adjust_hours, current_date = date_offset(), get_datetime()
-		episodes_data = episodes_meta(season, meta)
-		unaired_episodes = [adjust_premiered_date(i['premiered'], adjust_hours)[0] for i in episodes_data]
-		if None in unaired_episodes or any(i > current_date for i in unaired_episodes): return False, False
-		else: return True, False
+		if show_has_ended(meta): return True, True
+		if not _season_fully_aired(meta, season): return False, False
+		return True, True
 	except: pass
 	return False, False
 
@@ -249,20 +417,25 @@ def seas_ep_filter_exact(season, episode, release_title):
 
 # Cloud filename S/E tokens (left-to-right). Prefer explicit season markers.
 # Covers S04E17, S4.E17, S4-E17, S4 -17, S4-17, S4.17, S4 - E17, S6x29, S6xE29, 4x17.
-# (?!\d) avoids treating long hash tags like S1E123456… as episode numbers.
+# Episode 1–4 digits (One Piece S23E1170). (?!\d) avoids hash tags like S1E123456…
 _CLOUD_SE_TOKEN_RE = re.compile(
 	r'(?:'
-	r's(\d{1,2})[.-]?e[p]?[.-]?(\d{1,3})(?!\d)'
+	r's(\d{1,2})[.-]?e[p]?[.-]?(\d{1,4})(?!\d)'
 	r'|'
-	r's(\d{1,2})x(?:e)?(\d{1,3})(?!\d)'
+	r's(\d{1,2})x(?:e)?(\d{1,4})(?!\d)'
 	r'|'
-	r's(\d{1,2})[.-]+(?:e[p]?[.-]*)?(\d{1,3})(?!\d)'
+	r's(\d{1,2})[.-]+(?:e[p]?[.-]*)?(\d{1,4})(?!\d)'
 	r'|'
-	r'(\d{1,2})x(\d{1,3})(?!\d)'
+	r'(\d{1,2})x(\d{1,4})(?!\d)'
 	r')'
 )
-# Anime-style bare episode only when no Sxx/NxN token exists: "Show - 001 - Title", "Show - 255.mkv".
-_CLOUD_BARE_EP_RE = re.compile(r'(?:^|[.-])(\d{1,3})(?=[.-]|$)')
+# Anime-style bare episode only when no Sxx/NxN token exists: "Show - 001 - Title", "Show - 1080.mkv".
+# 4 digits so 1080/1170 can match; a year token only keeps if that number is the requested episode.
+_CLOUD_BARE_EP_RE = re.compile(r'(?:^|[.-])(\d{1,4})(?=[.-]|$)')
+# e164 / ep15 / episode.15. Prefix required; 4 digits so e1170 can match.
+_CLOUD_BARE_EP_PREFIX_RE = re.compile(r'(?:^|[.-])(?:e(?:p(?:isode)?)?)[.-]?(\d{1,4})(?=[.-]|$)')
+# Quality-like numbers: skip unless that number is the requested episode/absolute.
+# 1080p is already not a bare token (p attached). Show.720.BluRay stays out when not ep 720.
 _BARE_EP_BLOCKLIST = frozenset((480, 720, 1080, 2160))
 
 def _normalize_release_title(release_title):
@@ -304,19 +477,28 @@ def absolute_episode_from_season_data(season_data, season, episode):
 	except Exception:
 		return None
 
-def iter_bare_episode_numbers(release_title):
-	"""Yield bare episode candidates when the name has no explicit season token."""
+def iter_bare_episode_numbers(release_title, requested=None):
+	"""Yield bare episode candidates when the name has no explicit season token.
+
+	480/720/1080/2160 are skipped unless they are the requested episode or absolute.
+	"""
 	normalized = _normalize_release_title(release_title)
 	if _CLOUD_SE_TOKEN_RE.search(normalized):
 		return
-	for match in _CLOUD_BARE_EP_RE.finditer(normalized):
-		try:
-			num = int(match.group(1))
-		except Exception:
-			continue
-		if num < 1 or num in _BARE_EP_BLOCKLIST:
-			continue
-		yield num
+	requested = set(requested or ())
+	seen = set()
+	for rx in (_CLOUD_BARE_EP_PREFIX_RE, _CLOUD_BARE_EP_RE):
+		for match in rx.finditer(normalized):
+			try:
+				num = int(match.group(1))
+			except Exception:
+				continue
+			if num < 1 or num in seen:
+				continue
+			if num in _BARE_EP_BLOCKLIST and num not in requested:
+				continue
+			seen.add(num)
+			yield num
 
 def parse_episode_from_filename(release_title, season=None):
 	"""Parse SxxExx / Sxx - ## / 1x## from a filename; prefer requested season; ignore later hash junk."""
@@ -354,7 +536,7 @@ def cloud_episode_matches(season, episode, filename, absolute_episode=None):
 		targets.add(episode_i)
 	if not targets:
 		return False
-	return any(num in targets for num in iter_bare_episode_numbers(filename))
+	return any(num in targets for num in iter_bare_episode_numbers(filename, targets))
 
 def find_season_in_release_title(release_title):
 	release_title = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace('\'', '')).lower()
@@ -369,7 +551,243 @@ def find_season_in_release_title(release_title):
 		except: pass
 	return match
 
-def check_title(title, release_title, aliases, year, season, episode):
+_FALSE_YEAR_TOKENS = frozenset((1920,))
+_YEAR_TOKEN_RE = re.compile(r'(?:^|[^0-9])((?:19|20)\d{2})(?![0-9])')
+
+def _exact_show_title_key(name):
+	text = (name or '').lower().replace('&', 'and')
+	return re.sub(r'[^a-z0-9]+', '', text)
+
+def filename_years(release_title):
+	"""19xx/20xx tokens in a release name. Skips 1920 (1080p width)."""
+	years = set()
+	for match in _YEAR_TOKEN_RE.finditer(release_title or ''):
+		try:
+			value = int(match.group(1))
+		except Exception:
+			continue
+		if value in _FALSE_YEAR_TOKENS:
+			continue
+		years.add(value)
+	return years
+
+def release_contains_show_year(release_title, year):
+	try:
+		year = int(year)
+	except Exception:
+		return False
+	return bool(filename_years(release_title) & {year - 1, year, year + 1})
+
+def movie_release_year_ok(release_title, title, year):
+	"""True when the name has no release year, or it is search year ±1.
+
+	Years that are the movie title itself (1917, 2012) are not treated as a release year.
+	Used by Local Media Folders so a (2000) file is not returned for a 2018 search.
+	"""
+	try:
+		year = int(year or 0)
+	except Exception:
+		return True
+	if not year:
+		return True
+	release_years = filename_years(release_title or '') - filename_years(title or '')
+	if not release_years:
+		return True
+	return bool(release_years & {year - 1, year, year + 1})
+
+def _folders_movie_dotted_key(text, strip_years=None):
+	text = strip_non_ascii_and_unprintable(text or '').lstrip('/ ').replace(' ', '.').replace(':', '.').lower()
+	text = text.replace("'", '').replace('!', '').replace('(', '').replace(')', '').replace('&', 'and')
+	text = re.sub(r'\.+', '.', text).strip('.')
+	unwanted = unwanted_tags()
+	releasetitle_startswith = text.startswith
+	for i in unwanted:
+		if releasetitle_startswith(i):
+			i_startswith = i.startswith
+			pattern = r'\%s' % i if i_startswith('[') or i_startswith('+') else r'%s' % i
+			text = re.sub(r'^%s' % pattern, '', text, 1, re.I)
+	text = text.lstrip('.-:/')
+	text = re.sub(r'^\[.*?]', '', text, 1, re.I)
+	text = text.lstrip('.-[](){}:/')
+	text = re.sub(r'\.+', '.', text).strip('.')
+	if '.' in text:
+		head, tail = text.rsplit('.', 1)
+		if 2 <= len(tail) <= 4 and tail.isalpha():
+			text = head
+	if strip_years:
+		for y in sorted(strip_years, reverse=True):
+			text = re.sub(r'(?:^|\.)%s(?:\.|$)' % y, '.', text)
+		text = re.sub(r'\.+', '.', text).strip('.')
+	return text
+
+def folders_movie_title_ok(title, release_title, aliases, year):
+	"""Local movie title match: exact, or search title at the start of the filename.
+
+	Stops The Grinch keeping How the Grinch Stole Christmas when years already match.
+	Quality tags after the title still pass (The Grinch.1080p).
+	"""
+	try:
+		all_titles = [title]
+		if aliases: all_titles += aliases
+		year = str(year or '')
+		cleaned_titles = []
+		for i in all_titles:
+			if not i: continue
+			cleaned_titles.append(
+				i.lower().replace('\'', '').replace(':', '').replace('!', '').replace('(', '').replace(')', '').replace('&', 'and').replace(' ', '.').replace(year, ''))
+		cleaned_titles = [re.sub(r'\.+', '.', t).strip('.') for t in cleaned_titles if t]
+		if not cleaned_titles:
+			return True
+		strip_years = filename_years(release_title or '') - filename_years(title or '')
+		release_key = _folders_movie_dotted_key(release_title, strip_years)
+		if not release_key:
+			return False
+		for item in cleaned_titles:
+			if not item:
+				continue
+			if release_key == item or release_key.startswith(item + '.'):
+				return True
+		return False
+	except Exception:
+		return True
+
+def _shared_title_default_peer(peers):
+	if len(peers) < 2:
+		return None
+	ranked = sorted(peers, key=lambda p: (int(p.get('vote_count') or 0), float(p.get('popularity') or 0)), reverse=True)
+	top, second = ranked[0], ranked[1]
+	v1, v2 = int(top.get('vote_count') or 0), int(second.get('vote_count') or 0)
+	p1, p2 = float(top.get('popularity') or 0), float(second.get('popularity') or 0)
+	if v1 >= 50 and v1 >= v2 * 2 and (v1 - v2) >= 25:
+		return top
+	if v1 >= 20 and v1 >= v2 * 3:
+		return top
+	if p1 >= 20 and p1 >= p2 * 3 and v1 >= v2:
+		return top
+	return None
+
+def resolve_shared_title_require_year(meta):
+	"""True when this TV id is a secondary exact-title series (needs year in name queries/files)."""
+	if not meta:
+		return False
+	media = meta.get('mediatype') or meta.get('media_type')
+	if media == 'movie':
+		return False
+	title = meta.get('english_title') or meta.get('original_title') or meta.get('tvshowtitle') or meta.get('title') or ''
+	try:
+		tmdb_id = int(meta.get('tmdb_id') or 0)
+	except Exception:
+		tmdb_id = 0
+	try:
+		year = int(meta.get('year') or 0)
+	except Exception:
+		year = 0
+	if not title or not tmdb_id:
+		return False
+	from modules.settings import tmdb_api_key
+	if tmdb_api_key() in (None, 'empty_setting', ''):
+		return False
+	try:
+		from apis.tmdb_api import tmdb_tv_search
+		data = tmdb_tv_search(title, 1)
+	except Exception:
+		return False
+	results = data.get('results') if isinstance(data, dict) else data
+	if not isinstance(results, list):
+		return False
+	key = _exact_show_title_key(title)
+	peers, seen = [], set()
+	for row in results:
+		name = row.get('name') or ''
+		original = row.get('original_name') or ''
+		if _exact_show_title_key(name) != key and _exact_show_title_key(original) != key:
+			continue
+		try:
+			peer_id = int(row.get('id') or 0)
+			peer_year = int(str(row.get('first_air_date') or '')[:4])
+		except Exception:
+			continue
+		if not peer_id or not peer_year or peer_id in seen:
+			continue
+		seen.add(peer_id)
+		peers.append({
+			'id': peer_id, 'year': peer_year,
+			'vote_count': row.get('vote_count') or 0,
+			'popularity': row.get('popularity') or 0,
+			'name': name or original,
+		})
+	if tmdb_id not in seen and year:
+		peers.append({
+			'id': tmdb_id, 'year': year,
+			'vote_count': meta.get('votes') or 0,
+			'popularity': 0,
+			'name': title,
+		})
+	years = set(p['year'] for p in peers)
+	default = _shared_title_default_peer(peers)
+	return bool(default and tmdb_id != default['id'] and len(years) >= 2)
+
+def _is_longer_title_sibling(title, other):
+	a = (title or '').strip().lower()
+	b = (other or '').strip().lower()
+	if not a or not b or a == b:
+		return False
+	return b.startswith(a + ' ') or b.startswith(a + ':') or b.startswith(a + '-')
+
+def has_prefix_title_siblings(meta):
+	"""True when TMDb has other TV shows whose name is this title plus extra words.
+
+	Same Title Series only covers exact-title twins (year in the name). This is Batman vs
+	Batman: Caped Crusader / Batman: The Animated Series, where the year is not required
+	on the default series but extra title words still name a different show.
+	"""
+	if not meta:
+		return False
+	media = meta.get('mediatype') or meta.get('media_type')
+	if media == 'movie':
+		return False
+	title = meta.get('english_title') or meta.get('original_title') or meta.get('tvshowtitle') or meta.get('title') or ''
+	try:
+		tmdb_id = int(meta.get('tmdb_id') or 0)
+	except Exception:
+		tmdb_id = 0
+	if not title or not tmdb_id:
+		return False
+	from modules.settings import tmdb_api_key
+	if tmdb_api_key() in (None, 'empty_setting', ''):
+		return False
+	try:
+		from apis.tmdb_api import tmdb_tv_search
+		data = tmdb_tv_search(title, 1)
+	except Exception:
+		return False
+	results = data.get('results') if isinstance(data, dict) else data
+	if not isinstance(results, list):
+		return False
+	for row in results:
+		try:
+			peer_id = int(row.get('id') or 0)
+		except Exception:
+			continue
+		if not peer_id or peer_id == tmdb_id:
+			continue
+		for name in (row.get('name'), row.get('original_name')):
+			if _is_longer_title_sibling(title, name):
+				return True
+	return False
+
+def tv_scrape_query(title, year, season, episode, require_year, season_only=False):
+	if season_only:
+		tail = 'S%02d' % int(season)
+	else:
+		tail = 'S%02dE%02d' % (int(season), int(episode))
+	if require_year and year not in (None, '', 0, '0'):
+		return '%s %s %s' % (title, year, tail)
+	return '%s %s' % (title, tail)
+
+def check_title(title, release_title, aliases, year, season, episode, require_year=False):
+	if require_year and season and not release_contains_show_year(release_title, year):
+		return False
 	try:
 		all_titles = [title]
 		if aliases: all_titles += aliases
@@ -434,14 +852,14 @@ def episode_title_in_release(ep_name, release_title):
 	hay = set(_filename_tokens(release_title))
 	return all(w in hay for w in needed)
 
-def check_title_or_absolute(title, release_title, aliases, year, season, episode, absolute_episode=None, ep_name=None, allow_episode_title=False):
+def check_title_or_absolute(title, release_title, aliases, year, season, episode, absolute_episode=None, ep_name=None, allow_episode_title=False, require_year=False):
 	"""Keep SxxExx hits via check_title, plus Sxx-less files whose bare/absolute episode matches.
 
 	Same title/alias rules as cloud scrapers (pack-style substring) on the absolute path.
 	The episode title can help searches find more candidates, but it must not bypass the
 	show/alias check unless allow_episode_title is True (EasyNews/NZB Filter by Name option).
 	"""
-	if check_title(title, release_title, aliases, year, season, episode):
+	if check_title(title, release_title, aliases, year, season, episode, require_year):
 		return True
 	if not season or season == 'pack':
 		return False
@@ -452,7 +870,16 @@ def check_title_or_absolute(title, release_title, aliases, year, season, episode
 		return False
 	if not cloud_episode_matches(season, episode, release_title, absolute_episode):
 		return False
-	if check_title(title, release_title, aliases, year, 'pack', episode):
+	# SxxExx already names this episode: extra words before it failed check_title.
+	# Pack substring would re-admit Batman.Caped.Crusader.S01E01 for title Batman.
+	try:
+		if seas_ep_filter(season, episode, release_title):
+			if allow_episode_title:
+				return episode_title_in_release(ep_name, release_title)
+			return False
+	except Exception:
+		pass
+	if check_title(title, release_title, aliases, year, 'pack', episode, require_year):
 		return True
 	if allow_episode_title:
 		return episode_title_in_release(ep_name, release_title)
@@ -611,7 +1038,9 @@ def get_info(title):
 		info_append('2CH')
 	if '.wmv' in title:
 		info_append('WMV')
-	elif any(i in title for i in ('.mpg', '.mp2', '.mpeg', '.mpe', '.mpv', '.mp4', '.m4p', '.m4v', 'msmpeg', 'mpegurl')):
+	elif any(i in title for i in ('.mp4', '.m4p', '.m4v')):
+		info_append('MP4')
+	elif any(i in title for i in ('.mpg', '.mp2', '.mpeg', '.mpe', '.mpv', 'msmpeg', 'mpegurl')):
 		info_append('MPEG')
 	elif '.avi' in title:
 		info_append('AVI')

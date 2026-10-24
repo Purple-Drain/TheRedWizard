@@ -33,11 +33,15 @@ def search_punchplay_public_lists(params):
 					'iconImage': 'punchplay', 'from_search': 'true', 'key_id': search_title, 'query': search_title
 				}
 				url = build_url(url_params)
-				cm = [('[B]Add to Shortcut Folder[/B]', 'RunPlugin(%s)' % build_url({'mode': 'menu_editor.shortcut_folder_add_known', 'url': url}))]
+				from modules import list_sort
+				cm = [
+					list_sort.custom_sort_context(build_url, 'punchplay.list:%s' % list_id),
+					('[B]Add to Shortcut Folder[/B]', 'RunPlugin(%s)' % build_url({'mode': 'menu_editor.shortcut_folder_add_known', 'url': url}))
+				]
 				listitem = make_listitem()
 				listitem.setLabel(display)
 				listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': fanart, 'banner': fanart})
-				info_tag = listitem.getVideoInfoTag(True)
+				info_tag = listitem.getVideoInfoTag()
 				info_tag.setPlot(list_folder_plot(item.get('description'), user, count, item.get('likeCount')))
 				listitem.addContextMenuItems(cm)
 				yield (url, listitem, True)
@@ -53,6 +57,48 @@ def search_punchplay_public_lists(params):
 	except: pass
 	set_content(handle, MENU_FOLDER_CONTENT)
 	set_category(handle, search_title.capitalize() if search_title else 'Search PunchPlay Lists')
+	end_directory(handle)
+	set_view_mode('view.main', MENU_FOLDER_CONTENT)
+
+def in_punchplay_lists(params):
+	def _builder():
+		for item in lists:
+			try:
+				list_id = item.get('list_id')
+				if list_id in (None, '', 0, '0'): continue
+				name = item.get('name') or 'List'
+				count = item.get('item_count', '?')
+				display = '%s | [I](x%s)[/I]' % (name, count)
+				url_params = {
+					'mode': 'navigator.punchplay_user_list', 'list_id': list_id, 'list_name': name, 'name': name,
+					'iconImage': 'punchplay'
+				}
+				url = build_url(url_params)
+				from modules import list_sort
+				cm = [
+					list_sort.custom_sort_context(build_url, 'punchplay.list:%s' % list_id),
+					('[B]Add to Shortcut Folder[/B]', 'RunPlugin(%s)' % build_url({'mode': 'menu_editor.shortcut_folder_add_known', 'url': url}))
+				]
+				listitem = make_listitem()
+				listitem.setLabel(display)
+				listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': fanart, 'banner': fanart})
+				info_tag = listitem.getVideoInfoTag()
+				info_tag.setPlot(list_folder_plot('', '', count))
+				listitem.addContextMenuItems(cm)
+				yield (url, listitem, True)
+			except: pass
+	handle = int(sys.argv[1])
+	icon, fanart = get_icon('punchplay'), get_addon_fanart()
+	media_type = params.get('media_type') or 'movie'
+	list_media = 'movie' if media_type == 'movie' else 'tvshow'
+	tmdb_id = params.get('tmdb_id')
+	try:
+		from apis.punchplay_api import punchplay_lists_with_media
+		lists = punchplay_lists_with_media(list_media, tmdb_id) if settings.punchplay_user_active() else []
+		add_items(handle, list(_builder()))
+	except: pass
+	set_content(handle, MENU_FOLDER_CONTENT)
+	set_category(handle, params.get('category_name', 'PunchPlay Lists'))
 	end_directory(handle)
 	set_view_mode('view.main', MENU_FOLDER_CONTENT)
 
@@ -75,7 +121,7 @@ def search_punchplay_lists(params):
 				listitem = make_listitem()
 				listitem.setLabel(display)
 				listitem.setArt({'icon': icon, 'poster': icon, 'thumb': icon, 'fanart': fanart, 'banner': fanart})
-				info_tag = listitem.getVideoInfoTag(True)
+				info_tag = listitem.getVideoInfoTag()
 				info_tag.setPlot('PunchPlay %s' % status_label)
 				yield (url, listitem, True)
 			except: pass

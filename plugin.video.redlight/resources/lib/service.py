@@ -16,10 +16,29 @@ update_string = 'Next Update in %s minutes...'
 def _start_daemon(target):
 	Thread(target=target, daemon=True).start()
 
+def _run_safe(cls, label):
+	try: cls().run()
+	except Exception as e: kodi_utils.logger(label, str(e))
+
 class SetAddonConstants:
 	def run(self):
 		kodi_utils.logger('Red Light', 'SetAddonConstants Service Starting')
 		import random
+		import xbmc
+		# Guard against the ~200ms window where the addon ID is temporarily
+		# unregistered when a new invoker starts immediately after a force-kill
+		# during an update.  Uses waitForAbort so the wait exits immediately if
+		# Kodi sends an abort signal (e.g. the build is shutting down).
+		_mon = xbmc.Monitor()
+		for _attempt in range(20):
+			try:
+				kodi_utils.addon_info('version')
+				break
+			except Exception:
+				if _mon.waitForAbort(0.25):
+					return kodi_utils.logger('SetAddonConstants', 'Aborted during addon ID wait')
+		else:
+			return kodi_utils.logger('SetAddonConstants', 'Addon ID still unknown after retries — aborting')
 		new_version = kodi_utils.addon_info('version')
 		prev_version = kodi_utils.get_property('redlight.addon_version')
 		if prev_version and prev_version != new_version:
@@ -254,7 +273,7 @@ class PunchPlayMonitor:
 				sync_kodi_profile_context()
 				sync_interval, wait_time = punchplay_sync_interval()
 				next_update_string = 'PunchPlay Sync finished - Next Sync in %s minutes' % sync_interval
-				if punchplay_user_active(): status = punchplay_sync_activities()
+				if punchplay_user_active(): status = punchplay_sync_activities(allow_history_repair=True)
 				else: status = 'no_auth'
 				if status == 'failed': kodi_utils.logger('Red Light', 'PunchPlay Sync Failed')
 				elif status == 'no_auth': kodi_utils.logger('Red Light', 'PunchPlay Sync Not Run - No Account')
@@ -272,6 +291,40 @@ class PunchPlayMonitor:
 		except: pass
 		return kodi_utils.logger('Red Light', 'PunchPlayMonitor Service Finished')
 
+class WeTrakrMonitor:
+	def run(self, monitor):
+		kodi_utils.logger('Red Light', 'WeTrakrMonitor Service Starting')
+		from apis.wetrakr_api import wetrakr_sync_activities
+		from modules.settings import wetrakr_user_active, wetrakr_sync_interval
+		player = kodi_utils.kodi_player()
+		wait_for_abort, is_playing = monitor.waitForAbort, player.isPlayingVideo
+		wait_for_abort(55)
+		while not monitor.abortRequested():
+			while is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': wait_for_abort(10)
+			wait_time = 1800
+			try:
+				from caches.settings_cache import sync_kodi_profile_context
+				sync_kodi_profile_context()
+				sync_interval, wait_time = wetrakr_sync_interval()
+				next_update_string = 'WeTrakr Sync finished - Next Sync in %s minutes' % sync_interval
+				if wetrakr_user_active(): status = wetrakr_sync_activities(allow_history_repair=True)
+				else: status = 'no_auth'
+				if status == 'failed': kodi_utils.logger('Red Light', 'WeTrakr Sync Failed')
+				elif status == 'no_auth': kodi_utils.logger('Red Light', 'WeTrakr Sync Not Run - No Account')
+				else: kodi_utils.logger('Red Light', 'WeTrakr Sync %s - %s' % ('OK' if status == 'success' else 'No Changes', next_update_string))
+				if status == 'success' and not kodi_utils.service_shutting_down(monitor):
+					from modules.settings import provider_sync_refresh_widgets
+					if provider_sync_refresh_widgets(5):
+						try:
+							if not kodi_utils.playback_widget_refresh_recent(): kodi_utils.run_plugin({'mode': 'kodi_refresh'})
+						except Exception as exc:
+							kodi_utils.logger('Red Light', 'WeTrakr widget refresh skipped: %s' % exc)
+			except Exception as e: kodi_utils.logger('Red Light', 'WeTrakr Sync Failed: %s' % str(e))
+			wait_for_abort(wait_time)
+		try: del player
+		except: pass
+		return kodi_utils.logger('Red Light', 'WeTrakrMonitor Service Finished')
+
 class WidgetRefresher:
 	def run(self, monitor):
 		kodi_utils.logger('Red Light', 'WidgetRefresher Service Starting')
@@ -282,8 +335,13 @@ class WidgetRefresher:
 		self.set_next_refresh(time())
 		while not monitor.abortRequested():
 			try:
-				wait_for_abort(10)
-				if kodi_utils.service_shutting_down(monitor): continue
+				# Two 5s waits: a pending Home update is seen as quickly as the old alarm.
+				# The timed widget refresh below still runs on the same 10s check.
+				for _ in (0, 1):
+					if wait_for_abort(5): break
+					if kodi_utils.service_shutting_down(monitor): break
+					self._flush_deferred_widget_refresh()
+				if monitor.abortRequested() or kodi_utils.service_shutting_down(monitor): continue
 				offset = int(get_setting('redlight.widget_refresh_timer', '60'))
 				if offset != self.offset:
 					self.set_next_refresh(time())
@@ -298,10 +356,25 @@ class WidgetRefresher:
 		except: pass
 		return kodi_utils.logger('Red Light', 'WidgetRefresher Service Finished')
 
+	def _flush_deferred_widget_refresh(self):
+		"""One Home widget update after Mark Watched, once the user has left Red Light."""
+		pending = kodi_utils.widget_refresh_pending()
+		if not pending: return
+		if self.is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': return
+		if kodi_utils.browsing_redlight(): return
+		kodi_utils.clear_widget_refresh_pending()
+		kodi_utils.logger('Red Light', 'Widget refresh after leaving Red Light')
+		kodi_utils.refresh_widgets(silent=True, reload_skin=(pending == 'reload'))
+
 	def condition_check(self):
 		if not self.external(): return True
 
 		if self.next_refresh == None or self.is_playing() or kodi_utils.get_property(pause_services_prop) == 'true': return True
+		# Same 120s post-Stop/mark window as Meta Accounts Refresh Widgets After Sync.
+		# Kodi already rebuilds Home; do not stack another UpdateLibrary immediately.
+		try:
+			if kodi_utils.playback_widget_refresh_recent(): return True
+		except: pass
 		if kodi_utils.get_property('redlight.window_loaded') == 'true': return True 
 		try:
 			window_stack = json.loads(kodi_utils.get_property('redlight.window_stack'))
@@ -316,6 +389,37 @@ class WidgetRefresher:
 
 	def external(self):
 		return 'plugin' not in kodi_utils.get_infolabel('Container.PluginName')
+
+class PlaybackRemoteMonitor:
+	def run(self, monitor):
+		kodi_utils.logger('Red Light', 'PlaybackRemoteMonitor Service Starting')
+		from modules.playback_remotes import process_pending_jobs
+		wait_for_abort = monitor.waitForAbort
+		while not monitor.abortRequested():
+			try: process_pending_jobs(monitor)
+			except Exception as e: kodi_utils.logger('PlaybackRemoteMonitor', str(e))
+			wait_for_abort(1)
+		try: process_pending_jobs(monitor, force=True)
+		except: pass
+		return kodi_utils.logger('Red Light', 'PlaybackRemoteMonitor Service Finished')
+
+class InvokerCooldown:
+	"""Retire the interpreter left by browsing, once the user has left Red Light.
+
+	A home widget call does not do this. That call is what keeps the next widget warm.
+	"""
+	def run(self, monitor):
+		kodi_utils.logger('Red Light', 'InvokerCooldown Service Starting')
+		wait_for_abort = monitor.waitForAbort
+		while not monitor.abortRequested():
+			if wait_for_abort(1): break
+			try:
+				if kodi_utils.service_shutting_down(monitor) or kodi_utils.get_property(pause_services_prop) == 'true': continue
+				if not kodi_utils.invoker_cooldown_due(): continue
+				kodi_utils.clear_invoker_idle()
+				kodi_utils.run_plugin({'mode': 'invoker_cooldown'})
+			except Exception as e: kodi_utils.logger('InvokerCooldown', str(e))
+		return kodi_utils.logger('Red Light', 'InvokerCooldown Service Finished')
 
 class AutoStart:
 	def run(self, monitor):
@@ -350,28 +454,40 @@ class AddonXMLCheck:
 class RedLightMonitor(Monitor):
 	def __init__ (self):
 		Monitor.__init__(self)
-		self.startServices()
+		# Background ALL startup work so the main thread reaches waitForAbort()
+		# in milliseconds.  Kodi only restarts a service's new version after a
+		# CLEAN exit (waitForAbort returned).  If startServices() ran on the
+		# main thread and took > 5 seconds, Kodi force-killed the process and
+		# then did NOT restart the updated version — leaving Red Light dead
+		# until the next full Kodi restart.
+		_start_daemon(lambda: self.startServices())
 
 	def startServices(self):
 		try: SetAddonConstants().run()
 		except Exception as e: kodi_utils.logger('SetAddonConstants', str(e))
-		try: DatabaseMaintenance().run()
-		except Exception as e: kodi_utils.logger('DatabaseMaintenance', str(e))
-		try: SyncSettings().run()
-		except Exception as e: kodi_utils.logger('SyncSettings', str(e))
+		if self.abortRequested(): return
+		_start_daemon(lambda: _run_safe(DatabaseMaintenance, 'DatabaseMaintenance'))
+		_start_daemon(lambda: _run_safe(SyncSettings, 'SyncSettings'))
+		if self.abortRequested(): return
 		try: AddonXMLCheck().run()
 		except Exception as e: kodi_utils.logger('AddonXMLCheck', str(e))
+		if self.abortRequested(): return
 		try:
 			from caches.settings_cache import service_bootstrap_needed
 			if service_bootstrap_needed():
 				_start_daemon(lambda: BootstrapSettings().run(self))
 		except Exception as e: kodi_utils.logger('BootstrapSettings', str(e))
+		if self.abortRequested(): return
 		start_custom_windows_prepare(self)
+		_start_daemon(lambda: PlaybackRemoteMonitor().run(self))
+		_start_daemon(lambda: InvokerCooldown().run(self))
 		_start_daemon(lambda: TraktMonitor().run(self))
 		_start_daemon(lambda: SimklMonitor().run(self))
 		_start_daemon(lambda: MdblistMonitor().run(self))
 		_start_daemon(lambda: PunchPlayMonitor().run(self))
+		_start_daemon(lambda: WeTrakrMonitor().run(self))
 		_start_daemon(lambda: WidgetRefresher().run(self))
+		if self.abortRequested(): return
 		try: AutoStart().run(self)
 		except Exception as e: kodi_utils.logger('AutoStart', str(e))
 		_start_daemon(lambda: ServiceExpiryAlerts().run(self))

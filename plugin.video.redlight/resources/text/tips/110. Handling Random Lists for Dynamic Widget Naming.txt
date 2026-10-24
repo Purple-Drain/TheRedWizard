@@ -16,7 +16,7 @@ The random trakt list options will behave the same as the movie/tvshow options a
 
 
 
-The second option to utilize random lists in Red Light is to assign as "Random" a Shortcut Folder you have made (see Shortcut Folders Tips for more info on making a Shortcut Folder).
+The second option to utilise random lists in Red Light is to assign as "Random" a Shortcut Folder you have made (see Shortcut Folders Tips for more info on making a Shortcut Folder).
 This essentially becomes a list of lists, where one of those lists is chosen at random to display.
 
 The widget's label will need to be set similarly to the special labels described above, yet this time you will use the Shortcut Folder's name as the value within the special label.

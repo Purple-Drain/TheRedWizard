@@ -5,7 +5,7 @@ from caches.main_cache import cache_object
 from modules import source_utils
 from modules.kodi_utils import list_dirs, open_file
 from modules.utils import clean_file_name, normalize, make_thread_list
-from modules.settings import filter_by_name, max_threads
+from modules.settings import scrape_needs_title_filter, max_threads, shared_title_require_year
 # from modules.kodi_utils import logger
 
 class source:
@@ -19,10 +19,12 @@ class source:
 	def results(self, info):
 		try:
 			if not self.folder_path: return source_utils.internal_results(self.scraper_name, self.sources)
-			filter_title = filter_by_name('folders')
-			self.media_type, title, self.year = info.get('media_type'), info.get('title'), int(info.get('year'))
+			filter_title = scrape_needs_title_filter(info, 'folders')
+			self.media_type, self.title, self.year = info.get('media_type'), info.get('title'), int(info.get('year') or 0)
+			title = self.title
 			self.season, self.episode = info.get('season'), info.get('episode')
 			self.tmdb_id = info.get('tmdb_id')
+			self.require_year = shared_title_require_year(info, 'folders')
 			self.title_query = source_utils.clean_title(normalize(title))
 			self.folder_query = self._season_query_list() if self.media_type == 'episode' else self._year_query_list()
 			self._scrape_directory(self.folder_path, first_run=True)
@@ -32,7 +34,10 @@ class source:
 				for item in self.scrape_results:
 					try:
 						file_name = normalize(item[0])
-						if filter_title and not source_utils.check_title(title, file_name, aliases, self.year, self.season, self.episode): continue
+						if self.media_type != 'episode':
+							if not source_utils.movie_release_year_ok(file_name, title, self.year): continue
+							if filter_title and not source_utils.folders_movie_title_ok(title, file_name, aliases, self.year): continue
+						elif filter_title and not source_utils.check_title(title, file_name, aliases, self.year, self.season, self.episode, self.require_year): continue
 						display_name = clean_file_name(file_name).replace('html', ' ').replace('+', ' ').replace('-', ' ')
 						file_dl = item[1]
 						try: size = item[2]
@@ -67,10 +72,12 @@ class source:
 				ext = os.path.splitext(urlparse(item[0]).path)[-1].lower()
 				if ext in self.extensions:
 					if self.media_type == 'episode' and not source_utils.seas_ep_filter(self.season, self.episode, normalized): return
+					if self.media_type != 'episode' and not source_utils.movie_release_year_ok(normalized, self.title, self.year): return
 					url_path = self.url_path(folder_name, item[0])
 					size = self._get_size(url_path)
 					scrape_results_append((item[0], url_path, size))
 			elif self.title_query in item_name or any(x in item_name for x in self.folder_query):
+					if self.media_type != 'episode' and not source_utils.movie_release_year_ok(normalized, self.title, self.year): return
 					folder_results_append((os.path.join(folder_name, item[0])))
 		folder_results = []
 		scrape_results_append = self.scrape_results.append

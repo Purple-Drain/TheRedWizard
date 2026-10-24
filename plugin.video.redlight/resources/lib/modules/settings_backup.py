@@ -184,7 +184,7 @@ def _import_confirm_text(path, manifest, inventory):
 		'From Red Light %s (%s)' % (manifest.get('addon_version') or 'unknown', (manifest.get('exported') or 'unknown')[:10]),
 		'',
 		'This replaces your current Red Light settings, menus, and lists.',
-		'Favorites and watch history are not changed.',
+		'Favourites and watch history are not changed.',
 	]
 	if inventory['images']:
 		lines.append('%s custom list image(s) will be restored.' % inventory['images'])

@@ -364,49 +364,91 @@
                         <left>300</left>
                         <width>15</width>
                         <height>15</height>
+                        <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
+                        <visible>String.IsEqual(Window.Property(window_mode),scraper) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),75)</visible>
+                    </control>
+                    <control type="image">
+                        <left>320</left>
+                        <width>15</width>
+                        <height>15</height>
+                        <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
+                        <visible>String.IsEqual(Window.Property(window_mode),scraper) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),80)</visible>
+                    </control>
+                    <control type="image">
+                        <left>340</left>
+                        <width>15</width>
+                        <height>15</height>
+                        <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
+                        <visible>String.IsEqual(Window.Property(window_mode),scraper) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),85)</visible>
+                    </control>
+                    <control type="image">
+                        <left>360</left>
+                        <width>15</width>
+                        <height>15</height>
+                        <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
+                        <visible>String.IsEqual(Window.Property(window_mode),scraper) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),90)</visible>
+                    </control>
+                    <control type="image">
+                        <left>380</left>
+                        <width>15</width>
+                        <height>15</height>
+                        <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
+                        <visible>String.IsEqual(Window.Property(window_mode),scraper) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),95)</visible>
+                    </control>
+                    <control type="image">
+                        <left>400</left>
+                        <width>15</width>
+                        <height>15</height>
+                        <texture colordiffuse="FF7C7C7C">redlight_common/white.png</texture>
+                        <visible>String.IsEqual(Window.Property(window_mode),scraper) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),99)</visible>
+                    </control>
+                    <control type="image">
+                        <left>300</left>
+                        <width>15</width>
+                        <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),75)</visible>
+                        <visible>String.IsEqual(Window.Property(window_mode),resolver) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),75)</visible>
                     </control>
                     <control type="image">
                         <left>320</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),80)</visible>
+                        <visible>String.IsEqual(Window.Property(window_mode),resolver) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),80)</visible>
                     </control>
                     <control type="image">
                         <left>340</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),85)</visible>
+                        <visible>String.IsEqual(Window.Property(window_mode),resolver) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),85)</visible>
                     </control>
                     <control type="image">
                         <left>360</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),90)</visible>
+                        <visible>String.IsEqual(Window.Property(window_mode),resolver) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),90)</visible>
                     </control>
                     <control type="image">
                         <left>380</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),95)</visible>
+                        <visible>String.IsEqual(Window.Property(window_mode),resolver) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),95)</visible>
                     </control>
                     <control type="image">
                         <left>400</left>
                         <width>15</width>
                         <height>15</height>
                         <texture colordiffuse="FFB40025">redlight_common/white.png</texture>
-                        <visible>Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),99)</visible>
+                        <visible>String.IsEqual(Window.Property(window_mode),resolver) + Integer.IsGreaterOrEqual(Window(10000).Property(redlight.scrape.percent),99)</visible>
                     </control>
                 </control>
             </control>
             <!-- Scraper -->
             <control type="group">
-                <visible>String.IsEqual(Window.Property(window_mode),scraper)</visible>
+                <visible>String.IsEqual(Window.Property(window_mode),scraper) + !String.IsEqual(Window.Property(loading_detail),false)</visible>
                 <top>490</top>
                 <control type="group">
                     <top>70</top>
@@ -552,6 +594,7 @@
                     <label>$INFO[Window.Property(text)]</label>
                 </control>
                 <control type="textbox" id="2002">
+                    <visible>!String.IsEqual(Window.Property(loading_detail),false)</visible>
                     <top>970</top>
                     <left>360</left>
                     <width>1200</width>

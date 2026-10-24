@@ -37,6 +37,10 @@ _INTRO_CHAPTER_MIN_SEGMENT_SEC = 10
 _INTRO_CHAPTER_MIN_END_SEC = 15
 _INTRO_SKIP_POST_END_GRACE_SEC = 20
 _INTRO_SKIP_SEEK_SETTLE_MS = 250
+# After a forward seek, Kodi can briefly report 0/start. Only those near-start
+# samples are discarded — a real skip-back (70% → 5%) must update progress.
+# A user rewind into this window is honoured via onPlayBackSeek (#283).
+_SEEK_GLITCH_START_SEC = 10
 
 class RedLightPlayer(xbmc.Player):
 	def __init__ (self):
@@ -71,11 +75,33 @@ class RedLightPlayer(xbmc.Player):
 		except Exception:
 			pass
 
+	def _callbacks_live(self):
+		# A player can outlive this call when the interpreter is reused. A later Stop
+		# then arrives inside some other call. Only the play that is running may answer.
+		return getattr(self, '_live', False)
+
 	def onPlayBackStopped(self):
+		if not self._callbacks_live(): return
 		self._maybe_show_nextep_handoff_cover()
 
 	def onPlayBackEnded(self):
+		if not self._callbacks_live(): return
 		self._maybe_show_nextep_handoff_cover()
+
+	def onPlayBackSeek(self, time, seekOffset):
+		# Kodi reports time in milliseconds. A user rewind to 00:00 must not be
+		# treated as the post-forward-seek 0/start glitch (2.2.6 / 2.8.4).
+		if not self._callbacks_live(): return
+		try:
+			seconds = float(time) / 1000.0
+		except Exception:
+			return
+		honour = seconds < _SEEK_GLITCH_START_SEC
+		if honour and not getattr(self, '_honour_start_position', False):
+			try: ku.logger('Red Light', 'Seek to start honoured: %.1fs' % seconds)
+			except Exception:
+				pass
+		self._honour_start_position = honour
 
 	def run(self, url=None, obj=None):
 		ku.hide_busy_dialog()
@@ -83,10 +109,13 @@ class RedLightPlayer(xbmc.Player):
 		if not url:
 			self.is_generic = obj == 'video'
 			return self.run_error('No playable link was returned.')
+		self._live = True
 		try: return self.play_video(url, obj)
 		except:
 			self.is_generic = obj == 'video'
 			return self.run_error()
+		finally:
+			self._live = False
 
 	def play_video(self, url, obj):
 		self.set_constants(url, obj)
@@ -100,6 +129,12 @@ class RedLightPlayer(xbmc.Player):
 			except Exception:
 				pass
 			return
+		# play_file already closed the row, before the short wait that sits between
+		# resolve and play. This is only a fallback. No extra wait here: waiting for
+		# the row to vanish as the file opens made the handover less smooth.
+		# Closing it after the picture is up stops playback.
+		if not self.is_generic and self.sources_object._progress_row():
+			ku.close_loading_background(force=True)
 		ku.volume_checker()
 		ku.set_property(PROP_PLAY_OPENING, 'true')
 		listitem = self.make_listing()
@@ -113,6 +148,7 @@ class RedLightPlayer(xbmc.Player):
 			if self.is_generic:
 				ku.clear_video_playlist()
 			self.play(self.url, listitem)
+		self._hold_fullscreen_over_home()
 		if self.is_generic:
 			self.check_playback_start_generic()
 			if self.playback_successful:
@@ -181,6 +217,25 @@ class RedLightPlayer(xbmc.Player):
 			return True
 		except Exception:
 			return False
+
+	def _hold_fullscreen_over_home(self):
+		# Background draws no window. Until the picture is fullscreen, Home (a widget)
+		# paints again over the opening file.
+		try:
+			src = self.sources_object
+			if not src or src.progress_dialog or src.background or not src._silent_loading():
+				return
+			if ku.get_visibility('Window.IsActive(fullscreenvideo)'):
+				return
+			if not self.isPlayingVideo() or not ku.get_visibility('Window.IsActive(home)'):
+				return
+			now = time.time()
+			if now - getattr(self, '_home_fullscreen_at', 0) < 0.4:
+				return
+			self._home_fullscreen_at = now
+			ku.execute_builtin('ActivateWindow(fullscreenvideo)', block=False)
+		except Exception:
+			pass
 
 	def _seek_to_resume_if_needed(self):
 		# setResolvedUrl often ignores StartPercent on Kodi 22 / widget PlayMedia.
@@ -270,8 +325,27 @@ class RedLightPlayer(xbmc.Player):
 
 	def check_playback_start(self):
 		resolve_percent = 0
+		# The progress row closes before this loop. Dialog.Close on every pass kept that
+		# close behind the refresh change. Waiting to dismiss the busy spinner left it
+		# up through that change, because the close was queued behind the 48Hz switch.
+		# Dismiss it once, as soon as it shows, and only in the first moments of the open.
+		quiet_open = False
+		busy_cleared = False
+		opened_at = time.time()
+		try:
+			quiet_open = bool(self.sources_object and self.sources_object._progress_row())
+		except Exception:
+			quiet_open = False
 		while self.playback_successful is None:
-			ku.hide_busy_dialog()
+			if quiet_open:
+				if not busy_cleared:
+					if (time.time() - opened_at) >= 0.30:
+						busy_cleared = True
+					elif ku.get_visibility('Window.IsVisible(busydialog)') or ku.get_visibility('Window.IsVisible(busydialognocancel)'):
+						ku.hide_busy_dialog()
+						busy_cleared = True
+			else:
+				ku.hide_busy_dialog()
 			if self._resolve_cancelled():
 				self.sources_object.cancel_all_playback = True
 				self.sources_object._resolve_user_cancelled = True
@@ -279,14 +353,18 @@ class RedLightPlayer(xbmc.Player):
 				self.safe_stop()
 				break
 			elif not self.sources_object.progress_dialog:
-				if self._resolve_cancelled():
+				if self._resolve_cancelled() or self.kodi_monitor.abortRequested():
 					self.sources_object.cancel_all_playback = True
 					self.sources_object._resolve_user_cancelled = True
 					self.playback_successful = False
 					self.safe_stop()
 					break
+				elif resolve_percent >= 100:
+					self.playback_successful = False
+					break
 				elif self.isPlayingVideo():
 					try:
+						self._hold_fullscreen_over_home()
 						if self.getTotalTime() not in ('0.0', '', 0.0, None) and ku.get_visibility('Window.IsActive(fullscreenvideo)'):
 							self.playback_successful = True
 					except: pass
@@ -369,6 +447,7 @@ class RedLightPlayer(xbmc.Player):
 			ku.sleep(1000)
 			self._trakt_scrobble_start()
 			self._simkl_scrobble_start()
+			self._mdblist_scrobble_start()
 			self._punchplay_scrobble_start()
 			self._wetrakr_scrobble_start()
 			self._maybe_start_subtitle_alert_fetch()
@@ -409,15 +488,18 @@ class RedLightPlayer(xbmc.Player):
 						self._intro_skip_fetch_started = True
 						self._start_intro_skip_fetch()
 					self._maybe_apply_intro_skip()
-					self._wetrakr_progress_tick()
 					self._punchplay_scrobble_progress()
+					self._wetrakr_playback_event()
 					if play_random_continual:
 						if self._should_prep_random_continual():
 							self.random_continual_triggered = True
 							self.run_random_continual()
 							break
 					elif self.current_point >= self.watched_tick_percent:
-						if not self.media_marked: self.media_watched_marker()
+						if not self.media_marked:
+							# WeTrakr stop is a history play. Do not send it at 80% while
+							# the file is still playing — wait for a real exit.
+							self.media_watched_marker(remote=st.watched_indicators() != 5)
 					if self.media_type == 'episode':
 						if self.autoplay_nextep or self.autoscrape_nextep:
 							if not self.nextep_info_gathered:
@@ -496,12 +578,15 @@ class RedLightPlayer(xbmc.Player):
 				ku.hide_busy_dialog()
 			# Re-sample position before mark — stop often races getTime() (seek then Stop).
 			self._refresh_playback_position(allow_stale=True)
-			if not playback_superseded and not self.media_marked: self.media_watched_marker()
+			if getattr(self, '_wetrakr_remote_pending', False):
+				self._enqueue_wetrakr_watched_stop()
+			elif not playback_superseded and not self.media_marked:
+				self.media_watched_marker()
 			# Wipe Kodi MyVideos bookmarks for plugin:// paths so the next home-widget
 			# click does not show Resume/Start over before scrape (Umbrella pattern).
 			try:
 				from modules.watched_status import clear_local_bookmarks
-				clear_local_bookmarks()
+				clear_local_bookmarks(force=True)
 			except: pass
 			self.clear_playback_properties(clear_navigation=False)
 			self._release_active_playback()
@@ -516,7 +601,7 @@ class RedLightPlayer(xbmc.Player):
 		listitem.setPath(self.url)
 		listitem.setContentLookup(False)
 		if self.is_generic:
-			info_tag = listitem.getVideoInfoTag(True)
+			info_tag = listitem.getVideoInfoTag()
 			info_tag.setMediaType('video')
 			play_name = ku.get_property('redlight.tb.play_filename') or self.url
 			info_tag.setFilenameAndPath(play_name)
@@ -555,7 +640,7 @@ class RedLightPlayer(xbmc.Player):
 			if self.media_type == 'movie':
 				plot = self.meta_get('plot') if st.show_loading_plot() else ''
 				listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo})
-				info_tag = listitem.getVideoInfoTag(True)
+				info_tag = listitem.getVideoInfoTag()
 				info_tag.setMediaType('movie'), info_tag.setTitle(self.title), info_tag.setOriginalTitle(self.meta_get('original_title')), info_tag.setPlot(plot)
 				info_tag.setYear(int(self.year)), info_tag.setRating(rating), info_tag.setVotes(votes), info_tag.setMpaa(mpaa)
 				info_tag.setDuration(duration), info_tag.setCountries(country), info_tag.setTrailer(trailer), info_tag.setPremiered(premiered)
@@ -567,7 +652,7 @@ class RedLightPlayer(xbmc.Player):
 				elif st.avoid_episode_spoilers() and int(self.meta_get('playcount') or 0) == 0: plot = self.meta_get('tvshow_plot') or '* Hidden to Prevent Spoilers *'
 				else: plot = self.meta_get('plot') or self.meta_get('tvshow_plot')
 				listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'tvshow.poster': poster, 'tvshow.clearlogo': clearlogo})
-				info_tag = listitem.getVideoInfoTag(True)
+				info_tag = listitem.getVideoInfoTag()
 				info_tag.setMediaType('episode'), info_tag.setTitle(self.meta_get('ep_name')), info_tag.setOriginalTitle(self.meta_get('original_title'))
 				info_tag.setTvShowTitle(self.title), info_tag.setTvShowStatus(self.meta_get('status')), info_tag.setSeason(self.season), info_tag.setEpisode(self.episode)
 				info_tag.setPlot(plot), info_tag.setYear(int(self.year)), info_tag.setRating(rating), info_tag.setVotes(votes)
@@ -622,6 +707,13 @@ class RedLightPlayer(xbmc.Player):
 		if not simkl_official_status(self.media_type): return
 		Thread(target=simkl_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
 
+	def _mdblist_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 3 or not st.mdblist_user_active(): return
+		from apis.mdblist_api import mdblist_scrobble, mdblist_official_status
+		if not mdblist_official_status(self.media_type): return
+		percent = self.playback_percent if self.playback_percent else 0
+		Thread(target=mdblist_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode)).start()
+
 	def _punchplay_scrobble_start(self):
 		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
 		from apis.punchplay_api import punchplay_scrobble, punchplay_official_status
@@ -656,104 +748,120 @@ class RedLightPlayer(xbmc.Player):
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
 				'session_id': session_id}, daemon=True).start()
 
-	def _wetrakr_meta_kwargs(self, percent):
-		ep_title = ''
-		show_title = None
-		if self.media_type == 'episode':
-			try: ep_title = (self.meta_get('ep_name') if getattr(self, 'meta_get', None) else '') or ''
-			except: ep_title = ''
-			show_title = getattr(self, 'title', '') or ''
-			title = ep_title or show_title
-		else:
-			title = getattr(self, 'title', '') or ''
+	def _wetrakr_scrobble_start(self):
+		if self.is_generic or st.watched_indicators() != 5 or not st.wetrakr_user_active(): return
+		from apis.wetrakr_api import wetrakr_scrobble, wetrakr_official_status, wetrakr_scrobble_deferred
+		if not wetrakr_official_status(self.media_type) or wetrakr_scrobble_deferred(): return
+		percent = self.playback_percent if self.playback_percent else 0
+		self._wetrakr_paused = False
+		self._wetrakr_prev_point = percent
+		self._wetrakr_event_at = time.time()
+		Thread(target=wetrakr_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None)}, daemon=True).start()
+
+	def _wetrakr_playback_event(self):
+		"""Pause, resume, and seek only. WeTrakr asks for events, not a progress timer."""
+		if self.is_generic or st.watched_indicators() != 5 or not st.wetrakr_user_active(): return
+		try: paused = bool(ku.get_visibility('Player.Paused'))
+		except: paused = False
+		try: point = float(self.current_point or 0)
+		except: point = 0
+		prev = getattr(self, '_wetrakr_prev_point', None)
+		was_paused = getattr(self, '_wetrakr_paused', False)
+		action = None
+		if paused and not was_paused: action = 'pause'
+		elif not paused and was_paused: action = 'start'
+		elif not paused and prev is not None and abs(point - float(prev)) >= 8: action = 'start'
+		self._wetrakr_paused = paused
+		self._wetrakr_prev_point = point
+		if not action: return
+		now = time.time()
+		if now - getattr(self, '_wetrakr_event_at', 0) < 2: return
+		self._wetrakr_event_at = now
+		from apis.wetrakr_api import wetrakr_scrobble, wetrakr_official_status, wetrakr_scrobble_deferred
+		if not wetrakr_official_status(self.media_type) or wetrakr_scrobble_deferred(): return
+		Thread(target=wetrakr_scrobble, args=(action, self.media_type, self.tmdb_id, point, self.season, self.episode),
+			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None)}, daemon=True).start()
+
+	def _playback_remote_base(self, percent, scrobble_stop=True):
 		return {
-			'progress': percent,
-			'title': title,
+			'media_type': self.media_type,
+			'tmdb_id': self.tmdb_id,
+			'tvdb_id': getattr(self, 'tvdb_id', 0),
+			'title': self.title,
 			'year': getattr(self, 'year', None),
-			'tmdb_id': getattr(self, 'tmdb_id', None),
-			'imdb_id': getattr(self, 'imdb_id', None),
-			'tvdb_id': getattr(self, 'tvdb_id', None),
-			'season': getattr(self, 'season', None),
-			'episode': getattr(self, 'episode', None),
-			'show_title': show_title
+			'season': self.season,
+			'episode': self.episode,
+			'percent': percent,
+			'scrobble_stop': scrobble_stop,
+			'punchplay_session_id': getattr(self, '_punchplay_session_id', None)
 		}
 
-	def _wetrakr_send(self, event, percent):
-		if self.is_generic or not st.wetrakr_user_active(): return
-		from apis.wetrakr_api import wetrakr_should_scrobble, wetrakr_send_event
-		if not wetrakr_should_scrobble(): return
-		kwargs = self._wetrakr_meta_kwargs(percent)
-		Thread(target=wetrakr_send_event, args=(event, self.media_type), kwargs=kwargs).start()
+	def _enqueue_wetrakr_watched_stop(self):
+		"""Send the one WeTrakr history play now that this playback has ended."""
+		if not getattr(self, '_wetrakr_remote_pending', False): return
+		self._wetrakr_remote_pending = False
+		from modules.playback_remotes import enqueue_playback_job
+		job = self._playback_remote_base(100)
+		job.update({
+			'op': 'watched', 'action': 'mark_as_watched',
+			'resume_id': getattr(self, '_wetrakr_pending_resume_id', None)
+		})
+		enqueue_playback_job(job)
 
-	def _wetrakr_scrobble_start(self):
-		self._wetrakr_scrobbled = False
-		self._wetrakr_last_progress_send = 0
-		percent = self.playback_percent if self.playback_percent else 0
-		self._wetrakr_send('playing', percent)
-
-	def _wetrakr_progress_tick(self):
-		if self.is_generic or getattr(self, '_wetrakr_scrobbled', False): return
-		if not st.wetrakr_user_active(): return
-		from apis.wetrakr_api import wetrakr_should_scrobble, wetrakr_scrobble_threshold
-		if not wetrakr_should_scrobble(): return
-		now = time.time()
-		last = getattr(self, '_wetrakr_last_progress_send', 0) or 0
-		if now - last >= 30:
-			self._wetrakr_last_progress_send = now
-			self._wetrakr_send('playing', self.current_point)
-		threshold = wetrakr_scrobble_threshold()
-		if self.current_point >= threshold and not getattr(self, '_wetrakr_scrobbled', False):
-			self._wetrakr_scrobbled = True
-			self._wetrakr_send('scrobble', self.current_point)
-
-	def _wetrakr_on_stop(self, percent, force_scrobble=False):
-		if getattr(self, '_wetrakr_scrobbled', False): return
-		from apis.wetrakr_api import wetrakr_scrobble_threshold
-		threshold = wetrakr_scrobble_threshold()
-		if force_scrobble or percent >= threshold:
-			self._wetrakr_scrobbled = True
-			self._wetrakr_send('scrobble', 100 if force_scrobble else percent)
-		elif percent >= 5:
-			self._wetrakr_send('paused', percent)
-
-	def media_watched_marker(self, force_watched=False):
+	def media_watched_marker(self, force_watched=False, remote=True):
 		self.media_marked = True
 		try:
 			self._refresh_playback_position(allow_stale=True)
+			if getattr(self, '_honour_start_position', False):
+				self.curr_time = 0
+				self.current_point = 0
 			current_point = getattr(self, 'current_point', 0) or 0
 			try:
-				ku.logger('Red Light', 'playback stop progress: %.1f%% (curr=%.1fs total=%.1fs)' % (
-					float(current_point), float(getattr(self, 'curr_time', 0) or 0), float(getattr(self, 'total_time', 0) or 0)))
+				label = 'playback watched tick' if not remote else 'playback stop progress'
+				ku.logger('Red Light', '%s: %.1f%% (curr=%.1fs total=%.1fs)' % (
+					label, float(current_point), float(getattr(self, 'curr_time', 0) or 0),
+					float(getattr(self, 'total_time', 0) or 0)))
 			except Exception:
 				pass
 			tick_at = getattr(self, 'watched_tick_percent', None)
 			if tick_at is None: tick_at = st.playback_watched_percent()
+			from modules.playback_remotes import apply_local_watched, apply_local_progress, apply_local_clear_progress, enqueue_playback_job
+			wetrakr = st.watched_indicators() == 5
 			if current_point >= tick_at or force_watched:
-				self._trakt_scrobble_stop(100)
-				self._simkl_scrobble_stop(100)
-				self._punchplay_scrobble_stop(100)
-				self._wetrakr_on_stop(100, force_scrobble=True)
-				watched_function = ws.mark_movie if self.media_type == 'movie' else ws.mark_episode
-				watched_params = {'action': 'mark_as_watched', 'tmdb_id': self.tmdb_id, 'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
-									'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
-				Thread(target=self.run_media_progress, args=(watched_function, watched_params), daemon=True).start()
+				watched_params = {'action': 'mark_as_watched', 'media_type': self.media_type, 'tmdb_id': self.tmdb_id,
+					'title': self.title, 'year': self.year, 'season': self.season, 'episode': self.episode,
+					'tvdb_id': self.tvdb_id, 'from_playback': 'true'}
+				resume_id = apply_local_watched(watched_params)
+				if not remote:
+					self._wetrakr_remote_pending = True
+					self._wetrakr_pending_resume_id = resume_id
+					return
+				job = self._playback_remote_base(100)
+				job.update({'op': 'watched', 'action': 'mark_as_watched', 'resume_id': resume_id})
+				enqueue_playback_job(job)
 			else:
-				# Always stop Trakt live scrobble so Playing now clears. Below ~80% Trakt treats stop as pause + resume.
-				self._trakt_scrobble_stop(current_point)
-				self._simkl_scrobble_stop(current_point)
-				self._punchplay_scrobble_stop(current_point)
-				self._wetrakr_on_stop(current_point)
+				# Trakt / Simkl / MDBList / PunchPlay: stop so Playing now clears.
+				# WeTrakr stop is a history play even at 1% — pause only.
 				ku.clear_property('redlight.random_episode_history')
-				if current_point >= 5:
-					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
-									'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
-					# Local DB sync so In Progress is correct even if the remote scrobble
-					# thread is still running when the invoker exits; remote stays async.
-					try:
-						ws.set_bookmark(progress_params, remote=False)
-					except Exception:
-						pass
-					Thread(target=self.run_media_progress, args=(ws.set_bookmark, progress_params), daemon=True).start()
+				job = self._playback_remote_base(current_point, scrobble_stop=not wetrakr)
+				progress_floor = 0 if wetrakr else 5
+				if getattr(self, '_honour_start_position', False):
+					# Real rewind to the start — not a sub-5% stop, which must
+					# not wipe a 3% play that arrived from another source.
+					resume_id = apply_local_clear_progress({
+						'media_type': self.media_type, 'tmdb_id': self.tmdb_id,
+						'season': self.season, 'episode': self.episode})
+					job.update({'op': 'clear_progress', 'resume_id': resume_id})
+				elif current_point >= progress_floor or wetrakr:
+					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time,
+						'total_time': self.total_time, 'title': self.title, 'season': self.season, 'episode': self.episode,
+						'from_playback': 'true'}
+					apply_local_progress(progress_params)
+					job.update({'op': 'progress', 'curr_time': self.curr_time, 'total_time': self.total_time})
+				else:
+					job['op'] = 'stop'
+				enqueue_playback_job(job)
 		except: pass
 
 	def run_media_progress(self, function, params):
@@ -898,20 +1006,34 @@ class RedLightPlayer(xbmc.Player):
 
 	def _refresh_playback_position(self, allow_stale=True):
 		'''Update curr_time / total_time / current_point. Keep last good sample if live read fails.'''
+		honour_start = getattr(self, '_honour_start_position', False)
 		curr, total = self._read_player_times()
-		if total not in (None, 0, 0.0) and curr not in (None,) and float(total) >= 60 and float(curr) > 0:
-			# Honour forward seeks: never shrink a known larger position on a bad post-seek sample.
+		total_ok = total not in (None, 0, 0.0) and float(total) >= 60
+		curr_ok = curr not in (None,)
+		if total_ok and curr_ok and (float(curr) > 0 or honour_start):
+			# Honour forward seeks: never shrink a known larger position on a
+			# transient 0/start sample. A real skip-back is not that glitch.
 			prev = getattr(self, 'curr_time', None)
 			try:
 				prev_f = float(prev) if prev not in (None, '') else 0.0
 			except Exception:
 				prev_f = 0.0
-			if float(curr) + 2.0 < prev_f and prev_f > 30:
-				# Likely a transient 0/start sample after seek — keep previous.
-				curr = prev_f
-			self.total_time, self.curr_time = float(total), float(curr)
+			curr_f = float(curr)
+			if (not honour_start) and prev_f > 30 and curr_f < _SEEK_GLITCH_START_SEC and curr_f + 2.0 < prev_f:
+				curr_f = prev_f
+			self.total_time, self.curr_time = float(total), curr_f
 			self.current_point = round(float(self.curr_time) / float(self.total_time) * 100, 1)
+			if honour_start and curr_f >= _SEEK_GLITCH_START_SEC:
+				self._honour_start_position = False
 			return True
+		if honour_start and allow_stale:
+			try:
+				if getattr(self, 'total_time', None) not in (None, 0, 0.0, ''):
+					self.curr_time = 0
+					self.current_point = 0
+					return True
+			except Exception:
+				pass
 		if allow_stale and getattr(self, 'total_time', None) not in (None, 0, 0.0, '') and getattr(self, 'curr_time', None) not in (None, '', 0, 0.0):
 			try:
 				self.current_point = round(float(self.curr_time) / float(self.total_time) * 100, 1)
@@ -1037,7 +1159,7 @@ class RedLightPlayer(xbmc.Player):
 			try:
 				from modules.episode_tools import EpisodeTools
 				if not self.media_marked:
-					try: self.media_watched_marker(force_watched=True)
+					try: self.media_watched_marker(force_watched=True, remote=st.watched_indicators() != 5)
 					except: pass
 				EpisodeTools(meta, nextep_settings).auto_nextep()
 			except Exception as exc:
@@ -1227,12 +1349,12 @@ class RedLightPlayer(xbmc.Player):
 
 	def run_next_ep(self):
 		from modules.episode_tools import EpisodeTools
-		if not self.media_marked: self.media_watched_marker(force_watched=True)
+		if not self.media_marked: self.media_watched_marker(force_watched=True, remote=st.watched_indicators() != 5)
 		EpisodeTools(self.meta, self.nextep_settings).auto_nextep()
 
 	def run_random_continual(self):
 		from modules.episode_tools import EpisodeTools
-		if not self.media_marked: self.media_watched_marker(force_watched=True)
+		if not self.media_marked: self.media_watched_marker(force_watched=True, remote=st.watched_indicators() != 5)
 		EpisodeTools(self.meta).play_random_continual(False)
 
 	def run_movie_stingers(self):
@@ -1266,7 +1388,7 @@ class RedLightPlayer(xbmc.Player):
 			listitem.setProperty('StartPercent', '0')
 		listitem.setProperty('StartOffset', '0')
 		try:
-			listitem.getVideoInfoTag(True).setResumePoint(0.0)
+			listitem.getVideoInfoTag().setResumePoint(0.0)
 		except:
 			pass
 
@@ -1344,20 +1466,61 @@ class RedLightPlayer(xbmc.Player):
 				self._outro_credits_start_cached = '__unset__'
 		Thread(target=_work, daemon=True).start()
 
-	def _maybe_start_subtitle_alert_fetch(self):
-		if getattr(self, '_subtitle_alert_fetch_started', False): return
-		if self.is_generic or not self.imdb_id: return
-		if not st.subs_alert_fetch_enabled(self.media_type): return
-		self._subtitle_alert_fetch_started = True
+	def _subtitle_search_ids(self):
+		'''IMDb + S/E for OpenSubtitles/SubMaker only. Playback meta is unchanged.
+
+		Titles that already have a tt id keep that id and TMDb S/E. TMDb-only
+		anthology episodes may use the same Cinemeta parent id Sites scrape with.
+		'''
+		cached = getattr(self, '_subtitle_search_ids_cached', None)
+		if cached is not None:
+			return cached
 		season = self.season if self.media_type == 'episode' else None
 		episode = self.episode if self.media_type == 'episode' else None
+		imdb = self.imdb_id or None
+		result = (imdb, season, episode)
+		if self.media_type == 'episode':
+			try:
+				from modules.native_torrents import cinemeta_ids_when_imdb_missing
+				meta = getattr(self, 'meta', None) or {}
+				try:
+					season_count = [int(x['episode_count']) for x in (meta.get('season_data') or [])
+						if int(x['season_number']) == int(season)][0]
+				except Exception:
+					season_count = int(meta.get('season_episode_count') or 1) or 1
+				mapped = cinemeta_ids_when_imdb_missing({
+					'imdb_id': imdb,
+					'media_type': 'episode',
+					'title': self.title or meta.get('title') or '',
+					'tmdb_id': self.tmdb_id or meta.get('tmdb_id'),
+					'season': season,
+					'episode': episode,
+					'premiered': meta.get('premiered') or '',
+					'season_episode_count': season_count,
+				})
+				if mapped:
+					ku.logger('Red Light', 'Subtitles: no IMDb id — using %s S%02dE%02d (Cinemeta)' % (
+						mapped['imdb_id'], mapped['season'], mapped['episode']))
+					result = (mapped['imdb_id'], mapped['season'], mapped['episode'])
+			except Exception:
+				pass
+		self._subtitle_search_ids_cached = result
+		return result
+
+	def _maybe_start_subtitle_alert_fetch(self):
+		if getattr(self, '_subtitle_alert_fetch_started', False): return
+		if self.is_generic: return
+		if not st.subs_alert_fetch_enabled(self.media_type): return
+		imdb_id, season, episode = self._subtitle_search_ids()
+		if not imdb_id: return
+		self._subtitle_alert_fetch_started = True
 		year = getattr(self, 'year', None)
 		playing_filename = getattr(self, 'playing_filename', None)
 		playing_item = getattr(self, 'playing_item', None)
 		def _work():
 			try:
 				from indexers.subtitles import fetch_subtitle_for_alert_timing
-				fetch_subtitle_for_alert_timing(self.imdb_id, season, episode, year, playing_filename, playing_item)
+				fetch_subtitle_for_alert_timing(imdb_id, season, episode, year, playing_filename, playing_item)
 			except: pass
 			finally:
 				self._subtitle_alert_fetch_done = True
@@ -1372,9 +1535,8 @@ class RedLightPlayer(xbmc.Player):
 			return cached_by_mode[cache_key]
 		try:
 			from indexers.subtitles import subtitle_seconds_remaining_before_end
-			season = self.season if self.media_type == 'episode' else None
-			episode = self.episode if self.media_type == 'episode' else None
-			remaining = subtitle_seconds_remaining_before_end(float(self.total_time), self.imdb_id, season, episode, fetch=fetch,
+			imdb_id, season, episode = self._subtitle_search_ids()
+			remaining = subtitle_seconds_remaining_before_end(float(self.total_time), imdb_id, season, episode, fetch=fetch,
 				player=self, playing_filename=getattr(self, 'playing_filename', None), playing_item=getattr(self, 'playing_item', None),
 				playback_started_at=getattr(self, '_playback_started_at', None),
 				year=getattr(self, 'year', None), for_alert=for_alert)
@@ -1533,11 +1695,14 @@ class RedLightPlayer(xbmc.Player):
 		self.kodi_monitor = ku.kodi_monitor()
 		self.playback_successful = None
 		self.cancel_all_playback = False
+		self._honour_start_position = False
 		if not self.is_generic:
 			self.meta = self.sources_object.meta
 			self.meta_get, self.playback_percent = self.meta.get, self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
+			self._wetrakr_remote_pending = False
+			self._wetrakr_pending_resume_id = None
 			self.watched_tick_percent = st.playback_watched_percent()
 			self.current_point = 0
 			self.subs_searched = False
@@ -1809,21 +1974,19 @@ class RedLightPlayer(xbmc.Player):
 		self.subs_searched = True
 		self._clear_subtitle_end_cache()
 		if not st.auto_enable_subs(): return
-		if not self.imdb_id: return
 		try:
 			from indexers.subtitles import subtitle_notify_poster
 			poster = subtitle_notify_poster(self.meta, self.media_type)
-			season = self.season if self.media_type == 'episode' else None
-			episode = self.episode if self.media_type == 'episode' else None
+			imdb_id, season, episode = self._subtitle_search_ids()
 			year = getattr(self, 'year', None)
 			playing_filename = getattr(self, 'playing_filename', None)
 			playing_item = getattr(self, 'playing_item', None)
 			if st.submaker_enabled():
 				from indexers.subtitles import Subtitles
-				Thread(target=Subtitles().run, args=(self.imdb_id, season, episode, poster, playing_filename, playing_item, self, year)).start()
+				Thread(target=Subtitles().run, args=(imdb_id, season, episode, poster, playing_filename, playing_item, self, year)).start()
 			elif st.opensubs_enabled():
 				from indexers.subtitles import OpenSubtitlesSubs
-				Thread(target=OpenSubtitlesSubs().run, args=(self.imdb_id, season, episode, poster, year, playing_filename, playing_item, self)).start()
+				Thread(target=OpenSubtitlesSubs().run, args=(imdb_id, season, episode, poster, year, playing_filename, playing_item, self)).start()
 		except: pass
 
 	def set_playback_properties(self):

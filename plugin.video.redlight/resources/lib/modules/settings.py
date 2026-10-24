@@ -3,51 +3,91 @@ from caches.settings_cache import get_setting, set_setting, default_setting_valu
 from modules.kodi_utils import translate_path, get_property, addon_profile, make_directory
 from modules.kodi_utils import logger
 
+def _shipped_credential(setting_id):
+	from caches.settings_cache import normalize_credential_string
+	from modules.http_defaults import shipped_setting
+	value = normalize_credential_string(get_setting('redlight.%s' % setting_id, ''))
+	return value or shipped_setting(setting_id)
+
 def tmdb_api_key():
-	return get_setting('redlight.tmdb_api', '')
+	return _shipped_credential('tmdb_api')
 
 def tmdb_lists_read_token():
-	return get_setting('redlight.tmdb.lists_read_token', '')
+	return _shipped_credential('tmdb.lists_read_token')
 
 def trakt_client():
-	return get_setting('redlight.trakt.client', '')
+	return _shipped_credential('trakt.client')
 
 def simkl_client():
-	"""Simkl Client ID from Meta Accounts; empty falls back to the shipped default in simkl_api."""
-	return (get_setting('redlight.simkl.client', '') or '').strip()
+	"""Simkl Client ID from Meta Accounts; empty falls back to the shipped default."""
+	return _shipped_credential('simkl.client')
 
 def mdblist_client():
-	return get_setting('redlight.mdblist.client', '')
+	return _shipped_credential('mdblist.client')
+
+def punchplay_client():
+	return _shipped_credential('punchplay.client')
 
 def trakt_secret():
-	return get_setting('redlight.trakt.secret', '')
+	return _shipped_credential('trakt.secret')
 
 def trakt_user_active():
-	from caches.settings_cache import settings_cache
-	val = settings_cache.read_db_value('trakt.user')
+	from caches.settings_cache import live_setting
+	val = live_setting('trakt.user', 'empty_setting')
 	return val not in (None, 'empty_setting', '')
 
 def simkl_user_active():
-	from caches.settings_cache import settings_cache
-	user = settings_cache.read_db_value('simkl.user')
-	token = settings_cache.read_db_value('simkl.token')
+	from caches.settings_cache import live_setting
+	user = live_setting('simkl.user', 'empty_setting')
+	token = live_setting('simkl.token', '0')
 	return user not in (None, 'empty_setting', '') and token not in (None, '0', '', 'empty_setting')
 
+def simkl_plan_known_free():
+	"""True only when the saved plan is free. A missing plan is not free."""
+	from caches.settings_cache import live_setting
+	plan = str(live_setting('simkl.account_type', '') or '').strip().lower()
+	return plan == 'free'
+
+def simkl_custom_lists_allowed():
+	"""Signed in, AUTH V2, and not a known free plan."""
+	return simkl_auth_v2() and not simkl_plan_known_free()
+
+def simkl_auth_v2():
+	"""True when the signed-in Simkl grant is AUTH V2 (custom lists / refresh)."""
+	if not simkl_user_active(): return False
+	from caches.settings_cache import live_setting
+	version = str(live_setting('simkl.auth_version', '') or '').strip()
+	if version == '2': return True
+	if version == '1': return False
+	refresh = live_setting('simkl.refresh', '0')
+	if refresh not in (None, '0', '', 'empty_setting'): return True
+	token = live_setting('simkl.token', '0')
+	return str(token or '').startswith('simkl_at_')
+
+def simkl_rewatches_allowed():
+	"""Signed in on V1 or V2, and the saved plan is PRO or VIP. A missing plan is not allowed."""
+	if not simkl_user_active(): return False
+	from caches.settings_cache import live_setting
+	plan = str(live_setting('simkl.account_type', '') or '').strip().lower()
+	return plan in ('pro', 'vip')
+
+def simkl_track_rewatches():
+	if not simkl_rewatches_allowed(): return False
+	return get_setting('redlight.simkl.track_rewatches', 'false') == 'true'
+
 def mdblist_user_active():
-	from caches.settings_cache import settings_cache
-	user = settings_cache.read_db_value('mdblist.user')
-	token = settings_cache.read_db_value('mdblist.token')
-	refresh = get_setting('redlight.mdblist.refresh', '0')
+	from caches.settings_cache import live_setting
+	user = live_setting('mdblist.user', 'empty_setting')
+	token = live_setting('mdblist.token', '0')
+	refresh = live_setting('mdblist.refresh', '0')
 	return (user not in (None, 'empty_setting', '')
 		and token not in (None, '0', '', 'empty_setting')
 		and refresh not in (None, '0', '', 'empty_setting'))
 
 def punchplay_user_active():
 	"""Authorised when a usable access token exists (username is display-only)."""
-	from caches.settings_cache import settings_cache, get_setting
-	token = settings_cache.read_db_value('punchplay.token')
-	if token in (None, '0', '', 'empty_setting'):
-		token = get_setting('redlight.punchplay.token', '0')
+	from caches.settings_cache import live_setting
+	token = live_setting('punchplay.token', '0')
 	return token not in (None, '0', '', 'empty_setting')
 
 def punchplay_sync_interval():
@@ -57,13 +97,22 @@ def punchplay_sync_interval():
 	return interval, interval * 60
 
 def wetrakr_user_active():
-	from caches.settings_cache import settings_cache
-	user = settings_cache.read_db_value('wetrakr.user')
-	token = settings_cache.read_db_value('wetrakr.token')
+	from caches.settings_cache import live_setting
+	user = live_setting('wetrakr.user', 'empty_setting')
+	token = live_setting('wetrakr.token', '0')
 	return user not in (None, 'empty_setting', '') and token not in (None, '0', '', 'empty_setting')
 
-def wetrakr_scrobble_enabled():
-	return get_setting('redlight.wetrakr.scrobble', 'true') == 'true'
+def wetrakr_sync_interval():
+	setting = get_setting('redlight.wetrakr.sync_interval', '60')
+	try: interval = max(5, int(setting))
+	except: interval = 60
+	return interval, interval * 60
+
+def wetrakr_lists_active():
+	"""Lists use Red Light's shipped WeTrakr app key plus an authorised account."""
+	from modules.http_defaults import shipped_setting
+	if not wetrakr_user_active(): return False
+	return bool(shipped_setting('wetrakr.client'))
 
 def mdblist_sync_interval():
 	setting = get_setting('redlight.mdblist.sync_interval', '60')
@@ -109,7 +158,7 @@ def playback_settings():
 
 def playback_watched_percent():
 	"""Percent at which playback writes a local watched tick. Follows Watched Status Provider."""
-	return 80 if watched_indicators() in (1, 2) else 90
+	return 80 if watched_indicators() in (1, 2, 5) else 90
 
 def limit_resolve():
 	return get_setting('redlight.playback.limit_resolve', 'false') == 'true'
@@ -183,6 +232,7 @@ WATCHLIST_UNAIRED_ACTIONS = frozenset((
 	'mdblist_watchlist',
 	'punchplay_watchlist', 'punchplay_plantowatch',
 	'simkl_plantowatch',
+	'wetrakr_plantowatch',
 ))
 
 def show_unaired_watchlist():
@@ -212,13 +262,40 @@ def avoid_episode_spoilers():
 def show_loading_plot():
 	return get_setting('redlight.show_loading_plot', 'true') == 'true'
 
+def loading_screen():
+	# 0 Full, 1 Artwork, 2 Background. Missing stays Full.
+	return get_setting('redlight.loading_screen', '0')
+
+def loading_progress_row():
+	# Only applies when Loading Screen is Background. Default on.
+	if loading_screen() != '2': return False
+	return get_setting('redlight.loading_progress_row', 'true') == 'true'
+
 def paginate(is_home):
 	paginate_lists = int(get_setting('redlight.paginate.lists', '0'))
 	if is_home: return paginate_lists in (2, 3)
 	else: return paginate_lists in (1, 3)
 
-def page_limit(is_home):	
-	return int(get_setting({True: 'redlight.paginate.limit_widgets', False: 'redlight.paginate.limit_addon'}[is_home], '20'))
+def page_limit(is_home):
+	try:
+		return int(get_setting({True: 'redlight.paginate.limit_widgets', False: 'redlight.paginate.limit_addon'}[is_home], '20'))
+	except Exception:
+		return 20
+
+CATALOGUE_PAGE_LIMIT_MIN, CATALOGUE_PAGE_LIMIT_MAX, CATALOGUE_PAGE_LIMIT_DEFAULT = 1, 100, 20
+
+def catalogue_page_limit(is_home=None):
+	if is_home is None:
+		from modules.kodi_utils import external
+		is_home = external()
+	try:
+		value = int(get_setting({
+			True: 'redlight.paginate.catalogue_limit_widgets',
+			False: 'redlight.paginate.catalogue_limit_addon',
+		}[is_home], str(CATALOGUE_PAGE_LIMIT_DEFAULT)))
+	except Exception:
+		value = CATALOGUE_PAGE_LIMIT_DEFAULT
+	return max(CATALOGUE_PAGE_LIMIT_MIN, min(CATALOGUE_PAGE_LIMIT_MAX, value))
 
 def quality_filter(setting):
 	return get_setting('redlight.%s' % setting).split(', ')
@@ -410,10 +487,16 @@ def public_calendar_include_anime():
 	return get_setting('redlight.public_calendar_include_anime', 'true') == 'true'
 
 def public_calendar_max_items():
-	"""0 = unlimited; otherwise 1–2000 listitem cap after the day window."""
+	"""How many public-calendar rows to build. 0 or a bad value uses 250. Otherwise 1–2000."""
 	try: value = int(get_setting('redlight.public_calendar_max_items', '250'))
 	except (TypeError, ValueError): value = 250
-	if value <= 0: return 0
+	if value <= 0:
+		try:
+			from caches.settings_cache import set_setting
+			set_setting('public_calendar_max_items', '250')
+		except Exception:
+			pass
+		return 250
 	return max(1, min(2000, value))
 
 def public_calendar_cache_list():
@@ -617,10 +700,24 @@ def _any_debrid_account():
 	return any(enabled_debrids_check(i) for i in ('rd', 'pm', 'ad', 'oc', 'tb'))
 
 def internal_scrapers_enabled():
-	return get_setting('redlight.provider.internal', 'false') == 'true'
+	return get_setting('redlight.provider.internal', 'true') == 'true'
+
+def prefer_internal_scrapers():
+	return get_setting('redlight.provider.prefer_internal', 'false') == 'true'
+
+def internal_filter_foreign_audio():
+	"""Drop a torrent file tagged as one non-English language. English, multi, and untagged stay."""
+	return get_setting('redlight.internal.filter_foreign_audio', 'true') == 'true'
+
+def disabled_internal_ignored():
+	"""Play Options ALL Internal: every Indexer/Site for this scrape only."""
+	from modules.kodi_utils import get_property
+	return get_property('redlight.disabled_int_ignored') == 'true'
 
 def _native_torrent_scrape_active(scraper):
-	return internal_scrapers_enabled() and get_setting('redlight.provider.%s' % scraper, 'false') == 'true' and _any_debrid_account()
+	if not _any_debrid_account(): return False
+	if disabled_internal_ignored(): return True
+	return internal_scrapers_enabled() and get_setting('redlight.provider.%s' % scraper, 'false') == 'true'
 
 def comet_scrape_active():
 	return _native_torrent_scrape_active('comet')
@@ -636,6 +733,18 @@ def nyaa_scrape_active():
 
 def animetosho_scrape_active():
 	return _native_torrent_scrape_active('animetosho')
+
+def piratebay_scrape_active():
+	return _native_torrent_scrape_active('piratebay')
+
+def torrentdownloads_scrape_active():
+	return _native_torrent_scrape_active('torrentdownloads')
+
+def mediafusion_scrape_active():
+	return _native_torrent_scrape_active('mediafusion')
+
+def zilean_scrape_active():
+	return _native_torrent_scrape_active('zilean')
 
 def nzb_search_width():
 	return int(get_setting('redlight.nzb.search_width', '0'))
@@ -704,7 +813,8 @@ def tv_progress_location():
 
 def check_prescrape_sources(scraper, media_type):
 	"""Prescrape only when Check Before Full Search is enabled for that provider."""
-	if scraper in ('animetosho', 'nyaa', 'comet', 'torz', 'torrentio'):
+	from modules.native_torrents import NATIVE_TORRENT_SCRAPERS
+	if scraper in NATIVE_TORRENT_SCRAPERS:
 		return False
 	if scraper in ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'):
 		return get_setting('redlight.check.%s' % scraper) == 'true'
@@ -737,12 +847,12 @@ EXTERNAL_SCRAPER_SLOT_COUNT = 3
 # Fen-style torrent packs shown first in Choose Module when already installed.
 # Other still lists every xbmc.python.module. Empty slots are never auto-assigned.
 # Chain Scrapers is omitted on purpose — Gears from the same repository is preferred.
+# Magneto is omitted from this list; an existing slot assignment is left in place.
 KNOWN_EXTERNAL_SCRAPERS = (
 	('script.module.classyscrapers', 'Classy Scrapers'),
 	('script.module.cocoscrapers', 'CocoScrapers Module'),
 	('script.module.diamondscrapers', 'Diamond Scrapers'),
 	('script.module.gearsscrapers', 'Gears Scrapers'),
-	('script.module.magneto', 'Magneto Module'),
 	('plugin.program.taz19scrapers', 'Taz19 Scrapers'),
 	('script.module.viperscrapers', 'Viper Scrapers'),
 )
@@ -751,22 +861,40 @@ KNOWN_EXTERNAL_SCRAPER_IDS = frozenset(i[0] for i in KNOWN_EXTERNAL_SCRAPERS)
 def _external_slot_setting(slot, field):
 	return 'external_scraper.slot%d.%s' % (int(slot), field)
 
+def _external_scraper_addon_present(module_id):
+	if not module_id or module_id in ('empty_setting', ''): return False
+	from modules.kodi_utils import addon_present
+	return addon_present(module_id)
+
 def external_scraper_slot_data(slot):
 	module = get_setting('redlight.%s' % _external_slot_setting(slot, 'module'), 'empty_setting')
 	name = get_setting('redlight.%s' % _external_slot_setting(slot, 'name'), 'empty_setting')
 	enabled = get_setting('redlight.%s' % _external_slot_setting(slot, 'enabled'), 'false') == 'true'
-	if module in ('empty_setting', ''):
+	if module in ('empty_setting', '') or not _external_scraper_addon_present(module):
 		return {'slot': int(slot), 'module': '', 'name': '', 'enabled': False, 'folder_name': ''}
 	return {'slot': int(slot), 'module': module, 'name': name, 'enabled': enabled, 'folder_name': module.split('.')[-1]}
+
+def prune_uninstalled_external_scraper_slots():
+	cleared = False
+	for slot in range(1, EXTERNAL_SCRAPER_SLOT_COUNT + 1):
+		module = get_setting('redlight.%s' % _external_slot_setting(slot, 'module'), 'empty_setting')
+		if module in ('empty_setting', ''): continue
+		if _external_scraper_addon_present(module): continue
+		set_external_scraper_slot(slot, '', '', enable=False)
+		cleared = True
+	if cleared:
+		refresh_external_scraper_properties()
+	return cleared
 
 def external_scraper_cache_key(module_id, provider):
 	return '%s::%s' % (module_id, provider)
 
-def active_external_modules():
+def active_external_modules(include_disabled=False):
 	modules = []
 	for slot in range(1, EXTERNAL_SCRAPER_SLOT_COUNT + 1):
 		data = external_scraper_slot_data(slot)
-		if not data['module'] or not data['enabled']: continue
+		if not data['module']: continue
+		if not include_disabled and not data['enabled']: continue
 		display = data['name'] if data['name'] not in ('empty_setting', '') else data['folder_name']
 		modules.append({'slot': slot, 'module_id': data['module'], 'folder_name': data['folder_name'], 'display_name': display})
 	return modules
@@ -908,6 +1036,14 @@ def append_list_shortcut_context_menus(cm_append, build_url_fn, cm_sort_order, m
 			'RunPlugin(%s)' % build_url_fn(dict(base, mode='trakt_watchlist_shortcut_choice')))
 		append_cm_if_enabled(cm_append, cm_sort_order, 'trakt_collection', '[B]Trakt Library[/B]',
 			'RunPlugin(%s)' % build_url_fn(dict(base, mode='trakt_collection_shortcut_choice')))
+	if punchplay_user_active():
+		append_cm_if_enabled(cm_append, cm_sort_order, 'punchplay_watchlist', '[B]PunchPlay Watchlist[/B]',
+			'RunPlugin(%s)' % build_url_fn(dict(base, mode='punchplay_watchlist_shortcut_choice')))
+		append_cm_if_enabled(cm_append, cm_sort_order, 'punchplay_collection', '[B]PunchPlay Collection[/B]',
+			'RunPlugin(%s)' % build_url_fn(dict(base, mode='punchplay_collection_shortcut_choice')))
+	if wetrakr_lists_active():
+		append_cm_if_enabled(cm_append, cm_sort_order, 'wetrakr_plantowatch', '[B]WeTrakr Plan to Watch[/B]',
+			'RunPlugin(%s)' % build_url_fn(dict(base, mode='wetrakr_plantowatch_shortcut_choice')))
 
 def append_source_shortcut_context_menus(cm_append, build_url_fn, cm_sort_order, media_type, meta, season='', episode='', playcount='0'):
 	params = {'media_type': media_type, 'meta': meta, 'playcount': playcount}
@@ -945,12 +1081,42 @@ def migrate_external_scraper_run_mode_for_upgrade(had_existing_settings):
 	set_setting('external_scraper.run_mode', '1' if legacy == '1' else '0')
 	return True
 
+_SAME_TITLE_KEYS = (
+	'indexer', 'site', 'aiostreams', 'easynews', 'nzb', 'folders',
+	'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud',
+)
+
+def _title_filter_key(scraper):
+	from modules.native_torrents import NATIVE_INDEXER_SCRAPERS, NATIVE_SITE_SCRAPERS
+	if scraper in NATIVE_INDEXER_SCRAPERS:
+		return 'indexer'
+	if scraper in NATIVE_SITE_SCRAPERS:
+		return 'site'
+	return scraper
+
+def same_title_year(scraper=None):
+	if scraper:
+		return get_setting('redlight.%s.same_title_year' % _title_filter_key(scraper), 'false') == 'true'
+	return any(get_setting('redlight.%s.same_title_year' % key, 'false') == 'true' for key in _SAME_TITLE_KEYS)
+
+def shared_title_require_year(info, scraper):
+	return bool(info.get('shared_title_require_year')) and same_title_year(scraper)
+
 def filter_by_name(scraper):
 	if get_property('fs_filterless_search') == 'true': return False
-	return get_setting('redlight.%s.title_filter' % scraper, 'false') == 'true'
+	return get_setting('redlight.%s.title_filter' % _title_filter_key(scraper), 'false') == 'true'
+
+def scrape_needs_title_filter(info, scraper):
+	"""Filter Results by Name, or an auto exact-title check when TMDb has prefix-title siblings."""
+	if get_property('fs_filterless_search') == 'true': return False
+	return filter_by_name(scraper) or bool(info and info.get('prefix_title_collision'))
+
+def site_strict_filenames():
+	if get_property('fs_filterless_search') == 'true': return False
+	return get_setting('redlight.site.strict_filenames', 'true') == 'true'
 
 def filter_by_episode_title(scraper):
-	return get_setting('redlight.%s.title_filter_episode' % scraper, 'true') == 'true'
+	return get_setting('redlight.%s.title_filter_episode' % _title_filter_key(scraper), 'true') == 'true'
 
 def uncached_min_seeders():
 	return int(get_setting('redlight.results.uncached_min_seeders', '0'))
@@ -962,8 +1128,11 @@ _DEBRID_CACHE_CHECK_SETTINGS = {
 	'Offcloud': 'oc.cache_check',
 }
 
+def debrid_cache_check_supported(provider):
+	return provider in _DEBRID_CACHE_CHECK_SETTINGS
+
 def debrid_cache_check(provider):
-	if provider == 'AllDebrid':
+	if not debrid_cache_check_supported(provider):
 		return False
 	setting_id = _DEBRID_CACHE_CHECK_SETTINGS.get(provider)
 	if not setting_id: return False
@@ -1033,11 +1202,9 @@ def active_internal_scrapers():
 	active = [i.split('.')[1] for i in settings if get_setting('redlight.%s' % i) == 'true']
 	if aiostreams_active(): active.append('aiostreams')
 	if nzb_scrape_active(): active.append('nzb')
-	if animetosho_scrape_active(): active.append('animetosho')
-	if nyaa_scrape_active(): active.append('nyaa')
-	if comet_scrape_active(): active.append('comet')
-	if torz_scrape_active(): active.append('torz')
-	if torrentio_scrape_active(): active.append('torrentio')
+	from modules.native_torrents import NATIVE_TORRENT_SCRAPERS
+	for scraper in NATIVE_TORRENT_SCRAPERS:
+		if _native_torrent_scrape_active(scraper): active.append(scraper)
 	return active
 
 def provider_sort_ranks():
@@ -1113,6 +1280,9 @@ def get_meta_filter():
 def mpaa_region():
 	return get_setting('redlight.mpaa_region', 'US')
 
+def meta_language():
+	return get_setting('redlight.meta_language', 'en') or 'en'
+
 def widget_hide_next_page():
 	return get_setting('redlight.widget_hide_next_page', 'false') == 'true'
 
@@ -1126,7 +1296,7 @@ def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
 
 def calendar_day_window():
-	'''Inclusive start/end dates for MDBList, PunchPlay, Simkl, and Trakt calendars (Show Previous/Future Days).'''
+	'''Inclusive start/end dates for MDBList, PunchPlay, Simkl, Trakt, and WeTrakr calendars (Show Previous/Future Days).'''
 	from datetime import timedelta
 	from modules.utils import get_datetime
 	try: previous_days = int(get_setting('redlight.trakt.calendar_previous_days', '7'))
@@ -1160,6 +1330,10 @@ def calendar_date_format():
 def ignore_articles():
 	return get_setting('redlight.ignore_articles', 'false') == 'true'
 
+def search_history_sort():
+	try: return int(get_setting('redlight.search.history_sort', '0'))
+	except (TypeError, ValueError): return 0
+
 def jump_to_enabled():
 	return get_setting('redlight.paginate.jump_to', 'true') == 'true'
 
@@ -1187,6 +1361,7 @@ def _resolve_watched_provider():
 	if ind == 2 and not simkl_user_active(): return 0
 	if ind == 3 and not mdblist_user_active(): return 0
 	if ind == 4 and not punchplay_user_active(): return 0
+	if ind == 5 and not wetrakr_user_active(): return 0
 	return ind
 
 def watched_provider_options():
@@ -1196,6 +1371,7 @@ def watched_provider_options():
 	options['0'] = 'Red Light'
 	if simkl_user_active(): options['2'] = 'Simkl'
 	if trakt_user_active(): options['1'] = 'Trakt'
+	if wetrakr_user_active(): options['5'] = 'WeTrakr'
 	return options
 
 def offer_watched_provider(provider_index, name):
@@ -1206,21 +1382,20 @@ def offer_watched_provider(provider_index, name):
 		return True
 	return False
 
+def notify_post_auth_sync(name, status):
+	from modules.kodi_utils import notification
+	if status == 'failed':
+		notification('%s Sync Failed' % name, 3000)
+	else:
+		notification('%s Sync Complete' % name, 3000)
+
 def fallback_watched_provider_on_revoke(revoked_index):
+	# The revoked account was the watched provider. Use Red Light. Do not pick another service.
 	current = int(get_setting('redlight.watched_indicators', '0'))
 	if current != revoked_index: return
-	def _next(*candidates):
-		for idx, active in candidates:
-			if active: return str(idx)
-		return '0'
-	if revoked_index == 1:
-		set_setting('watched_indicators', _next((2, simkl_user_active()), (4, punchplay_user_active()), (3, mdblist_user_active())))
-	elif revoked_index == 2:
-		set_setting('watched_indicators', _next((1, trakt_user_active()), (4, punchplay_user_active()), (3, mdblist_user_active())))
-	elif revoked_index == 3:
-		set_setting('watched_indicators', _next((4, punchplay_user_active()), (2, simkl_user_active()), (1, trakt_user_active())))
-	elif revoked_index == 4:
-		set_setting('watched_indicators', _next((3, mdblist_user_active()), (2, simkl_user_active()), (1, trakt_user_active())))
+	set_setting('watched_indicators', '0')
+	from modules.kodi_utils import notification
+	notification('Watched Status Provider set to Red Light', 3000)
 
 def watched_indicators():
 	return _resolve_watched_provider()
@@ -1229,7 +1404,7 @@ def provider_sync_refresh_widgets(provider_index):
 	"""Refresh home widgets after a provider sync only when that provider owns watched/progress indicators."""
 	if watched_indicators() != provider_index:
 		return False
-	keys = {1: 'trakt.refresh_widgets', 2: 'simkl.refresh_widgets', 3: 'mdblist.refresh_widgets', 4: 'punchplay.refresh_widgets'}
+	keys = {1: 'trakt.refresh_widgets', 2: 'simkl.refresh_widgets', 3: 'mdblist.refresh_widgets', 4: 'punchplay.refresh_widgets', 5: 'wetrakr.refresh_widgets'}
 	key = keys.get(provider_index)
 	if not key:
 		return False
@@ -1240,6 +1415,9 @@ def most_watched_provider():
 
 def flatten_episodes():
 	return get_setting('redlight.trakt.flatten_episodes', 'false') == 'true'
+
+def single_episode_tvshow_view():
+	return get_setting('redlight.single_ep_tvshow_view', 'false') == 'true'
 
 def nextep_method():
 	return int(get_setting('redlight.nextep.method', '0'))
@@ -1256,8 +1434,19 @@ def nextep_include_unwatched():
 def nextep_include_airdate():
 	return get_setting('redlight.nextep.include_airdate', 'false') == 'true'
 
+def nextep_sort_latest_activity():
+	return get_setting('redlight.nextep.sort_latest_activity', 'false') == 'true'
+
 def nextep_airing_today():
 	return get_setting('redlight.nextep.airing_today', 'false') == 'true'
+
+def nextep_airing_today_days():
+	"""0 = today only. Past days to keep recently aired next-ups on top (max 180)."""
+	try: days = int(get_setting('redlight.nextep.airing_today_days', '0'))
+	except: days = 0
+	if days < 0: return 0
+	if days > 180: return 180
+	return days
 
 def nextep_include_unaired():
 	return get_setting('redlight.nextep.include_unaired', 'false') == 'true'
@@ -1282,7 +1471,8 @@ def nextep_sort_direction():
 	return int(get_setting('redlight.nextep.sort_order', '0')) == 0
 
 def _rescrape_defaults():
-	return [('cache_ignored', '1', '0'), ('imdb_year', '0', '1'), ('with_all', '0', '2'), ('episode_group', '0', '3'), ('ignore_filters', '0', '4'), ('full_scrape', '2', '5')]
+	return [('cache_ignored', '1', '0'), ('imdb_year', '0', '1'), ('with_all', '0', '2'),
+			('with_all_internal', '0', '3'), ('episode_group', '0', '4'), ('ignore_filters', '0', '5')]
 
 def rescrape_all_settings():
 	return sorted([(i[0], int(get_setting('redlight.rescrape.%s' % i[0], i[1])), int(get_setting('redlight.rescrape.%s.order' % i[0], i[2]))) \
@@ -1294,9 +1484,36 @@ def rescrape_settings():
 def rescrape_action_value(action, default='0'):
 	return int(get_setting('redlight.rescrape.%s' % action, default))
 
+_CM_IN_LIST_ITEMS = 'in_trakt_list,in_mdblist_list,in_punchplay_list,in_simkl_list,in_wetrakr_list'
+# Each provider block: browse lists containing this title, then manager, then list shortcuts (A–Z by service).
+_CM_META_PROVIDER_GROUPS = (
+	('in_mdblist_list', 'mdblist_manager', 'mdblist_watchlist', 'mdblist_library'),
+	('in_punchplay_list', 'punchplay_manager', 'punchplay_watchlist', 'punchplay_collection'),
+	('in_simkl_list', 'simkl_manager', 'simkl_plantowatch'),
+	('tmdb_manager', 'tmdb_watchlist', 'tmdb_favorites'),
+	('in_trakt_list', 'trakt_manager', 'trakt_watchlist', 'trakt_collection'),
+	('in_wetrakr_list', 'wetrakr_manager', 'wetrakr_plantowatch'),
+)
+_CM_META_PROVIDER_ITEMS = frozenset(i for group in _CM_META_PROVIDER_GROUPS for i in group)
+
+def _cm_default_order_string():
+	prefix = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar'
+	meta = ','.join(i for group in _CM_META_PROVIDER_GROUPS for i in group)
+	suffix = 'personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+	return '%s,%s,%s' % (prefix, meta, suffix)
+
+def _group_cm_meta_provider_items(order):
+	order = list(order)
+	present = [i for i in order if i in _CM_META_PROVIDER_ITEMS]
+	if not present: return order
+	anchor = min(order.index(i) for i in present)
+	stripped = [i for i in order if i not in _CM_META_PROVIDER_ITEMS]
+	order_set = set(order)
+	grouped = [item for group in _CM_META_PROVIDER_GROUPS for item in group if item in order_set]
+	return stripped[:anchor] + grouped + stripped[anchor:]
+
 def cm_enabled():
-	default = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'mdblist_manager,punchplay_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+	default = _cm_default_order_string()
 	setting = get_setting('redlight.context_menu.enabled', default)
 	if setting in ('', None, 'noop', '[]'): return default.split(',')
 	return setting.split(',')
@@ -1324,7 +1541,7 @@ def _merge_cm_order_with_enabled(order, enabled):
 
 def _normalize_cm_list_order(order):
 	order = list(order)
-	managers = ('mdblist_manager', 'punchplay_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager')
+	managers = ('mdblist_manager', 'punchplay_manager', 'simkl_manager', 'tmdb_manager', 'trakt_manager', 'wetrakr_manager')
 	present = [m for m in managers if m in order]
 	if present:
 		insert_at = min(order.index(m) for m in present)
@@ -1334,7 +1551,7 @@ def _normalize_cm_list_order(order):
 	if 'trakt_manager' in order and 'personal_manager' in order:
 		ti, pi = order.index('trakt_manager'), order.index('personal_manager')
 		if pi < ti: order[ti], order[pi] = order[pi], order[ti]
-	return order
+	return _group_cm_meta_provider_items(order)
 
 def migrate_external_scraper_context_menu_for_upgrade(had_existing_settings):
 	if get_setting('redlight.external_scraper.cm_menu_migrated', 'false') == 'true': return False
@@ -1415,6 +1632,51 @@ def migrate_punchplay_context_menu_for_upgrade(had_existing_settings):
 			changed = True
 	return changed
 
+def migrate_wetrakr_context_menu_for_upgrade(had_existing_settings):
+	if get_setting('redlight.wetrakr.cm_menu_migrated', 'false') == 'true': return False
+	set_setting('wetrakr.cm_menu_migrated', 'true')
+	if not had_existing_settings: return False
+	item, changed = 'wetrakr_manager', False
+	raw = get_setting('redlight.context_menu.enabled', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = [p for p in raw.split(',') if p]
+		if item not in parts:
+			if 'trakt_manager' in parts: parts.insert(parts.index('trakt_manager') + 1, item)
+			elif 'personal_manager' in parts: parts.insert(parts.index('personal_manager'), item)
+			else: parts.append(item)
+			set_setting('context_menu.enabled', ','.join(parts))
+			changed = True
+	raw = get_setting('redlight.context_menu.order', '')
+	if raw and raw not in ('noop', '[]'):
+		parts = _normalize_cm_list_order(_merge_cm_order_with_enabled([p for p in raw.split(',') if p], cm_enabled()))
+		if item not in raw.split(','):
+			set_setting('context_menu.order', ','.join(parts))
+			changed = True
+	return changed
+
+def migrate_cm_meta_in_lists_for_upgrade(had_existing_settings):
+	if get_setting('redlight.cm_meta_in_lists_migrated', 'false') == 'true': return False
+	set_setting('cm_meta_in_lists_migrated', 'true')
+	if not had_existing_settings: return False
+	new_items = [i for i in _CM_IN_LIST_ITEMS.split(',') if i != 'in_trakt_list']
+	item, changed = 'in_trakt_list', False
+	for setting_key in ('context_menu.enabled', 'context_menu.order'):
+		raw = get_setting('redlight.%s' % setting_key, '')
+		if raw in ('', None, 'noop', '[]'): continue
+		parts = [p for p in raw.split(',') if p]
+		if item not in parts: continue
+		insert_at = parts.index(item) + 1
+		added = False
+		for entry in new_items:
+			if entry in parts: continue
+			parts.insert(insert_at, entry)
+			insert_at += 1
+			added = True
+		if added:
+			set_setting(setting_key, ','.join(parts))
+			changed = True
+	return changed
+
 def migrate_cm_manager_order_for_upgrade():
 	if get_setting('redlight.cm_manager_order_migrated_v3', 'false') == 'true': return False
 	set_setting('cm_manager_order_migrated_v3', 'true')
@@ -1432,8 +1694,7 @@ def migrate_cm_manager_order_for_upgrade():
 	return get_setting('redlight.context_menu.order', '') != before
 
 def cm_current_order():
-	default = 'extras,options,playback_options,external_scraper_settings,browse_movie_set,browse_seasons,browse_episodes,recommended,related,more_like_this,similar,in_trakt_list,' \
-				'mdblist_manager,punchplay_manager,simkl_manager,tmdb_manager,trakt_manager,personal_manager,favorites_manager,mark_watched,unmark_previous_episode,exit,refresh,reload'
+	default = _cm_default_order_string()
 	setting = get_setting('redlight.context_menu.order', default)
 	if setting in ('', None, 'noop', '[]'): order = default.split(',')
 	else: order = setting.split(',')
@@ -1453,8 +1714,64 @@ def cm_default_order():
 def rpdb_info(media_type):
 	if media_type == 'extras': active = extras_enable_item_ratings()
 	else: active = int(get_setting('redlight.rpdb_enabled', '0')) in {'movie': (1, 3), 'tvshow': (2, 3)}[media_type]
-	if active: return {'rpdb_api_key': get_setting('redlight.rpdb_api'), 'rpdb_format': get_setting('redlight.rpdb_format')}
+	if active: return {'rpdb_api_key': _shipped_credential('rpdb_api'), 'rpdb_format': get_setting('redlight.rpdb_format')}
 	else: return {'rpdb_api_key': None, 'rpdb_format': None}
+
+_rpdb_gate_lock = None
+_rpdb_check_failed = set()
+
+def _rpdb_gate_lock_obj():
+	global _rpdb_gate_lock
+	if _rpdb_gate_lock is None:
+		from threading import Lock
+		_rpdb_gate_lock = Lock()
+	return _rpdb_gate_lock
+
+def _rpdb_quota_open(api_key):
+	"""True under the monthly limit, False if the key is rejected or spent, None if the check failed."""
+	try:
+		from modules.kodi_utils import make_session
+		response = make_session('https://api.ratingposterdb.com').get('https://api.ratingposterdb.com/%s/requests' % api_key, timeout=10)
+		if response.status_code in (401, 403, 429): return False
+		if response.status_code != 200: return None
+		data = response.json()
+		req, limit = int(data.get('req') or 0), int(data.get('limit') or 0)
+		if limit and req >= limit: return False
+		return True
+	except Exception:
+		return None
+
+def rpdb_key_open(api_key):
+	"""Whether this Kodi session may still request rating posters. One check per key."""
+	if not api_key: return False
+	if api_key in _rpdb_check_failed: return True
+	from modules.kodi_utils import get_property, set_property, logger
+	prop = 'redlight.rpdb_gate'
+	def _stored():
+		mark, sep, state = (get_property(prop) or '').rpartition('|')
+		if sep and mark == api_key and state in ('open', 'closed'): return state == 'open'
+		return None
+	known = _stored()
+	if known is not None: return known
+	with _rpdb_gate_lock_obj():
+		if api_key in _rpdb_check_failed: return True
+		known = _stored()
+		if known is not None: return known
+		open_key = _rpdb_quota_open(api_key)
+		if open_key is None:
+			_rpdb_check_failed.add(api_key)
+			return True
+		set_property(prop, '%s|%s' % (api_key, 'open' if open_key else 'closed'))
+		if not open_key: logger('RPDb', 'Rating posters off for this session. The API key was rejected or the monthly limit is used up. TMDB posters are used instead.')
+		return open_key
+
+def rpdb_poster(api_key, rpdb_format, template, fallback):
+	"""Saved RatingPosterDB image, or the TMDB poster when that image is missing or the key cannot be used."""
+	if not api_key or not template or not rpdb_key_open(api_key): return fallback
+	try: url = (template % api_key) + (rpdb_format or '')
+	except Exception: return fallback
+	from modules.rpdb import resolve_poster
+	return resolve_poster(url, fallback)
 
 def use_season_name():
 	return get_setting('redlight.use_season_name', 'false') == 'true'

@@ -12,7 +12,8 @@ from caches.settings_cache import get_setting, set_setting
 from caches import punchplay_cache as pp_cache
 from modules import kodi_utils, settings
 from modules.http_defaults import META_API_TIMEOUT
-from modules.utils import copy2clip, make_qrcode, make_tinyurl, TaskPool
+from modules.utils import copy2clip, make_qrcode, make_tinyurl, TaskPool, \
+							device_auth_complete_url, device_auth_site_label, authorise_wait_text
 
 BASE_URL = 'https://punchplay.tv'
 API_PREFIX = '/api/platform/v1'
@@ -38,7 +39,8 @@ def _icon():
 	return kodi_utils.get_icon('punchplay') or kodi_utils.addon_icon()
 
 def punchplay_client_id():
-	return (get_setting('redlight.punchplay.client', '') or '').strip()
+	from modules.settings import punchplay_client
+	return punchplay_client()
 
 def _device_id():
 	from caches.settings_cache import settings_cache
@@ -49,18 +51,12 @@ def _device_id():
 	return str(device_id)
 
 def _token():
-	from caches.settings_cache import settings_cache
-	token = settings_cache.read_db_value('punchplay.token')
-	if token in (None, '0', '', 'empty_setting'):
-		token = get_setting('redlight.punchplay.token', '0')
-	return token
+	from caches.settings_cache import live_setting
+	return live_setting('punchplay.token', '0')
 
 def _refresh_token():
-	from caches.settings_cache import settings_cache
-	token = settings_cache.read_db_value('punchplay.refresh')
-	if token in (None, '0', '', 'empty_setting'):
-		token = get_setting('redlight.punchplay.refresh', '0')
-	return token
+	from caches.settings_cache import live_setting
+	return live_setting('punchplay.refresh', '0')
 
 def punchplay_user_active():
 	return settings.punchplay_user_active()
@@ -95,14 +91,12 @@ def _token_usable(token):
 	return token not in (None, '0', '', 'empty_setting')
 
 def _reload_token_cache():
-	from caches.settings_cache import settings_cache
-	settings_cache.clear_db_cache()
+	from caches.settings_cache import reload_auth_from_db
+	reload_auth_from_db('punchplay.token', 'punchplay.refresh', 'punchplay.expires')
 
 def _expires_at():
-	from caches.settings_cache import settings_cache
-	raw = settings_cache.read_db_value('punchplay.expires')
-	if raw in (None, '', 'empty_setting', '0'):
-		raw = get_setting('redlight.punchplay.expires', '0')
+	from caches.settings_cache import live_setting
+	raw = live_setting('punchplay.expires', '0')
 	try: return float(raw or 0)
 	except (TypeError, ValueError): return 0.0
 
@@ -162,17 +156,22 @@ def _refresh_access_token():
 			headers=_headers(with_auth=False), timeout=META_API_TIMEOUT)
 		if resp.status_code != 200:
 			detail, request_id = '', ''
+			body = {}
 			try:
 				body = resp.json() or {}
 				if isinstance(body, dict):
 					detail = body.get('message') or body.get('error') or ''
 					request_id = body.get('request_id') or ''
+				else:
+					body = {}
 			except Exception:
-				pass
+				body = {}
 			kodi_utils.logger('PunchPlay', 'refresh failed: HTTP %s%s%s' % (
 				resp.status_code,
 				(': %s' % detail) if detail else '',
 				(' request_id=%s' % request_id) if request_id else ''))
+			from modules.meta_auth_alerts import maybe_notify_refresh_failure
+			maybe_notify_refresh_failure('punchplay', resp.status_code, body or resp.text)
 			return False
 		payload = resp.json() or {}
 		if not payload.get('refresh_token'):
@@ -293,11 +292,16 @@ def _punchplay_payload_failed(data):
 	msg = str(data.get('message') or '').lower()
 	return 'too many' in msg or 'rate limit' in msg
 
-def _paginate_history(limit=100, max_pages=50):
-	"""Newest-first watch history. None = pull failed (do not replace local watched)."""
-	items, cursor, pages = [], None, 0
+def _paginate_history(limit=100, max_pages=500, progress=None):
+	"""Newest-first watch history. None = pull failed or cut short (do not replace local watched).
+
+	History has no date filter. A 50-page cap (5,000 rows) used to be saved as a finished sync,
+	so older watches were deleted locally. Keep going while nextCursor is set.
+	"""
+	items, cursor, pages, finished = [], None, 0, False
 	while pages < max_pages:
 		pages += 1
+		kodi_utils.sync_progress_page(progress, 'Watched', 10, 72, pages)
 		query = {'limit': limit}
 		if cursor: query['cursor'] = cursor
 		data = call_punchplay('/me/history', method='get', query=query)
@@ -305,10 +309,18 @@ def _paginate_history(limit=100, max_pages=50):
 			kodi_utils.logger('PunchPlay', 'history pull aborted; local watched left unchanged')
 			return None
 		batch = _library_items(data)
-		if not batch: break
+		if not batch:
+			finished = True
+			break
 		items.extend(batch)
 		cursor = data.get('nextCursor') if isinstance(data, dict) else None
-		if not cursor: break
+		if not cursor:
+			finished = True
+			break
+	if not finished:
+		kodi_utils.logger('PunchPlay', 'history page cap %s hit; local watched left unchanged' % max_pages)
+		return None
+	kodi_utils.sync_progress(progress, 'Watched', 72)
 	return items
 
 def _paginate_interaction_library(path, max_pages=50):
@@ -443,30 +455,27 @@ def punchplay_authenticate(dummy=''):
 		kodi_utils.logger('PunchPlay', 'device/code: %s' % e)
 		code_data = None
 	if not code_data or not code_data.get('device_code'):
-		return kodi_utils.notification('PunchPlay Authorisation Failed', 3000, icon)
+		_ok, message = punchplay_test_client_id()
+		return kodi_utils.ok_dialog(heading='PunchPlay', text=message)
 	user_code = str(code_data.get('user_code') or '')
 	device_code = code_data.get('device_code')
-	verification_url = (code_data.get('verification_uri') or 'https://punchplay.tv/link').rstrip('/')
-	auth_url = code_data.get('verification_uri_complete') or (
-		'%s?code=%s' % (verification_url, user_code) if user_code else verification_url)
+	auth_url = device_auth_complete_url(code_data, user_code, fallback='https://punchplay.tv/link', style='query')
 	expires_in = int(code_data.get('expires_in') or 600)
 	interval = 5
 	qr_code = make_qrcode(auth_url) or icon
 	try: copy2clip(auth_url)
 	except: pass
 	short_url = make_tinyurl(auth_url)
-	p_dialog_insert = '[CR]OR visit [B]%s[/B]' % short_url if short_url else ''
-	content = (
-		'Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B]%s[CR][CR]Waiting for authorisation...'
-		% (user_code, verification_url.replace('https://', '').replace('http://', ''), p_dialog_insert))
+	content = authorise_wait_text(user_code, device_auth_site_label(code_data, 'https://punchplay.tv/link'), short_url)
 	progress = kodi_utils.progress_dialog('PunchPlay Authorise', qr_code)
 	progress.update(content, 0)
 	expires = time.time() + expires_in
 	token_payload = None
+	canceled = False
 	while time.time() < expires:
 		if progress.iscanceled():
-			progress.close()
-			return kodi_utils.notification('PunchPlay Authorisation Canceled', 3000, icon)
+			canceled = True
+			break
 		try:
 			poll = requests.post(
 				_url('/auth/device/token'),
@@ -486,16 +495,22 @@ def punchplay_authenticate(dummy=''):
 			error = body.get('error') or ''
 			if error in ('expired', 'access_denied', 'expired_token'): break
 			if poll.status_code == 429:
-				kodi_utils.sleep(30000)
+				if kodi_utils.sleep_while_authorising(progress, 30):
+					canceled = True
+					break
 				continue
 		except Exception as e:
 			kodi_utils.logger('PunchPlay', 'poll: %s' % e)
 		progress.update(content, int(100 * (1 - (expires - time.time()) / float(expires_in))))
-		kodi_utils.sleep(interval * 1000)
+		if kodi_utils.sleep_while_authorising(progress, interval):
+			canceled = True
+			break
 	try: progress.close()
 	except: pass
+	if canceled:
+		return kodi_utils.notification('PunchPlay Authorisation Canceled', 3000, icon)
 	if not token_payload or not _save_tokens(token_payload):
-		return kodi_utils.notification('PunchPlay Authorisation Failed', 3000, icon)
+		return kodi_utils.notification('PunchPlay Error Authorising', 3000, icon)
 	username = 'PunchPlay User'
 	try:
 		me = call_punchplay('/me', method='get') or {}
@@ -504,7 +519,9 @@ def punchplay_authenticate(dummy=''):
 	except: pass
 	set_setting('punchplay.user', str(username))
 	from caches.settings_cache import settings_cache
+	from modules.meta_auth_alerts import clear_alert
 	settings_cache.clear_db_cache()
+	clear_alert('punchplay')
 	kodi_utils.notification('PunchPlay Account Authorised', 3000, icon)
 	try: settings.offer_watched_provider(4, 'PunchPlay')
 	except: pass
@@ -520,6 +537,9 @@ def punchplay_authenticate(dummy=''):
 	return True
 
 def punchplay_revoke_authentication(dummy=''):
+	if not kodi_utils.confirm_revoke('PunchPlay'): return
+	from modules.meta_auth_alerts import clear_alert
+	clear_alert('punchplay')
 	settings.fallback_watched_provider_on_revoke(4)
 	set_setting('punchplay.user', 'empty_setting')
 	set_setting('punchplay.token', '0')
@@ -571,6 +591,16 @@ def _filter_status_items(status):
 		if row: items.append(row)
 	return items
 
+def _punchplay_sort(items, shelf, media_kind):
+	"""Movies use the Movies default. TV and Anime use the TV Shows default."""
+	if not items: return items
+	sort_media = 'movies' if _normalize_media_kind(media_kind) == 'movie' else 'shows'
+	try:
+		from modules import list_sort
+		return list_sort.sort_source(items, 'punchplay.%s' % shelf, sort_media, 'punchplay') or items
+	except Exception:
+		return items
+
 def _normalize_media_kind(media_kind):
 	if media_kind in ('movies', 'movie'): return 'movie'
 	if media_kind == 'anime': return 'anime'
@@ -581,26 +611,26 @@ def _filter_kind(items, media_kind):
 	return [item for item in items if item.get('type') == want]
 
 def punchplay_plantowatch(media_kind, page_no=None):
-	return _filter_kind(_filter_status_items(STATUS_PLANNING), media_kind)
+	return _punchplay_sort(_filter_kind(_filter_status_items(STATUS_PLANNING), media_kind), 'plantowatch', media_kind)
 
 def punchplay_watching(media_kind, page_no=None):
-	return _filter_kind(_filter_status_items(STATUS_WATCHING), media_kind)
+	return _punchplay_sort(_filter_kind(_filter_status_items(STATUS_WATCHING), media_kind), 'watching', media_kind)
 
 def punchplay_hold(media_kind, page_no=None):
-	return _filter_kind(_filter_status_items(STATUS_ON_HOLD), media_kind)
+	return _punchplay_sort(_filter_kind(_filter_status_items(STATUS_ON_HOLD), media_kind), 'hold', media_kind)
 
 def punchplay_completed(media_kind, page_no=None):
-	return _filter_kind(_filter_status_items(STATUS_WATCHED), media_kind)
+	return _punchplay_sort(_filter_kind(_filter_status_items(STATUS_WATCHED), media_kind), 'completed', media_kind)
 
 def punchplay_dropped(media_kind, page_no=None):
-	return _filter_kind(_filter_status_items(STATUS_DROPPED), media_kind)
+	return _punchplay_sort(_filter_kind(_filter_status_items(STATUS_DROPPED), media_kind), 'dropped', media_kind)
 
 def punchplay_favorites(media_kind, page_no=None):
 	items = []
 	for count, entry in enumerate(_punchplay_favourites_items(), 1):
 		row = _entry_to_list_item(entry, count)
 		if row: items.append(row)
-	return _filter_kind(items, media_kind)
+	return _punchplay_sort(_filter_kind(items, media_kind), 'favorites', media_kind)
 
 def punchplay_collection(media_kind, page_no=None):
 	want = _normalize_media_kind(media_kind)
@@ -627,7 +657,7 @@ def punchplay_collection(media_kind, page_no=None):
 	try:
 		kodi_utils.logger('PunchPlay', 'collection %s: raw=%s kept=%s' % (want, len(raw), len(items)))
 	except: pass
-	return items
+	return _punchplay_sort(items, 'collection', media_kind)
 
 def _watchlist_list_id():
 	cached = pp_cache.punchplay_cache.get('watchlist_list_id')
@@ -643,9 +673,10 @@ def _watchlist_list_id():
 def punchplay_watchlist(media_kind, page_no=None):
 	list_id = _watchlist_list_id()
 	if not list_id:
-		# Fallback: PLANNING status doubles as plan/watchlist when no dedicated list.
-		return punchplay_plantowatch(media_kind, page_no)
-	return punchplay_list_items(list_id, media_kind)
+		items = _filter_kind(_filter_status_items(STATUS_PLANNING), media_kind)
+	else:
+		items = punchplay_list_items(list_id, media_kind)
+	return _punchplay_sort(items, 'watchlist', media_kind)
 
 def punchplay_get_lists():
 	return _library_items(call_punchplay('/me/lists', method='get'))
@@ -1170,6 +1201,51 @@ def punchplay_reset_scrobble(params):
 		kodi_utils.notification('Success', 3000)
 	except: kodi_utils.notification('Error', 3000)
 
+# ---------- Context menu shortcuts ----------
+
+def punchplay_item_in_watchlist(list_media, tmdb_id):
+	list_id = _watchlist_list_id()
+	if list_id:
+		return _punchplay_item_on_list(list_id, tmdb_id, list_media) is not None
+	return _item_has_status(list_media, STATUS_PLANNING, tmdb_id)
+
+def punchplay_toggle_watchlist(list_media, tmdb_id, title, add):
+	list_id = _watchlist_list_id()
+	if list_id:
+		if add:
+			return punchplay_add_to_list(list_id, tmdb_id, list_media, title, 'Watchlist')
+		item_id = _punchplay_item_on_list(list_id, tmdb_id, list_media)
+		if not item_id:
+			return kodi_utils.notify_not_in_list()
+		return punchplay_remove_from_list(list_id, item_id, 'Watchlist')
+	payload = {'showStatus': STATUS_PLANNING, 'wantToWatch': True} if add else {'showStatus': None, 'wantToWatch': False}
+	ok = punchplay_interact(list_media, tmdb_id, payload)
+	return kodi_utils.notify_success() if ok else kodi_utils.notify_error()
+
+def punchplay_toggle_collection(list_media, tmdb_id, title, add):
+	if add:
+		kind = _title_kind(list_media)
+		ok = call_punchplay('/collection', method='post', data={
+			'kind': kind, 'sourceId': int(tmdb_id), 'title': title or str(tmdb_id), 'format': 'digital'
+		})
+		ok = bool(ok) and not _punchplay_payload_failed(ok)
+	else:
+		entry = _collection_entry(list_media, tmdb_id)
+		cid = entry.get('id') if entry else None
+		if not cid:
+			return kodi_utils.notify_not_in_list()
+		ok = call_punchplay('/collection/%s' % cid, method='delete')
+		ok = not _punchplay_payload_failed(ok)
+	if ok:
+		clear_punchplay_list_caches()
+		kodi_utils.kodi_refresh()
+		return kodi_utils.notify_success()
+	return kodi_utils.notify_error()
+
+def punchplay_lists_with_media(list_media, tmdb_id):
+	in_lists, _ = punchplay_lists_split_by_membership(list_media, tmdb_id)
+	return in_lists or []
+
 # ---------- Manager ----------
 
 def _item_has_status(media_type, status, tmdb_id, entries=None):
@@ -1356,14 +1432,17 @@ def punchplay_indicators_tv(history=None):
 	pp_cache.punchplay_watched_cache.set_bulk_tvshow_watched(insert_list)
 	return True
 
-def punchplay_refresh_watched_indicators():
-	history = _paginate_history()
+def punchplay_refresh_watched_indicators(progress=None):
+	history = _paginate_history(progress=progress)
 	if history is None: return False
+	kodi_utils.sync_progress(progress, 'Watched movies', 76)
 	punchplay_indicators_movies(history)
+	kodi_utils.sync_progress(progress, 'Watched episodes', 82)
 	punchplay_indicators_tv(history)
 	return True
 
-def punchplay_sync_playback():
+def punchplay_sync_playback(progress=None):
+	kodi_utils.sync_progress(progress, 'In progress', 88)
 	data = call_punchplay('/playback/in-progress', method='get') or {}
 	items = _library_items(data) if not isinstance(data, list) else data
 	movie_ins, ep_ins = [], []
@@ -1385,6 +1464,7 @@ def punchplay_sync_playback():
 		except: pass
 	pp_cache.punchplay_watched_cache.set_bulk_movie_progress(movie_ins)
 	pp_cache.punchplay_watched_cache.set_bulk_tvshow_progress(ep_ins)
+	kodi_utils.sync_progress(progress, 'In progress', 98)
 
 # Partner sync change feed — PunchPlay's stand-in for Simkl/MDBList last_activities.
 _PUNCHPLAY_WATCHED_SYNC_RESOURCES = frozenset(('history', 'playback', 'interaction'))
@@ -1471,7 +1551,9 @@ def _punchplay_ack_local_watched_change():
 	except Exception as e:
 		kodi_utils.logger('PunchPlay', 'ack local watched change failed: %s' % e)
 
-def punchplay_sync_activities(params=None, force_update=False):
+_WATCHED_HISTORY_KEY = 'watched_history_complete'
+
+def punchplay_sync_activities(params=None, force_update=False, progress=None, allow_history_repair=False):
 	"""Activity-gated sync. Uses PunchPlay /me/sync/changes (not Simkl-style last_activities)."""
 	notify = False
 	if isinstance(params, dict):
@@ -1484,25 +1566,37 @@ def punchplay_sync_activities(params=None, force_update=False):
 		return status
 	if not punchplay_user_active(): return _done('no account')
 	if force_update:
+		kodi_utils.sync_progress(progress, 'Checking PunchPlay', 6)
 		pp_cache.clear_all_punchplay_cache_data(silent=True, refresh=False)
 		pp_cache.punchplay_cache.delete('sync_changes_cursor')
+	repair_history = allow_history_repair and pp_cache.punchplay_cache.get(_WATCHED_HISTORY_KEY) is None
 	probe = None
 	sync_mode = 'full'
 	if not force_update:
 		needs_refresh, probe, sync_mode = _punchplay_probe_sync_changes()
-		if not needs_refresh: return _done('not needed')
-		sync_mode = sync_mode or 'full'
-	try:
-		if sync_mode == 'playback':
-			# Progress-only tip after stop/seek — do not rebuild watched history.
-			punchplay_sync_playback()
+		# A failed or rate-limited probe must not start the long history walk.
+		if repair_history and not isinstance(probe, dict):
+			repair_history = False
+		if not needs_refresh and not repair_history: return _done('not needed')
+		if repair_history:
+			kodi_utils.logger('PunchPlay', 'watched history re-download')
+			sync_mode = 'full'
 		else:
-			if not punchplay_refresh_watched_indicators():
+			sync_mode = sync_mode or 'full'
+	try:
+		history_refreshed = sync_mode != 'playback'
+		if history_refreshed:
+			if not punchplay_refresh_watched_indicators(progress):
 				return _done('failed')
-			punchplay_sync_playback()
+			punchplay_sync_playback(progress)
 			clear_punchplay_list_caches()
 			pp_cache.punchplay_cache.delete('watchlist_list_id')
+		else:
+			# Progress-only tip after stop/seek — do not rebuild watched history.
+			punchplay_sync_playback(progress)
 		pp_cache.punchplay_cache.set('last_sync', time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+		if history_refreshed:
+			pp_cache.punchplay_cache.set(_WATCHED_HISTORY_KEY, True)
 		# Sync is current as of now — advance change-feed cursor to the tip.
 		if probe is None:
 			probe = call_punchplay('/me/sync/changes', method='get', query={'limit': 100})
@@ -1512,25 +1606,12 @@ def punchplay_sync_activities(params=None, force_update=False):
 		kodi_utils.logger('PunchPlay', 'sync failed: %s' % e)
 		return _done('failed')
 
-PUNCHPLAY_TRAKT_IMPORT_URL = 'https://punchplay.tv/import/trakt'
-
-def punchplay_import_trakt(params=None):
-	from threading import Thread
-	from modules.trakt_import_help import open_official_trakt_import_page
-	def _after():
-		Thread(target=punchplay_sync_activities, kwargs={'force_update': True}, daemon=True).start()
-	return open_official_trakt_import_page(
-		'PunchPlay', PUNCHPLAY_TRAKT_IMPORT_URL,
-		icon=_icon(),
-		after_close=_after)
-
 def punchplay_force_sync(params=None):
 	if not punchplay_user_active(): return kodi_utils.notification('PunchPlay account not authorised', 3000)
 	progress = kodi_utils.progress_dialog('PunchPlay Sync')
 	status = 'failed'
 	try:
-		progress.update('Syncing with PunchPlay...', 0)
-		status = punchplay_sync_activities(force_update=True)
+		status = punchplay_sync_activities(force_update=True, progress=progress)
 	except Exception as e:
 		kodi_utils.logger('PunchPlay', 'Force sync failed: %s' % e)
 	finally:

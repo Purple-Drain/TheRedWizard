@@ -42,6 +42,7 @@ def runner(params):
 		image = meta.get('poster') or kodi_utils.get_icon('box_office')
 		default_name = '%s (%s)' % (clean_file_name(get_title(meta)), get_year(meta))
 		default_foldername = kodi_utils.kodi_dialog().input('Title', defaultt=default_name)
+		single_choice = len(chosen_list) == 1
 		threads = []
 		threads_append = threads.append
 		for item in chosen_list:
@@ -51,9 +52,11 @@ def runner(params):
 					meta['season'] = season
 					item['meta'] = json.dumps(meta)
 			item['default_foldername'] = default_foldername
-			item['pack_batch'] = True
+			if not single_choice:
+				item['pack_batch'] = True
 			threads_append(Thread(target=Downloader(item).run))
-		kodi_utils.notification('Multi File Pack Download Started...', 3500, image)
+		if not single_choice:
+			kodi_utils.notification('Multi File Pack Download Started...', 3500, image)
 		for thread in threads:
 			thread.start()
 		if provider == 'torbox' and pack_choices and not store_resolved_to_cloud('TorBox', True):
@@ -94,7 +97,7 @@ def select_pack_item(pack_choices, icon):
 	return kodi_utils.select_dialog(pack_choices, **kwargs)
 
 def get_title(meta):
-	title = meta.get('custom_title', None) or meta.get('english_title') or meta.get('title')	
+	title = meta.get('custom_title', None) or meta.get('english_title') or meta.get('original_title') or meta.get('title')	
 	return title
 
 def get_year(meta):
@@ -563,7 +566,7 @@ def viewer(params):
 				listitem = kodi_utils.make_listitem()
 				listitem.setLabel(clean_file_name(normalize(path)))
 				listitem.setArt({'fanart': fanart})
-				info_tag = listitem.getVideoInfoTag(True)
+				info_tag = listitem.getVideoInfoTag()
 				info_tag.setPlot(' ')
 				yield (url, listitem, info[1])
 			except: pass

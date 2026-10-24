@@ -11,7 +11,7 @@ class TVShows:
 	'tmdb_anime_popular', 'tmdb_anime_popular_recent', 'tmdb_anime_premieres', 'tmdb_anime_upcoming', 'tmdb_anime_on_the_air')
 	special = ('tmdb_tv_languages', 'tmdb_tv_networks', 'tmdb_tv_providers', 'tmdb_tv_year', 'tmdb_tv_decade', 'tmdb_tv_recommendations', 'tmdb_tv_genres',
 	'tmdb_tv_search', 'tmdb_tv_keyword_results', 'tmdb_tv_keyword_results_direct', 'tmdb_anime_year', 'tmdb_anime_decade', 'tmdb_anime_genres',
-	'tmdb_anime_providers', 'ai_similar')
+	'tmdb_anime_providers', 'tmdb_anime_search', 'ai_similar')
 	personal = {'in_progress_tvshows': ('modules.watched_status', 'get_in_progress_tvshows'),
 	'watched_tvshows': ('modules.watched_status', 'get_watched_items'),
 	'recent_watched_tvshows': ('modules.watched_status', 'get_recently_watched'),
@@ -23,6 +23,8 @@ class TVShows:
 	trakt_special = ('trakt_tv_certifications', 'trakt_anime_certifications')
 	trakt_personal = ('trakt_collection', 'trakt_watchlist', 'trakt_collection_lists', 'trakt_watchlist_lists', 'trakt_favorites', 'trakt_droplist')
 	simkl_personal = ('simkl_plantowatch', 'simkl_completed', 'simkl_watching', 'simkl_hold', 'simkl_dropped')
+	wetrakr_personal = ('wetrakr_plantowatch', 'wetrakr_watching', 'wetrakr_waiting', 'wetrakr_playing',
+		'wetrakr_paused', 'wetrakr_watched', 'wetrakr_dropped', 'wetrakr_favorites')
 	punchplay_personal = ('punchplay_watchlist', 'punchplay_collection', 'punchplay_favorites', 'punchplay_plantowatch',
 		'punchplay_watching', 'punchplay_hold', 'punchplay_completed', 'punchplay_dropped')
 	mdblist_personal = ('mdblist_watchlist', 'mdblist_collection', 'mdblist_droplist')
@@ -125,9 +127,9 @@ class TVShows:
 				try:
 					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 				except: pass
-			elif self.action in self.simkl_personal:
+			elif self.action in self.simkl_personal or self.action in self.wetrakr_personal:
 				self.id_type = 'trakt_dict'
-				media_kind = 'anime' if self.is_anime_list is True else 'shows'
+				media_kind = 'shows' if self.action in self.wetrakr_personal else ('anime' if self.is_anime_list is True else 'shows')
 				data = function(media_kind, page_no)
 				data, total_pages = self.paginate_list(data, page_no)
 				self.list = [i['media_ids'] for i in data]
@@ -145,11 +147,33 @@ class TVShows:
 				try:
 					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
 				except: pass
+			elif self.action in ('wetrakr_trending', 'wetrakr_popular', 'wetrakr_toprated', 'wetrakr_search', 'wetrakr_public_list'):
+				self.id_type = 'trakt_dict'
+				from apis.wetrakr_api import wetrakr_feed
+				data, total_pages = wetrakr_feed(self.action, 'shows', page_no, self.params_get('query') or self.params_get('key_id'), self.params_get('list_id'))
+				self.list = [i['media_ids'] for i in data]
+				if total_pages > page_no:
+					self.new_page = {'new_page': str(page_no + 1)}
+					for key in ('query', 'key_id', 'list_id'):
+						if self.params_get(key): self.new_page[key] = self.params_get(key)
+			elif self.action == 'wetrakr_user_list':
+				self.id_type = 'trakt_dict'
+				from apis.wetrakr_api import wetrakr_list_items
+				data = wetrakr_list_items(self.params_get('list_id'), 'shows')
+				from modules import list_sort
+				data = list_sort.sort_user_list(data, 'wetrakr.list:%s' % self.params_get('list_id'), 'wetrakr')
+				data, total_pages = self.paginate_list(data, page_no)
+				self.list = [i['media_ids'] for i in data]
+				try:
+					if total_pages > page_no: self.new_page = {'new_page': str(page_no + 1), 'paginate_start': self.paginate_start}
+				except: pass
 			elif self.action == 'punchplay_user_list':
 				self.id_type = 'trakt_dict'
 				from apis.punchplay_api import punchplay_list_items
 				media_kind = 'anime' if self.is_anime_list is True else 'shows'
 				data = punchplay_list_items(self.params_get('list_id'), media_kind)
+				from modules import list_sort
+				data = list_sort.sort_user_list(data, 'punchplay.list:%s' % self.params_get('list_id'))
 				data, total_pages = self.paginate_list(data, page_no)
 				self.list = [i['media_ids'] for i in data]
 				try:
@@ -216,7 +240,7 @@ class TVShows:
 				kodi_utils.logger('MDBList List Error', '%s: %s' % (self.action, e))
 		kodi_utils.set_content(handle, 'tvshows')
 		kodi_utils.set_category(handle, self.category_name)
-		kodi_utils.end_directory(handle, cacheToDisc=False if self.is_external or self.action in self.mdblist_personal else True)
+		kodi_utils.end_directory(handle, cacheToDisc=False)
 		if not self.is_external:
 			if self.params_get('refreshed') == 'true': kodi_utils.sleep(1000)
 			kodi_utils.set_view_mode('view.tvshows', 'tvshows', self.is_external)
@@ -233,10 +257,7 @@ class TVShows:
 			premiered = meta_get('premiered')
 			trailer, title, year = meta_get('trailer'), meta_get('title'), meta_get('year') or '2050'
 			tvdb_id, imdb_id = meta_get('tvdb_id'), meta_get('imdb_id')
-			if self.rpdb_api_key:
-				try: poster = meta_get('rpdb_poster') % self.rpdb_api_key + self.rpdb_format
-				except: poster = meta_get('poster') or self.poster_empty
-			else: poster = meta_get('poster') or self.poster_empty
+			poster = settings.rpdb_poster(self.rpdb_api_key, self.rpdb_format, meta_get('rpdb_poster'), meta_get('poster') or self.poster_empty)
 			fanart = meta_get('fanart') or self.fanart_empty
 			clearlogo, landscape = meta_get('clearlogo') or '', meta_get('landscape') or meta_get('fanart') or ''
 			thumb = poster or landscape or fanart
@@ -261,12 +282,26 @@ class TVShows:
 										'name': 'More Like This based on %s' % title, 'is_external': self.is_external})
 			browse_similar_params = self.build_url({'mode': 'build_tvshow_list', 'action': 'ai_similar', 'is_external': self.is_external,
 										'key_id': 'tvshow|%s' % tmdb_id, 'name': 'Similar based on %s' % title})
-			browse_in_trakt_list_params, trakt_manager_params = '', ''
+			browse_in_trakt_list_params, browse_in_mdblist_list_params = '', ''
+			browse_in_punchplay_list_params, browse_in_simkl_list_params, browse_in_wetrakr_list_params = '', '', ''
+			trakt_manager_params = ''
 			if settings.trakt_user_active():
 				browse_in_trakt_list_params = self.build_url({'mode': 'trakt.list.in_trakt_lists', 'media_type': 'tvshow', 'imdb_id': imdb_id, 'is_external': self.is_external,
 										'category_name': '%s In Trakt Lists' % title})
 				trakt_manager_params = self.build_url({'mode': 'trakt_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
 													'title': title, 'icon': poster})
+			if settings.mdblist_user_active():
+				browse_in_mdblist_list_params = self.build_url({'mode': 'mdblist.in_mdblist_lists', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'is_external': self.is_external,
+										'category_name': '%s In MDBList Lists' % title})
+			if settings.punchplay_user_active():
+				browse_in_punchplay_list_params = self.build_url({'mode': 'punchplay.list.in_punchplay_lists', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'is_external': self.is_external,
+										'category_name': '%s In PunchPlay Lists' % title})
+			if settings.simkl_user_active():
+				browse_in_simkl_list_params = self.build_url({'mode': 'simkl.list.in_simkl_lists', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id,
+										'is_external': self.is_external, 'category_name': '%s In Simkl Lists' % title})
+			if settings.wetrakr_lists_active():
+				browse_in_wetrakr_list_params = self.build_url({'mode': 'wetrakr.in_wetrakr_lists', 'media_type': 'tvshow', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'is_external': self.is_external,
+										'category_name': '%s In WeTrakr Lists' % title})
 			simkl_manager_params = ''
 			if settings.simkl_user_active():
 				simkl_params = {'mode': 'simkl_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
@@ -306,12 +341,21 @@ class TVShows:
 			cm_append(['related', ('[B]Browse Related[/B]', self.window_command % browse_related_params)])
 			cm_append(['more_like_this', ('[B]Browse More Like This[/B]', self.window_command % browse_more_like_this_params)])
 			if self.ai_model_active: cm_append(['similar', ('[B]Browse Similar[/B]', self.window_command % browse_similar_params)])
-			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
+			wetrakr_manager_params = ''
+			if settings.wetrakr_lists_active():
+				wetrakr_manager_params = self.build_url({'mode': 'wetrakr_manager_choice', 'tmdb_id': tmdb_id, 'imdb_id': imdb_id, 'tvdb_id': tvdb_id, 'media_type': 'tvshow',
+														'title': title, 'icon': poster})
+			if browse_in_mdblist_list_params: cm_append(['in_mdblist_list', ('[B]In MDBList Lists[/B]', self.window_command % browse_in_mdblist_list_params)])
 			if mdblist_manager_params: cm_append(['mdblist_manager', ('[B]MDBList Manager[/B]', 'RunPlugin(%s)' % mdblist_manager_params)])
+			if browse_in_punchplay_list_params: cm_append(['in_punchplay_list', ('[B]In PunchPlay Lists[/B]', self.window_command % browse_in_punchplay_list_params)])
 			if punchplay_manager_params: cm_append(['punchplay_manager', ('[B]PunchPlay Manager[/B]', 'RunPlugin(%s)' % punchplay_manager_params)])
+			if browse_in_simkl_list_params: cm_append(['in_simkl_list', ('[B]In Simkl Lists[/B]', self.window_command % browse_in_simkl_list_params)])
 			if simkl_manager_params: cm_append(['simkl_manager', ('[B]Simkl Lists Manager[/B]', 'RunPlugin(%s)' % simkl_manager_params)])
 			if tmdb_manager_params: cm_append(['tmdb_manager', ('[B]TMDb Lists Manager[/B]', 'RunPlugin(%s)' % tmdb_manager_params)])
+			if browse_in_trakt_list_params: cm_append(['in_trakt_list', ('[B]In Trakt Lists[/B]', self.window_command % browse_in_trakt_list_params)])
 			if trakt_manager_params: cm_append(['trakt_manager', ('[B]Trakt Lists Manager[/B]', 'RunPlugin(%s)' % trakt_manager_params)])
+			if browse_in_wetrakr_list_params: cm_append(['in_wetrakr_list', ('[B]In WeTrakr Lists[/B]', self.window_command % browse_in_wetrakr_list_params)])
+			if wetrakr_manager_params: cm_append(['wetrakr_manager', ('[B]WeTrakr Lists Manager[/B]', 'RunPlugin(%s)' % wetrakr_manager_params)])
 			settings.append_list_shortcut_context_menus(cm_append, self.build_url, self.cm_sort_order, 'tvshow', tmdb_id, imdb_id, tvdb_id, title, poster)
 			cm_append(['personal_manager', ('[B]Personal Lists Manager[/B]', 'RunPlugin(%s)' % personal_manager_params)])
 			cm_append(['favorites_manager', ('[B]Favorites Manager[/B]', 'RunPlugin(%s)' % favorites_manager_params)])
@@ -334,7 +378,7 @@ class TVShows:
 			listitem.addContextMenuItems(cm)
 			listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'landscape': landscape, 'thumb': thumb, 'icon': landscape,
 							'tvshow.poster': poster, 'tvshow.clearlogo': clearlogo})
-			info_tag = listitem.getVideoInfoTag(True)
+			info_tag = listitem.getVideoInfoTag()
 			info_tag.setMediaType('tvshow'), info_tag.setTitle(title), info_tag.setTvShowTitle(title), info_tag.setOriginalTitle(meta_get('original_title'))
 			info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str(tmdb_id), 'tvdb': str(tvdb_id)}), info_tag.setIMDBNumber(imdb_id)
 			info_tag.setPlot(meta_get('plot')), info_tag.setPlaycount(playcount), info_tag.setGenres(meta_get('genre')), info_tag.setYear(int(year))
@@ -354,6 +398,7 @@ class TVShows:
 				'redlight.browse_similar_params': browse_similar_params,
 				'redlight.browse_in_trakt_list_params': browse_in_trakt_list_params,
 				'redlight.trakt_manager_params': trakt_manager_params,
+				'redlight.wetrakr_manager_params': wetrakr_manager_params,
 				'redlight.simkl_manager_params': simkl_manager_params,
 				'redlight.punchplay_manager_params': punchplay_manager_params,
 				'redlight.mdblist_manager_params': mdblist_manager_params,
@@ -381,7 +426,8 @@ class TVShows:
 		self.in_progress_show_ids = watched_status.get_in_progress_tvshow_ids(watched_db) if self.skip_inprogress else set()
 		browsing_external_lists = (self.action in self.simkl_personal or self.action in self.punchplay_personal
 			or self.action in self.mdblist_personal or self.action in self.trakt_personal
-			or self.action == 'punchplay_user_list')
+			or self.action in self.wetrakr_personal
+			or self.action == 'punchplay_user_list' or self.action == 'wetrakr_user_list')
 		if self.watched_indicators == 2 and settings.simkl_user_active() and not browsing_external_lists:
 			from apis.simkl_api import simkl_sync_activities
 			simkl_sync_activities()
@@ -391,6 +437,9 @@ class TVShows:
 		if self.watched_indicators == 4 and settings.punchplay_user_active() and not browsing_external_lists:
 			from apis.punchplay_api import punchplay_sync_activities
 			punchplay_sync_activities()
+		if self.watched_indicators == 5 and settings.wetrakr_user_active() and not browsing_external_lists:
+			from apis.wetrakr_api import wetrakr_sync_activities
+			wetrakr_sync_activities()
 		self.watched_info = watched_status.watched_info_tvshow(watched_db)
 		self.window_command = 'ActivateWindow(Videos,%s,return)' if self.is_external else 'Container.Update(%s)'
 		if self.custom_order:

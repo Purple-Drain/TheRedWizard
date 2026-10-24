@@ -34,6 +34,7 @@ class SimklWatched:
 	def set_bulk_tvshow_watched(self, insert_list):
 		self._delete('DELETE FROM watched WHERE db_type = ?', ('episode',))
 		self._executemany('INSERT OR IGNORE INTO watched VALUES (?, ?, ?, ?, ?, ?)', insert_list)
+		self.prune_mirrored_specials()
 
 	def merge_bulk_movie_watched(self, insert_list):
 		"""Upsert movie watched rows from a date_from delta (does not wipe the table)."""
@@ -54,6 +55,48 @@ class SimklWatched:
 			dbcon.execute('DELETE FROM watched WHERE db_type = ? AND media_id = ?', ('episode', media_id))
 		if insert_list:
 			dbcon.executemany('INSERT OR IGNORE INTO watched VALUES (?, ?, ?, ?, ?, ?)', insert_list)
+		self.prune_mirrored_specials()
+
+	def delete_movie_watched(self, media_ids):
+		"""Drop movie watched rows (Phase 2 status move off completed)."""
+		ids = [str(i) for i in (media_ids or []) if i not in (None, '', 'None', '0', 0)]
+		if not ids: return
+		dbcon = connect_database('simkl_db')
+		for media_id in ids:
+			dbcon.execute('DELETE FROM watched WHERE db_type = ? AND media_id = ?', ('movie', media_id))
+
+	def prune_not_in(self, keep_movie_ids=None, keep_episode_media_ids=None):
+		"""Remove local watches whose media_id is not in the ids_only library snapshot."""
+		dbcon = connect_database('simkl_db')
+		if keep_movie_ids is not None:
+			self._prune_watched_type(dbcon, 'movie', keep_movie_ids)
+		if keep_episode_media_ids is not None:
+			self._prune_watched_type(dbcon, 'episode', keep_episode_media_ids)
+
+	def _prune_watched_type(self, dbcon, db_type, keep_ids):
+		keep = set(str(i) for i in (keep_ids or []) if i not in (None, '', 'None', '0', 0))
+		rows = dbcon.execute('SELECT DISTINCT media_id FROM watched WHERE db_type = ?', (db_type,)).fetchall()
+		for row in rows:
+			media_id = row[0]
+			if str(media_id) not in keep:
+				dbcon.execute('DELETE FROM watched WHERE db_type = ? AND media_id = ?', (db_type, media_id))
+
+	def prune_mirrored_specials(self):
+		"""Drop S00 rows that are the same episode/timestamp as a regular-season watch.
+
+		Simkl include_all_episodes can list a miniseries part as both S01E01 and S00E01.
+		"""
+		try:
+			dbcon = connect_database('simkl_db')
+			dbcon.execute(
+				'DELETE FROM watched WHERE rowid IN ('
+				'SELECT w0.rowid FROM watched w0 '
+				'INNER JOIN watched w1 ON w1.db_type = w0.db_type AND w1.media_id = w0.media_id '
+				'AND w1.episode = w0.episode AND w1.last_played = w0.last_played '
+				'AND CAST(w1.season AS INTEGER) > 0 '
+				'WHERE w0.db_type = ? AND CAST(w0.season AS INTEGER) = 0)',
+				('episode',))
+		except: pass
 
 	def set_bulk_movie_progress(self, insert_list):
 		self._delete('DELETE FROM progress WHERE db_type = ?', ('movie',))
@@ -101,6 +144,7 @@ def clear_all_simkl_cache_data(silent=False, refresh=True):
 		try:
 			from caches.lists_cache import lists_cache
 			lists_cache.delete_like('simkl_all_items_%')
+			lists_cache.delete_like('simkl_custom_%')
 		except: pass
 		if not silent: kodi_utils.notification('Simkl Cache Cleared', 3000)
 		if refresh:

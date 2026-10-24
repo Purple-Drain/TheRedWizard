@@ -147,11 +147,13 @@ class Navigator:
 			self._safe_add({'mode': 'navigator.mdblist_lists'}, 'MDBList Lists', 'mdblist')
 		if s.punchplay_user_active():
 			self._safe_add({'mode': 'navigator.punchplay_lists'}, 'PunchPlay Lists', 'punchplay')
-		# Always show Simkl Lists so Public Calendar stays reachable without auth (Trakt Public Lists pattern).
+		# Simkl stays visible so its public calendar is reachable without a sign-in.
 		self._safe_add(self._simkl_lists_menu(), 'Simkl Lists', 'simkl')
 		if s.tmdblist_user_active(): self._safe_add({'mode': 'navigator.tmdb_lists_personal'}, 'TMDb Lists', 'tmdb')
 		if s.trakt_user_active(): self._safe_add({'mode': 'navigator.trakt_lists_personal'}, 'Trakt Lists', 'trakt')
 		self._safe_add({'mode': 'navigator.trakt_lists_public'}, 'Trakt Public Lists', 'trakt')
+		if s.wetrakr_lists_active(): self._safe_add({'mode': 'navigator.wetrakr_lists'}, 'WeTrakr Lists', 'wetrakr')
+		self._safe_add({'mode': 'navigator.wetrakr_public_lists_menu'}, 'WeTrakr Public Lists', 'wetrakr')
 		self._safe_add({'mode': 'personal_lists.get_personal_lists'}, 'Personal Lists', 'lists')
 		self._safe_add({'mode': 'navigator.discover_contents', 'media_type': 'movie', 'show_new': 'false'}, 'Discover Lists (Movies)', 'movies')
 		self._safe_add({'mode': 'navigator.discover_contents', 'media_type': 'tvshow', 'show_new': 'false'}, 'Discover Lists (TV Shows)', 'tv')
@@ -214,19 +216,336 @@ class Navigator:
 		self.add({'mode': 'navigator.search_history', 'action': 'trakt_lists'}, 'Search User Lists', 'search')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
 		self.end_directory()
+
+	def _wetrakr_folder(self, action, category_name, list_key, list_id=None, exit_mode='wetrakr_lists', movies=True, shows=True):
+		self.category_name = category_name
+		movie_params = {'mode': 'build_movie_list', 'action': action, 'category_name': 'Movies %s' % category_name}
+		tv_params = {'mode': 'build_tvshow_list', 'action': action, 'category_name': 'TV Shows %s' % category_name}
+		sort_key = list_key
+		if list_id is not None:
+			movie_params['list_id'] = list_id
+			tv_params['list_id'] = list_id
+			sort_key = 'wetrakr.list:%s' % list_id
+			sort_adapter = 'wetrakr'
+			movie_cm = self._sort_cm(sort_key, None, sort_adapter, fallback='default:asc')
+			tv_cm = self._sort_cm(sort_key, None, sort_adapter, fallback='default:asc')
+		else:
+			sort_adapter = 'user_list'
+			movie_cm = self._sort_cm('%s:movies' % list_key, None, sort_adapter, fallback='default:asc')
+			tv_cm = self._sort_cm('%s:shows' % list_key, None, sort_adapter, fallback='default:asc')
+		if movies: self._safe_add(movie_params, 'Movies', 'movies', cm_items=movie_cm)
+		if shows: self._safe_add(tv_params, 'TV Shows', 'tv', cm_items=tv_cm)
+		self._set_exit_params({'mode': 'navigator.%s' % exit_mode})
+		self.end_directory()
+
+	def wetrakr_lists(self):
+		"""Status shelves, your lists, and the signed-in calendar. Public rows live under WeTrakr Public Lists."""
+		self.category_name = 'WeTrakr Lists'
+		if s.wetrakr_lists_active():
+			for mode, label, icon, key in (
+				('wetrakr_plantowatch', 'Plan to Watch', 'lists', 'wetrakr.planning'),
+				('wetrakr_watching', 'Watching', 'player', 'wetrakr.watching'),
+				('wetrakr_waiting', 'Waiting', 'ontheair', 'wetrakr.waiting'),
+				('wetrakr_playing', 'Playing', 'player', 'wetrakr.playing'),
+				('wetrakr_paused', 'Paused', 'ontheair', 'wetrakr.paused'),
+				('wetrakr_watched', 'Watched', 'watched_1', 'wetrakr.watched'),
+				('wetrakr_dropped', 'Dropped', 'lists', 'wetrakr.dropped'),
+				('wetrakr_favorites', 'Favorites', 'favorites', 'wetrakr.favorites'),
+			):
+				self._safe_add({'mode': 'navigator.%s' % mode}, label, icon)
+			self._safe_add({'mode': 'navigator.wetrakr_my_lists'}, 'My Lists', 'lists')
+			self._safe_add({'mode': 'navigator.wetrakr_personal_calendar'}, 'Calendar', 'calender')
+		self._set_exit_params({'mode': 'navigator.my_lists'})
+		self.end_directory()
+
+	def wetrakr_plantowatch(self):
+		self._wetrakr_folder('wetrakr_plantowatch', 'Plan to Watch', 'wetrakr.planning')
+
+	def wetrakr_watching(self):
+		self._wetrakr_folder('wetrakr_watching', 'Watching', 'wetrakr.watching', movies=False)
+
+	def wetrakr_waiting(self):
+		self._wetrakr_folder('wetrakr_waiting', 'Waiting', 'wetrakr.waiting', movies=False)
+
+	def wetrakr_playing(self):
+		self._wetrakr_folder('wetrakr_playing', 'Playing', 'wetrakr.playing', shows=False)
+
+	def wetrakr_paused(self):
+		self._wetrakr_folder('wetrakr_paused', 'Paused', 'wetrakr.paused', movies=False)
+
+	def wetrakr_watched(self):
+		self._wetrakr_folder('wetrakr_watched', 'Watched', 'wetrakr.watched')
+
+	def wetrakr_dropped(self):
+		self._wetrakr_folder('wetrakr_dropped', 'Dropped', 'wetrakr.dropped')
+
+	def wetrakr_favorites(self):
+		self._wetrakr_folder('wetrakr_favorites', 'Favorites', 'wetrakr.favorites')
+
+	def wetrakr_personal_calendar(self):
+		self.category_name = 'Calendar'
+		self._safe_add({'mode': 'build_movie_list', 'action': 'wetrakr_calendar_personal', 'category_name': 'WeTrakr Movie Calendar'}, 'Movies', 'movies')
+		self._safe_add({'mode': 'build_wetrakr_calendar'}, 'Episodes', 'calender')
+		self._set_exit_params({'mode': 'navigator.wetrakr_lists'})
+		self.end_directory()
+
+	def wetrakr_calendar(self):
+		self.category_name = 'Public Calendar'
+		self._safe_add({'mode': 'build_movie_list', 'action': 'wetrakr_calendar', 'category_name': 'WeTrakr Movie Calendar'}, 'Movies', 'movies')
+		self._safe_add({'mode': 'build_wetrakr_public_calendar'}, 'Episodes', 'calender')
+		self._set_exit_params({'mode': 'navigator.wetrakr_public_lists_menu'})
+		self.end_directory()
+
+	def wetrakr_discover(self):
+		self.category_name = 'Discover'
+		for feed, label, icon in (
+			('wetrakr_trending', 'Trending', 'trending'),
+			('wetrakr_popular', 'Popular', 'popular'),
+			('wetrakr_toprated', 'Top Rated', 'popular'),
+		):
+			self._safe_add({'mode': 'navigator.wetrakr_discover_type', 'feed': feed, 'category_name': label}, label, icon)
+		self._set_exit_params({'mode': 'navigator.wetrakr_public_lists_menu'})
+		self.end_directory()
+
+	def wetrakr_discover_type(self):
+		feed = self.params.get('feed') or 'wetrakr_trending'
+		label = self.params.get('category_name') or 'Discover'
+		self.category_name = label
+		self._safe_add({'mode': 'build_movie_list', 'action': feed, 'category_name': '%s Movies' % label}, 'Movies', 'movies')
+		self._safe_add({'mode': 'build_tvshow_list', 'action': feed, 'category_name': '%s TV Shows' % label}, 'TV Shows', 'tv')
+		self._set_exit_params({'mode': 'navigator.wetrakr_discover'})
+		self.end_directory()
+
+	def wetrakr_public_lists_menu(self):
+		"""Discover, other people's lists, then the public calendar above search. No sign-in."""
+		self.category_name = 'WeTrakr Public Lists'
+		self._safe_add({'mode': 'navigator.wetrakr_discover'}, 'Discover', 'discover')
+		self._safe_add({'mode': 'navigator.wetrakr_public_lists', 'list_kind': 'trending'}, 'Trending', 'trending')
+		self._safe_add({'mode': 'navigator.wetrakr_public_lists', 'list_kind': 'latest'}, 'Latest', 'lists')
+		self._safe_add({'mode': 'navigator.wetrakr_calendar'}, 'Public Calendar', 'calender')
+		self._safe_add({'mode': 'navigator.search_history', 'action': 'wetrakr_lists'}, 'Search Public Lists', 'search')
+		self._set_exit_params({'mode': 'navigator.my_lists'})
+		self.end_directory()
+
+	def wetrakr_public_lists(self):
+		kind = self.params.get('list_kind') or 'trending'
+		query = self.params.get('query') or self.params.get('key_id') or ''
+		try: page_no = int(self.params.get('new_page', '1'))
+		except Exception: page_no = 1
+		self.category_name = self.params.get('category_name') or self.params.get('name') or ('Search Results for %s' % query if query else ('Latest' if kind == 'latest' else 'Trending'))
+		try:
+			from apis.wetrakr_api import wetrakr_public_lists
+			rows, total_pages = wetrakr_public_lists(kind, query or None, page_no)
+		except Exception:
+			rows, total_pages = [], 1
+		shuffle_lists = self.params.get('shuffle', 'false') == 'true' or self.params.get('random', 'false') == 'true'
+		returning = False
+		if shuffle_lists and rows:
+			rows, returning = self._remember_shuffle(rows, 'redlight.wetrakr.public.%s.%s.order' % (kind, page_no), 'build_wetrakr_public_contents')
+		for entry in rows:
+			if shuffle_lists:
+				self._safe_add({'mode': 'random.build_wetrakr_public_contents', 'list_id': entry['id'], 'list_name': entry['name'], 'random': 'true'}, entry['name'], 'wetrakr')
+			else:
+				link = {'mode': 'navigator.wetrakr_public_list', 'list_id': entry['id'], 'list_name': entry['name'], 'list_kind': kind}
+				if query: link['query'] = query
+				self._safe_add(link, entry['name'], 'lists')
+		if total_pages > page_no:
+			nxt = {'mode': 'navigator.wetrakr_public_lists', 'list_kind': kind, 'new_page': str(page_no + 1), 'name': self.category_name}
+			if query: nxt['query'] = query
+			if shuffle_lists:
+				nxt['shuffle'] = 'true'
+				nxt['random'] = 'true'
+			self._safe_add(nxt, 'Next Page (%s) >>' % (page_no + 1), 'nextpage')
+		if shuffle_lists:
+			self._set_exit_params({'mode': 'navigator.build_random_lists', 'menu_type': 'wetrakr_public'})
+			if not returning: k.focus_index(0)
+			self.end_directory(cache_to_disc=False)
+		else:
+			self._set_exit_params({'mode': 'navigator.wetrakr_public_lists_menu'})
+			self.end_directory()
+
+	def wetrakr_list_search(self):
+		query = self.params.get('key_id') or self.params.get('query') or ''
+		self.params['query'] = query
+		self.params['list_kind'] = 'search'
+		return self.wetrakr_public_lists()
+
+	def wetrakr_public_list(self):
+		"""Someone else's public list, movies and TV shows together, in that list's order."""
+		import json
+		from threading import Lock, Thread
+		from indexers.movies import Movies
+		from indexers.tvshows import TVShows
+		from modules.utils import paginate_list
+		handle = int(sys.argv[1])
+		list_id = self.params.get('list_id')
+		list_name = self.params.get('list_name') or 'List'
+		kind = self.params.get('list_kind') or 'trending'
+		query = self.params.get('query') or ''
+		try: page_no = int(self.params.get('new_page', '1'))
+		except Exception: page_no = 1
+		try: paginate_start = int(self.params.get('paginate_start', '0'))
+		except Exception: paginate_start = 0
+		content, item_list = 'movies', []
+		try:
+			if page_no == 1 and not self.is_external:
+				back = {'mode': 'navigator.wetrakr_public_lists', 'list_kind': kind, 'name': 'Latest' if kind == 'latest' else ('Search Results for %s' % query if query else 'Trending')}
+				if query: back['query'] = query
+				k.set_property('redlight.exit_params', k.build_folder_url(back))
+			from apis.wetrakr_api import wetrakr_public_mixed_list_items
+			rows = wetrakr_public_mixed_list_items(list_id)
+			if s.paginate(self.is_external):
+				rows, total_pages = paginate_list(rows, page_no, s.page_limit(self.is_external), paginate_start)
+				if self.is_external: paginate_start = s.page_limit(self.is_external)
+			else:
+				total_pages = 1
+			movies = [(i.get('order', 0), i.get('media_ids')) for i in rows if i.get('type') == 'movie' and i.get('media_ids')]
+			shows = [(i.get('order', 0), i.get('media_ids')) for i in rows if i.get('type') == 'show' and i.get('media_ids')]
+			content = 'movies' if len(movies) >= len(shows) else 'tvshows'
+			built, built_lock = [], Lock()
+
+			def _process(cls, media):
+				if not media: return
+				rows_built = cls({'list': media, 'id_type': 'trakt_dict', 'custom_order': 'true'}).worker()
+				with built_lock: built.extend(rows_built)
+
+			threads = []
+			for cls, media in ((Movies, movies), (TVShows, shows)):
+				thread = Thread(target=_process, args=(cls, media))
+				thread.start()
+				threads.append(thread)
+			for thread in threads: thread.join()
+			built.sort(key=lambda item: item[1])
+			item_list = [item[0] for item in built]
+			new_params = {
+				'mode': 'navigator.wetrakr_public_list', 'list_id': list_id, 'list_name': list_name,
+				'list_kind': kind, 'paginate_start': paginate_start,
+			}
+			if query: new_params['query'] = query
+			k.add_items(handle, item_list)
+			hide_next = self.is_external and s.widget_hide_next_page()
+			if total_pages > 2 and s.jump_to_enabled() and not self.is_external:
+				k.add_dir(handle, {'mode': 'navigate_to_page_choice', 'current_page': page_no, 'total_pages': total_pages,
+					'url_params': json.dumps(new_params)}, 'Jump To...', 'item_jump', k.get_icon('item_jump_landscape'), isFolder=False)
+			if total_pages > page_no and not hide_next:
+				new_params['new_page'] = str(page_no + 1)
+				k.add_dir(handle, new_params, 'Next Page (%s) >>' % new_params['new_page'], 'nextpage', k.get_icon('nextpage_landscape'))
+		except Exception as error:
+			k.logger('WeTrakr', 'public list failed: %s' % error)
+		k.set_content(handle, content)
+		k.set_category(handle, list_name)
+		k.end_directory(handle, cacheToDisc=not self.is_external)
+		if not self.is_external:
+			if self.params.get('refreshed') == 'true': k.sleep(1000)
+			k.set_view_mode('view.%s' % content, content, self.is_external)
+
+	def wetrakr_my_lists(self):
+		shuffle_lists = self.params.get('shuffle', 'false') == 'true' or self.params.get('random', 'false') == 'true'
+		self.category_name = self.params.get('category_name') or ('Random Shuffled WeTrakr My Lists (All)' if shuffle_lists else 'My Lists')
+		returning = False
+		try:
+			from apis.wetrakr_api import wetrakr_get_lists
+			entries = list(wetrakr_get_lists() or [])
+			if shuffle_lists:
+				entries, returning = self._remember_shuffle(entries, 'redlight.wetrakr.my_lists.order', 'build_wetrakr_lists_contents')
+			for entry in entries:
+				list_id, name = entry.get('id'), entry.get('name') or 'List'
+				if shuffle_lists:
+					self._safe_add({'mode': 'random.build_wetrakr_lists_contents', 'list_id': list_id, 'list_name': name, 'random': 'true'}, name, 'wetrakr')
+				else:
+					self._safe_add({'mode': 'navigator.wetrakr_user_list', 'list_id': list_id, 'list_name': name}, name, 'lists',
+						cm_items=self._sort_cm('wetrakr.list:%s' % list_id, None, 'wetrakr', fallback='default:asc'))
+		except: pass
+		if shuffle_lists:
+			self._set_exit_params({'mode': 'navigator.build_random_lists', 'menu_type': 'wetrakr_personal'})
+			if not returning: k.focus_index(0)
+			self.end_directory(cache_to_disc=False)
+		else:
+			self._set_exit_params({'mode': 'navigator.wetrakr_lists'})
+			self.end_directory()
+
+	def wetrakr_user_list(self):
+		"""One of your lists, movies and TV shows together, in the list's own order."""
+		import json
+		from threading import Lock, Thread
+		from indexers.movies import Movies
+		from indexers.tvshows import TVShows
+		from modules.utils import paginate_list
+		handle = int(sys.argv[1])
+		list_id = self.params.get('list_id')
+		list_name = self.params.get('list_name') or 'List'
+		try: page_no = int(self.params.get('new_page', '1'))
+		except Exception: page_no = 1
+		try: paginate_start = int(self.params.get('paginate_start', '0'))
+		except Exception: paginate_start = 0
+		content, item_list = 'movies', []
+		try:
+			if page_no == 1 and not self.is_external:
+				k.set_property('redlight.exit_params', k.build_folder_url({'mode': 'navigator.wetrakr_my_lists'}))
+			from apis.wetrakr_api import wetrakr_mixed_list_items
+			from modules import list_sort
+			rows = list_sort.sort_user_list(wetrakr_mixed_list_items(list_id), 'wetrakr.list:%s' % list_id, 'wetrakr')
+			if s.paginate(self.is_external):
+				rows, total_pages = paginate_list(rows, page_no, s.page_limit(self.is_external), paginate_start)
+				if self.is_external: paginate_start = s.page_limit(self.is_external)
+			else:
+				total_pages = 1
+			movies = [(i.get('order', 0), i.get('media_ids')) for i in rows if i.get('type') == 'movie' and i.get('media_ids')]
+			shows = [(i.get('order', 0), i.get('media_ids')) for i in rows if i.get('type') == 'show' and i.get('media_ids')]
+			content = 'movies' if len(movies) >= len(shows) else 'tvshows'
+			built, built_lock = [], Lock()
+
+			def _process(cls, media):
+				if not media: return
+				rows_built = cls({'list': media, 'id_type': 'trakt_dict', 'custom_order': 'true'}).worker()
+				with built_lock: built.extend(rows_built)
+
+			threads = []
+			for cls, media in ((Movies, movies), (TVShows, shows)):
+				thread = Thread(target=_process, args=(cls, media))
+				thread.start()
+				threads.append(thread)
+			for thread in threads: thread.join()
+			built.sort(key=lambda item: item[1])
+			item_list = [item[0] for item in built]
+			new_params = {
+				'mode': 'navigator.wetrakr_user_list', 'list_id': list_id, 'list_name': list_name,
+				'paginate_start': paginate_start,
+			}
+			k.add_items(handle, item_list)
+			hide_next = self.is_external and s.widget_hide_next_page()
+			if total_pages > 2 and s.jump_to_enabled() and not self.is_external:
+				k.add_dir(handle, {'mode': 'navigate_to_page_choice', 'current_page': page_no, 'total_pages': total_pages,
+					'url_params': json.dumps(new_params)}, 'Jump To...', 'item_jump', k.get_icon('item_jump_landscape'), isFolder=False)
+			if total_pages > page_no and not hide_next:
+				new_params['new_page'] = str(page_no + 1)
+				k.add_dir(handle, new_params, 'Next Page (%s) >>' % new_params['new_page'], 'nextpage', k.get_icon('nextpage_landscape'))
+		except Exception as error:
+			k.logger('WeTrakr', 'list failed: %s' % error)
+		k.set_content(handle, content)
+		k.set_category(handle, list_name)
+		k.end_directory(handle, cacheToDisc=not self.is_external)
+		if not self.is_external:
+			if self.params.get('refreshed') == 'true': k.sleep(1000)
+			k.set_view_mode('view.%s' % content, content, self.is_external)
+
 	def random_lists(self):
+		# Browse lists, then services in the same order as My Lists, then Personal Lists.
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'movie'}, 'Random Movie Lists', 'movies')
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'tvshow'}, 'Random TV Show Lists', 'tv')
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'anime'}, 'Random Anime Lists', 'anime')
 		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'because_you_watched'}, 'Random Because You Watched', 'because_you_watched')
-		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'personal_lists'}, 'Random Personal Lists', 'lists')
-		if s.punchplay_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'punchplay_lists'}, 'Random PunchPlay Lists', 'punchplay')
 		if s.mdblist_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'mdblist_lists'}, 'Random MDBList Lists', 'mdblist')
+		if s.punchplay_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'punchplay_lists'}, 'Random PunchPlay Lists', 'punchplay')
 		if s.simkl_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'simkl_lists'}, 'Random Simkl Lists', 'simkl')
 		if s.tmdblist_user_active(): self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'tmdb_lists'}, 'Random TMDb Lists', 'tmdb')
 		if s.trakt_user_active():
 			self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'trakt_personal'}, 'Random Trakt Lists (Personal)', 'trakt')
 			self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'trakt_public'}, 'Random Trakt Lists (Public)', 'trakt')
+		if s.wetrakr_lists_active():
+			self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'wetrakr_personal'}, 'Random WeTrakr Lists (Personal)', 'wetrakr')
+		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'wetrakr_public'}, 'Random WeTrakr Lists (Public)', 'wetrakr')
+		self.add({'mode': 'navigator.build_random_lists', 'menu_type': 'personal_lists'}, 'Random Personal Lists', 'lists')
 		self._set_submenu_exit_params()
 		self.end_directory()
 
@@ -246,12 +565,15 @@ class Navigator:
 		return link
 
 	def simkl_lists(self):
-		"""Grouped status shelves — Plan to Watch → Watching → On Hold → Completed → Dropped → Calendar → Search.
+		"""Grouped status shelves — Plan to Watch → Watching → On Hold → Completed → Dropped → My Lists (V2) → Calendar → Search.
 
-		Personal shelves / personal Calendar / Search need auth. Public Calendar is always shown
-		(CDN feed, same idea as My Lists > Trakt Public Lists).
+		Personal shelves, Calendar, and Search need a sign-in. Custom lists need AUTH V2 and PRO or VIP.
+		Public Calendar is always shown.
 		"""
 		self.category_name = 'Simkl Lists'
+		if s.simkl_user_active() and s.simkl_auth_v2():
+			from apis.simkl_api import refresh_simkl_account_plan
+			refresh_simkl_account_plan()
 		if s.simkl_user_active():
 			for mode, label, icon in (
 				('simkl_watchlists', 'Plan to Watch', 'lists'),
@@ -261,9 +583,10 @@ class Navigator:
 				('simkl_dropped', 'Dropped', 'lists'),
 			):
 				self._safe_add({'mode': 'navigator.%s' % mode}, label, icon)
+			if s.simkl_custom_lists_allowed():
+				self._safe_add({'mode': 'simkl.list.get_simkl_custom_lists', 'category_name': 'My Lists'}, 'My Lists', 'lists')
 			self._safe_add({'mode': 'build_simkl_calendar'}, 'Calendar', 'calender')
-		self._safe_add({'mode': 'build_simkl_public_calendar', 'feeds': 'all'},
-			'Public Calendar', 'calender')
+		self._safe_add({'mode': 'build_simkl_public_calendar', 'feeds': 'all'}, 'Public Calendar', 'calender')
 		if s.simkl_user_active():
 			self._safe_add({'mode': 'navigator.search_history', 'action': 'simkl_lists'}, 'Search My Simkl Lists', 'search')
 		self._set_exit_params({'mode': 'navigator.my_lists'})
@@ -348,6 +671,15 @@ class Navigator:
 		if list_id is not None: params['list_id'] = list_id
 		return params
 
+	def _punchplay_shelf_sort_cm(self, action, media_type):
+		shelf = {
+			'punchplay_watchlist': 'watchlist', 'punchplay_collection': 'collection', 'punchplay_favorites': 'favorites',
+			'punchplay_plantowatch': 'plantowatch', 'punchplay_watching': 'watching', 'punchplay_hold': 'hold',
+			'punchplay_dropped': 'dropped', 'punchplay_completed': 'completed'
+		}.get(action)
+		if not shelf: return None
+		return self._sort_cm('punchplay.%s' % shelf, media_type, 'punchplay')
+
 	def _punchplay_media_folder(self, action, category_name, exit_mode='punchplay_lists', list_id=None, exit_params=None):
 		self.category_name = category_name
 		movie_params = {'mode': 'build_movie_list', 'action': action, 'category_name': 'Movies %s' % category_name}
@@ -355,9 +687,10 @@ class Navigator:
 		if list_id is not None:
 			movie_params['list_id'] = list_id
 			tv_params['list_id'] = list_id
-		self._safe_add(movie_params, 'Movies', 'movies')
-		self._safe_add(tv_params, 'TV Shows', 'tv')
-		self._safe_add(self._punchplay_anime_link(action, 'Anime %s' % category_name, list_id), 'Anime', 'anime')
+		self._safe_add(movie_params, 'Movies', 'movies', cm_items=self._punchplay_shelf_sort_cm(action, 'movies'))
+		self._safe_add(tv_params, 'TV Shows', 'tv', cm_items=self._punchplay_shelf_sort_cm(action, 'shows'))
+		self._safe_add(self._punchplay_anime_link(action, 'Anime %s' % category_name, list_id), 'Anime', 'anime',
+			cm_items=self._punchplay_shelf_sort_cm(action, 'shows'))
 		self._set_exit_params(exit_params or {'mode': 'navigator.%s' % exit_mode})
 		self.end_directory()
 
@@ -415,7 +748,8 @@ class Navigator:
 			entries.sort(key=lambda k: (k.get('name') or '').lower())
 			for entry in entries:
 				list_id, name = entry.get('id'), entry.get('name') or 'List'
-				self._safe_add({'mode': 'navigator.punchplay_user_list', 'list_id': list_id, 'list_name': name}, name, 'lists')
+				self._safe_add({'mode': 'navigator.punchplay_user_list', 'list_id': list_id, 'list_name': name}, name, 'lists',
+					cm_items=self._sort_cm('punchplay.list:%s' % list_id, None, 'user_list', fallback='default:asc'))
 		except: pass
 		self._set_exit_params({'mode': 'navigator.punchplay_lists'})
 		self.end_directory()
@@ -516,29 +850,31 @@ class Navigator:
 	def import_export(self):
 		self.add({'mode': 'settings_backup.import_settings', 'isFolder': 'false'}, 'Import Red Light Settings', 'settings')
 		self.add({'mode': 'settings_backup.export_settings', 'isFolder': 'false'}, 'Export Red Light Settings', 'settings')
-		self.add({'mode': 'local_backup.import_data', 'isFolder': 'false'}, 'Import Red Light Favorites & History', 'folder')
-		self.add({'mode': 'local_backup.export_data', 'isFolder': 'false'}, 'Export Red Light Favorites & History', 'folder')
-		self.add({'mode': 'kodi_favorites.import_favorites', 'isFolder': 'false'}, 'Import Kodi Favorites', 'favorites')
-		self.add({'mode': 'kodi_favorites.export_favorites', 'isFolder': 'false'}, 'Export Kodi Favorites', 'favorites')
+		self.add({'mode': 'local_backup.import_data', 'isFolder': 'false'}, 'Import Red Light Favourites & History', 'folder')
+		self.add({'mode': 'local_backup.export_data', 'isFolder': 'false'}, 'Export Red Light Favourites & History', 'folder')
+		self.add({'mode': 'kodi_favorites.import_favorites', 'isFolder': 'false'}, 'Import Kodi Favourites', 'favorites')
+		self.add({'mode': 'kodi_favorites.export_favorites', 'isFolder': 'false'}, 'Export Kodi Favourites', 'favorites')
 		self.end_directory()
 
 	def maintenance(self):
 		self.add({'mode': 'check_databases_integrity_cache', 'isFolder': 'false'}, 'Check for Corrupt Databases', 'settings')
 		self.add({'mode': 'clean_databases_cache', 'isFolder': 'false'}, 'Clean Databases', 'settings')
 		self.add({'mode': 'sync_settings', 'silent': 'false', 'isFolder': 'false'}, 'Remake Settings Cache', 'settings')
-		self.add({'mode': 'clear_all_cache', 'isFolder': 'false'}, 'Clear All Cache (Excluding Favorites)', 'settings')
-		self.add({'mode': 'clear_favorites_choice', 'isFolder': 'false'}, 'Clear Favorites Cache', 'settings')
+		self.add({'mode': 'clear_all_cache', 'isFolder': 'false'}, 'Clear All Cache (Excluding Favourites)', 'settings')
+		self.add({'mode': 'clear_favorites_choice', 'isFolder': 'false'}, 'Clear Favourites Cache', 'settings')
 		self.add({'mode': 'search.clear_search', 'isFolder': 'false'}, 'Clear Search History Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'ai_functions', 'isFolder': 'false'}, 'Clear AI Data Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'list', 'isFolder': 'false'}, 'Clear Lists Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'main', 'isFolder': 'false'}, 'Clear Main Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'meta', 'isFolder': 'false'}, 'Clear Meta Cache', 'settings')
+		self.add({'mode': 'clear_kodi_images_cache', 'isFolder': 'false'}, 'Clear Kodi Images', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'imdb', 'isFolder': 'false'}, 'Clear IMDb Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'mdblist', 'isFolder': 'false'}, 'Clear MDBList Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'punchplay', 'isFolder': 'false'}, 'Clear PunchPlay Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'simkl', 'isFolder': 'false'}, 'Clear Simkl Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'tmdb_list', 'isFolder': 'false'}, 'Clear TMDb Personal List Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'trakt', 'isFolder': 'false'}, 'Clear Trakt Cache', 'settings')
+		self.add({'mode': 'clear_cache', 'cache': 'wetrakr', 'isFolder': 'false'}, 'Clear WeTrakr Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'subtitles', 'isFolder': 'false'}, 'Clear Subtitles Cache', 'settings')
 		self.add({'mode': 'clear_cache', 'cache': 'easynews_scrape', 'isFolder': 'false'}, 'Clear EasyNews Scrape Cache', 'settings')
 		self.add({'mode': 'search.clear_easynews_search_history', 'isFolder': 'false'}, 'Clear EasyNews Search History', 'settings')
@@ -689,14 +1025,21 @@ class Navigator:
 		'mdblist_lists': ('mdblist_list_queries', {'mode': 'search.get_key_id', 'search_type': 'mdblist_lists', 'isFolder': 'false'}),
 		'simkl_lists': ('simkl_list_queries', {'mode': 'search.get_key_id', 'search_type': 'simkl_lists', 'isFolder': 'false'}),
 		'punchplay_lists': ('punchplay_list_queries', {'mode': 'search.get_key_id', 'search_type': 'punchplay_lists', 'isFolder': 'false'}),
-		'punchplay_public_lists': ('punchplay_public_list_queries', {'mode': 'search.get_key_id', 'search_type': 'punchplay_public_lists', 'isFolder': 'false'})}
+		'punchplay_public_lists': ('punchplay_public_list_queries', {'mode': 'search.get_key_id', 'search_type': 'punchplay_public_lists', 'isFolder': 'false'}),
+		'wetrakr_movies': ('wetrakr_movie_queries', {'mode': 'search.get_key_id', 'search_type': 'wetrakr_movies', 'isFolder': 'false'}),
+		'wetrakr_tv': ('wetrakr_tv_queries', {'mode': 'search.get_key_id', 'search_type': 'wetrakr_tv', 'isFolder': 'false'}),
+		'wetrakr_lists': ('wetrakr_list_queries', {'mode': 'search.get_key_id', 'search_type': 'wetrakr_lists', 'isFolder': 'false'})}
 		setting_id, action_dict = search_mode_dict[self.list_name]
 		url_params = dict(action_dict)
-		data = main_cache.get(setting_id) or []
+		data = [unquote(i) for i in (main_cache.get(setting_id) or [])]
+		if s.search_history_sort() == 1:
+			from modules.utils import title_key
+			ignore = s.ignore_articles()
+			data.sort(key=lambda k: title_key(k, ignore))
 		self.add(action_dict, '[B]NEW SEARCH...[/B]', 'new')
 		for i in data:
 			try:
-				key_id = unquote(i)
+				key_id = i
 				url_params['key_id'] = key_id
 				url_params['setting_id'] = setting_id
 				cm_items = [('[B]Remove from history[/B]', 'RunPlugin(%s)' % self.build_url({'mode': 'search.remove', 'setting_id':setting_id, 'key_id': key_id})),
@@ -734,8 +1077,13 @@ class Navigator:
 		for item in results:
 			name = (item.get('name') or '').upper()
 			if not name or not item.get('id'): continue
+			poster_path = item.get('poster_path')
+			if poster_path:
+				icon, original_image = 'https://image.tmdb.org/t/p/w780%s' % poster_path, True
+			else:
+				icon, original_image = 'movies', False
 			self.add({'mode': 'build_movie_list', 'action': 'tmdb_movies_sets', 'key_id': item['id'], 'iconImage': 'movies',
-				'category_name': name}, name, iconImage='movies')
+				'category_name': name}, name, iconImage=icon, original_image=original_image)
 		try:
 			if int(data.get('total_pages') or 0) > page_no:
 				new_page = {'mode': 'navigator.collection_results', 'key_id': key_id, 'category_name': self.category_name, 'new_page': str(int(data.get('page') or page_no) + 1)}
@@ -922,7 +1270,9 @@ class Navigator:
 		'trakt_personal': ('Random Trakt Lists (Personal)', nc.random_trakt_lists_personal),
 		'trakt_public': ('Random Trakt Lists (Public)', nc.random_trakt_lists_public),
 		'simkl_lists': ('Random Simkl Lists', nc.random_simkl_lists),
-		'punchplay_lists': ('Random PunchPlay Lists', nc.random_punchplay_lists)}
+		'punchplay_lists': ('Random PunchPlay Lists', nc.random_punchplay_lists),
+		'wetrakr_personal': ('Random WeTrakr Lists (Personal)', nc.random_wetrakr_lists_personal),
+		'wetrakr_public': ('Random WeTrakr Lists (Public)', nc.random_wetrakr_lists_public)}
 		self.category_name, function = random_list_dict[self.params_get('menu_type')]
 		func = function()
 		for item in func: self.add(item, item['name'], item['iconImage'])
@@ -944,16 +1294,41 @@ class Navigator:
 		if not browse_list or not s.show_public_calendars(): return browse_list
 		if self.list_name == 'TVShowList':
 			feeds = 'all' if s.public_calendar_include_anime() else 'tv'
-			name = 'Public Calendar'
+			name = 'Simkl Calendar'
 		elif self.list_name == 'AnimeList':
-			feeds, name = 'anime', 'Public Calendar'
+			feeds, name = 'anime', 'Simkl Calendar'
 		else:
 			return browse_list
-		if any(i.get('mode') == 'build_simkl_public_calendar' for i in browse_list):
-			return browse_list
-		out = list(browse_list)
-		out.append({'name': name, 'mode': 'build_simkl_public_calendar', 'feeds': feeds, 'iconImage': 'calender'})
+		out = [dict(i) for i in browse_list]
+		found = False
+		for item in out:
+			if item.get('mode') == 'build_simkl_public_calendar':
+				item['name'] = name
+				item['feeds'] = feeds
+				found = True
+		if not found:
+			out.append({'name': name, 'mode': 'build_simkl_public_calendar', 'feeds': feeds, 'iconImage': 'calender'})
+		if self.list_name == 'TVShowList' and not any(i.get('mode') == 'build_wetrakr_public_calendar' for i in out):
+			out.append({'name': 'WeTrakr Calendar', 'mode': 'build_wetrakr_public_calendar', 'iconImage': 'calender'})
 		return out
+
+	def _remember_shuffle(self, rows, prop, return_token):
+		"""Keep one shuffled order while a list opened from it is on the path back."""
+		import json
+		returning = return_token in k.folder_path()
+		if returning:
+			try:
+				order = json.loads(k.get_property(prop) or '[]')
+				by_id = {str(row.get('id')): row for row in rows if isinstance(row, dict)}
+				restored = [by_id[item_id] for item_id in order if item_id in by_id]
+				if restored: return restored, True
+			except Exception:
+				pass
+		import random
+		random.shuffle(rows)
+		try: k.set_property(prop, json.dumps([str(row.get('id')) for row in rows if isinstance(row, dict)]))
+		except Exception: pass
+		return rows, False
 
 	def _safe_add(self, url_params, list_name, iconImage='folder', original_image=False, cm_items=[]):
 		try: self.add(url_params, list_name, iconImage, original_image, cm_items)

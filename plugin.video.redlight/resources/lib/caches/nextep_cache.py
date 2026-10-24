@@ -29,13 +29,16 @@ def _settings_fingerprint(watched_indicators, mdblist_menu_next, is_anime_list, 
 		settings.nextep_include_unwatched(),
 		1 if settings.nextep_include_unaired() else 0,
 		1 if settings.nextep_include_airdate() else 0,
+		1 if settings.nextep_sort_latest_activity() else 0,
 		1 if settings.nextep_airing_today() else 0,
+		settings.nextep_airing_today_days() if settings.nextep_airing_today() else 0,
 		1 if settings.nextep_limit_history() else 0,
 		settings.nextep_limit() if settings.nextep_limit_history() else 0,
 		resolved_sort,
 		1 if settings.nextep_sort_direction() else 0,
 		settings.single_ep_display_format(is_external),
 		1 if settings.single_ep_unwatched_episodes() else 0,
+		1 if (not is_external and settings.single_episode_tvshow_view()) else 0,
 		1 if settings.single_ep_unwatched_in_title() else 0,
 		1 if (is_external and settings.single_ep_widget_omit_tvshowtitle()) else 0,
 		1 if (is_external and settings.single_ep_widget_omit_season_episode()) else 0,
@@ -44,7 +47,7 @@ def _settings_fingerprint(watched_indicators, mdblist_menu_next, is_anime_list, 
 		settings.playback_key(),
 		settings.ignore_articles(),
 		calendar_day,
-		5,  # cache schema: episode still on landscape (LandscapeInfo widgets)
+		7,  # cache schema: TV show view poster counts
 	)
 	return '_'.join(str(p) for p in parts)
 
@@ -61,27 +64,34 @@ def activity_token(watched_indicators):
 	Next Episodes packet can still carry the old WatchedProgress / resume secs).
 	"""
 	try:
-		from modules.watched_status import get_database, get_hidden_progress_items
+		from modules.watched_status import get_database, get_hidden_progress_items, progress_sql_test
 		dbcon = get_database(watched_indicators)
 		watched = dbcon.execute(
 			'SELECT COUNT(*), COALESCE(MAX(last_played), "") FROM watched WHERE db_type = ?', ('episode',)
 		).fetchone() or (0, '')
-		# Only meaningful (>1%) progress — matches In Progress shelf + resume prompt.
+		# Same floor as the In Progress shelf. WeTrakr includes a pause under 1%.
 		progress = dbcon.execute(
 			'SELECT COUNT(*), COALESCE(MAX(last_played), ""), '
 			'COALESCE(SUM(CAST(resume_point AS FLOAT)), 0), '
 			'COALESCE(GROUP_CONCAT(media_id || ":" || season || "x" || episode || ":" || resume_point), "") '
-			'FROM progress WHERE db_type = ? AND CAST(resume_point AS FLOAT) > 1',
+			'FROM progress WHERE db_type = ? AND ' + progress_sql_test(watched_indicators),
 			('episode',)
 		).fetchone() or (0, '', 0, '')
 		hidden = get_hidden_progress_items(watched_indicators) or []
 		try: hidden_key = ','.join(str(i) for i in sorted(int(x) for x in hidden))
 		except: hidden_key = str(len(hidden))
-		return '%s|%s|%s|%s|%s|%s|%s|%s|%s' % (
+		token = '%s|%s|%s|%s|%s|%s|%s|%s|%s' % (
 			watched_indicators, watched[0], watched[1],
 			progress[0], progress[1], progress[2], progress[3],
 			len(hidden), hidden_key
 		)
+		if int(watched_indicators or 0) == 5:
+			try:
+				from apis.wetrakr_api import wetrakr_up_next_token
+				token = '%s|%s' % (token, wetrakr_up_next_token())
+			except Exception:
+				token = '%s|up:' % token
+		return token
 	except:
 		return '0'
 
@@ -89,7 +99,7 @@ def activity_token(watched_indicators):
 def show_activity(watched_indicators):
 	"""Per-show activity for incremental rebuild: watched + in-progress resume."""
 	try:
-		from modules.watched_status import get_database
+		from modules.watched_status import get_database, progress_sql_test
 		dbcon = get_database(watched_indicators)
 		rows = dbcon.execute(
 			'SELECT media_id, COALESCE(MAX(last_played), "") FROM watched WHERE db_type = ? GROUP BY media_id',
@@ -99,13 +109,22 @@ def show_activity(watched_indicators):
 		prog_rows = dbcon.execute(
 			'SELECT media_id, COALESCE(MAX(last_played), ""), '
 			'COALESCE(SUM(CAST(resume_point AS FLOAT)), 0) '
-			'FROM progress WHERE db_type = ? AND CAST(resume_point AS FLOAT) > 1 GROUP BY media_id',
+			'FROM progress WHERE db_type = ? AND ' + progress_sql_test(watched_indicators) + ' GROUP BY media_id',
 			('episode',)
 		).fetchall() or []
 		for r in prog_rows:
 			if r[0] in (None, ''): continue
 			key = str(r[0])
 			activity[key] = '%s|p:%s|%s' % (activity.get(key, ''), r[1] or '', r[2] or 0)
+		if int(watched_indicators or 0) == 5:
+			try:
+				from apis.wetrakr_api import wetrakr_up_next_episodes
+				rows = wetrakr_up_next_episodes()
+				if rows:
+					for row in rows:
+						key = str(row['media_ids']['tmdb'])
+						activity[key] = '%s|up:%s:%s' % (activity.get(key, ''), row['season'], row['episode'])
+			except Exception: pass
 		return activity
 	except:
 		return {}

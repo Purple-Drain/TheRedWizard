@@ -1,0 +1,11 @@
+Continue Watching is a home widget, not a menu in Red Light. It merges paused movies, paused episodes, and the next episode of each show that has nothing paused, sorted by last played.
+
+Point the widget at:
+
+[B]plugin://plugin.video.redlight/?mode=build_continue_watching[/B]
+
+Leave the widget on the addon's order. If the skin sorts by last played, next-ups sink to the bottom — they have no LastPlayed because that episode has not been played. LastPlayed on In Progress is a real play only.
+
+Unaired next-ups and never-started shows (Next Episodes' include-unwatched options) are left out. Nothing to continue there.
+
+Same list for every Watched Status Provider. Widgets Item Limit applies when pagination is on for widgets.

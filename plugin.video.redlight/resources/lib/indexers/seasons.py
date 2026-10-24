@@ -54,11 +54,13 @@ def build_season_list(params):
 				cm_append(['extras', ('[B]Extras[/B]', 'RunPlugin(%s)' % extras_params)])
 				cm_append(['options', ('[B]Options[/B]', 'RunPlugin(%s)' % options_params)])
 				settings.append_external_scraper_settings_cm(cm_append, build_url)
+				cm_append(['browse_seasons', ('[B]Browse Seasons[/B]', window_command % build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id}))])
+				cm_append(['browse_episodes', ('[B]Browse Episodes[/B]', window_command % build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season_number}))])
 				if playcount:
 					if hide_watched: continue
 				elif not unaired and not season_special:
-						cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_watched',
-															'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
+					cm_append(['mark_watched', ('[B]Mark Watched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_watched',
+														'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
 				if progress:
 					cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_unwatched',
 														'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
@@ -72,7 +74,7 @@ def build_season_list(params):
 					try: cm = sorted([i for i in cm if i[0] in cm_sort_order], key=lambda k: cm_sort_order[k[0]])
 					except: pass
 				cm = [i[1] for i in cm]
-				info_tag = listitem.getVideoInfoTag(True)
+				info_tag = listitem.getVideoInfoTag()
 				info_tag.setMediaType('season'), info_tag.setTitle(title), info_tag.setOriginalTitle(orig_title), info_tag.setTvShowTitle(show_title), info_tag.setIMDBNumber(imdb_id)
 				info_tag.setSeason(season_number), info_tag.setPlot(plot), info_tag.setDuration(episode_run_time), info_tag.setPlaycount(playcount), info_tag.setGenres(genre)
 				info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str_tmdb_id, 'tvdb': str_tvdb_id})
@@ -88,6 +90,7 @@ def build_season_list(params):
 	kodi_actor, make_listitem, build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
 	poster_empty, fanart_empty = kodi_utils.get_icon('box_office'), kodi_utils.addon_fanart()
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
+	window_command = 'ActivateWindow(Videos,%s,return)' if is_external else 'Container.Update(%s)'
 	watched_indicators, adjust_hours, hide_watched = settings.watched_indicators(), settings.date_offset(), is_external and settings.widget_hide_watched()
 	current_date = get_datetime()
 	cm_sort_order = settings.cm_sort_order()
@@ -103,10 +106,7 @@ def build_season_list(params):
 	cast = meta_get('short_cast', []) or meta_get('cast', []) or []
 	mpaa, votes, trailer, studio, country = meta_get('mpaa'), meta_get('votes'), str(meta_get('trailer')), meta_get('studio'), meta_get('country')
 	episode_run_time, season_data, total_seasons = meta_get('duration'), meta_get('season_data'), meta_get('total_seasons')
-	if rpdb_api_key:
-		try: show_poster = meta_get('rpdb_poster') % rpdb_api_key + rpdb_format
-		except: show_poster = meta_get('poster') or poster_empty
-	else: show_poster = meta_get('poster') or poster_empty
+	show_poster = settings.rpdb_poster(rpdb_api_key, rpdb_format, meta_get('rpdb_poster'), meta_get('poster') or poster_empty)
 	show_fanart = meta_get('fanart') or fanart_empty
 	show_clearlogo, show_landscape = meta_get('clearlogo') or '', meta_get('landscape') or meta_get('fanart') or ''
 	custom_order = params.get('custom_order', None)
@@ -119,17 +119,23 @@ def build_season_list(params):
 	if watched_indicators == 2 and settings.simkl_user_active():
 		from apis.simkl_api import simkl_sync_activities
 		simkl_sync_activities()
+		from caches.simkl_cache import simkl_watched_cache
+		simkl_watched_cache.prune_mirrored_specials()
 		watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
 	if watched_indicators == 3 and settings.mdblist_user_active():
 		from apis.mdblist_api import mdblist_sync_activities
 		mdblist_sync_activities()
+		watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
+	if watched_indicators == 5 and settings.wetrakr_user_active():
+		from apis.wetrakr_api import wetrakr_sync_activities
+		wetrakr_sync_activities()
 		watched_info = watched_info_season(tmdb_id, get_database(watched_indicators))
 	list_items = list(list(_process()))
 	if custom_order is not None: return (list_items[0], custom_order)
 	kodi_utils.add_items(handle, list_items)
 	kodi_utils.set_content(handle, 'seasons')
 	kodi_utils.set_category(handle, show_title)
-	kodi_utils.end_directory(handle, cacheToDisc=False if is_external else True)
+	kodi_utils.end_directory(handle, cacheToDisc=False)
 	kodi_utils.set_view_mode('view.seasons', 'seasons', is_external)
 
 def single_seasons(seasons_list):

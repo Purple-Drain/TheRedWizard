@@ -6,7 +6,7 @@ from apis.imdb_api import imdb_people_trivia
 from indexers import dialogs
 from indexers.images import Images
 from modules.kodi_utils import addon_fanart, execute_builtin, notification, show_busy_dialog, hide_busy_dialog, get_icon
-from modules.settings import extras_enable_scrollbars, tmdb_api_key, easynews_authorized, mpaa_region, rpdb_info
+from modules.settings import extras_enable_scrollbars, tmdb_api_key, easynews_authorized, mpaa_region, rpdb_info, rpdb_poster
 from modules.utils import calculate_age, get_datetime, remove_accents
 # from modules.kodi_utils import logger
 
@@ -213,11 +213,11 @@ class People(BaseDialog):
 				listitem = self.make_listitem()
 				year = self.get_release_year(item[release_key])
 				poster = 'https://image.tmdb.org/t/p/%s%s' % ('w300', item['poster_path']) if item['poster_path'] else ''
-				if self.rpdb_api_key and poster:
+				if poster:
 					media = 'movie' if media_type == 'movie' else 'series'
-					try: poster = 'https://api.ratingposterdb.com/%s/tmdb/poster-default/%s-%s.jpg?fallback=true' % (self.rpdb_api_key, media, str(item['id'])) + self.rpdb_format
-					except: pass
-				elif not poster: poster = self.empty_poster
+					template = 'https://api.ratingposterdb.com/%s/tmdb/poster-default/%s-%s.jpg?fallback=true' % ('%s', media, str(item['id']))
+					poster = rpdb_poster(self.rpdb_api_key, self.rpdb_format, template, poster)
+				else: poster = self.empty_poster
 				listitem.setProperties({'name': item[name_key], 'release_date': year, 'vote_average': '%.1f' % item['vote_average'], 'thumbnail': poster, 'tmdb_id': str(tmdb_id)})
 				append(tmdb_id)
 				yield listitem

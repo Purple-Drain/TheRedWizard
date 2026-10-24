@@ -71,6 +71,26 @@ def languages():
 {'name': 'Turkish', 'id': 'tr'}, {'name': 'Ukrainian', 'id': 'uk'}, {'name': 'Vietnamese', 'id': 'vi'}
 	]
 
+def iso639_1_to_display_code(code):
+	"""Convert a TMDb ISO 639-1 2-letter language code to a 3-letter uppercase display label.
+	Falls back to the uppercased 2-letter code when the code is unknown."""
+	_map = {
+		'af': 'AFR', 'sq': 'ALB', 'am': 'AMH', 'ar': 'ARA', 'hy': 'ARM', 'az': 'AZE',
+		'eu': 'BAQ', 'be': 'BEL', 'bn': 'BEN', 'bs': 'BOS', 'br': 'BRE', 'bg': 'BUL',
+		'my': 'BUR', 'ca': 'CAT', 'zh': 'CHI', 'hr': 'HRV', 'cs': 'CZE', 'da': 'DAN',
+		'nl': 'DUT', 'en': 'ENG', 'eo': 'EPO', 'et': 'EST', 'fi': 'FIN', 'fr': 'FRE',
+		'gl': 'GLG', 'ka': 'GEO', 'de': 'GER', 'el': 'GRE', 'he': 'HEB', 'hi': 'HIN',
+		'hu': 'HUN', 'is': 'ICE', 'id': 'IND', 'it': 'ITA', 'ja': 'JPN', 'kk': 'KAZ',
+		'km': 'KHM', 'ko': 'KOR', 'lv': 'LAV', 'lt': 'LIT', 'lb': 'LTZ', 'mk': 'MAC',
+		'ms': 'MAY', 'ml': 'MAL', 'mn': 'MON', 'no': 'NOR', 'nb': 'NOR', 'nn': 'NOR',
+		'oc': 'OCI', 'fa': 'PER', 'pl': 'POL', 'pt': 'POR', 'pa': 'PAN', 'ro': 'RUM',
+		'ru': 'RUS', 'sr': 'SRP', 'si': 'SIN', 'sk': 'SLO', 'sl': 'SLV', 'es': 'SPA',
+		'sw': 'SWA', 'sv': 'SWE', 'tl': 'TGL', 'ta': 'TAM', 'te': 'TEL', 'th': 'THA',
+		'tr': 'TUR', 'uk': 'UKR', 'ur': 'URD', 'vi': 'VIE', 'cy': 'WEL',
+	}
+	if not code: return ''
+	return _map.get(code.lower(), code.upper())
+
 def language_choices():
 	return {
 'None': 'None',              'Afrikaans': 'afr',            'Albanian': 'alb',             'Arabic': 'ara',

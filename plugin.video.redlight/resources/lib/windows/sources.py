@@ -4,10 +4,10 @@ from threading import Thread
 from windows.base_window import BaseDialog
 from caches.settings_cache import get_setting, set_setting
 from modules.debrid import debrid_cache_check_available
-from modules.settings import debrid_cache_check, external_module_display_name
+from modules.settings import debrid_cache_check, debrid_cache_check_supported, external_module_display_name
 from modules.utils import TaskPool
 from modules.source_utils import source_filters
-from modules.settings import provider_sort_ranks, avoid_episode_spoilers, show_loading_plot, max_threads
+from modules.settings import provider_sort_ranks, avoid_episode_spoilers, show_loading_plot, loading_screen, max_threads
 from modules.native_torrents import NATIVE_INDEXER_SCRAPERS, NATIVE_TORRENT_SCRAPERS
 from modules.kodi_utils import get_icon, kodi_dialog, hide_busy_dialog, show_busy_dialog, close_dialog, addon_fanart, select_dialog, ok_dialog, notification, clear_property
 
@@ -59,6 +59,8 @@ class SourcesResults(BaseDialog):
 		return any_external_cache_check()
 
 	def _provider_cache_verified(self, provider):
+		if not debrid_cache_check_supported(provider):
+			return False
 		if self.cache_check_override is not None:
 			return self.cache_check_override
 		return debrid_cache_check(provider)
@@ -621,6 +623,7 @@ class SourcesPlayback(BaseDialog):
 		title, genre = self.meta_get('title'), self.meta_get('genre', '')
 		fanart, clearlogo = self.meta_get('fanart') or self.addon_fanart, self.meta_get('clearlogo') or ''
 		self.setProperty('window_mode', self.window_mode)
+		self.setProperty('loading_detail', 'false' if loading_screen() == '1' else 'true')
 		self.setProperty('fanart', fanart)
 		self.setProperty('clearlogo', clearlogo)
 		self.setProperty('title', title)
@@ -640,6 +643,7 @@ class SourcesPlayback(BaseDialog):
 			else: plot = self.meta_get('plot', '') or self.meta_get('tvshow_plot', '')
 			self.text = '[B]%02dx%02d - %s[/B][CR][CR]%s' % (self.meta_get('season'), self.meta_get('episode'), self.meta_get('ep_name', 'N/A').upper(), plot)
 		self.setProperty('window_mode', self.window_mode)
+		self.setProperty('loading_detail', 'false' if loading_screen() == '1' else 'true')
 		self.setProperty('text', self.text)
 
 	def set_resume_properties(self, percent):

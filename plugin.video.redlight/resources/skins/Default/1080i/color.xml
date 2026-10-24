@@ -50,6 +50,7 @@
                 <width>1365</width>
                 <height>840</height>
                 <orientation>vertical</orientation>
+                <onright>10</onright>
                 <itemlayout height="44" width="44">
                     <control type="image">
                         <left>0</left>

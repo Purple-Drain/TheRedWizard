@@ -4,7 +4,7 @@ from urllib.parse import unquote
 from caches.main_cache import main_cache
 from indexers.people import person_search
 from indexers.easynews import search_easynews_image
-from modules.kodi_utils import close_all_dialog, external, build_url, kodi_dialog, execute_builtin, select_dialog, notification, kodi_refresh, folder_path, sanitize_folder_url, container_update
+from modules.kodi_utils import close_all_dialog, external, build_url, kodi_dialog, execute_builtin, select_dialog, confirm_dialog, notification, kodi_refresh, folder_path, sanitize_folder_url, container_update
 # from modules.kodi_utils import logger
 
 def _refresh_search_history_if_visible():
@@ -26,7 +26,7 @@ def get_key_id(params):
 	if search_type == 'media_title':
 		if media_type == 'movie': url_params, string = {'mode': 'build_movie_list', 'action': 'tmdb_movies_search'}, 'movie_queries'
 		elif media_type == 'tv_show': url_params, string = {'mode': 'build_tvshow_list', 'action': 'tmdb_tv_search', 'is_anime_list': 'false'}, 'tvshow_queries'
-		elif media_type == 'anime': url_params, string = {'mode': 'build_tvshow_list', 'action': 'tmdb_tv_search', 'is_anime_list': 'true'}, 'anime_queries'
+		elif media_type == 'anime': url_params, string = {'mode': 'build_tvshow_list', 'action': 'tmdb_anime_search', 'is_anime_list': 'true'}, 'anime_queries'
 		else: url_params, string = {'mode': 'build_tvshow_list', 'action': 'tmdb_tv_search'}, 'tvshow_anime_queries'#media_type=tvshow_anime
 	elif search_type == 'people': string = 'people_queries'
 	elif search_type == 'tmdb_keyword':
@@ -53,6 +53,12 @@ def get_key_id(params):
 		url_params, string = {'mode': 'punchplay.list.search_punchplay_lists'}, 'punchplay_list_queries'
 	elif search_type == 'punchplay_public_lists':
 		url_params, string = {'mode': 'punchplay.list.search_punchplay_public_lists'}, 'punchplay_public_list_queries'
+	elif search_type == 'wetrakr_movies':
+		url_params, string = {'mode': 'build_movie_list', 'action': 'wetrakr_search'}, 'wetrakr_movie_queries'
+	elif search_type == 'wetrakr_tv':
+		url_params, string = {'mode': 'build_tvshow_list', 'action': 'wetrakr_search'}, 'wetrakr_tv_queries'
+	elif search_type == 'wetrakr_lists':
+		url_params, string = {'mode': 'navigator.wetrakr_list_search'}, 'wetrakr_list_queries'
 	if string: history_changed = add_to_search(key_id, string)
 	else: history_changed = False
 	if search_type == 'people':
@@ -106,7 +112,10 @@ def clear_search():
 	('Clear MDBList Search History', 'mdblist_list_queries'),
 	('Clear Simkl List Search History', 'simkl_list_queries'),
 	('Clear PunchPlay List Search History', 'punchplay_list_queries'),
-	('Clear PunchPlay Lists Search History', 'punchplay_public_list_queries')]
+	('Clear PunchPlay Lists Search History', 'punchplay_public_list_queries'),
+	('Clear WeTrakr Movie Search History', 'wetrakr_movie_queries'),
+	('Clear WeTrakr TV Show Search History', 'wetrakr_tv_queries'),
+	('Clear WeTrakr Public Lists Search History', 'wetrakr_list_queries')]
 	try:
 		list_items = [{'line1': item[0]} for item in clear_history_list]
 		kwargs = {'items': json.dumps(list_items), 'narrow_window': 'true'}
@@ -121,6 +130,7 @@ def clear_all(setting_id, refresh='false'):
 	if refresh == 'true': kodi_refresh()
 
 def clear_easynews_search_history(refresh='false', silent=False):
+	if not silent and not confirm_dialog(): return
 	main_cache.set('easynews_video_queries', '', expiration=365)
 	main_cache.set('easynews_image_queries', '', expiration=365)
 	if not silent: notification('Success', 2500)

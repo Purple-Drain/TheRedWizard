@@ -18,6 +18,7 @@ def _settings_fingerprint(watched_indicators, is_external):
 		1 if is_external else 0,
 		settings.single_ep_display_format(is_external),
 		1 if settings.single_ep_unwatched_episodes() else 0,
+		1 if (not is_external and settings.single_episode_tvshow_view()) else 0,
 		1 if settings.single_ep_unwatched_in_title() else 0,
 		1 if (is_external and settings.single_ep_widget_omit_tvshowtitle()) else 0,
 		1 if (is_external and settings.single_ep_widget_omit_season_episode()) else 0,
@@ -26,8 +27,7 @@ def _settings_fingerprint(watched_indicators, is_external):
 		settings.playback_key(),
 		settings.lists_sort_order('progress'),
 		1 if settings.ignore_articles() else 0,
-		1 if settings.widget_hide_watched() else 0,
-		2,  # cache schema: episode still on landscape
+		4,  # cache schema: last_played on row packets
 	)
 	return '_'.join(str(p) for p in parts)
 
@@ -51,7 +51,7 @@ def _membership_key(data):
 def activity_token(watched_indicators, data=None):
 	"""Changes when progress membership / resume / watched activity changes."""
 	try:
-		from modules.watched_status import get_database
+		from modules.watched_status import get_database, progress_sql_test
 		dbcon = get_database(watched_indicators)
 		watched = dbcon.execute(
 			'SELECT COUNT(*), COALESCE(MAX(last_played), "") FROM watched WHERE db_type = ?', ('episode',)
@@ -60,7 +60,7 @@ def activity_token(watched_indicators, data=None):
 			'SELECT COUNT(*), COALESCE(MAX(last_played), ""), '
 			'COALESCE(SUM(CAST(resume_point AS FLOAT)), 0), '
 			'COALESCE(GROUP_CONCAT(media_id || ":" || season || "x" || episode || ":" || resume_point), "") '
-			'FROM progress WHERE db_type = ? AND CAST(resume_point AS FLOAT) > 1',
+			'FROM progress WHERE db_type = ? AND ' + progress_sql_test(watched_indicators),
 			('episode',)
 		).fetchone() or (0, '', 0, '')
 		token = '%s|%s|%s|%s|%s|%s|%s' % (

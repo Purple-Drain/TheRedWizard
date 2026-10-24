@@ -6,14 +6,49 @@ from modules import kodi_utils
 from modules.kodi_utils import external, get_property
 # from modules.kodi_utils import logger
 
+_PLAYBACK_MODES = frozenset((
+	'real_debrid.resolve_rd', 'alldebrid.resolve_ad', 'offcloud.resolve_oc', 'torbox.resolve_tb'))
+
+def _playback_mode(mode):
+	return 'playback.' in (mode or '') or mode in _PLAYBACK_MODES
+
 def sys_exit_check(mode='navigator.main'):
 	from caches.settings_cache import get_setting, is_directory_listing_mode
 	if get_setting('redlight.reuse_language_invoker', 'true') == 'false': return False
+	# One no-op call reuses the browse interpreter alone and ends it.
+	if mode == 'invoker_cooldown': return True
+	# Playback must not stay idle. Home reloads widgets as Stop returns, and an idle
+	# interpreter from this call is what those widgets can share.
+	if _playback_mode(mode): return True
 	# First open still has external() true before Container.PluginName updates; never discard a built list.
+	# Home widgets are listings, so they still return normally and can stay warm.
 	if is_directory_listing_mode(mode): return False
 	if mode == 'open_settings': return False
 	if not external(): return False
 	return True
+
+def note_invoker_state(exiting, inside):
+	"""Remember an idle interpreter only after browsing inside Red Light."""
+	try:
+		if exiting or not inside: kodi_utils.clear_invoker_idle()
+		else: kodi_utils.mark_invoker_idle()
+	except Exception as e:
+		kodi_utils.logger('routing', 'invoker state: %s' % e)
+
+def finish_invocation(mode='navigator.main'):
+	"""Collect before a playback call exits.
+
+	Kodi 21 does not collect on SystemExit, so a player left in a reference cycle
+	can receive a later Stop inside some other call.
+	"""
+	if not _playback_mode(mode): return
+	try:
+		from caches.settings_cache import get_setting
+		if get_setting('redlight.reuse_language_invoker', 'true') == 'false': return
+		import gc
+		gc.collect()
+	except Exception as e:
+		kodi_utils.logger('routing', 'finish gc: %s' % e)
 
 def prepare_directory_listing(mode):
 	from caches.settings_cache import is_directory_listing_mode
@@ -24,9 +59,33 @@ def prepare_directory_listing(mode):
 	except Exception as e:
 		kodi_utils.logger('routing', 'prepare listing: %s' % e)
 
+def _guard_service_ready(mode):
+	"""Wait briefly if the service hasn't finished bootstrapping settings.db yet.
+
+	On a fresh install (or immediately after a service restart during an addon
+	update), BootstrapSettings may still hold an open write transaction on
+	settings.db when the user first opens Red Light.  Any read from the same
+	DB in this invoker blocks until the write commits — with no timeout that
+	means Kodi hangs.  Polling the shared window property costs nothing on
+	normal boots (already 'true' → returns on the first check) and gives
+	BootstrapSettings up to 5 seconds to finish on first open.
+	Only applied to navigator and menu_editor calls; settings modes already
+	call ensure_settings_properties_loaded() via should_block_bootstrap_on_entry.
+	"""
+	if not (mode.startswith('navigator.') or mode.startswith('menu_editor.')): return
+	from caches.settings_cache import _properties_loaded
+	if _properties_loaded(): return
+	import xbmc
+	_mon = xbmc.Monitor()
+	for _ in range(20):  # up to 5 seconds in 250 ms steps
+		if _properties_loaded() or _mon.waitForAbort(0.25): return
+
 def routing(sys):
 	params = dict(parse_qsl(sys.argv[2][1:], keep_blank_values=True))
 	mode = params.get('mode', 'navigator.main')
+	kodi_utils.clear_invoker_idle()
+	if mode == 'invoker_cooldown': return
+	_guard_service_ready(mode)
 	try:
 		from caches.settings_cache import sync_kodi_profile_context
 		sync_kodi_profile_context()
@@ -125,9 +184,18 @@ def routing(sys):
 		elif mode == 'build_simkl_public_calendar':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.simkl_public', params)
+		elif mode == 'build_wetrakr_public_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.wetrakr_public', params)
+		elif mode == 'build_wetrakr_calendar':
+			from indexers.episodes import build_single_episode
+			return build_single_episode('episode.wetrakr_personal', params)
 		elif mode == 'build_mdbl_next_up':
 			from indexers.episodes import build_single_episode
 			return build_single_episode('episode.mdblist_next', params)
+		elif mode == 'build_continue_watching':
+			from indexers.continue_watching import build_continue_watching
+			return build_continue_watching(params)
 		elif mode == 'build_next_episode_manager':
 			from modules.episode_tools import build_next_episode_manager
 			return build_next_episode_manager()
@@ -140,21 +208,38 @@ def routing(sys):
 	elif 'watched_status.' in mode:
 		if mode == 'watched_status.mark_episode':
 			from modules.watched_status import mark_episode
+			_title = params.get('title') or 'Episode'
+			_text = 'Mark as Watched?' if params.get('action') == 'mark_as_watched' else 'Mark as Unwatched?'
+			if not kodi_utils.confirm_dialog(heading=_title, text=_text): return
 			return mark_episode(params)
 		elif mode == 'watched_status.mark_season':
 			from modules.watched_status import mark_season
+			_title = params.get('title') or 'Season'
+			_season = params.get('season', '')
+			_heading = ('%s — Season %s' % (_title, _season)) if _season else _title
+			_text = 'Mark season as Watched?' if params.get('action') == 'mark_as_watched' else 'Mark season as Unwatched?'
+			if not kodi_utils.confirm_dialog(heading=_heading, text=_text): return
 			return mark_season(params)
 		elif mode == 'watched_status.mark_tvshow':
 			from modules.watched_status import mark_tvshow
+			_title = params.get('title') or 'TV Show'
+			_text = 'Mark all episodes as Watched?' if params.get('action') == 'mark_as_watched' else 'Mark all episodes as Unwatched?'
+			if not kodi_utils.confirm_dialog(heading=_title, text=_text): return
 			return mark_tvshow(params)
 		elif mode == 'watched_status.mark_movie':
 			from modules.watched_status import mark_movie
+			_title = params.get('title') or 'Movie'
+			_text = 'Mark as Watched?' if params.get('action') == 'mark_as_watched' else 'Mark as Unwatched?'
+			if not kodi_utils.confirm_dialog(heading=_title, text=_text): return
 			return mark_movie(params)
 		elif mode == 'watched_status.erase_bookmark':
 			from modules.watched_status import erase_bookmark
+			if not kodi_utils.confirm_dialog(heading='Clear Progress', text='Clear progress?'): return
 			return erase_bookmark(params.get('media_type'), params.get('tmdb_id'), params.get('season', ''), params.get('episode', ''), params.get('refresh', 'false'))
 		elif mode == 'watched_status.unmark_previous_episode':
 			from modules.watched_status import unmark_previous_episode
+			_title = params.get('title') or 'Episode'
+			if not kodi_utils.confirm_dialog(heading=_title, text='Mark previous episode as Unwatched?'): return
 			return unmark_previous_episode(params)
 	elif 'search.' in mode:
 		if mode == 'search.get_key_id':
@@ -316,6 +401,8 @@ def routing(sys):
 			return base_cache.clear_cache(params.get('cache'))
 		elif mode == 'clear_all_cache':
 			return base_cache.clear_all_cache()
+		elif mode == 'clear_kodi_images_cache':
+			return base_cache.clear_kodi_images()
 		elif mode == 'clean_databases_cache':
 			return base_cache.clean_databases()
 		elif mode == 'check_databases_integrity_cache':

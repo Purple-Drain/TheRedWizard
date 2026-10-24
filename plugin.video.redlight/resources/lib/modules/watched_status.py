@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import Thread
 from apis.trakt_api import trakt_watched_status_mark, trakt_official_status, trakt_progress, trakt_get_hidden_items
 from apis.simkl_api import simkl_watched_status_mark, simkl_progress, simkl_official_status
 from apis.mdblist_api import mdblist_watched_status_mark, mdblist_progress, mdblist_official_status
 from apis.punchplay_api import punchplay_watched_status_mark, punchplay_progress, punchplay_official_status
+from apis.wetrakr_api import wetrakr_watched_status_mark, wetrakr_progress, wetrakr_official_status
 from caches.base_cache import connect_database, database
 from caches.trakt_cache import clear_trakt_collection_watchlist_data
 from modules.kodi_utils import kodi_progress_background, sleep, get_video_database_path, notification, kodi_refresh, logger, translate_path, get_property, set_property, clear_property
-from modules.utils import get_datetime, adjust_premiered_date, sort_for_article, TaskPool
+from modules.utils import get_datetime, adjust_premiered_date, sort_for_article, datetime_workaround, TaskPool
 from modules import metadata, settings
 # from modules.kodi_utils import logger
 
 def get_database(watched_indicators=None):
-	return connect_database({0: 'watched_db', 1: 'trakt_db', 2: 'simkl_db', 3: 'mdblist_db', 4: 'punchplay_db'}[watched_indicators if watched_indicators is not None else settings.watched_indicators()])
+	return connect_database({0: 'watched_db', 1: 'trakt_db', 2: 'simkl_db', 3: 'mdblist_db', 4: 'punchplay_db', 5: 'wetrakr_db'}[watched_indicators if watched_indicators is not None else settings.watched_indicators()])
 
 # def cache_watched_tvshow_status(function, status_type, watched_indicators=None):
 # 	watched_indicators = watched_indicators or settings.watched_indicators()
@@ -36,21 +37,31 @@ def get_database(watched_indicators=None):
 # 		return True
 # 	except: return False
 
+def _local_hidden_progress_ids():
+	try:
+		watched_db = get_database()
+		row = watched_db.execute('SELECT status FROM watched_status WHERE db_type = ?', ('hidden_progress_items',)).fetchone()
+		if not row: return []
+		return [int(i) for i in (eval(row[0]) or [])]
+	except: return []
+
 def get_hidden_progress_items(watched_indicators):
 	try:
 		if watched_indicators == 0:
-			watched_db = get_database()
-			watched_info = watched_db.execute('SELECT status FROM watched_status WHERE db_type = ?', ('hidden_progress_items',)).fetchone()[0]
-			return eval(watched_info) or []
+			return _local_hidden_progress_ids()
 		elif watched_indicators == 2:
 			from apis.simkl_api import simkl_get_dropped_items
-			return simkl_get_dropped_items()
+			dropped = [int(i) for i in (simkl_get_dropped_items() or [])]
+			return list(dict.fromkeys(dropped + _local_hidden_progress_ids()))
 		elif watched_indicators == 3:
 			from apis.mdblist_api import mdblist_get_dropped_items
 			return mdblist_get_dropped_items()
 		elif watched_indicators == 4:
 			from apis.punchplay_api import punchplay_get_dropped_items
 			return punchplay_get_dropped_items()
+		elif watched_indicators == 5:
+			from apis.wetrakr_api import wetrakr_get_dropped_items
+			return wetrakr_get_dropped_items()
 		else: return trakt_get_hidden_items('dropped')
 	except: return []
 
@@ -66,17 +77,21 @@ def update_hidden_progress(media_id):
 		from apis.mdblist_api import mdblist_hide_unhide_progress_items as function
 	elif watched_indicators == 4:
 		from apis.punchplay_api import punchplay_hide_unhide_progress_items as function
+	elif watched_indicators == 5:
+		from apis.wetrakr_api import wetrakr_hide_unhide_progress_items as function
 	else: from apis.trakt_api import hide_unhide_progress_items as function
 	function({'action': 'undrop', 'media_type': 'shows', 'media_id': media_id, 'section': 'dropped', 'refresh': 'false'})
 
 def hide_unhide_progress_items(params):
 	action, media_id, refresh = params['action'], int(params.get('media_id', '0')), params.get('refresh', 'true') == 'true'
-	current_items = get_hidden_progress_items(0) or []
-	if action == 'drop': current_items.append(media_id)
-	else: current_items.remove(media_id)
+	current_items = [int(i) for i in (_local_hidden_progress_ids() or [])]
+	if action == 'drop':
+		if media_id not in current_items: current_items.append(media_id)
+	else:
+		current_items = [i for i in current_items if i != media_id]
 	watched_db = get_database()
 	watched_info = watched_db.execute('INSERT OR REPLACE INTO watched_status VALUES (?, ?, ?)', ('hidden_progress_items', 'hidden', repr(current_items),))
-	if refresh: kodi_refresh()
+	refresh_container(refresh)
 
 def get_last_played_value(watched_indicators):
 	if watched_indicators == 0: return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -87,12 +102,26 @@ def make_batch_insert(action, media_type, media_id, season, episode, last_played
 	else: return (media_type, media_id, season, episode)
 
 def refresh_container(refresh=True):
-	if refresh: kodi_refresh()
+	# Context-menu mark/drop still has to update the list you are on.
+	# Container.Refresh does that. UpdateLibrary is only while Home is showing
+	# (widgets visible); from inside Red Light it waits until you leave so it
+	# does not rebuild every Home widget under the list you just marked.
+	if not refresh: return
+	from modules.kodi_utils import container_refresh, home, mark_playback_widget_refresh, schedule_widget_refresh
+	mark_playback_widget_refresh()
+	container_refresh()
+	if home():
+		kodi_refresh()
+	else:
+		schedule_widget_refresh(silent=True, defer_browsing=True)
 
 def _schedule_playback_widget_refresh(from_playback):
+	# Post-Stop UpdateLibrary removed: Kodi already rebuilds Home widgets on Stop.
+	# Keep the timestamp so Next Episodes skips a blocking provider sync and
+	# Trakt/Simkl/MDBList/PunchPlay monitors do not fire a second refresh.
 	if from_playback:
-		from modules.kodi_utils import schedule_playback_widget_refresh
-		schedule_playback_widget_refresh()
+		from modules.kodi_utils import mark_playback_widget_refresh
+		mark_playback_widget_refresh()
 
 def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None):
 	"""Count episodes that have aired using the same premiered rules as episode lists.
@@ -128,15 +157,41 @@ def count_aired_episodes(meta, season=None, current_date=None, adjust_hours=None
 				count += 1
 	return count
 
+def _still_airing_aired_eps(meta):
+	"""Finished seasons from TMDb episode_count; date-walk only the airing season.
+
+	Uses last_episode_to_air.season_number as current so a stub next season is not
+	treated as current. Same-day / timezone rules still apply to that season.
+	Missing last_episode_to_air falls back to a full date-walk so we do not guess.
+	"""
+	extra_info = meta.get('extra_info') or {}
+	last_ep = extra_info.get('last_episode_to_air')
+	if not isinstance(last_ep, dict): return count_aired_episodes(meta)
+	try: current = int(last_ep.get('season_number'))
+	except Exception: return count_aired_episodes(meta)
+	if current < 1: return count_aired_episodes(meta)
+	exclude_specials = settings.exclude_specials_from_progress()
+	season_data = meta.get('season_data') or []
+	prior = 0
+	for item in season_data:
+		try: snum = int(item.get('season_number', 0))
+		except Exception: continue
+		if snum <= 0 or snum >= current: continue
+		prior += item.get('episode_count', 0) or 0
+	aired = prior + count_aired_episodes(meta, season=current)
+	if not exclude_specials: aired += count_aired_episodes(meta, season=0)
+	return aired
+
 def progress_aired_eps(meta):
 	"""Aired episode total used for show-level In Progress / Watched / progress %."""
 	total = meta.get('total_aired_eps') or 0
 	status = meta.get('status', '')
-	# Still-airing: recount with premiered-date rules so totals match unaired colouring
-	# (TMDb last_episode_to_air often lags same-day releases).
+	# Still-airing: date-walk the current season only. Earlier seasons use TMDb
+	# episode_count; later stub seasons are ignored. Full recount if last aired
+	# is missing (TMDb last_episode_to_air often lags same-day releases).
 	if status not in ('Ended', 'Canceled'):
 		try:
-			return count_aired_episodes(meta)
+			return _still_airing_aired_eps(meta)
 		except Exception:
 			return total
 	if not settings.exclude_specials_from_progress(): return total
@@ -211,17 +266,32 @@ def get_bookmarks_movie(watched_db=None):
 	except: info = {}
 	return info
 
-def meaningful_progress_percent(resume_point):
-	"""Return rounded percent string only when progress is >1% (In Progress shelf threshold).
+def progress_sql_test(watched_indicators=None):
+	"""In Progress membership. WeTrakr's playing list includes a pause under 1%."""
+	if watched_indicators is None: watched_indicators = settings.watched_indicators()
+	if watched_indicators == 5: return 'CAST(resume_point AS FLOAT) >= 0'
+	return 'CAST(resume_point AS FLOAT) > 1'
 
-	Providers can leave a 0%/≤1% playback row after reset; string '0' is truthy in Python
-	and would still show Red Light's Resume / Start over prompt.
+def progress_row_counts(resume_point, watched_indicators=None):
+	try: percent = float(resume_point)
+	except Exception: return False
+	if watched_indicators is None: watched_indicators = settings.watched_indicators()
+	if watched_indicators == 5: return percent >= 0
+	return percent > 1
+
+def meaningful_progress_percent(resume_point):
+	"""Return a percent string when the row belongs on In Progress.
+
+	Other providers can leave a 0% playback row after reset. String '0' is truthy in
+	Python and would still show Resume / Start over, so those stay above 1%.
+	WeTrakr keeps that row as paused, so it counts.
 	"""
+	if not progress_row_counts(resume_point): return None
 	try:
 		percent = float(resume_point)
 		if percent > 1: return str(round(percent))
-	except: pass
-	return None
+		return str(round(percent, 1))
+	except Exception: return None
 
 def get_progress_status_movie(progress_info, media_id):
 	try: return meaningful_progress_percent(progress_info[media_id]['resume_point'])
@@ -345,13 +415,44 @@ def apply_listitem_progress(info_tag, set_properties, progress, duration, is_ext
 	if not meaningful_progress_percent(progress): return
 	set_properties({'WatchedProgress': progress})
 
-def clear_local_bookmarks():
+def local_last_played(last_played):
+	"""A row's last_played as a local datetime, or None when there is no real play.
+
+	Local Red Light stores local 'YYYY-MM-DD HH:MM:SS';
+	Trakt/Simkl/MDBList/PunchPlay/WeTrakr store ISO UTC (...T...Z), shifted to local here.
+	The Next Episodes sort placeholder (2000-01-01) is not a real play.
+	"""
+	if not last_played or str(last_played).startswith('2000-01-01'): return None
+	try:
+		value = str(last_played)
+		played = datetime_workaround(value, '%Y-%m-%d %H:%M:%S')
+		if 'T' in value: played = played.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+		return played
+	except: return None
+
+def apply_listitem_last_played(info_tag, last_played):
+	"""Expose a row's last_played to skins as ListItem.LastPlayed, in Kodi's local 'YYYY-MM-DD HH:MM:SS'."""
+	played = local_last_played(last_played)
+	if not played: return
+	try: info_tag.setLastPlayed(played.strftime('%Y-%m-%d %H:%M:%S'))
+	except: pass
+
+_BOOKMARK_CLEAR_STATE = 'redlight.bookmarks_clear_state'
+
+def clear_local_bookmarks(force=False):
 	"""Remove Kodi MyVideos bookmarks for Red Light plugin paths.
 
 	Kodi stores resume by filename for plugin:// URLs (via setResolvedUrl) and can
 	show Resume / Start over on the home widget before scrape. Clear every non-empty
 	MyVideos*.db — the version map alone can miss the live DB (e.g. empty 124 vs 131).
+
+	force=True is playback stop. That leaves one follow-up clear for the next list
+	open, because Kodi can write the bookmark after Stop. Later opens leave MyVideos
+	alone so a home refresh does not keep locking the video database.
 	"""
+	try: state = get_property(_BOOKMARK_CLEAR_STATE)
+	except: state = ''
+	if not force and state == 'clean': return
 	import os
 	db_dir = translate_path('special://profile/Database')
 	paths = set()
@@ -369,6 +470,7 @@ def clear_local_bookmarks():
 					pass
 	except Exception:
 		pass
+	failed = False
 	for path in paths:
 		try:
 			dbcon = database.connect(path)
@@ -386,7 +488,11 @@ def clear_local_bookmarks():
 				except Exception: pass
 			dbcon.close()
 		except Exception:
-			pass
+			failed = True
+	try:
+		if force: set_property(_BOOKMARK_CLEAR_STATE, 'dirty')
+		elif not failed: set_property(_BOOKMARK_CLEAR_STATE, 'clean')
+	except: pass
 
 def clear_listitem_kodi_resume(info_tag):
 	"""Force directory rows non-resumable for Kodi's native prompt."""
@@ -400,40 +506,54 @@ def _write_local_progress(watched_indicators, media_type, tmdb_id, season, episo
 	dbcon.execute('INSERT OR REPLACE INTO progress VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 				(media_type, str(tmdb_id), season, episode, str(resume_point), str(curr_time), last_played, 0, title))
 
-def erase_bookmark(media_type, media_id, season='', episode='', refresh='false', watched_indicators=None):
+def progress_resume_id(media_type, media_id, season='', episode='', watched_indicators=None):
 	try:
 		if watched_indicators is None: watched_indicators = settings.watched_indicators()
 		watched_db = get_database(watched_indicators)
-		if watched_indicators == 1:
+		if media_type == 'episode':
+			return get_bookmarks_episode(str(media_id), season, watched_db)[int(episode)]['resume_id']
+		return get_bookmarks_movie(watched_db)[str(media_id)]['resume_id']
+	except:
+		return None
+
+def erase_bookmark(media_type, media_id, season='', episode='', refresh='false', watched_indicators=None, remote=True):
+	try:
+		if watched_indicators is None: watched_indicators = settings.watched_indicators()
+		watched_db = get_database(watched_indicators)
+		if remote and watched_indicators == 1:
 			try:
 				if media_type == 'episode': resume_id = get_bookmarks_episode(str(media_id), season, watched_db)[int(episode)]['resume_id']
 				else: resume_id = get_bookmarks_movie(watched_db)[str(media_id)]['resume_id']
 				sleep(1000)
 				trakt_progress('clear_progress', media_type, media_id, 0, season, episode, resume_id)
 			except: pass
-		elif watched_indicators == 2:
+		elif remote and watched_indicators == 2:
 			try:
 				if media_type == 'episode': resume_id = get_bookmarks_episode(str(media_id), season, watched_db)[int(episode)]['resume_id']
 				else: resume_id = get_bookmarks_movie(watched_db)[str(media_id)]['resume_id']
 				sleep(1000)
 				simkl_progress('clear_progress', media_type, media_id, 0, season, episode, resume_id)
 			except: pass
-		elif watched_indicators == 3:
+		elif remote and watched_indicators == 3:
 			try:
 				if media_type == 'episode': resume_id = get_bookmarks_episode(str(media_id), season, watched_db)[int(episode)]['resume_id']
 				else: resume_id = get_bookmarks_movie(watched_db)[str(media_id)]['resume_id']
 				sleep(1000)
 				mdblist_progress('clear_progress', media_type, media_id, 0, season, episode, resume_id)
 			except: pass
-		elif watched_indicators == 4:
+		elif remote and watched_indicators == 4:
 			try:
 				if media_type == 'episode': resume_id = get_bookmarks_episode(str(media_id), season, watched_db)[int(episode)]['resume_id']
 				else: resume_id = get_bookmarks_movie(watched_db)[str(media_id)]['resume_id']
 				sleep(1000)
 				punchplay_progress('clear_progress', media_type, media_id, 0, season, episode, resume_id)
 			except: pass
+		elif remote and watched_indicators == 5:
+			try:
+				wetrakr_progress('clear_progress', media_type, media_id, 0, season, episode)
+			except: pass
 		watched_db.execute('DELETE FROM progress where db_type = ? and media_id = ? and season = ? and episode = ?', (media_type, media_id, season, episode))
-		refresh_container(refresh == 'true')
+		if remote: refresh_container(refresh == 'true')
 	except: pass
 
 def batch_erase_bookmark(watched_indicators, insert_list, action):
@@ -441,11 +561,12 @@ def batch_erase_bookmark(watched_indicators, insert_list, action):
 		watched_db = get_database(watched_indicators)
 		if action == 'mark_as_watched': modified_list = [(i[0], i[1], i[2], i[3]) for i in insert_list]
 		else: modified_list = insert_list
-		if watched_indicators in (1, 2, 3, 4):
+		if watched_indicators in (1, 2, 3, 4, 5):
 			if watched_indicators == 1: progress_fn = trakt_progress
 			elif watched_indicators == 2: progress_fn = simkl_progress
 			elif watched_indicators == 3: progress_fn = mdblist_progress
-			else: progress_fn = punchplay_progress
+			elif watched_indicators == 4: progress_fn = punchplay_progress
+			else: progress_fn = wetrakr_progress
 			def _process():
 				for i in insert_list:
 					try:
@@ -466,6 +587,7 @@ def set_bookmark(params, remote=True):
 		title, season, episode = params.get('title'), params.get('season'), params.get('episode')
 		adjusted_current_time = float(curr_time) - 5
 		resume_point = round(adjusted_current_time/float(total_time)*100,1)
+		if resume_point < 0: resume_point = 0
 		watched_indicators = settings.watched_indicators()
 		_write_local_progress(watched_indicators, media_type, tmdb_id, season, episode, resume_point, curr_time, title)
 		if not remote:
@@ -478,6 +600,8 @@ def set_bookmark(params, remote=True):
 			mdblist_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_mdblist=False)
 		elif watched_indicators == 4 and punchplay_official_status(media_type):
 			punchplay_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_punchplay=False)
+		elif watched_indicators == 5 and wetrakr_official_status(media_type):
+			wetrakr_progress('set_progress', media_type, tmdb_id, resume_point, season, episode, refresh_wetrakr=False)
 		if params.get('from_playback', 'false') == 'true': _schedule_playback_widget_refresh(True)
 		else: refresh_container(refresh)
 	except: pass
@@ -487,26 +611,35 @@ def mark_movie(params):
 	refresh, from_playback = params.get('refresh', 'true') == 'true', params.get('from_playback', 'false') == 'true'
 	if from_playback: refresh = False
 	tmdb_id, title = params.get('tmdb_id'), params.get('title')
+	if from_playback:
+		from modules.playback_remotes import apply_local_watched, enqueue_playback_job
+		params = dict(params)
+		params['media_type'] = media_type
+		resume_id = apply_local_watched(params)
+		enqueue_playback_job({
+			'op': 'watched', 'action': action, 'media_type': media_type,
+			'tmdb_id': tmdb_id, 'title': title, 'year': params.get('year'),
+			'scrobble_stop': True, 'percent': 100, 'resume_id': resume_id
+		})
+		return
 	watched_indicators = settings.watched_indicators()
 	if watched_indicators == 1:
-		if from_playback and trakt_official_status(media_type) == False: sleep(1000)
-		elif not trakt_watched_status_mark(action, 'movies', tmdb_id) and not from_playback: return notification('Error')
+		if not trakt_watched_status_mark(action, 'movies', tmdb_id): return notification('Error')
 		clear_trakt_collection_watchlist_data('watchlist', media_type)
 	elif watched_indicators == 2:
-		if from_playback and simkl_official_status(media_type) == False: sleep(1000)
-		elif not simkl_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
+		if not simkl_watched_status_mark(action, 'movie', tmdb_id): return notification('Error')
 	elif watched_indicators == 3:
-		if from_playback and mdblist_official_status(media_type) == False: sleep(1000)
-		elif not mdblist_watched_status_mark(action, 'movie', tmdb_id) and not from_playback: return notification('Error')
+		if not mdblist_watched_status_mark(action, 'movie', tmdb_id): return notification('Error')
 	elif watched_indicators == 4:
-		if from_playback and punchplay_official_status(media_type) == False: sleep(1000)
-		elif not punchplay_watched_status_mark(action, 'movie', tmdb_id, title=title, year=params.get('year')) and not from_playback:
+		if not punchplay_watched_status_mark(action, 'movie', tmdb_id, title=title, year=params.get('year')):
+			return notification('Error')
+	elif watched_indicators == 5:
+		if not wetrakr_watched_status_mark(action, 'movie', tmdb_id, title=title, year=params.get('year')):
 			return notification('Error')
 	_arm_provider_list_sync_skip(watched_indicators)
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, title=title)
-	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
-	if not from_playback: notification('Success')
+	notification('Success')
 
 def mark_tvshow(params):
 	title, action, tmdb_id = params.get('title', ''), params.get('action'), params.get('tmdb_id')
@@ -521,9 +654,14 @@ def mark_tvshow(params):
 	elif watched_indicators == 2:
 		if not simkl_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id): return notification('Error')
 	elif watched_indicators == 3:
-		if not mdblist_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id): return notification('Error')
+		if not mdblist_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id):
+			progress_backround.close()
+			return notification('Error')
 	elif watched_indicators == 4:
 		if not punchplay_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id, title=title, year=params.get('year')):
+			return notification('Error')
+	elif watched_indicators == 5:
+		if not wetrakr_watched_status_mark(action, 'tvshow', tmdb_id, tvdb_id, title=title, year=params.get('year')):
 			return notification('Error')
 	current_date = get_datetime()
 	insert_list = []
@@ -570,6 +708,9 @@ def mark_season(params):
 	elif watched_indicators == 4:
 		if not punchplay_watched_status_mark(action, 'season', tmdb_id, tvdb_id, season, title=title, year=params.get('year')):
 			return notification('Error')
+	elif watched_indicators == 5:
+		if not wetrakr_watched_status_mark(action, 'season', tmdb_id, tvdb_id, season, title=title, year=params.get('year')):
+			return notification('Error')
 	progress_backround = kodi_progress_background()
 	progress_backround.create('[B]Please Wait..[/B]', '')
 	current_date = get_datetime()
@@ -599,30 +740,42 @@ def mark_episode(params):
 	tmdb_id = params.get('tmdb_id')
 	try: tvdb_id = int(params.get('tvdb_id', '0'))
 	except: tvdb_id = 0
+	if from_playback:
+		from modules.playback_remotes import apply_local_watched, enqueue_playback_job
+		params = dict(params)
+		params['media_type'] = media_type
+		resume_id = apply_local_watched(params)
+		enqueue_playback_job({
+			'op': 'watched', 'action': action, 'media_type': media_type,
+			'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'title': title, 'year': params.get('year'),
+			'season': season, 'episode': episode, 'scrobble_stop': True, 'percent': 100,
+			'resume_id': resume_id
+		})
+		return
 	watched_indicators = settings.watched_indicators()
 	if watched_indicators == 1:
-		if from_playback and trakt_official_status(media_type) == False: sleep(1000)
-		elif not trakt_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback:
+		if not trakt_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode):
 			return notification('Error')
 		clear_trakt_collection_watchlist_data('watchlist', 'tvshow')
 	elif watched_indicators == 2:
-		if from_playback and simkl_official_status(media_type) == False: sleep(1000)
-		elif not simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
+		if not simkl_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode): return notification('Error')
 	elif watched_indicators == 3:
-		if from_playback and mdblist_official_status(media_type) == False: sleep(1000)
-		elif not mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode) and not from_playback: return notification('Error')
+		if not mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id, season, episode): return notification('Error')
 	elif watched_indicators == 4:
-		if from_playback and punchplay_official_status(media_type) == False: sleep(1000)
-		elif not punchplay_watched_status_mark(
+		if not punchplay_watched_status_mark(
 				action, media_type, tmdb_id, tvdb_id, season, episode, title=title, year=params.get('year')
-				) and not from_playback:
+				):
+			return notification('Error')
+	elif watched_indicators == 5:
+		if not wetrakr_watched_status_mark(
+				action, media_type, tmdb_id, tvdb_id, season, episode, title=title, year=params.get('year')
+				):
 			return notification('Error')
 	_arm_provider_list_sync_skip(watched_indicators)
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, season, episode, title)
 	update_hidden_progress(tmdb_id)
-	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
-	if not from_playback: notification('Success')
+	notification('Success')
 
 def unmark_previous_episode(params):
 	try:
@@ -641,7 +794,7 @@ def _invalidate_nextep_list_cache():
 	# reuse of clean show rows from the stale payload.
 	return
 
-def watched_status_mark(watched_indicators, media_type='', media_id='', action='', season='', episode='', title=''):
+def watched_status_mark(watched_indicators, media_type='', media_id='', action='', season='', episode='', title='', remote=True):
 	try:
 		last_played = get_last_played_value(watched_indicators)
 		dbcon = get_database(watched_indicators)
@@ -649,7 +802,7 @@ def watched_status_mark(watched_indicators, media_type='', media_id='', action='
 			dbcon.execute('INSERT OR REPLACE INTO watched VALUES (?, ?, ?, ?, ?, ?)', (media_type, media_id, season, episode, last_played, title))
 		elif action == 'mark_as_unwatched':
 			dbcon.execute('DELETE FROM watched WHERE (db_type = ? and media_id = ? and season = ? and episode = ?)', (media_type, media_id, season, episode))
-		erase_bookmark(media_type, media_id, season, episode)
+		erase_bookmark(media_type, media_id, season, episode, watched_indicators=watched_indicators, remote=remote)
 		if media_type == 'episode': _invalidate_nextep_list_cache()
 		# if media_type == 'episode': clear_cache_watched_tvshow_status()
 	except: notification('Error')
@@ -669,8 +822,16 @@ def batch_watched_status_mark(watched_indicators, insert_list, action):
 def get_next_episodes(nextep_content, watched_indicators=None):
 	watched_db = get_database(watched_indicators)
 	if nextep_content == 0:
-		sql = '''WITH cte AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY season DESC, episode DESC) rn FROM watched WHERE db_type = ?)
-				SELECT media_id, season, episode, title, last_played FROM cte WHERE rn = 1'''
+		# Pick the highest season/episode per show (for next-up logic) but use the
+		# most-recently-played timestamp across ALL episodes of that show as the sort key,
+		# so a rewatch of an early episode still bubbles the show to the top of the list.
+		sql = '''WITH cte AS (
+					SELECT media_id, season, episode, title, last_played,
+						ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY season DESC, episode DESC) rn,
+						MAX(last_played) OVER (PARTITION BY media_id) max_last_played
+					FROM watched WHERE db_type = ?
+				)
+				SELECT media_id, season, episode, title, max_last_played FROM cte WHERE rn = 1'''
 	else:
 		sql = '''WITH cte AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY media_id ORDER BY last_played DESC) rn FROM watched WHERE db_type = ?)
 				SELECT media_id, season, episode, title, last_played FROM cte WHERE rn = 1'''
@@ -755,13 +916,14 @@ def get_next(season, episode, watched_info, season_data, nextep_content, meta=No
 
 def _movie_progress_list(dbcon):
 	data = dbcon.execute('SELECT media_id, title, last_played, resume_point FROM progress WHERE db_type = ?', ('movie',)).fetchall()
-	return [{'media_id': i[0], 'title': i[1], 'last_played': i[2]} for i in data if i[0] and float(i[3] or 0) > 1]
+	return [{'media_id': i[0], 'title': i[1], 'last_played': i[2]} for i in data if i[0] and progress_row_counts(i[3])]
 
 _LIST_SYNC_SKIP_PROPS = {
 	1: 'redlight.trakt_skip_list_sync',
 	2: 'redlight.simkl_skip_list_sync',
 	3: 'redlight.mdblist_skip_list_sync',
 	4: 'redlight.punchplay_skip_list_sync',
+	5: 'redlight.wetrakr_skip_list_sync',
 }
 
 def _arm_provider_list_sync_skip(watched_indicators):
@@ -797,9 +959,11 @@ def _refresh_simkl_tvshow_watched():
 	# Activity-gated (same as SimklMonitor / TV show lists) — skip full watched pull when unchanged.
 	try:
 		if settings.watched_indicators() != 2 or not settings.simkl_user_active(): return
-		if _consume_provider_list_sync_skip(2): return
-		from apis.simkl_api import simkl_sync_activities
-		simkl_sync_activities()
+		if not _consume_provider_list_sync_skip(2):
+			from apis.simkl_api import simkl_sync_activities
+			simkl_sync_activities()
+		from caches.simkl_cache import simkl_watched_cache
+		simkl_watched_cache.prune_mirrored_specials()
 	except: pass
 
 def _refresh_simkl_progress():
@@ -813,6 +977,8 @@ def _refresh_simkl_progress():
 
 def _purge_negligible_progress(dbcon):
 	# Drop leftover ≤1% rows so local DB matches In Progress / resume thresholds.
+	# WeTrakr's playing list is that row, so leave it.
+	if settings.watched_indicators() == 5: return
 	try: dbcon.execute('DELETE FROM progress WHERE CAST(resume_point AS FLOAT) <= 1')
 	except: pass
 
@@ -869,6 +1035,24 @@ def _refresh_punchplay_progress():
 		punchplay_sync_activities()
 	except: pass
 
+def _refresh_wetrakr_watched():
+	try:
+		if settings.watched_indicators() != 5 or not settings.wetrakr_user_active(): return
+		if _consume_provider_list_sync_skip(5): return
+		from apis.wetrakr_api import wetrakr_sync_activities
+		wetrakr_sync_activities()
+	except: pass
+
+def _refresh_wetrakr_tvshow_watched():
+	_refresh_wetrakr_watched()
+
+def _refresh_wetrakr_progress():
+	try:
+		if settings.watched_indicators() != 5 or not settings.wetrakr_user_active(): return
+		from apis.wetrakr_api import wetrakr_sync_activities
+		wetrakr_sync_activities()
+	except: pass
+
 def _refresh_trakt_episode_progress():
 	try:
 		if settings.watched_indicators() != 1 or not settings.trakt_user_active(): return
@@ -892,12 +1076,68 @@ def _refresh_trakt_tvshow_watched():
 
 def _episode_progress_list(dbcon):
 	data = dbcon.execute('SELECT media_id, season, episode, resume_point, last_played, title FROM progress WHERE db_type = ?', ('episode',)).fetchall()
-	return [{'media_ids': {'tmdb': i[0]}, 'season': int(i[1]), 'episode': int(i[2]), 'resume_point': float(i[3]), 'date': i[4], 'title': i[5]}
-		for i in data if i[0] and float(i[3] or 0) > 1]
+	return [{'media_ids': {'tmdb': i[0]}, 'season': int(i[1]), 'episode': int(i[2]), 'resume_point': float(i[3]), 'last_played': i[4], 'title': i[5]}
+		for i in data if i[0] and progress_row_counts(i[3])]
 
 def _sort_progress_list(data):
 	if settings.lists_sort_order('progress') == 0: return sort_for_article(data, 'title', settings.ignore_articles())
 	return sorted(data, key=lambda x: x['last_played'], reverse=True)
+
+def _in_progress_use_local():
+	"""Home widgets paint from the local DB. Opening the list inside Red Light still syncs.
+
+	The same local paint covers the short window after Stop, including a stop under the
+	resume floor, which does not itself arm that window. Kodi still rebuilds Home on Stop.
+	"""
+	try:
+		from modules.kodi_utils import external, home, playback_list_sync_skip_recent
+		if playback_list_sync_skip_recent(): return True
+		if home() or external(): return True
+	except: pass
+	return False
+
+_TV_PROGRESS_CACHE_ID = 'in_progress_tvshows_v2'
+
+def _in_progress_tv_token():
+	try:
+		indicators = settings.watched_indicators()
+		dbcon = get_database(indicators)
+		# Watched TV rows are db_type=episode (same as Next Episodes). db_type=tvshow
+		# never matches, so marking the last episode watched did not invalidate this list.
+		watched = dbcon.execute(
+			'SELECT COUNT(*), COALESCE(MAX(last_played), "") FROM watched WHERE db_type = ?',
+			('episode',)).fetchone() or (0, '')
+		progress = dbcon.execute(
+			'SELECT COUNT(*), COALESCE(MAX(last_played), ""), COALESCE(SUM(CAST(resume_point AS FLOAT)), 0) '
+			'FROM progress WHERE db_type = ? AND %s' % progress_sql_test(indicators),
+			('episode',)).fetchone() or (0, '', 0)
+		hidden = get_hidden_progress_items(indicators) or []
+		try: hidden_key = ','.join(str(i) for i in sorted(int(x) for x in hidden))
+		except: hidden_key = str(len(hidden))
+		day = get_datetime().strftime('%Y-%m-%d')
+		return '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' % (
+			indicators, watched[0], watched[1], progress[0], progress[1], progress[2],
+			hidden_key, settings.tv_progress_location(),
+			settings.lists_sort_order('progress'), 1 if settings.ignore_articles() else 0, day)
+	except:
+		return None
+
+def _in_progress_tv_cached(token):
+	if not token: return None
+	try:
+		from caches.main_cache import main_cache
+		payload = main_cache.get(_TV_PROGRESS_CACHE_ID)
+		if isinstance(payload, dict) and payload.get('token') == token and isinstance(payload.get('items'), list):
+			return payload['items']
+	except: pass
+	return None
+
+def _in_progress_tv_store(token, items):
+	if not token: return
+	try:
+		from caches.main_cache import main_cache
+		main_cache.set(_TV_PROGRESS_CACHE_ID, {'token': token, 'items': items}, expiration=6)
+	except: pass
 
 def get_in_progress_movies(dummy_arg, page_no):
 	clear_local_bookmarks()
@@ -905,6 +1145,11 @@ def get_in_progress_movies(dummy_arg, page_no):
 	dbcon = get_database(watched_indicators)
 	data = _movie_progress_list(dbcon)
 	source = 'local'
+	if _in_progress_use_local():
+		_purge_negligible_progress(dbcon)
+		data = _movie_progress_list(dbcon)
+		logger('Red Light', 'get_in_progress_movies: %s item(s) from local (no provider sync)' % len(data))
+		return _sort_progress_list(data)
 	if watched_indicators == 1 and settings.trakt_user_active():
 		_refresh_trakt_movie_progress()
 		data = _movie_progress_list(dbcon)
@@ -922,6 +1167,10 @@ def get_in_progress_movies(dummy_arg, page_no):
 		_refresh_punchplay_progress()
 		data = _movie_progress_list(dbcon)
 		if data: source = 'punchplay'
+	elif watched_indicators == 5 and settings.wetrakr_user_active():
+		_refresh_wetrakr_progress()
+		data = _movie_progress_list(dbcon)
+		if data: source = 'wetrakr'
 	else:
 		_purge_negligible_progress(dbcon)
 		data = _movie_progress_list(dbcon)
@@ -931,22 +1180,32 @@ def get_in_progress_movies(dummy_arg, page_no):
 def get_in_progress_tvshows(dummy_arg, page_no):
 	clear_local_bookmarks()
 	source = 'local'
-	if settings.watched_indicators() == 1 and settings.trakt_user_active():
-		_refresh_trakt_tvshow_watched()
-		source = 'trakt'
-	elif settings.watched_indicators() == 2 and settings.simkl_user_active():
-		_refresh_simkl_tvshow_watched()
-		source = 'simkl'
-	elif settings.watched_indicators() == 3 and settings.mdblist_user_active():
-		_refresh_mdblist_tvshow_watched()
-		source = 'mdblist'
-	elif settings.watched_indicators() == 4 and settings.punchplay_user_active():
-		_refresh_punchplay_tvshow_watched()
-		source = 'punchplay'
+	if not _in_progress_use_local():
+		if settings.watched_indicators() == 1 and settings.trakt_user_active():
+			_refresh_trakt_tvshow_watched()
+			source = 'trakt'
+		elif settings.watched_indicators() == 2 and settings.simkl_user_active():
+			_refresh_simkl_tvshow_watched()
+			source = 'simkl'
+		elif settings.watched_indicators() == 3 and settings.mdblist_user_active():
+			_refresh_mdblist_tvshow_watched()
+			source = 'mdblist'
+		elif settings.watched_indicators() == 4 and settings.punchplay_user_active():
+			_refresh_punchplay_tvshow_watched()
+			source = 'punchplay'
+		elif settings.watched_indicators() == 5 and settings.wetrakr_user_active():
+			_refresh_wetrakr_tvshow_watched()
+			source = 'wetrakr'
+	token = _in_progress_tv_token()
+	cached = _in_progress_tv_cached(token)
+	if cached is not None:
+		logger('Red Light', 'get_in_progress_tvshows: %s item(s) from cache' % len(cached))
+		return cached
 	results = active_tvshows_information('progress')
-	logger('Red Light', 'get_in_progress_tvshows: %s item(s) from %s' % (len(results), source))
 	if settings.lists_sort_order('progress') == 0: results = sort_for_article(results, 'title', settings.ignore_articles())
 	else: results = sorted(results, key=lambda x: x['last_played'], reverse=True)
+	_in_progress_tv_store(token, results)
+	logger('Red Light', 'get_in_progress_tvshows: %s item(s) from %s' % (len(results), source))
 	return results
 
 def get_in_progress_tvshow_ids(watched_db=None):
@@ -954,7 +1213,7 @@ def get_in_progress_tvshow_ids(watched_db=None):
 	if not watched_db: watched_db = get_database()
 	try:
 		rows = watched_db.execute(
-			'SELECT DISTINCT media_id FROM progress WHERE db_type = ? AND CAST(resume_point AS FLOAT) > 1',
+			'SELECT DISTINCT media_id FROM progress WHERE db_type = ? AND %s' % progress_sql_test(),
 			('episode',)).fetchall()
 		return set(str(i[0]) for i in rows if i[0] not in (None, ''))
 	except:
@@ -966,11 +1225,7 @@ def get_in_progress_episodes():
 	dbcon = get_database(watched_indicators)
 	episode_list = _episode_progress_list(dbcon)
 	source = 'local'
-	_skip_sync = False
-	try:
-		from modules.kodi_utils import playback_list_sync_skip_recent
-		_skip_sync = playback_list_sync_skip_recent()
-	except: pass
+	_skip_sync = _in_progress_use_local()
 	if _skip_sync:
 		_purge_negligible_progress(dbcon)
 		episode_list = _episode_progress_list(dbcon)
@@ -992,13 +1247,17 @@ def get_in_progress_episodes():
 		_refresh_punchplay_progress()
 		episode_list = _episode_progress_list(dbcon)
 		if episode_list: source = 'punchplay'
+	elif watched_indicators == 5 and settings.wetrakr_user_active():
+		_refresh_wetrakr_progress()
+		episode_list = _episode_progress_list(dbcon)
+		if episode_list: source = 'wetrakr'
 	else:
 		_purge_negligible_progress(dbcon)
 		episode_list = _episode_progress_list(dbcon)
 	if not _skip_sync:
 		logger('Red Light', 'get_in_progress_episodes: %s item(s) from %s' % (len(episode_list), source))
 	if settings.lists_sort_order('progress') == 0: episode_list = sort_for_article(episode_list, 'title', settings.ignore_articles())
-	else: episode_list.sort(key=lambda k: k['date'], reverse=True)
+	else: episode_list.sort(key=lambda k: k['last_played'], reverse=True)
 	return episode_list
 
 def get_watched_items(media_type, page_no):
@@ -1006,6 +1265,8 @@ def get_watched_items(media_type, page_no):
 		_refresh_mdblist_watched()
 	elif settings.watched_indicators() == 4 and settings.punchplay_user_active():
 		_refresh_punchplay_watched()
+	elif settings.watched_indicators() == 5 and settings.wetrakr_user_active():
+		_refresh_wetrakr_watched()
 	if media_type == 'tvshow': results = active_tvshows_information('watched')
 	else: results = [v for k,v in watched_info_movie().items()]
 	if settings.lists_sort_order('watched') == 0: results = sort_for_article(results, 'title', settings.ignore_articles())
@@ -1018,6 +1279,8 @@ def get_recently_watched(media_type, short_list=0):
 		_refresh_mdblist_watched()
 	elif watched_indicators == 4 and settings.punchplay_user_active():
 		_refresh_punchplay_watched()
+	elif watched_indicators == 5 and settings.wetrakr_user_active():
+		_refresh_wetrakr_watched()
 	if media_type == 'movie':
 		watched_movies = watched_info_movie().items()
 		data = sorted([v for k,v in watched_movies], key=lambda x: x['last_played'], reverse=True)

@@ -18,13 +18,14 @@ def _settings_fingerprint(watched_indicators, is_external, short_list=True):
 		1 if short_list else 0,
 		settings.single_ep_display_format(is_external),
 		1 if settings.single_ep_unwatched_episodes() else 0,
+		1 if (not is_external and settings.single_episode_tvshow_view()) else 0,
 		1 if settings.single_ep_unwatched_in_title() else 0,
 		1 if (is_external and settings.single_ep_widget_omit_tvshowtitle()) else 0,
 		1 if (is_external and settings.single_ep_widget_omit_season_episode()) else 0,
 		1 if settings.avoid_episode_spoilers() else 0,
 		settings.date_offset(),
 		settings.playback_key(),
-		2,  # cache schema: episode still on landscape
+		3,  # cache schema: TV show view poster counts
 	)
 	return '_'.join(str(p) for p in parts)
 

@@ -21,14 +21,14 @@ def _kodi_favorites_path():
 
 
 def _pick_import_file():
-	path = kodi_utils.browse_file(BACKUP_MASK, settings.import_export_directory_setting(), heading='Choose Kodi favorites backup', force_defaultt=True)
+	path = kodi_utils.browse_file(BACKUP_MASK, settings.import_export_directory_setting(), heading='Choose Kodi favourites backup', force_defaultt=True)
 	if not path:
 		return None
 	tpath = kodi_utils.translate_path(path)
 	if not os.path.isfile(tpath):
 		return None
 	if not tpath.lower().endswith('.xml'):
-		kodi_utils.ok_dialog(heading='Import Kodi favorites', text='Please choose a Kodi favorites backup (.xml).')
+		kodi_utils.ok_dialog(heading='Import Kodi favourites', text='Please choose a Kodi favourites backup (.xml).')
 		return None
 	return tpath
 
@@ -40,7 +40,7 @@ def _parse_favorites_file(path):
 		raise ValueError('Invalid XML (%s)' % e)
 	root = tree.getroot()
 	if root.tag.lower() != 'favourites':
-		raise ValueError('This file is not a Kodi favorites backup (expected a favourites root element).')
+		raise ValueError('This file is not a Kodi favourites backup (expected a favourites root element).')
 	items = []
 	for node in root.findall('favourite'):
 		action = (node.text or '').strip()
@@ -70,19 +70,19 @@ def _write_favorites_file(path, items):
 
 
 def _compat_note():
-	return '[COLOR yellow]Kodi favorites usually only work with the add-on that created them.[/COLOR]'
+	return '[COLOR yellow]Kodi favourites usually only work with the add-on that created them.[/COLOR]'
 
 
 def export_favorites(params):
 	src = _kodi_favorites_path()
 	if not os.path.isfile(src):
-		return kodi_utils.ok_dialog(heading='Export Kodi favorites', text='No Kodi favorites file found on this profile.')
+		return kodi_utils.ok_dialog(heading='Export Kodi favourites', text='No Kodi favourites file found on this profile.')
 	try:
 		items = _parse_favorites_file(src)
 	except Exception as e:
-		return kodi_utils.ok_dialog(heading='Export failed', text='Could not read Kodi favorites.[CR][CR]%s' % e)
+		return kodi_utils.ok_dialog(heading='Export failed', text='Could not read Kodi favourites.[CR][CR]%s' % e)
 	if not items:
-		return kodi_utils.ok_dialog(heading='Export Kodi favorites', text='Your Kodi favorites file is empty.')
+		return kodi_utils.ok_dialog(heading='Export Kodi favourites', text='Your Kodi favourites file is empty.')
 	folder = pick_export_folder(heading='Choose export folder')
 	if not folder:
 		return
@@ -91,18 +91,18 @@ def export_favorites(params):
 	count = len(items)
 	preview_lines = [
 		'[B]%s[/B]' % filename,
-		'%s Kodi favorite(s).' % count,
+		'%s Kodi favourite(s).' % count,
 		'',
 		_compat_note(),
 	]
-	if not kodi_utils.confirm_dialog(heading='Export Kodi favorites', text='[CR]'.join(preview_lines), ok_label='Export', cancel_label='Cancel', default_control=10, scroll=True):
+	if not kodi_utils.confirm_dialog(heading='Export Kodi favourites', text='[CR]'.join(preview_lines), ok_label='Export', cancel_label='Cancel', default_control=10, scroll=True):
 		return
 	try:
 		kodi_utils.make_directory(folder)
 		shutil.copy2(src, dest)
 	except Exception as e:
 		return kodi_utils.ok_dialog(heading='Export failed', text=str(e))
-	summary = 'Exported %s Kodi favorite(s) to %s' % (count, filename)
+	summary = 'Exported %s Kodi favourite(s) to %s' % (count, filename)
 	kodi_utils.ok_dialog(heading='Export complete', text=summary, scroll=True)
 	kodi_utils.notification(summary, 6500)
 	offer_save_export_directory(folder)
@@ -117,7 +117,7 @@ def import_favorites(params):
 	except Exception as e:
 		return kodi_utils.ok_dialog(heading='Import failed', text='Could not read that file.[CR][CR]%s' % e)
 	if not import_items:
-		return kodi_utils.ok_dialog(heading='Import Kodi favorites', text='That file contains no Kodi favorites.')
+		return kodi_utils.ok_dialog(heading='Import Kodi favourites', text='That file contains no Kodi favourites.')
 	dest = _kodi_favorites_path()
 	local_items = []
 	if os.path.isfile(dest):
@@ -130,13 +130,13 @@ def import_favorites(params):
 	empty_dest = local_count == 0
 	preview_lines = [
 		'[B]%s[/B]' % os.path.basename(path),
-		'Backup: %s favorite(s).' % file_count,
-		'This device: %s favorite(s).' % local_count,
+		'Backup: %s favourite(s).' % file_count,
+		'This device: %s favourite(s).' % local_count,
 		'',
 		_compat_note(),
 	]
 	if not kodi_utils.confirm_dialog(
-		heading='Import Kodi favorites',
+		heading='Import Kodi favourites',
 		text='[CR]'.join(preview_lines),
 		ok_label='Import' if empty_dest else 'Continue',
 		cancel_label='Cancel',
@@ -149,7 +149,7 @@ def import_favorites(params):
 	else:
 		mode_choices = [
 			('Merge — add from backup; keep what is already here', 'merge'),
-			('Replace — remove local Kodi favorites first, then import backup', 'replace'),
+			('Replace — remove local Kodi favourites first, then import backup', 'replace'),
 		]
 		list_items = [{'line1': i[0]} for i in mode_choices]
 		kwargs = {'items': json.dumps(list_items), 'heading': 'Import mode', 'narrow_window': 'true'}
@@ -167,18 +167,18 @@ def import_favorites(params):
 			merged = _merge_favorites(local_items, import_items)
 			_write_favorites_file(dest, merged)
 			added = len(merged) - len(local_items)
-			summary = 'Import complete — %s favorite(s) now (%s added)' % (len(merged), max(added, 0))
+			summary = 'Import complete — %s favourite(s) now (%s added)' % (len(merged), max(added, 0))
 		else:
 			if os.path.isfile(dest):
 				backup = dest + '.redlight.bak'
 				shutil.copy2(dest, backup)
 			shutil.copy2(path, dest)
-			summary = 'Import complete — %s favorite(s) imported (replace)' % file_count
+			summary = 'Import complete — %s favourite(s) imported (replace)' % file_count
 	except Exception as e:
 		return kodi_utils.ok_dialog(heading='Import failed', text=str(e))
 	kodi_utils.ok_dialog(
 		heading='Import complete',
-		text='%s[CR][CR][COLOR yellow]Restart Kodi if the Favorites menu does not update.[/COLOR]' % summary,
+		text='%s[CR][CR][COLOR yellow]Restart Kodi if the Favourites menu does not update.[/COLOR]' % summary,
 		scroll=True,
 	)
 	kodi_utils.notification('Import complete', 6500)
@@ -186,14 +186,14 @@ def import_favorites(params):
 
 def _import_rules_text(mode):
 	if mode == 'merge':
-		return 'Kodi favorites: add from backup; keep existing entries.'
-	return 'Kodi favorites: replace everything on this device.[CR]A copy of your current Kodi favorites is saved before importing.'
+		return 'Kodi favourites: add from backup; keep existing entries.'
+	return 'Kodi favourites: replace everything on this device.[CR]A copy of your current Kodi favourites is saved before importing.'
 
 
 def _replace_warning(local_count):
 	return (
-		'This will replace %s favorite(s) on this device with the backup.[CR]'
-		'Your current Kodi favorites are copied to Favourites.xml.redlight.bak first.'
+		'This will replace %s favourite(s) on this device with the backup.[CR]'
+		'Your current Kodi favourites are copied to Favourites.xml.redlight.bak first.'
 	) % local_count
 
 

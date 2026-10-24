@@ -7,7 +7,7 @@ from indexers import dialogs, people
 from indexers.images import Images
 from modules import kodi_utils, settings, watched_status
 from modules.utils import change_image_resolution, adjust_premiered_date, get_datetime, make_thread_list_enumerate, batch_replace, get_current_timestamp
-from modules.meta_lists import networks, movie_genres, tvshow_genres
+from modules.meta_lists import networks, movie_genres, tvshow_genres, iso639_1_to_display_code
 from modules.metadata import movieset_meta, episodes_meta, movie_meta, tvshow_meta
 from modules.episode_tools import EpisodeTools
 # logger = kodi_utils.logger
@@ -34,6 +34,7 @@ class Extras(BaseDialog):
 		self.addon_fanart = kodi_utils.addon_fanart()
 		self.button_label_values = kodi_utils.extras_button_label_values()
 		self.set_starting_constants(kwargs)
+		self._load_completed()
 		self.set_properties()
 		self.tasks = (self.set_artwork, self.set_infoline1, self.set_infoline2, self.make_ratings, self.make_cast, self.make_recommended, self.make_related,
 					self.make_more_like_this, self.make_ai_similar, self.make_imdb_extras, self.make_comments, self.make_in_lists, self.make_videos, self.make_year,
@@ -41,6 +42,7 @@ class Extras(BaseDialog):
 
 	def onInit(self):
 		self.set_home_property('window_loaded', 'true')
+		self._retain_extras_theme()
 		for i in self.tasks: Thread(target=i).start()
 		self.set_default_focus()
 		if self.starting_position:
@@ -50,8 +52,7 @@ class Extras(BaseDialog):
 	def run(self):
 		self.doModal()
 		self.clearProperties()
-		self.clear_home_property('window_theme.extras')
-		self.clear_home_property('window_theme.highlight.extras')
+		self._release_extras_theme()
 		if self.selected: self.execute_code(self.selected)
 
 	def onClick(self, controlID):
@@ -222,10 +223,8 @@ class Extras(BaseDialog):
 			try:
 				details = function('trakt_dict', item, self.tmdb_api_key, self.mpaa_region, self.current_date, current_time=None)
 				poster = details['poster']
-				if self.rpdb_api_key and poster:
-					try: poster = details['rpdb_poster'] % self.rpdb_api_key + self.rpdb_format
-					except: pass
-				elif not poster: poster = self.empty_poster
+				if poster: poster = settings.rpdb_poster(self.rpdb_api_key, self.rpdb_format, details.get('rpdb_poster'), poster)
+				else: poster = self.empty_poster
 				listitem = self.make_listitem()
 				listitem.setProperty('name', details['title'])
 				listitem.setProperty('release_date', details['year'])
@@ -233,6 +232,7 @@ class Extras(BaseDialog):
 				listitem.setProperty('thumbnail', poster)
 				listitem.setProperty('tmdb_id', str(details['tmdb_id']))
 				listitem.setProperty('info_alert', self.media_alert)
+				self._mark_completed(listitem, details['tmdb_id'], details)
 				item_list_append((listitem, position))
 			except: pass
 		if self.media_type == 'movie': data_function, function = trakt_api.trakt_movies_related, movie_meta
@@ -255,16 +255,15 @@ class Extras(BaseDialog):
 				details = function('imdb_id', item, self.tmdb_api_key, self.mpaa_region, self.current_date, current_time=None)					
 				listitem = self.make_listitem()
 				poster = details['poster']
-				if self.rpdb_api_key and poster:
-					try: poster = details['rpdb_poster'] % self.rpdb_api_key + self.rpdb_format
-					except: pass
-				elif not poster: poster = self.empty_poster
+				if poster: poster = settings.rpdb_poster(self.rpdb_api_key, self.rpdb_format, details.get('rpdb_poster'), poster)
+				else: poster = self.empty_poster
 				listitem.setProperty('name', details['title'])
 				listitem.setProperty('release_date', details['year'])
 				listitem.setProperty('vote_average', '%.1f' % details['rating'])
 				listitem.setProperty('thumbnail', poster)
 				listitem.setProperty('tmdb_id', str(details['tmdb_id']))
 				listitem.setProperty('info_alert', self.media_alert)
+				self._mark_completed(listitem, details['tmdb_id'], details)
 				item_list_append((listitem, position))
 			except: pass
 		data = imdb_api.imdb_more_like_this(self.imdb_id)
@@ -286,16 +285,15 @@ class Extras(BaseDialog):
 				details = function('tmdb_id', item['id'], self.tmdb_api_key, self.mpaa_region, self.current_date, current_time=None)					
 				listitem = self.make_listitem()
 				poster = details['poster']
-				if self.rpdb_api_key and poster:
-					try: poster = details['rpdb_poster'] % self.rpdb_api_key + self.rpdb_format
-					except: pass
-				elif not poster: poster = self.empty_poster
+				if poster: poster = settings.rpdb_poster(self.rpdb_api_key, self.rpdb_format, details.get('rpdb_poster'), poster)
+				else: poster = self.empty_poster
 				listitem.setProperty('name', details['title'])
 				listitem.setProperty('release_date', details['year'])
 				listitem.setProperty('vote_average', '%.1f' % details['rating'])
 				listitem.setProperty('thumbnail', poster)
 				listitem.setProperty('tmdb_id', str(details['tmdb_id']))
 				listitem.setProperty('info_alert', self.media_alert)
+				self._mark_completed(listitem, details['tmdb_id'], details)
 				item_list_append((listitem, position))
 			except: pass
 		try:
@@ -454,12 +452,20 @@ class Extras(BaseDialog):
 	def make_videos(self):
 		if not self.videos_id in self.enabled_lists: return
 		def _sort_trailers(trailers):
-			official_trailers = [i for i in trailers if i['official'] and i['type'] == 'Trailer' and 'official trailer' in i['name'].lower()]
-			other_official_trailers = [i for i in trailers if i['official'] and i['type'] == 'Trailer' and not i in official_trailers]
-			other_trailers = [i for i in trailers if i['type'] == 'Trailer' and not i in official_trailers  and not i in other_official_trailers]
-			teaser_trailers = [i for i in trailers if i['type'] == 'Teaser']
+			lang = (settings.meta_language() or 'en').split('-')[0]
+			def _lang_rank(item):
+				iso = (item.get('iso_639_1') or '').split('-')[0]
+				if iso == lang: return 0
+				if iso in ('en', '', 'xx'): return 1
+				return 2
+			def _by_lang(items):
+				return sorted(items, key=_lang_rank)
+			official_trailers = _by_lang([i for i in trailers if i['official'] and i['type'] == 'Trailer' and 'official trailer' in i['name'].lower()])
+			other_official_trailers = _by_lang([i for i in trailers if i['official'] and i['type'] == 'Trailer' and not i in official_trailers])
+			other_trailers = _by_lang([i for i in trailers if i['type'] == 'Trailer' and not i in official_trailers  and not i in other_official_trailers])
+			teaser_trailers = _by_lang([i for i in trailers if i['type'] == 'Teaser'])
 			full_trailers = official_trailers + other_official_trailers + other_trailers + teaser_trailers
-			features = [i for i in trailers if not i in full_trailers]
+			features = _by_lang([i for i in trailers if not i in full_trailers])
 			return full_trailers + features
 		def builder():
 			for item in all_trailers:
@@ -625,6 +631,37 @@ class Extras(BaseDialog):
 	def remove_current_tmdb_mediaitem(self, data):
 		return [i for i in data if int(i['id']) != self.tmdb_id]
 
+	def _load_completed(self):
+		# One read, before the poster threads start. A resume row is not in these maps.
+		self._completed_movies, self._completed_shows = set(), {}
+		try:
+			if self.media_type == 'movie':
+				self._completed_movies = set(str(k) for k in (watched_status.watched_info_movie() or {}))
+			else:
+				self._completed_shows = watched_status.watched_info_tvshow() or {}
+		except Exception:
+			pass
+
+	def _mark_completed(self, listitem, tmdb_id, meta=None):
+		# Tick only a finished movie, or a show caught up with every aired episode.
+		# Matches the show-list overlay. Nothing aired stays unticked (aired 0 would otherwise count as complete).
+		try:
+			tid = str(tmdb_id)
+			if self.media_type == 'movie':
+				if tid in self._completed_movies: listitem.setProperty('watched', 'true')
+				return
+			info = self._completed_shows.get(tid)
+			if not info or not info.get('total_played'): return
+			if meta is None:
+				meta = tvshow_meta('tmdb_id', tid, self.tmdb_api_key, self.mpaa_region, self.current_date)
+			if not meta or meta.get('total_aired_eps') == 0: return
+			aired = watched_status.progress_aired_eps(meta)
+			if not aired: return
+			playcount, _watched, _unwatched = watched_status.get_watched_status_tvshow(info, aired)
+			if playcount == 1: listitem.setProperty('watched', 'true')
+		except Exception:
+			pass
+
 	def make_tmdb_listitems(self, data):
 		used_ids = []
 		append = used_ids.append
@@ -637,13 +674,14 @@ class Extras(BaseDialog):
 				listitem = self.make_listitem()
 				year = self.get_release_year(item[release_key])
 				poster = 'https://image.tmdb.org/t/p/%s%s' % ('w300', item['poster_path']) if item['poster_path'] else ''
-				if self.rpdb_api_key and poster:
+				if poster:
 					media = 'movie' if self.media_type == 'movie' else 'series'
-					try: poster = 'https://api.ratingposterdb.com/%s/tmdb/poster-default/%s-%s.jpg?fallback=true' % (self.rpdb_api_key, media, str(item['id'])) + self.rpdb_format
-					except: pass
-				elif not poster: poster = self.empty_poster
+					template = 'https://api.ratingposterdb.com/%s/tmdb/poster-default/%s-%s.jpg?fallback=true' % ('%s', media, str(item['id']))
+					poster = settings.rpdb_poster(self.rpdb_api_key, self.rpdb_format, template, poster)
+				else: poster = self.empty_poster
 				listitem.setProperties({'name': item[name_key], 'release_date': year, 'vote_average': '%.1f' % item['vote_average'],
 										'thumbnail': poster, 'tmdb_id': str(tmdb_id), 'info_alert': self.media_alert})
+				self._mark_completed(listitem, tmdb_id)
 				append(tmdb_id)
 				yield listitem
 			except: pass
@@ -679,8 +717,11 @@ class Extras(BaseDialog):
 	def show_trailers(self):
 		if not kodi_utils.addon_installed('plugin.video.youtube') or not kodi_utils.addon_enabled('plugin.video.youtube'):
 			return kodi_utils.notification('Youtube Plugin needed for playback')
+		trailer = self.meta_get('trailer')
+		if not trailer:
+			return kodi_utils.notification('No trailer available')
 		self.set_current_params(set_starting_position=False)
-		self.window_player_url = self.meta_get('trailer')
+		self.window_player_url = trailer
 		return window_player(self)
 
 	def show_images(self):
@@ -908,11 +949,30 @@ class Extras(BaseDialog):
 		self.landscape = self.meta_get('landscape') or self.meta_get('fanart') or ''
 		self.rating = str(round(self.meta_get('rating'), 1)) if self.meta_get('rating') not in ('', '%', 0, 0.0, None) else None
 		self.mpaa, self.genre, self.network = self.meta_get('mpaa'), self.meta_get('genre'), self.meta_get('studio') or ''
+		self.original_language = iso639_1_to_display_code(self.meta_get('original_language', '') or '')
 		self.status, self.duration_data = self.extra_info_get('status', '').replace(' Series', ''), int(float(self.meta_get('duration'))/60)
 		self.status_infoline_value = self.make_status_infoline()
 		self.stinger_dialog = self.make_stinger_dialog()
 		self.single_rating_data = {'rating': self.rating, 'icon': 'tmdb.png'}
 		self.make_plot_and_tagline()
+
+	def _retain_extras_theme(self):
+		try: count = int(self.get_home_property('extras_open_count') or '0')
+		except: count = 0
+		self.set_home_property('extras_open_count', str(count + 1))
+		if not self.get_home_property('window_theme.extras'):
+			self.set_home_property('window_theme.extras', self.get_home_property('window_theme'))
+
+	def _release_extras_theme(self):
+		try: count = int(self.get_home_property('extras_open_count') or '1')
+		except: count = 1
+		count = max(0, count - 1)
+		if count:
+			self.set_home_property('extras_open_count', str(count))
+			return
+		self.clear_home_property('extras_open_count')
+		self.clear_home_property('window_theme.extras')
+		self.clear_home_property('window_theme.highlight.extras')
 
 	def set_properties(self):
 		self.assign_buttons()
@@ -951,7 +1011,7 @@ class Extras(BaseDialog):
 			data = rating_data or self.single_rating_data
 			rating, image = data['rating'], 'redlight_flags/ratings/%s' % data['icon']
 			if rating: self.set_image(203, image)
-		self.set_label(2001, '[B]  •  [/B]'.join([i for i in (rating, self.year, self.mpaa, self.get_duration(), self.stinger_dialog, self.status_infoline_value) if i]))
+		self.set_label(2001, '[B]  •  [/B]'.join([i for i in (rating, self.year, self.original_language, self.mpaa, self.get_duration(), self.stinger_dialog, self.status_infoline_value) if i]))
 
 	def set_infoline2(self):
 		if self.media_type == 'movie':
@@ -961,7 +1021,8 @@ class Extras(BaseDialog):
 				except: percent_watched = '0'
 				if not percent_watched: percent_watched = 0
 			line2 = '[B]  •  [/B]'.join([self.get_progress(percent_watched), self.get_finish(percent_watched)])
-		else: line2 = '[B]  •  [/B]'.join([i for i in (self.get_next_episode(), self.get_last_aired(), self.get_next_aired()) if i])
+		else:
+			line2 = '[B]  •  [/B]'.join([i for i in (self.get_next_episode(), self.get_last_aired(), self.get_next_aired()) if i])
 		self.set_label(3001, line2)
 
 	def close_all(self):

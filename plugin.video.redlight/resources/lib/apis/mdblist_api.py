@@ -8,7 +8,8 @@ from caches import mdblist_cache
 from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils, settings, list_sort
 from modules.http_defaults import META_API_TIMEOUT, meta_status_retry
-from modules.utils import paginate_list, get_datetime, TaskPool, make_thread_list, copy2clip, make_qrcode, make_tinyurl
+from modules.utils import paginate_list, get_datetime, TaskPool, make_thread_list, copy2clip, make_qrcode, make_tinyurl, \
+							device_auth_complete_url, device_auth_site_label, authorise_wait_text
 
 _EPISODE_SE_RE = re.compile(
 	r'(?:^|[\s·|\-–—/])S(\d{1,2})\s*[:.]?\s*E(\d{1,3})(?:\b|:)|(?:^|[\s·|\-–—/])(\d{1,2})x(\d{1,3})\b',
@@ -23,19 +24,66 @@ session = requests.Session()
 session.mount('https://api.mdblist.com', requests.adapters.HTTPAdapter(pool_maxsize=100, max_retries=meta_status_retry()))
 
 def _mdblist_token():
-	from caches.settings_cache import settings_cache
-	token = settings_cache.read_db_value('mdblist.token')
-	if token in (None, '0', '', 'empty_setting'):
-		token = get_setting('redlight.mdblist.token', '0')
-	return token
+	from caches.settings_cache import live_setting
+	return live_setting('mdblist.token', '0')
 
-def call_mdblist(path, params=None, json_data=None, method=None):
+def _mdblist_refresh():
+	from caches.settings_cache import live_setting
+	return live_setting('mdblist.refresh', '0')
+
+def mdblist_refresh_token():
+	refresh = _mdblist_refresh()
+	client_id = settings.mdblist_client()
+	if refresh in (None, '0', '', 'empty_setting') or not client_id:
+		return False
+	while kodi_utils.get_property('redlight.mdblist_refreshing_token') == 'true':
+		kodi_utils.sleep(250)
+	kodi_utils.set_property('redlight.mdblist_refreshing_token', 'true')
+	try:
+		from caches.settings_cache import reload_auth_from_db
+		reload_auth_from_db('mdblist.token', 'mdblist.refresh')
+		refresh = _mdblist_refresh()
+		if refresh in (None, '0', '', 'empty_setting') or not client_id:
+			return False
+		resp = requests.post(
+			_OAUTH_TOKEN_URL,
+			data={'grant_type': 'refresh_token', 'refresh_token': refresh, 'client_id': client_id},
+			timeout=META_API_TIMEOUT)
+		if resp.status_code == 200:
+			data = resp.json() or {}
+			access = data.get('access_token')
+			if access:
+				set_setting('mdblist.token', access)
+				if data.get('refresh_token'):
+					set_setting('mdblist.refresh', data['refresh_token'])
+				from caches.settings_cache import settings_cache
+				settings_cache.clear_db_cache()
+				return True
+		from modules.meta_auth_alerts import maybe_notify_refresh_failure
+		maybe_notify_refresh_failure('mdblist', resp.status_code, resp.text)
+		kodi_utils.logger('MDBList', 'token refresh failed: HTTP %s' % resp.status_code)
+		return False
+	except Exception as e:
+		kodi_utils.logger('MDBList', 'token refresh failed: %s' % e)
+		return False
+	finally:
+		kodi_utils.clear_property('redlight.mdblist_refreshing_token')
+
+def call_mdblist(path, params=None, json_data=None, method=None, _retried=False):
 	params = params or {}
 	token = _mdblist_token()
 	if not token or token in ('0', 'empty_setting'): return None
 	headers = {'Authorization': 'Bearer %s' % token}
 	try:
 		response = session.request(method or 'get', BASE_URL % path.lstrip('/'), params=params, json=json_data, headers=headers, timeout=META_API_TIMEOUT)
+		if response.status_code == 401 and not _retried:
+			from caches.settings_cache import reload_auth_from_db
+			reloaded = reload_auth_from_db('mdblist.token', 'mdblist.refresh')
+			fresh = reloaded.get('mdblist.token')
+			if fresh and fresh not in ('0', '', 'empty_setting') and fresh != token:
+				return call_mdblist(path, params=params, json_data=json_data, method=method, _retried=True)
+			if mdblist_refresh_token():
+				return call_mdblist(path, params=params, json_data=json_data, method=method, _retried=True)
 		if 'json' in response.headers.get('Content-Type', ''):
 			result = response.json()
 		else:
@@ -52,11 +100,13 @@ def call_mdblist(path, params=None, json_data=None, method=None):
 		kodi_utils.logger('MDBList Error', str(e))
 		return None
 
-def _get_mdbl_paginated_list(url):
+def _get_mdbl_paginated_list(url, progress=None, label='', span=(0, 100)):
 	params = {'limit': 1000}
 	items = {'movies': [], 'shows': [], 'seasons': [], 'episodes': [], 'items': []}
 	try:
-		for _ in range(MAX_LIST_ITEMS // params['limit']):
+		for page in range(1, MAX_LIST_ITEMS // params['limit'] + 1):
+			if progress and label:
+				kodi_utils.sync_progress_page(progress, label, span[0], span[1], page)
 			result = call_mdblist(url, params=params)
 			# None = hard failure (do not treat as empty success — bulk watched replace would wipe).
 			if not isinstance(result, dict): return None
@@ -68,11 +118,13 @@ def _get_mdbl_paginated_list(url):
 			next_cursor = pagination.get('next_cursor')
 			if not next_cursor: break
 			params['cursor'] = next_cursor
+		if progress and label:
+			kodi_utils.sync_progress(progress, label, span[1])
 	except: return None
 	return items
 
-def _get_mdbl_playback_items():
-	result = _get_mdbl_paginated_list('sync/playback')
+def _get_mdbl_playback_items(progress=None):
+	result = _get_mdbl_paginated_list('sync/playback', progress, 'In progress', (86, 98))
 	if result is None: return None
 	return result.get('items', [])
 
@@ -258,7 +310,8 @@ def mdbl_episode_list_entry(item, order=0):
 		'type': 'episode',
 		'season': int(season),
 		'episode': int(episode),
-		'custom_order': order
+		'custom_order': order,
+		'release_date': str(item.get('year') or show.get('year') or '')
 	}
 
 def mdbl_collect_list_media(payload):
@@ -312,7 +365,9 @@ def _mdbl_item_media_ids(item):
 def _mdbl_movie_show_row(item, media_type, order):
 	media_ids = _mdbl_item_media_ids(item)
 	if not media_ids: return None
-	return {'type': media_type, 'media_ids': media_ids, 'order': order, 'custom_order': order}
+	return {'type': media_type, 'media_ids': media_ids, 'order': order, 'custom_order': order,
+		'title': item.get('title') or '',
+		'release_date': item.get('release_date') or str(item.get('year') or item.get('release_year') or '')}
 
 def mdbl_ordered_list_rows(payload):
 	"""Ordered typed rows for mixed list open (movie | show | episode), preserving unified order."""
@@ -420,10 +475,8 @@ def _mdbl_personal_list(original_list, media_kind):
 	return normalized
 
 def _mdblist_device_auth_url(device_data):
-	verification_url = (device_data.get('verification_uri') or device_data.get('verification_url') or 'https://mdblist.com/oauth/device/').rstrip('/')
-	user_code = device_data.get('user_code', '')
-	if user_code: return '%s?code=%s' % (verification_url, user_code)
-	return verification_url
+	return device_auth_complete_url(device_data, device_data.get('user_code', ''),
+		fallback='https://mdblist.com/oauth/device', style='query')
 
 def mdblist_get_device_code():
 	client_id = settings.mdblist_client()
@@ -434,6 +487,30 @@ def mdblist_get_device_code():
 		return response.json()
 	except: return None
 
+def mdblist_test_client_id():
+	client_id = settings.mdblist_client()
+	if not client_id or client_id in ('empty_setting', ''):
+		return False, 'MDBList Client ID Key is not set.'
+	try:
+		response = session.post(_OAUTH_DEVICE_URL, data={'client_id': client_id, 'scope': 'write'}, timeout=META_API_TIMEOUT)
+		if response.ok:
+			body = {}
+			try: body = response.json() or {}
+			except: body = {}
+			if body.get('user_code'):
+				return True, 'MDBList Client ID Key is valid.'
+			return False, 'MDBList Client ID Key failed.[CR]MDBList returned an empty device code.'
+		detail = ''
+		try:
+			payload = response.json() or {}
+			if isinstance(payload, dict):
+				detail = payload.get('error_description') or payload.get('error') or payload.get('message') or ''
+		except: detail = ''
+		if not detail: detail = (response.text or '').strip() or 'No details returned.'
+		return False, 'MDBList Client ID Key failed.[CR]MDBList rejected the Client ID (HTTP %s).[CR]%s' % (response.status_code, detail)
+	except Exception as e:
+		return False, 'MDBList Client ID Key failed.[CR]Could not reach MDBList: %s' % str(e)
+
 def mdblist_poll_device(device_data):
 	device_code, user_code = device_data.get('device_code'), device_data.get('user_code')
 	if not device_code or not user_code: return None
@@ -443,18 +520,17 @@ def mdblist_poll_device(device_data):
 	qr_code = make_qrcode(auth_url) or ''
 	copy2clip(auth_url)
 	short_url = make_tinyurl(auth_url)
-	p_dialog_insert = '[CR]OR visit [B]%s[/B]' % short_url if short_url else ''
-	verify_display = (device_data.get('verification_uri') or device_data.get('verification_url') or 'mdblist.com/oauth/device').replace('https://', '').replace('http://', '')
-	content = ('Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B]%s[CR][CR]'
-		'Waiting for authorisation...' % (user_code, verify_display, p_dialog_insert))
+	content = authorise_wait_text(user_code, device_auth_site_label(device_data, 'https://mdblist.com/oauth/device'), short_url)
 	progress = kodi_utils.progress_dialog('MDBList Authorise', qr_code)
 	progress.update(content, 0)
 	start = time.time()
 	while time.time() - start < expires_in:
 		if progress.iscanceled():
 			progress.close()
-			return None
-		kodi_utils.sleep(interval * 1000)
+			return 'canceled'
+		if kodi_utils.sleep_while_authorising(progress, interval):
+			progress.close()
+			return 'canceled'
 		try:
 			client_id = settings.mdblist_client()
 			response = session.post(_OAUTH_TOKEN_URL, data={
@@ -472,11 +548,15 @@ def mdblist_poll_device(device_data):
 
 def mdblist_authenticate(dummy=''):
 	device_data = mdblist_get_device_code()
-	if not device_data or not device_data.get('user_code'): return kodi_utils.notification('MDBList Authorisation Failed', 3000)
+	if not device_data or not device_data.get('user_code'):
+		_ok, message = mdblist_test_client_id()
+		return kodi_utils.ok_dialog(heading='MDBList', text=message)
 	token_result = mdblist_poll_device(device_data)
-	if not token_result: return kodi_utils.notification('MDBList Authorisation Canceled', 3000)
-	access_token = token_result.get('access_token')
-	if not access_token: return kodi_utils.notification('MDBList Authorisation Failed', 3000)
+	if token_result == 'canceled':
+		return kodi_utils.notification('MDBList Authorisation Canceled', 3000)
+	access_token = (token_result or {}).get('access_token')
+	if not access_token:
+		return kodi_utils.notification('MDBList Error Authorising', 3000)
 	set_setting('mdblist.token', access_token)
 	set_setting('mdblist.refresh', token_result.get('refresh_token') or '0')
 	from caches.settings_cache import settings_cache
@@ -487,16 +567,24 @@ def mdblist_authenticate(dummy=''):
 	mdblist_cache.clear_mdblist_collection_watchlist_data('watchlist')
 	try: _mdbl_watchlist_raw()
 	except: pass
-	switched = settings.offer_watched_provider(3, 'MDBList')
+	settings.offer_watched_provider(3, 'MDBList')
+	from modules.meta_auth_alerts import clear_alert
+	clear_alert('mdblist')
 	kodi_utils.notification('MDBList Account Authorised', 3000)
-	if switched:
-		try: mdblist_sync_activities(force_update=True)
-		except Exception as e: kodi_utils.logger('MDBList', 'Post-auth sync failed: %s' % e)
+	try:
+		status = mdblist_sync_activities(force_update=True)
+	except Exception as e:
+		kodi_utils.logger('MDBList', 'Post-auth sync failed: %s' % e)
+		status = 'failed'
+	settings.notify_post_auth_sync('MDBList', status)
 	try: kodi_utils.container_refresh()
 	except: pass
 	return True
 
 def mdblist_revoke_authentication(dummy=''):
+	if not kodi_utils.confirm_revoke('MDBList'): return
+	from modules.meta_auth_alerts import clear_alert
+	clear_alert('mdblist')
 	set_setting('mdblist.user', 'empty_setting')
 	set_setting('mdblist.token', '0')
 	set_setting('mdblist.refresh', '0')
@@ -504,23 +592,9 @@ def mdblist_revoke_authentication(dummy=''):
 	mdblist_cache.clear_all_mdblist_cache_data(silent=True, refresh=False)
 	kodi_utils.notification('MDBList Authorisation Reset', 3000)
 
-MDBLIST_TRAKT_IMPORT_URL = 'https://mdblist.com/preferences/'
-
-def mdblist_import_trakt(params=None):
-	from threading import Thread
-	from modules.trakt_import_help import open_official_trakt_import_page
-	def _after():
-		Thread(target=mdblist_sync_activities, kwargs={'force_update': True}, daemon=True).start()
-	return open_official_trakt_import_page(
-		'MDBList', MDBLIST_TRAKT_IMPORT_URL,
-		icon=kodi_utils.get_icon('mdblist') or kodi_utils.addon_icon(),
-		extra_line='On Preferences, use [B]Import from Trakt[/B].',
-		after_close=_after)
-
 def mdblist_force_sync(params=None):
 	if not settings.mdblist_user_active(): return kodi_utils.notification('MDBList account not authorised', 3000)
 	progress = kodi_utils.progress_dialog('MDBList Sync')
-	progress.update('Syncing with MDBList...', 0)
 	status = 'failed'
 	try:
 		status = mdblist_sync_activities(force_update=True, progress=progress)
@@ -536,29 +610,80 @@ def mdblist_force_sync(params=None):
 		kodi_utils.kodi_refresh()
 	return status
 
-def _mdbl_watched_unwatched(action, media, media_id, tvdb_id=0, season=None, episode=None, key='tmdb'):
+def _mdbl_regular_season_numbers(tmdb_id):
+	"""Same season list Simkl uses. MDBList marks a season's episodes; a bare show id does not."""
+	try:
+		from apis.simkl_api import _simkl_regular_season_numbers
+		return _simkl_regular_season_numbers(tmdb_id) or []
+	except Exception:
+		return []
+
+def _mdbl_watched_ids(media, tmdb_id):
+	"""sync/watched matches TMDb and IMDb. A TVDB-only id comes back not_found."""
+	try: tmdb_id = int(tmdb_id)
+	except: pass
+	ids = {'tmdb': tmdb_id}
+	if media != 'movies':
+		imdb_id = _mdblist_resolve_show_imdb(tmdb_id)
+		if imdb_id and str(imdb_id) not in ('None', '', '0'): ids['imdb'] = imdb_id
+	return ids
+
+def _mdbl_watched_unwatched(action, media, media_id, tvdb_id=0, season=None, episode=None, season_numbers=None):
 	if action == 'mark_as_watched': url, result_key = 'sync/watched', 'updated'
 	else: url, result_key = 'sync/watched/remove', 'removed'
-	try: media_id = int(media_id)
-	except: pass
+	ids = _mdbl_watched_ids(media, media_id)
 	if media == 'movies':
-		success_key, data = 'movies', {'movies': [{'ids': {key: media_id}}]}
+		success_key, data = 'movies', {'movies': [{'ids': ids}]}
 	elif media == 'episode':
 		success_key = 'episodes'
-		data = {'shows': [{'ids': {key: media_id}, 'seasons': [{'number': int(season), 'episodes': [{'number': int(episode)}]}]}]}
+		data = {'shows': [{'ids': ids, 'seasons': [{'number': int(season), 'episodes': [{'number': int(episode)}]}]}]}
 	elif media == 'shows':
-		success_key, data = 'episodes', {'shows': [{'ids': {key: media_id}}]}
+		if season_numbers is None:
+			season_numbers = _mdbl_regular_season_numbers(media_id)
+		show = {'ids': ids}
+		if season_numbers:
+			show['seasons'] = [{'number': int(n)} for n in season_numbers]
+		success_key, data = 'episodes', {'shows': [show]}
 	else:
 		success_key = 'episodes'
-		data = {'shows': [{'ids': {key: media_id}, 'seasons': [{'number': int(season)}]}]}
+		data = {'shows': [{'ids': ids, 'seasons': [{'number': int(season)}]}]}
 	result = call_mdblist(url, json_data=data, method='post')
 	if not isinstance(result, dict): return False
-	success = result.get(result_key, {}).get(success_key, 0) > 0
-	if not success and media != 'movies' and tvdb_id:
-		return _mdbl_watched_unwatched(action, media, tvdb_id, 0, season, episode, 'tvdb')
+	if action == 'mark_as_watched':
+		success = _mdbl_mark_counted(result, 'movies' if media == 'movies' else 'episodes', 'seasons')
+	else:
+		bucket = result.get(result_key) or {}
+		success = bucket.get(success_key, 0) > 0 if isinstance(bucket, dict) else False
+	# Already on MDBList: added and updated are both 0, and it is not in not_found.
+	# A bare show id is the exception — that reply updates nothing.
+	if not success and action == 'mark_as_watched' and not _mdbl_not_found(result):
+		if media != 'shows' or season_numbers: return True
 	# Remove with 0 removed = already unwatched on MDBList — not a failure.
 	if not success and action != 'mark_as_watched': return True
+	if not success:
+		kodi_utils.logger('MDBList', 'mark %s %s ids=%s: %s' % (action, media, ids, result))
 	return success
+
+def _mdbl_mark_counted(result, *keys):
+	"""A first watch is under added. A repeat watch is under updated."""
+	total = 0
+	for name in ('added', 'updated'):
+		bucket = (result or {}).get(name) or {}
+		if not isinstance(bucket, dict): continue
+		for key in keys:
+			try: total += int(bucket.get(key) or 0)
+			except Exception: pass
+	return total > 0
+
+def _mdbl_not_found(result):
+	nf = (result or {}).get('not_found') or {}
+	if not isinstance(nf, dict): return bool(nf)
+	for val in nf.values():
+		if isinstance(val, list) and val: return True
+		try:
+			if int(val or 0) > 0: return True
+		except Exception: pass
+	return False
 
 def mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=None, episode=None):
 	if media_type == 'movie': media = 'movies'
@@ -579,6 +704,21 @@ def mdblist_official_status(media_type):
 		auth_keys=('api_key', 'apikey', 'token', 'mdblist_api_key', 'mdblist.token', 'refresh_token'),
 		scrobble_enable_keys=('scrobble', 'scrobble_enabled', 'enable_scrobble', 'scrobble_movies', 'scrobble_episodes')): return False
 	return True
+
+def mdblist_scrobble(action, media_type, tmdb_id, percent=0, season=None, episode=None):
+	if not settings.mdblist_user_active(): return
+	path = {'start': 'scrobble/start', 'stop': 'scrobble/stop'}.get(action)
+	if not path: return
+	try: tmdb_id = int(tmdb_id)
+	except: return
+	try: pct = float(percent or 0)
+	except: pct = 0
+	if media_type == 'movie':
+		payload = {'movie': {'ids': {'tmdb': tmdb_id}}, 'progress': pct}
+	else:
+		try: payload = {'show': {'ids': {'tmdb': tmdb_id}, 'season': {'number': int(season), 'episode': {'number': int(episode)}}}, 'progress': pct}
+		except: return
+	call_mdblist(path, json_data=payload, method='post')
 
 def mdblist_progress(action, media_type, tmdb_id, percent, season=None, episode=None, resume_id=None, refresh_mdblist=False):
 	if action == 'clear_progress':
@@ -735,27 +875,35 @@ def mdblist_hide_unhide_progress_items(params):
 	if action == 'hide': kodi_utils.notification('Dropped from MDBList Progress', 3000)
 	else: kodi_utils.notification('Removed from MDBList Dropped', 3000)
 
-def mdblist_indicators_movies(watched_info):
+def mdblist_indicators_movies(watched_info, progress=None):
 	if watched_info is None: return False
 	insert_list = []
+	tick = lambda: None
 	def _process(item):
-		tmdb_id = _resolve_movie_id(item.get('movie', {}).get('ids', {}))
-		if tmdb_id: insert_list.append(('movie', tmdb_id, '', '', item.get('last_watched_at', ''), item.get('movie', {}).get('title', '')))
+		try:
+			tmdb_id = _resolve_movie_id(item.get('movie', {}).get('ids', {}))
+			if tmdb_id: insert_list.append(('movie', tmdb_id, '', '', item.get('last_watched_at', ''), item.get('movie', {}).get('title', '')))
+		finally: tick()
 	movies = watched_info.get('movies', [])
+	tick = kodi_utils.sync_progress_counter(progress, 'Watched movies', 72, 80, len(movies))
 	for i in TaskPool().tasks(_process, movies, min(len(movies), settings.max_threads())): i.join()
 	mdblist_cache.mdblist_watched_cache.set_bulk_movie_watched(insert_list)
 	return True
 
-def mdblist_indicators_tv(watched_info):
+def mdblist_indicators_tv(watched_info, progress=None):
 	if watched_info is None: return False
 	insert_list = []
+	tick = lambda: None
 	def _process(item):
-		show_ids = item.get('episode', {}).get('show', {}).get('ids', {})
-		tmdb_id = _resolve_tvshow_id(show_ids)
-		if not tmdb_id: return
-		ep = item.get('episode', {})
-		insert_list.append(('episode', tmdb_id, ep.get('season'), ep.get('number'), item.get('last_watched_at', ''), ep.get('show', {}).get('title', '')))
+		try:
+			show_ids = item.get('episode', {}).get('show', {}).get('ids', {})
+			tmdb_id = _resolve_tvshow_id(show_ids)
+			if not tmdb_id: return
+			ep = item.get('episode', {})
+			insert_list.append(('episode', tmdb_id, ep.get('season'), ep.get('number'), item.get('last_watched_at', ''), ep.get('show', {}).get('title', '')))
+		finally: tick()
 	episodes = watched_info.get('episodes', [])
+	tick = kodi_utils.sync_progress_counter(progress, 'Watched episodes', 80, 86, len(episodes))
 	for i in TaskPool().tasks(_process, episodes, min(len(episodes), settings.max_threads())): i.join()
 	mdblist_cache.mdblist_watched_cache.set_bulk_tvshow_watched(insert_list)
 	return True
@@ -792,6 +940,7 @@ def mdblist_sync_activities(params=None, force_update=False, progress=None):
 	def _sync_canceled():
 		return progress and progress.iscanceled()
 	if force_update:
+		kodi_utils.sync_progress(progress, 'Checking MDBList', 6)
 		mdblist_cache.clear_all_mdblist_cache_data(silent=True, refresh=False)
 	if _sync_canceled(): return 'canceled'
 	latest = call_mdblist('sync/last_activities')
@@ -830,16 +979,22 @@ def mdblist_sync_activities(params=None, force_update=False, progress=None):
 	if refresh_movies or refresh_episodes:
 		if _sync_canceled(): return 'canceled'
 		success = 'success'
-		watched_info = _get_mdbl_paginated_list('sync/watched')
+		kodi_utils.sync_progress(progress, 'Watched', 18)
+		watched_info = _get_mdbl_paginated_list('sync/watched', progress, 'Watched', (18, 70))
 		if watched_info is None: return 'failed'
 		if _sync_canceled(): return 'canceled'
-		if refresh_movies: mdblist_indicators_movies(watched_info)
+		if refresh_movies:
+			kodi_utils.sync_progress(progress, 'Watched movies', 72)
+			mdblist_indicators_movies(watched_info, progress)
 		if _sync_canceled(): return 'canceled'
-		if refresh_episodes: mdblist_indicators_tv(watched_info)
+		if refresh_episodes:
+			kodi_utils.sync_progress(progress, 'Watched episodes', 80)
+			mdblist_indicators_tv(watched_info, progress)
 	if refresh_movie_pause or refresh_episode_pause:
 		if _sync_canceled(): return 'canceled'
 		success = 'success'
-		items = _get_mdbl_playback_items()
+		kodi_utils.sync_progress(progress, 'In progress', 86)
+		items = _get_mdbl_playback_items(progress)
 		if items is None: return 'failed'
 		if _sync_canceled(): return 'canceled'
 		if refresh_movie_pause: mdblist_progress_movies(items)
@@ -880,7 +1035,8 @@ def _mdblist_watchlist_normalized(media_kind):
 def mdblist_watchlist(media_kind, page_no):
 	original_list = _mdblist_watchlist_normalized(media_kind)
 	is_home = kodi_utils.external()
-	if settings.paginate(is_home): return paginate_list(original_list, page_no, settings.page_limit(is_home))
+	if page_no not in (None, '') and settings.paginate(is_home):
+		return paginate_list(original_list, page_no, settings.page_limit(is_home))
 	return original_list, 1
 
 def mdblist_watchlist_media_ids(media_kind):
@@ -898,7 +1054,8 @@ def mdblist_collection(media_kind, page_no):
 	original_list = _mdbl_personal_list(_mdbl_collection_watchlist_items(string, url), media_kind)
 	original_list = list_sort.sort_source(original_list, 'mdblist.collection', media_kind, 'mdblist_collection')
 	is_home = kodi_utils.external()
-	if settings.paginate(is_home): return paginate_list(original_list, page_no, settings.page_limit(is_home))
+	if page_no not in (None, '') and settings.paginate(is_home):
+		return paginate_list(original_list, page_no, settings.page_limit(is_home))
 	return original_list, 1
 
 def mdblist_droplist(media_kind, page_no):
@@ -1164,6 +1321,11 @@ def mdblist_episode_in_static_list(list_id, show_tmdb, season, episode, episode_
 		item_ep_tmdb = _mdbl_first_int(item.get('tmdb'), item.get('id'), ids_block.get('tmdb'))
 		if episode_tmdb is not None and item_ep_tmdb is not None and int(item_ep_tmdb) == episode_tmdb: return True
 	return False
+
+def mdblist_lists_with_media(media_type, tmdb_id):
+	list_media = 'movie' if media_type in ('movie', 'movies') else 'tvshow'
+	in_lists, _ = mdblist_static_lists_split_by_membership(list_media, tmdb_id, refresh=False)
+	return in_lists or []
 
 def mdblist_static_lists_split_by_membership(media_type, tmdb_id, refresh=True, season=None, episode=None, episode_tmdb=None):
 	results = []
@@ -1533,3 +1695,7 @@ def build_mdbl_watchlist(params):
 def build_mdbl_library(params):
 	from indexers import mdblist_lists
 	return mdblist_lists.build_mdbl_library(params)
+
+def in_mdblist_lists(params):
+	from indexers import mdblist_lists
+	return mdblist_lists.in_mdblist_lists(params)

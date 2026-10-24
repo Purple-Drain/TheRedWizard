@@ -11,7 +11,7 @@ BACKUP_FORMAT = 1
 BACKUP_MASK = '.json'
 PROGRESS_MIN_PERCENT = 1.0
 
-_EXTERNAL_HISTORY_PROVIDERS = {1: 'Trakt', 2: 'Simkl', 3: 'MDBList', 4: 'PunchPlay'}
+_EXTERNAL_HISTORY_PROVIDERS = {1: 'Trakt', 2: 'Simkl', 3: 'MDBList', 4: 'PunchPlay', 5: 'WeTrakr'}
 
 
 def _local_history_active():
@@ -47,14 +47,14 @@ def _default_backup_dir():
 
 
 def _pick_import_file(default_dir):
-	path = kodi_utils.browse_file(BACKUP_MASK, default_dir, heading='Choose favorites & history backup', force_defaultt=True)
+	path = kodi_utils.browse_file(BACKUP_MASK, default_dir, heading='Choose Favourites & History backup', force_defaultt=True)
 	if not path:
 		return None
 	tpath = kodi_utils.translate_path(path)
 	if not os.path.isfile(tpath):
 		return None
 	if not tpath.lower().endswith('.json'):
-		kodi_utils.ok_dialog(heading='Import favorites & history', text='Please choose a Red Light backup (.json).')
+		kodi_utils.ok_dialog(heading='Import Favourites & History', text='Please choose a Red Light backup (.json).')
 		return None
 	return tpath
 
@@ -62,14 +62,14 @@ def _pick_import_file(default_dir):
 def export_data(params):
 	payload, counts = _build_export_payload()
 	if not payload:
-		return kodi_utils.ok_dialog(heading='Export favorites & history', text='Nothing to export on this device.')
+		return kodi_utils.ok_dialog(heading='Export Favourites & History', text='Nothing to export on this device.')
 	folder = pick_export_folder(heading='Choose export folder')
 	if not folder:
 		return
 	filename = 'redlight-backup-%s.json' % datetime.now().strftime('%Y%m%d-%H%M%S')
 	path = os.path.join(folder, filename)
 	preview = _export_preview_text(filename, counts)
-	if not kodi_utils.confirm_dialog(heading='Export favorites & history', text=preview, ok_label='Export', cancel_label='Cancel', default_control=10, scroll=True):
+	if not kodi_utils.confirm_dialog(heading='Export Favourites & History', text=preview, ok_label='Export', cancel_label='Cancel', default_control=10, scroll=True):
 		return
 	try:
 		kodi_utils.make_directory(folder)
@@ -95,12 +95,12 @@ def import_data(params):
 		return kodi_utils.ok_dialog(heading='Import failed', text='Could not read that file.[CR][CR]%s' % e)
 	file_stats = _payload_stats(payload)
 	if not file_stats['favorites'] and not _has_history_counts(file_stats):
-		return kodi_utils.ok_dialog(heading='Import favorites & history', text='That file contains no favorites or watch history.')
+		return kodi_utils.ok_dialog(heading='Import Favourites & History', text='That file contains no favourites or watch history.')
 	local_stats = _local_stats()
 	empty_dest = not _local_has_data(local_stats)
 	preview = _preview_text(path, file_stats, local_stats)
 	if not kodi_utils.confirm_dialog(
-		heading='Import favorites & history',
+		heading='Import Favourites & History',
 		text=preview,
 		ok_label='Import' if empty_dest else 'Continue',
 		cancel_label='Cancel',
@@ -282,8 +282,8 @@ def _preview_text(path, file_stats, local_stats):
 	name = os.path.basename(path)
 	lines = [
 		'[B]%s[/B]' % name,
-		'Backup: %s favorite(s), %s' % (file_stats['favorites'], _history_count_line(file_stats['progress'], file_stats['watched'])),
-		'This device: %s favorite(s), %s' % (local_stats['favorites'], _history_count_line(local_stats['progress'], local_stats['watched'])),
+		'Backup: %s favourite(s), %s' % (file_stats['favorites'], _history_count_line(file_stats['progress'], file_stats['watched'])),
+		'This device: %s favourite(s), %s' % (local_stats['favorites'], _history_count_line(local_stats['progress'], local_stats['watched'])),
 	]
 	if _has_history_counts(file_stats) and not _local_history_active():
 		lines.append('[COLOR yellow]Watch history in the backup will be skipped (%s Indicators).[/COLOR]' % _external_history_provider_name())
@@ -293,7 +293,7 @@ def _preview_text(path, file_stats, local_stats):
 def _replace_warning(local_stats):
 	parts = []
 	if local_stats['favorites']:
-		parts.append('%s favorite(s)' % local_stats['favorites'])
+		parts.append('%s favourite(s)' % local_stats['favorites'])
 	if _has_history_counts(local_stats):
 		parts.append(_history_count_line(local_stats['progress'], local_stats['watched']))
 	return 'This will remove %s on this device before importing.' % ' and '.join(parts)
@@ -302,7 +302,7 @@ def _replace_warning(local_stats):
 def _export_preview_text(filename, counts):
 	lines = [
 		'[B]%s[/B]' % filename,
-		'%s favorite(s), %s' % (counts['favorites'], _history_count_line(counts['progress'], counts['watched'])),
+		'%s favourite(s), %s' % (counts['favorites'], _history_count_line(counts['progress'], counts['watched'])),
 	]
 	msg = _history_not_included_message()
 	if msg:
@@ -313,7 +313,7 @@ def _export_preview_text(filename, counts):
 def _export_summary(counts, filename):
 	parts = []
 	if counts['favorites']:
-		parts.append('%s favorite(s)' % counts['favorites'])
+		parts.append('%s favourite(s)' % counts['favorites'])
 	if _has_history_counts(counts) and _local_history_active():
 		parts.append(_history_count_line(counts['progress'], counts['watched']))
 	if parts:
@@ -325,9 +325,9 @@ def _import_rules_text(mode, file_stats):
 	lines = []
 	if file_stats['favorites']:
 		if mode == 'merge':
-			lines.append('Favorites: add from backup; keep existing entries.')
+			lines.append('Favourites: add from backup; keep existing entries.')
 		else:
-			lines.append('Favorites: replace everything on this device.')
+			lines.append('Favourites: replace everything on this device.')
 	if _has_history_counts(file_stats) and _local_history_active():
 		if mode == 'merge':
 			if file_stats['progress']:
@@ -370,7 +370,7 @@ def _import_favorites(items, mode):
 			updated += 1
 		else:
 			added += 1
-	return 'favorites: %s added, %s updated' % (added, updated)
+	return 'Favourites: %s added, %s updated' % (added, updated)
 
 
 def _import_progress(items, mode):

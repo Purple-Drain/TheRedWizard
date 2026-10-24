@@ -162,7 +162,7 @@ def pm_rename(file_type, file_id, current_name):
 	result = Premiumize.rename_cache_item(file_type, file_id, new_name)
 	if result == 'success':
 		Premiumize.clear_cache()
-		execute_builtin('Container.Refresh')
+		kodi_utils.execute_builtin('Container.Refresh')
 	else:
 		return kodi_utils.ok_dialog(text='Error')
 
@@ -171,7 +171,7 @@ def pm_delete(file_type, file_id):
 	result = Premiumize.delete_object(file_type, file_id)
 	if result == 'success':
 		Premiumize.clear_cache()
-		execute_builtin('Container.Refresh')
+		kodi_utils.execute_builtin('Container.Refresh')
 	else:
 		return kodi_utils.ok_dialog(text='Error')
 

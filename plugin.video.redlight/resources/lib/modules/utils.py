@@ -7,7 +7,7 @@ import inspect
 import _strptime
 import unicodedata
 from html import unescape
-from queue import SimpleQueue
+from queue import SimpleQueue, Empty
 from contextlib import nullcontext
 from threading import Thread, activeCount
 from importlib import import_module
@@ -25,9 +25,12 @@ class TaskPool:
 		uses_db = 'dbcon' in sig.parameters
 		context = open_db(db_name) if (uses_db and db_name) else nullcontext(None)
 		with context as dbcon:
-			while not queue.empty():
+			while True:
 				try:
-					args = queue.get()
+					args = queue.get_nowait()
+				except Empty:
+					break
+				try:
 					if uses_db: target(*args, dbcon=dbcon)
 					else: target(*args)
 				except Exception as e: logger('thread queue error', str(e))
@@ -279,6 +282,13 @@ def clean_file_name(s, use_encoding=False, use_blanks=True):
 	except: pass
 	return s
 
+_SEASON_RANGE_SPACES = re.compile(r'\bS\d{1,2}(?: S\d{1,2})+\b', re.I)
+
+def format_display_name(s):
+	"""Readable release name: dots to spaces, keep a season range as S01-S04."""
+	text = clean_file_name(s).replace('html', ' ').replace('+', ' ').replace('-', ' ')
+	return _SEASON_RANGE_SPACES.sub(lambda m: m.group(0).replace(' ', '-'), text)
+
 def byteify(data, ignore_dicts=False):
 	try:
 		if isinstance(data, unicode): return data.encode('utf-8')
@@ -454,6 +464,59 @@ def make_qrcode(url):
 	except Exception as e:
 		logger('Red Light', 'make_qrcode failed: %s' % e)
 		return
+
+def _url_already_has_code(url, code):
+	if not url or not code:
+		return False
+	from urllib.parse import urlparse, parse_qs
+	parsed = urlparse(url)
+	qs = parse_qs(parsed.query)
+	if code in (qs.get('code') or []) or code in (qs.get('pin') or []):
+		return True
+	path = (parsed.path or '').rstrip('/')
+	return path.endswith('/' + code)
+
+def device_auth_complete_url(payload, user_code='', fallback='', style='path'):
+	"""PIN/device page with the code filled in when the service supports it."""
+	payload = payload or {}
+	code = str(user_code or payload.get('user_code') or payload.get('pin') or payload.get('code') or '').strip()
+	for key in ('verification_uri_complete', 'verification_url_complete', 'direct_verification_url', 'user_url'):
+		value = payload.get(key)
+		if value and str(value).startswith('http'):
+			return str(value).strip()
+	base = str(payload.get('verification_uri') or payload.get('verification_url') or fallback or '').strip().rstrip('/')
+	if not base:
+		return ''
+	if not code or _url_already_has_code(base, code):
+		return base
+	if style == 'query':
+		sep = '&' if '?' in base else '?'
+		return '%s%scode=%s' % (base, sep, code)
+	if style == 'pin':
+		sep = '&' if '?' in base else '?'
+		return '%s%spin=%s' % (base, sep, code)
+	if style == 'none':
+		return base
+	return '%s/%s' % (base, code)
+
+def device_auth_site_label(payload, fallback=''):
+	payload = payload or {}
+	base = str(payload.get('verification_uri') or payload.get('verification_url') or fallback or '')
+	return base.replace('https://', '').replace('http://', '').rstrip('/')
+
+def authorise_wait_text(user_code, site_label, short_url='', filled=True):
+	code, site = str(user_code or ''), (site_label or 'the site')
+	link = ('[CR]OR visit [B]%s[/B]' % short_url) if short_url else ''
+	if filled:
+		return (
+			'Scan the [B]QR Code[/B] or open the link — the code is filled in.%s[CR]'
+			'Code is [B]%s[/B] if you need to type it at [B]%s[/B].[CR][CR]Waiting for authorisation...'
+			% (link, code, site)
+		)
+	return (
+		'Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B] to open that page.%s[CR][CR]Waiting for authorisation...'
+		% (code, site, link)
+	)
 
 def make_tinyurl(url):
 	if not url:
