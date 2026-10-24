@@ -7,6 +7,7 @@ from caches.main_cache import cache_object
 from caches.settings_cache import get_setting, set_setting
 from modules.utils import copy2clip, make_tinyurl, make_qrcode
 from modules.source_utils import supported_video_extensions, seas_ep_filter, extras
+from modules import debrid_allowance
 from modules.kodi_utils import sleep, ok_dialog, progress_dialog, notification, logger, make_session
 
 _rd_magnet_semaphore = Semaphore(3)
@@ -191,6 +192,9 @@ class RealDebridAPI:
 		# Kept on the instance so the resolve queue can say why a play failed (#86).
 		self.last_unrestrict_error = error
 		if error: logger('Real-Debrid', 'unrestrict/link answered %s (error_code %s) for %s' % (error['error'], error['error_code'], link))
+		# #293: a spent daily allowance cools RD until its reset, not just this call.
+		if error and debrid_allowance.is_allowance_error('Real-Debrid', response):
+			self.last_unrestrict_error = debrid_allowance.spent_error('Real-Debrid', debrid_allowance.mark_spent('Real-Debrid'))
 		return response.get('download'), response.get('id'), error
 
 	@staticmethod

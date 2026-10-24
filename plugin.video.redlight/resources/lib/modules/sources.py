@@ -2019,6 +2019,18 @@ class Sources():
 			kodi_utils.clear_property(PROP_PLAY_MIME)
 		return mime
 
+	def _allowance_spent(self, provider):
+		"""#293: True when the provider's daily allowance is spent and still cooling. The failure
+		reason says when to try again, and the resolve skips the provider without a request."""
+		try:
+			from modules import debrid_allowance
+			until = debrid_allowance.spent_until(provider)
+			if not until: return False
+			self._debrid_error = describe_debrid_error(provider, debrid_allowance.spent_error(provider, until))
+			return True
+		except Exception:
+			return False
+
 	def _note_debrid_error(self, provider, api):
 		"""Keep the error the debrid client saw on its last unrestrict call (RD #126, TorBox), for
 		the failure reason of the queue entry being resolved (#86)."""
@@ -3892,6 +3904,7 @@ class Sources():
 	def resolve_cached(self, debrid_provider, item_url, _hash, title, season, episode, pack, source_item=None):
 		debrid_function = self.debrid_importer(debrid_provider)
 		store_to_cloud = settings.store_resolved_to_cloud(debrid_provider, pack)
+		if self._allowance_spent(debrid_provider): return None
 		try:
 			api = debrid_function()
 			if debrid_provider == 'Offcloud' and hasattr(api, 'resolve_magnet_with_cleanup'):
@@ -3915,6 +3928,7 @@ class Sources():
 			else:
 				debrid_function = self.debrid_importer(scrape_provider)
 				if scrape_provider == 'tb_cloud':
+					if self._allowance_spent('TorBox'): return None
 					tb = debrid_function()
 					media_type = cloud_media_type or 'torrent'
 					if media_type == 'webdl':
@@ -3926,6 +3940,7 @@ class Sources():
 					url = tb.coerce_play_url(url) or url
 					if not url: self._note_debrid_error('TorBox', tb)
 				elif scrape_provider == 'rd_cloud':
+					if self._allowance_spent('Real-Debrid'): return None
 					# #94: RD can answer hoster_unavailable for a torrent it still lists as downloaded;
 					# the helper reinserts that torrent once per session (folder_id is its id) and retries.
 					rd = debrid_function()

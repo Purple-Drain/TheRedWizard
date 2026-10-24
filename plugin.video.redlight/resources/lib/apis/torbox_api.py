@@ -8,6 +8,7 @@ from caches.settings_cache import get_setting, set_setting
 from caches.main_cache import cache_object
 from modules.source_utils import supported_video_extensions, seas_ep_filter, extras
 from modules.utils import copy2clip, make_qrcode
+from modules import debrid_allowance
 from modules.kodi_utils import make_session, ok_dialog, notification, confirm_dialog, progress_dialog, sleep, logger
 
 base_url = 'https://api.torbox.app/v1/api/'
@@ -630,6 +631,12 @@ class TorBoxAPI:
 				if isinstance(r, dict) and not r.get('success'):
 					detail = r.get('detail') or r.get('error')
 					if detail: self.last_unrestrict_error = {'error': str(detail)[:120]}
+				# #293: a spent daily allowance comes back as a 429 that no retry can clear before
+				# the reset, so stop here and cool the provider instead of retrying to the deadline.
+				if debrid_allowance.is_allowance_error('TorBox', r):
+					until = debrid_allowance.mark_spent('TorBox')
+					self.last_unrestrict_error = debrid_allowance.spent_error('TorBox', until)
+					break
 				# #108 item 3: check after the detail capture above, so a 4xx with a JSON body
 				# keeps the API's own detail in last_unrestrict_error instead of it being
 				# overwritten by the generic "requestdl returned N".
