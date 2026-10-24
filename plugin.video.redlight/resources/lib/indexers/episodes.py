@@ -252,11 +252,13 @@ def build_episode_list(params):
 				info_tag.setStudios(studios), info_tag.setWriters(item_get('writer'))
 				full_cast = cast + (item_get('guest_stars') or [])
 				info_tag.setCast([kodi_actor(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in full_cast])
-				ws.clear_listitem_kodi_resume(info_tag)
 				try: listitem.setContentLookup(False)
 				except: pass
 				if progress and not unaired:
-					ws.apply_listitem_progress(info_tag, set_properties, progress, duration, is_external)
+					# Time only: a total would make Kodi or the skin show a resume dialog we cannot honour.
+					resume_secs = ws.get_resume_seconds(progress, duration)
+					info_tag.setResumePoint(resume_secs)
+					set_properties({'WatchedProgress': progress})
 				listitem.setLabel(display)
 				listitem.addContextMenuItems(cm)
 				listitem.setArt({'poster': show_poster, 'fanart': show_fanart, 'thumb': thumb, 'icon':thumb, 'clearlogo': show_clearlogo, 'landscape': thumb,
@@ -599,8 +601,10 @@ def build_single_episode(list_type, params={}):
 				'cast': [{'name': item['name'], 'role': item['role'], 'thumbnail': item['thumbnail']} for item in full_cast],
 				'art': {'poster': show_poster, 'fanart': show_fanart, 'thumb': thumb, 'icon':thumb, 'clearlogo': show_clearlogo, 'landscape': thumb,
 						'season.poster': season_poster, 'tvshow.poster': show_poster, 'tvshow.clearlogo': show_clearlogo, 'tvshow.landscape': show_landscape}}
-			# Progress shows as a skin property only; Kodi's own resume point stays 0 (render_episode_row).
-			if progress and not unaired and ws.meaningful_progress_percent(progress): properties['WatchedProgress'] = progress
+			if progress and not unaired:
+				# Time only: a total would make Kodi or the skin show a resume dialog we cannot honour.
+				row['resume_seconds'] = ws.get_resume_seconds(progress, duration)
+				properties['WatchedProgress'] = progress
 			properties.update({
 				'episode_type': episode_type, 'redlight.extras_params': extras_params, 'redlight.options_params': options_params,
 				'redlight.playback_options_params': playback_options_params,
@@ -670,8 +674,8 @@ def build_single_episode(list_type, params={}):
 		except: pass
 		mdblist_menu_next = list_type == 'episode.mdblist_next'
 		include_unwatched, include_unaired, nextep_content = settings.nextep_include_unwatched(), settings.nextep_include_unaired(), settings.nextep_method()
-		sort_override = settings.parse_nextep_sort_key(params.get('nextep_sort'))
-		sort_key, sort_direction = settings.nextep_sort_key(sort_override), settings.nextep_sort_direction()
+		sort_key, sort_direction = settings.nextep_sort_key(), settings.nextep_sort_direction()
+		sort_override = None  # the sort is the setting, as on main: nextep_list_cache keys on it, not on upstream's nextep_sort param
 		include_airdate = settings.nextep_include_airdate()
 		if watched_indicators in (1, 2, 3, 4):
 			resformat, resinsert = '%Y-%m-%dT%H:%M:%S.%fZ', '2000-01-01T00:00:00.000Z'

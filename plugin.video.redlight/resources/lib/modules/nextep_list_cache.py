@@ -41,7 +41,8 @@ SETTING_GETTERS = (
 	'avoid_episode_spoilers', 'date_offset', 'tmdb_api_key', 'mpaa_region', 'include_anime_tvshow',
 	'exclude_specials_from_progress', 'tv_progress_location', 'cm_sort_order', 'cm_default_order', 'ignore_articles',
 	'playback_key', 'trakt_user_active', 'simkl_user_active', 'punchplay_user_active', 'mdblist_user_active',
-	'tmdblist_user_active', 'configured_external_scraper_slots')
+	'tmdblist_user_active', 'configured_external_scraper_slots',
+	'single_ep_widget_omit_tvshowtitle', 'single_ep_widget_omit_season_episode', 'public_calendar_include_anime')
 
 
 def _digest(value):

@@ -25,7 +25,7 @@ def render_episode_row(row, make_listitem, kodi_actor):
 	info_tag.setStudios(info['studios']), info_tag.setWriters(info['writers']), info_tag.setDirectors(info['directors'])
 	info_tag.setYear(info['year']), info_tag.setRating(info['rating']), info_tag.setVotes(info['votes']), info_tag.setMpaa(info['mpaa'])
 	info_tag.setCast([kodi_actor(name=i['name'], role=i['role'], thumbnail=i['thumbnail']) for i in row['cast']])
-	info_tag.setResumePoint(0.0)
+	if 'resume_seconds' in row: info_tag.setResumePoint(row['resume_seconds'])
 	try: listitem.setContentLookup(False)
 	except: pass
 	listitem.setLabel(row['label'])

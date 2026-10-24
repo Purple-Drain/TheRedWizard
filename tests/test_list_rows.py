@@ -60,6 +60,7 @@ def _setup(obj, is_external):
 	obj.cm_sort_order, obj.custom_cm_menu, obj.widget_hide_watched, obj.ai_model_active = {'extras': 0, 'options': 1, 'mdblist_watchlist': 2}, True, False, False
 	obj.make_listitem, obj.kodi_actor = _Recorder, _actor
 	obj.items, obj.rows, obj.keep_rows = [], [], True
+	obj.action = None  # hide_unaired_watchlist_item(action, unaired) reads it (2.4.2 sync)
 	obj.append = obj.items.append
 
 

@@ -344,7 +344,10 @@ class Movies:
 				'tagline': meta_get('tagline'), 'studios': meta_get('studio'), 'writers': meta_get('writer'), 'directors': meta_get('director')},
 			'cast': [{'name': item['name'], 'role': item['role'], 'thumbnail': item['thumbnail']} for item in cast],
 			'properties': properties}
-		if progress and watched_status.meaningful_progress_percent(progress): properties['WatchedProgress'] = progress
+		if progress:
+			# Time only: a total would make Kodi or the skin show a resume dialog we cannot honour.
+			row['resume_seconds'] = watched_status.get_resume_seconds(progress, duration)
+			properties['WatchedProgress'] = progress
 		properties.update({
 			'belongs_to_collection': belongs_to_movieset,
 			'redlight.extras_params': extras_params,

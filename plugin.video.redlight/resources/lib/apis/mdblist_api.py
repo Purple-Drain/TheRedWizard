@@ -93,7 +93,8 @@ def call_mdblist(path, params=None, json_data=None, method=None, retry=True):
 	params = params or {}
 	token = _mdblist_token()
 	if not token or token in ('0', 'empty_setting'): return None
-	headers = {'Authorization': 'Bearer %s' % token}
+	headers = {'Authorization': 'Bearer %s' % token} if _mdblist_oauth_active() else {}
+	if not headers: params['apikey'] = token
 	try:
 		response = session.request(method or 'get', BASE_URL % path.lstrip('/'), params=params, json=json_data, headers=headers, timeout=META_API_TIMEOUT)
 		if 'json' in response.headers.get('Content-Type', ''):

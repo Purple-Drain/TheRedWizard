@@ -2,7 +2,7 @@
 import requests
 from caches.main_cache import main_cache
 
-THEINTRODB_URL = 'https://api.theintrodb.org/v3/media'
+THEINTRODB_URL = 'https://api.theintrodb.org/v4/media'
 INTRODB_URL = 'https://api.introdb.app/segments'
 _CACHE_HOURS = 168
 _API_TIMEOUT = 6
@@ -16,6 +16,13 @@ _OLD_EPISODE_DAYS = 30
 # #282: a credits marker whose credits end leaves more than this much file after it belongs to a
 # shorter cut of the episode; a short tail (preview, logo, black) stays under it.
 _CUT_MISMATCH_GAP_SEC = 120
+# Same test for a marker with no credits end, measured from the credits start: wider, so a show
+# with long credits keeps its marker, while a cut 4 min longer still trips it.
+_CUT_MISMATCH_GAP_NO_END_SEC = 180
+# #283: TheIntroDB v4 matches the closest cut within 5 minutes of duration_ms. Cached markers are keyed
+# by the file's length to the minute, so two cuts of one episode do not share an entry.
+_CUT_MATCH_SEC = 300
+_DURATION_BUCKET_SEC = 60
 _status = {}
 
 
@@ -66,12 +73,46 @@ _MAX_INTRO_START_FRAC = 0.5
 _CREDITS_INTRO_OVERLAP_MS = 5000
 
 
-def _intro_cache_key(tmdb_id, imdb_id, season, episode):
-	return 'intro_skip_%s_%s_%s_%s' % (tmdb_id, imdb_id or '', season, episode)
+def _duration_bucket(duration_sec):
+	try:
+		duration_sec = float(duration_sec)
+		if duration_sec > 0: return int(round(duration_sec / _DURATION_BUCKET_SEC))
+	except: pass
+	return None
 
 
-def _outro_cache_key(tmdb_id, imdb_id, season, episode):
-	return 'outro_credits_%s_%s_%s_%s' % (tmdb_id, imdb_id or '', season, episode)
+def _intro_cache_key(tmdb_id, imdb_id, season, episode, duration_sec=None):
+	key = 'intro_skip_%s_%s_%s_%s' % (tmdb_id, imdb_id or '', season, episode)
+	bucket = _duration_bucket(duration_sec)
+	return key if bucket is None else '%s_d%s' % (key, bucket)
+
+
+def _outro_cache_key(tmdb_id, imdb_id, season, episode, duration_sec=None):
+	key = 'outro_credits_%s_%s_%s_%s' % (tmdb_id, imdb_id or '', season, episode)
+	bucket = _duration_bucket(duration_sec)
+	return key if bucket is None else '%s_d%s' % (key, bucket)
+
+
+def _cached_for_duration(key_fn, tmdb_id, imdb_id, season, episode, duration_sec):
+	'''#283: the entry for this file's length, else the length-free entry (a prefetch made before the
+	file was known) when its cut is within TheIntroDB's match window of the file. None means ask again.'''
+	cached = main_cache.get(key_fn(tmdb_id, imdb_id, season, episode, duration_sec))
+	if cached is not None or _duration_bucket(duration_sec) is None:
+		return cached
+	cached = main_cache.get(key_fn(tmdb_id, imdb_id, season, episode))
+	if isinstance(cached, dict):
+		cut_sec = cached.get('cut_duration_sec')
+		if cut_sec is not None and abs(float(cut_sec) - float(duration_sec)) > _CUT_MATCH_SEC:
+			return None
+	return cached
+
+
+def _store_key(key_fn, tmdb_id, imdb_id, season, episode, duration_sec, segment):
+	'''Only a marker from a known cut is filed under the file's length; introdb.app has no cuts, so its
+	marker stays per episode and serves every cut (#282 fits it to the file).'''
+	if isinstance(segment, dict) and segment.get('cut_duration_sec') is not None:
+		return key_fn(tmdb_id, imdb_id, season, episode, duration_sec)
+	return key_fn(tmdb_id, imdb_id, season, episode)
 
 
 def peek_intro_segment_cache(tmdb_id, imdb_id, season, episode, duration_sec=None):
@@ -79,7 +120,7 @@ def peek_intro_segment_cache(tmdb_id, imdb_id, season, episode, duration_sec=Non
 		season, episode = int(season), int(episode)
 	except:
 		return '__miss__'
-	cached = main_cache.get(_intro_cache_key(tmdb_id, imdb_id, season, episode))
+	cached = _cached_for_duration(_intro_cache_key, tmdb_id, imdb_id, season, episode, duration_sec)
 	if cached is None:
 		return '__miss__'
 	if not cached:
@@ -110,8 +151,9 @@ def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None, 
 		season, episode = int(season), int(episode)
 	except:
 		return None
-	cache_key = _intro_cache_key(tmdb_id, imdb_id, season, episode)
-	cached = main_cache.get(cache_key)
+	cache_key = _intro_cache_key(tmdb_id, imdb_id, season, episode, duration_sec)
+	status_key = _intro_cache_key(tmdb_id, imdb_id, season, episode)
+	cached = _cached_for_duration(_intro_cache_key, tmdb_id, imdb_id, season, episode, duration_sec)
 	if cached is not None:
 		if not cached:
 			return None
@@ -126,40 +168,41 @@ def resolve_intro_segment(tmdb_id, imdb_id, season, episode, duration_sec=None, 
 	if not segment and imdb_id not in (None, '', 'None', 'tt0000000'):
 		segment = _attempt(_fetch_introdb_intro, failures, imdb_id, season, episode)
 	if segment:
-		_status[cache_key] = 'found'
-		main_cache.set(cache_key, segment, expiration=_CACHE_HOURS)
+		_status[status_key] = 'found'
+		main_cache.set(_store_key(_intro_cache_key, tmdb_id, imdb_id, season, episode, duration_sec, segment), segment, expiration=_CACHE_HOURS)
 	elif failures:
 		# #270: a failed request is not "no intro"; leave it uncached so the next play asks again.
-		_status[cache_key] = 'api error (%s)' % ', '.join(failures)
+		_status[status_key] = 'api error (%s)' % ', '.join(failures)
 	else:
-		_status[cache_key] = 'api miss'
+		_status[status_key] = 'api miss'
 		main_cache.set(cache_key, '', expiration=_empty_cache_hours(premiered))
 	return segment
 
 
 def resolve_credits_segment(tmdb_id, imdb_id, season, episode, duration_sec=None, premiered=None):
 	'''The credits marker as stored: {'start_sec', 'end_sec'} (end_sec None when the provider has none),
-	or None. The cache is per episode, not per file, so the fit against the playing file is done by the
-	caller through credits_start_for_duration() (#282).'''
+	or None. TheIntroDB is asked for the cut nearest the file's length (#283); introdb.app has no cuts, so
+	the caller still fits the marker to the playing file through credits_start_for_duration() (#282).'''
 	try:
 		season, episode = int(season), int(episode)
 	except:
 		return None
-	cache_key = _outro_cache_key(tmdb_id, imdb_id, season, episode)
-	cached = main_cache.get(cache_key)
+	cache_key = _outro_cache_key(tmdb_id, imdb_id, season, episode, duration_sec)
+	cached = _cached_for_duration(_outro_cache_key, tmdb_id, imdb_id, season, episode, duration_sec)
 	if cached is not None:
 		if not cached:
 			return None
 		if isinstance(cached, dict):
 			return cached
-		return {'start_sec': cached, 'end_sec': None}  # value cached before #282
+		# A bare number was cached before pd.129 (an episode prefetched during the previous play),
+		# so it has no end for the fit check: fetch again (#282, S04E21).
 	segment, failures = None, []
 	if tmdb_id not in (None, '', 'None', '0000000'):
 		segment = _attempt(_fetch_theintrodb_credits, failures, tmdb_id, season, episode, duration_sec)
 	if segment is None and imdb_id not in (None, '', 'None', 'tt0000000'):
 		segment = _attempt(_fetch_introdb_outro, failures, imdb_id, season, episode, duration_sec)
 	if segment is not None:
-		main_cache.set(cache_key, segment, expiration=_CACHE_HOURS)
+		main_cache.set(_store_key(_outro_cache_key, tmdb_id, imdb_id, season, episode, duration_sec, segment), segment, expiration=_CACHE_HOURS)
 	elif not failures:
 		main_cache.set(cache_key, '', expiration=_empty_cache_hours(premiered))
 	return segment
@@ -173,7 +216,8 @@ def credits_start_for_duration(segment, duration_sec, gap_sec=None):
 	next-episode prompt fires minutes early. Credits sit at the end of any cut, so when the
 	marker's credits end leaves more than gap_sec of file after it, the marker is re-anchored to
 	the end of this file, keeping its credits length. A marker with no end (TheIntroDB credits
-	carry end_ms null, and it is already asked with the duration) is returned as is.'''
+	carry end_ms null) is measured from its start with the wider _CUT_MISMATCH_GAP_NO_END_SEC,
+	since the credits length is unknown, and re-anchored to the end with no credits length.'''
 	if not segment:
 		return None, None
 	start_sec = segment.get('start_sec')
@@ -188,8 +232,12 @@ def credits_start_for_duration(segment, duration_sec, gap_sec=None):
 		end_sec = float(end_sec) if end_sec is not None else None
 	except:
 		return start_sec, None
-	if total is None or total <= 60 or end_sec is None or end_sec < start_sec:
+	if total is None or total <= 60:
 		return start_sec, None
+	if end_sec is None or end_sec < start_sec:
+		if total - start_sec <= _CUT_MISMATCH_GAP_NO_END_SEC:
+			return start_sec, None
+		return total, start_sec
 	if total - end_sec <= gap_sec:
 		return start_sec, None
 	return total - (end_sec - start_sec), start_sec
@@ -305,10 +353,10 @@ def _parse_start_value(start_val, end_val=None):
 
 def _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec=None):
 	try:
-		params = {'tmdb_id': str(tmdb_id), 'season': season, 'episode': episode}
+		params = {'tmdb_id': str(tmdb_id), 'season': season, 'episode': episode, 'details': 'true'}
 		if duration_sec:
 			try:
-				params['durationMs'] = int(float(duration_sec) * 1000)
+				params['duration_ms'] = int(float(duration_sec) * 1000)
 			except:
 				pass
 		data = _get_json(THEINTRODB_URL, params)
@@ -327,6 +375,7 @@ def _fetch_theintrodb_intro(tmdb_id, season, episode, duration_sec=None):
 			segment = _ms_segment(start_ms, entry.get('end_ms'), duration_sec)
 			if segment:
 				segment['source'] = 'theintrodb'
+				_add_cut_duration(segment, data)
 				return segment
 		return None
 	except _LookupFailed:
@@ -381,10 +430,10 @@ def _fetch_introdb_outro(imdb_id, season, episode, duration_sec=None):
 
 def _fetch_theintrodb_credits(tmdb_id, season, episode, duration_sec=None):
 	try:
-		params = {'tmdb_id': str(tmdb_id), 'season': season, 'episode': episode}
+		params = {'tmdb_id': str(tmdb_id), 'season': season, 'episode': episode, 'details': 'true'}
 		if duration_sec:
 			try:
-				params['durationMs'] = int(float(duration_sec) * 1000)
+				params['duration_ms'] = int(float(duration_sec) * 1000)
 			except:
 				pass
 		data = _get_json(THEINTRODB_URL, params)
@@ -403,8 +452,15 @@ def _fetch_theintrodb_credits(tmdb_id, season, episode, duration_sec=None):
 		if entry.get('end_ms') is not None:
 			try: end_sec = int(entry['end_ms']) / 1000.0
 			except: end_sec = None
-		return {'start_sec': start_sec, 'end_sec': end_sec}
+		return _add_cut_duration({'start_sec': start_sec, 'end_sec': end_sec}, data)
 	except _LookupFailed:
 		raise
 	except:
 		return None
+
+
+def _add_cut_duration(segment, data):
+	'''Length of the cut TheIntroDB matched (details=true), when it gives one.'''
+	try: segment['cut_duration_sec'] = int(data['group_duration_ms']) / 1000.0
+	except: pass
+	return segment
