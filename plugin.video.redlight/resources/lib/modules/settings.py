@@ -37,7 +37,10 @@ def mdblist_user_active():
 	from caches.settings_cache import settings_cache
 	user = settings_cache.read_db_value('mdblist.user')
 	token = settings_cache.read_db_value('mdblist.token')
-	return user not in (None, 'empty_setting', '') and token not in (None, '0', '', 'empty_setting')
+	refresh = get_setting('redlight.mdblist.refresh', '0')
+	return (user not in (None, 'empty_setting', '')
+		and token not in (None, '0', '', 'empty_setting')
+		and refresh not in (None, '0', '', 'empty_setting'))
 
 def punchplay_user_active():
 	"""Authorised when a usable access token exists (username is display-only)."""
@@ -103,6 +106,10 @@ def playback_key():
 
 def playback_settings():
 	return (int(get_setting('redlight.playback.watched_percent', '90')), int(get_setting('redlight.playback.resume_percent', '5')))
+
+def playback_watched_percent():
+	"""Percent at which playback writes a local watched tick. Follows Watched Status Provider."""
+	return 80 if watched_indicators() in (1, 2) else 90
 
 def limit_resolve():
 	return get_setting('redlight.playback.limit_resolve', 'false') == 'true'
@@ -171,11 +178,25 @@ def ai_model_order():
 def ai_model_limit():
 	return max(1, int(get_setting('redlight.ai_model.limit', '10')))
 
+WATCHLIST_UNAIRED_ACTIONS = frozenset((
+	'trakt_watchlist', 'trakt_watchlist_lists',
+	'mdblist_watchlist',
+	'punchplay_watchlist', 'punchplay_plantowatch',
+	'simkl_plantowatch',
+))
+
 def show_unaired_watchlist():
 	return get_setting('redlight.show_unaired_watchlist', 'true') == 'true'
 
+def hide_unaired_watchlist_item(action, unaired):
+	return bool(unaired) and action in WATCHLIST_UNAIRED_ACTIONS and not show_unaired_watchlist()
+
 def lists_cache_duraton():
 	return int(get_setting('redlight.lists_cache_duraton', '48'))
+
+def premieres_newest_first():
+	"""Content > Premieres & Latest Releases Sort: date-desc instead of popularity."""
+	return get_setting('redlight.tmdb.premieres_sort', '0') == '1'
 
 def auto_start_redlight():
 	return get_setting('redlight.auto_start_redlight', 'false') == 'true'
@@ -187,6 +208,9 @@ def source_folders_directory(media_type, source):
 
 def avoid_episode_spoilers():
 	return get_setting('redlight.avoid_episode_spoilers', 'false') == 'true'
+
+def show_loading_plot():
+	return get_setting('redlight.show_loading_plot', 'true') == 'true'
 
 def paginate(is_home):
 	paginate_lists = int(get_setting('redlight.paginate.lists', '0'))
@@ -209,6 +233,11 @@ def quality_sort_order():
 
 def sort_to_top_filter(autoplay):
 	return {0: False, 1: False if autoplay else True, 2: True if autoplay else False, 3: True}[int(get_setting('redlight.filter.sort_to_top', '0'))]
+
+def prefer_release_groups(autoplay):
+	try: value = int(get_setting('redlight.filter.prefer_release_groups', '0'))
+	except: value = 0
+	return {0: False, 1: False if autoplay else True, 2: True if autoplay else False, 3: True}.get(value, False)
 
 def audio_filters():
 	setting = get_setting('redlight.filter_audio')
@@ -374,6 +403,22 @@ def stingers_percentage():
 def include_anime_tvshow():
 	return get_setting('redlight.include_anime_tvshow', 'false') == 'true'
 
+def show_public_calendars():
+	return get_setting('redlight.show_public_calendars', 'false') == 'true'
+
+def public_calendar_include_anime():
+	return get_setting('redlight.public_calendar_include_anime', 'true') == 'true'
+
+def public_calendar_max_items():
+	"""0 = unlimited; otherwise 1–2000 listitem cap after the day window."""
+	try: value = int(get_setting('redlight.public_calendar_max_items', '250'))
+	except (TypeError, ValueError): value = 250
+	if value <= 0: return 0
+	return max(1, min(2000, value))
+
+def public_calendar_cache_list():
+	return get_setting('redlight.public_calendar_cache_list', 'true') == 'true'
+
 def anime_seasons_episode_group_fallback():
 	return get_setting('redlight.anime.seasons_episode_group_fallback', 'false') == 'true'
 
@@ -457,7 +502,10 @@ def nextep_widget_warm():
 	return get_setting('redlight.nextep_widget_warm', 'true') == 'true'
 
 def skip_intro_mode():
-	return int(get_setting('redlight.autoplay_skip_intro', '0'))
+	try:
+		return int(get_setting('redlight.autoplay_skip_intro', '0'))
+	except:
+		return 0
 
 def skip_intro_all_episodes():
 	return get_setting('redlight.skip_intro_all_episodes', 'true') == 'true'
@@ -560,7 +608,7 @@ def nextep_pipeline_headroom(play_type, scraper_time, still_watching_due=False):
 def auto_nextep_settings(play_type):
 	play_type = 'autoplay' if play_type == 'autoplay_nextep' else 'autoscrape'
 	window_percentage = 100 - int(get_setting('redlight.%s_next_window_percentage' % play_type, '95'))
-	alert_timing = _alert_timing_mode('%s_alert_timing' % play_type, '1')
+	alert_timing = _alert_timing_mode('%s_alert_timing' % play_type, '3')
 	watching_check = int(get_setting('redlight.autoplay_watching_check', '3'))
 	scraper_time = int(get_setting('redlight.results.timeout', '60')) + NEXTEP_SCRAPE_MARGIN_SEC
 	if play_type == 'autoplay':
@@ -627,6 +675,14 @@ def single_ep_display_format(is_external):
 	else: setting, default = 'redlight.single_ep_display', ''
 	return int(get_setting(setting, default))
 
+def single_ep_widget_omit_tvshowtitle():
+	"""Widgets only: skip TVShowTitle info tag so skins don't show show name under Label."""
+	return get_setting('redlight.single_ep_widget_omit_tvshowtitle', 'false') == 'true'
+
+def single_ep_widget_omit_season_episode():
+	"""Widgets only: skip Season/Episode info tags (Label still has SxE via Display Format)."""
+	return get_setting('redlight.single_ep_widget_omit_season_episode', 'false') == 'true'
+
 def calendar_display_format(is_external):
 	if is_external:
 		setting, default = 'redlight.trakt.calendar_display_widget', '1'
@@ -669,6 +725,30 @@ def nzb_indexer_active():
 def nzb_scrape_active():
 	"""NZB title scrape — indexers plus TorBox Pro usenet for resolve."""
 	return nzb_indexer_active() and authorized_debrid_check('tb')
+
+def _any_debrid_account():
+	return any(enabled_debrids_check(i) for i in ('rd', 'pm', 'ad', 'oc', 'tb'))
+
+def internal_scrapers_enabled():
+	return get_setting('redlight.provider.internal', 'false') == 'true'
+
+def _native_torrent_scrape_active(scraper):
+	return internal_scrapers_enabled() and get_setting('redlight.provider.%s' % scraper, 'false') == 'true' and _any_debrid_account()
+
+def comet_scrape_active():
+	return _native_torrent_scrape_active('comet')
+
+def torrentio_scrape_active():
+	return _native_torrent_scrape_active('torrentio')
+
+def torz_scrape_active():
+	return _native_torrent_scrape_active('torz')
+
+def nyaa_scrape_active():
+	return _native_torrent_scrape_active('nyaa')
+
+def animetosho_scrape_active():
+	return _native_torrent_scrape_active('animetosho')
 
 def nzb_search_width():
 	return int(get_setting('redlight.nzb.search_width', '0'))
@@ -737,6 +817,8 @@ def tv_progress_location():
 
 def check_prescrape_sources(scraper, media_type):
 	"""Prescrape only when Check Before Full Search is enabled for that provider."""
+	if scraper in ('animetosho', 'nyaa', 'comet', 'torz', 'torrentio'):
+		return False
 	if scraper in ('easynews', 'aiostreams', 'nzb', 'rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud'):
 		return get_setting('redlight.check.%s' % scraper) == 'true'
 	if scraper == 'folders':
@@ -764,6 +846,20 @@ def cloud_scrape_before_external(scraper):
 	return False
 
 EXTERNAL_SCRAPER_SLOT_COUNT = 3
+
+# Fen-style torrent packs shown first in Choose Module when already installed.
+# Other still lists every xbmc.python.module. Empty slots are never auto-assigned.
+# Chain Scrapers is omitted on purpose — Gears from the same repository is preferred.
+KNOWN_EXTERNAL_SCRAPERS = (
+	('script.module.classyscrapers', 'Classy Scrapers'),
+	('script.module.cocoscrapers', 'CocoScrapers Module'),
+	('script.module.diamondscrapers', 'Diamond Scrapers'),
+	('script.module.gearsscrapers', 'Gears Scrapers'),
+	('script.module.magneto', 'Magneto Module'),
+	('plugin.program.taz19scrapers', 'Taz19 Scrapers'),
+	('script.module.viperscrapers', 'Viper Scrapers'),
+)
+KNOWN_EXTERNAL_SCRAPER_IDS = frozenset(i[0] for i in KNOWN_EXTERNAL_SCRAPERS)
 
 def _external_slot_setting(slot, field):
 	return 'external_scraper.slot%d.%s' % (int(slot), field)
@@ -969,6 +1065,8 @@ def filter_by_name(scraper):
 def uncached_sort_last():
 	# media-stack #45 / #258: cached rows of every provider list first, then the included uncached rows.
 	return get_setting('redlight.results.uncached_sort_last', 'true') == 'true'
+def filter_by_episode_title(scraper):
+	return get_setting('redlight.%s.title_filter_episode' % scraper, 'true') == 'true'
 
 def uncached_min_seeders():
 	return int(get_setting('redlight.results.uncached_min_seeders', '0'))
@@ -1054,6 +1152,11 @@ def active_internal_scrapers():
 	active = [i.split('.')[1] for i in settings if get_setting('redlight.%s' % i) == 'true']
 	if aiostreams_active(): active.append('aiostreams')
 	if nzb_scrape_active(): active.append('nzb')
+	if animetosho_scrape_active(): active.append('animetosho')
+	if nyaa_scrape_active(): active.append('nyaa')
+	if comet_scrape_active(): active.append('comet')
+	if torz_scrape_active(): active.append('torz')
+	if torrentio_scrape_active(): active.append('torrentio')
 	return active
 
 def provider_sort_ranks():
@@ -1110,6 +1213,9 @@ def scraping_settings():
 def external_cache_check():
 	return any_external_cache_check()
 
+def fanarttv_api_key():
+	return get_setting('redlight.fanarttv_api', 'empty_setting')
+
 def omdb_api_key():
 	return get_setting('redlight.omdb_api', 'empty_setting')
 
@@ -1131,6 +1237,9 @@ def widget_hide_next_page():
 
 def widget_hide_watched():
 	return get_setting('redlight.widget_hide_watched', 'false') == 'true'
+
+def widget_hide_watched_fill():
+	return widget_hide_watched() and get_setting('redlight.widget_hide_watched_fill', 'false') == 'true'
 
 def calendar_sort_order():
 	return int(get_setting('redlight.trakt.calendar_sort_order', '0'))
@@ -1212,7 +1321,7 @@ def offer_watched_provider(provider_index, name):
 	from modules.kodi_utils import confirm_dialog
 	if confirm_dialog(heading='Watched Status Provider', text='Do you want to set %s as your Watched Status Provider?' % name,
 						ok_label='Yes', cancel_label='No', default_control=10):
-		set_setting('watched_indicators', str(provider_index))
+		set_setting('watched_indicators', str(provider_index), provider_sync=False)
 		return True
 	return False
 
@@ -1319,8 +1428,21 @@ def nextep_airing_today():
 def nextep_include_unaired():
 	return get_setting('redlight.nextep.include_unaired', 'false') == 'true'
 
-def nextep_sort_key():
-	return {0: 'last_played', 1: 'first_aired', 2: 'name', 3: 'updated'}[int(get_setting('redlight.nextep.sort_type', '0'))]
+_NEXTEP_SORT_ALIASES = {
+	'last_played': 'last_played', 'first_aired': 'first_aired', 'name': 'name',
+	'0': 'last_played', '1': 'first_aired', '2': 'name', '3': 'updated', 'updated': 'updated',
+	'recently_watched': 'last_played', 'airdate': 'first_aired', 'title': 'name'
+}
+
+def parse_nextep_sort_key(value):
+	if value in (None, ''): return None
+	return _NEXTEP_SORT_ALIASES.get(str(value).strip().lower())
+
+def nextep_sort_key(override=None):
+	parsed = parse_nextep_sort_key(override)
+	if parsed: return parsed
+	try: return {0: 'last_played', 1: 'first_aired', 2: 'name', 3: 'updated'}[int(get_setting('redlight.nextep.sort_type', '0'))]
+	except: return 'last_played'
 
 def nextep_sort_direction():
 	return int(get_setting('redlight.nextep.sort_order', '0')) == 0

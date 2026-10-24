@@ -31,6 +31,8 @@ def get_key_id(params):
 	elif search_type == 'people': string = 'people_queries'
 	elif search_type == 'tmdb_keyword':
 		url_params, string = {'mode': 'navigator.keyword_results', 'media_type': media_type}, 'keyword_tmdb_%s_queries' % media_type
+	elif search_type == 'tmdb_collection':
+		url_params, string = {'mode': 'navigator.collection_results'}, 'collection_tmdb_queries'
 	elif search_type == 'easynews_video':
 		url_params, string = {'mode': 'easynews.search_easynews'}, 'easynews_video_queries'
 	elif search_type == 'easynews_image':
@@ -43,31 +45,40 @@ def get_key_id(params):
 		url_params, string = {'mode': 'trakt.list.search_trakt_my_lists'}, 'trakt_my_list_queries'
 	elif search_type == 'mdblist_my_lists':
 		url_params, string = {'mode': 'mdblist.search_mdbl_my_lists'}, 'mdblist_my_list_queries'
+	elif search_type == 'mdblist_lists':
+		url_params, string = {'mode': 'mdblist.search_mdbl_lists'}, 'mdblist_list_queries'
 	elif search_type == 'simkl_lists':
 		url_params, string = {'mode': 'simkl.list.search_simkl_lists'}, 'simkl_list_queries'
 	elif search_type == 'punchplay_lists':
 		url_params, string = {'mode': 'punchplay.list.search_punchplay_lists'}, 'punchplay_list_queries'
-	if string: add_to_search(key_id, string)
+	elif search_type == 'punchplay_public_lists':
+		url_params, string = {'mode': 'punchplay.list.search_punchplay_public_lists'}, 'punchplay_public_list_queries'
+	if string: history_changed = add_to_search(key_id, string)
+	else: history_changed = False
 	if search_type == 'people':
 		person_search(key_id)
-		return _refresh_search_history_if_visible()
+		if history_changed: _refresh_search_history_if_visible()
+		return
 	if search_type == 'easynews_image':
 		search_easynews_image(key_id)
-		return _refresh_search_history_if_visible()
+		if history_changed: _refresh_search_history_if_visible()
+		return
 	url_params.update({'query': key_id, 'key_id': key_id, 'name': 'Search Results for %s' % key_id})
 	url = build_url(url_params)
 	return execute_builtin(('ActivateWindow(Videos,%s,return)' if external() else 'Container.Update(%s)') % url)
 
 def add_to_search(search_name, search_list):
 	try:
-		result = []
-		cache = main_cache.get(search_list)
-		if cache: result = cache
-		if search_name in result: result.remove(search_name)
+		result = list(main_cache.get(search_list) or [])
+		if result and result[0] == search_name:
+			return False
+		if search_name in result:
+			result.remove(search_name)
 		result.insert(0, search_name)
 		result = result[:50]
 		main_cache.set(search_list, result, expiration=8760)
-	except: return
+		return True
+	except: return False
 
 def remove_from_search(params):
 	try:
@@ -84,6 +95,7 @@ def clear_search():
 	('Clear Anime Search History', 'anime_queries'),
 	('Clear TV Show & Anime Search History', 'tvshow_anime_queries'),
 	('Clear People Search History', 'people_queries'),
+	('Clear Collections Search History', 'collection_tmdb_queries'),
 	('Clear Keywords Movie Search History', 'keyword_tmdb_movie_queries'),
 	('Clear Keywords TV Show Search History', 'keyword_tmdb_tvshow_queries'),
 	('Clear EasyNews Search History', 'easynews_video_queries'),
@@ -92,7 +104,10 @@ def clear_search():
 	('Clear Trakt User Lists Search History', 'trakt_list_queries'),
 	('Clear Trakt My Lists Search History', 'trakt_my_list_queries'),
 	('Clear MDBList My Lists Search History', 'mdblist_my_list_queries'),
-	('Clear Simkl List Search History', 'simkl_list_queries')]
+	('Clear MDBList Search History', 'mdblist_list_queries'),
+	('Clear Simkl List Search History', 'simkl_list_queries'),
+	('Clear PunchPlay List Search History', 'punchplay_list_queries'),
+	('Clear PunchPlay Lists Search History', 'punchplay_public_list_queries')]
 	try:
 		list_items = [{'line1': item[0]} for item in clear_history_list]
 		kwargs = {'items': json.dumps(list_items), 'narrow_window': 'true'}

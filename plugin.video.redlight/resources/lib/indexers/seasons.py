@@ -31,10 +31,15 @@ def build_season_list(params):
 				try: premiered = adjust_premiered_date(air_date, adjust_hours)[1]
 				except: premiered = ''
 				unaired = aired_eps == 0
-				if unaired or season_special:
-					progress, playcount, total_watched, total_unwatched = 0, 0, 0, aired_eps
-					if unaired: title = '[COLOR red][I]%s[/I][/COLOR]' % title
-					else: title = 'Specials'
+				if unaired:
+					# Must set watched/unwatched here — Specials sorts last and previously
+					# leaked the prior season's counts via unset locals (e.g. S5 10 → Specials 10/37).
+					progress, playcount, watched, unwatched = 0, 0, 0, aired_eps
+					title = '[COLOR red][I]%s[/I][/COLOR]' % title
+				elif season_special:
+					title = 'Specials'
+					playcount, watched, unwatched = get_watched_status_season(watched_info.get(season_number, None), aired_eps)
+					progress = get_progress_status_season(watched, aired_eps)
 				else:
 					if season_number in group_season_totals:
 						# Group-native traversal is in play: the bucket (plus ungrouped leftovers)
@@ -124,7 +129,7 @@ def build_season_list(params):
 		except: show_poster = meta_get('poster') or poster_empty
 	else: show_poster = meta_get('poster') or poster_empty
 	show_fanart = meta_get('fanart') or fanart_empty
-	show_clearlogo, show_landscape = meta_get('clearlogo') or '', meta_get('landscape') or ''
+	show_clearlogo, show_landscape = meta_get('clearlogo') or '', meta_get('landscape') or meta_get('fanart') or ''
 	custom_order = params.get('custom_order', None)
 	if settings.show_specials(): season_data.sort(key=lambda i: (i['season_number'] == 0, i['season_number']))
 	elif custom_order is not None: season_data = [i for i in season_data if i['season_number'] == params['season']]

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import os
+import sys
 import xbmc
 import xbmcgui
+import xbmcplugin
 import json
 import time
 import traceback
@@ -94,10 +96,10 @@ _INTRO_SKIP_MIN_JUMP_SEC = 3
 _INTRO_SKIP_SETTLE_SEC = 4
 _INTRO_SKIP_SETTLE_MAX_WAIT_SEC = 12
 _INTRO_SKIP_SETTLE_JUMP_SEC = 20
-_INTRO_CHAPTER_MIN_START_SEC = 5
 _INTRO_CHAPTER_MIN_SEGMENT_SEC = 10
 _INTRO_CHAPTER_MIN_END_SEC = 15
 _INTRO_SKIP_POST_END_GRACE_SEC = 20
+_INTRO_SKIP_SEEK_SETTLE_MS = 250
 
 def abnormal_playback_end(curr_time, total_time, user_stopped=False, superseded=False, cancelled=False, media_marked=False, min_remaining=_STALL_MIN_REMAINING_SEC):
 	"""True when playback ended where nobody asked it to (#107): not a user Stop, not Redlight
@@ -233,8 +235,10 @@ class RedLightPlayer(xbmc.Player):
 	def onAVStarted(self): self._cb_started = self._cb_avstarted = True
 	def onPlayBackStopped(self):
 		if self._cb_started: self._cb_stopped = True
+		self._maybe_show_nextep_handoff_cover()
 	def onPlayBackEnded(self):
 		if self._cb_started: self._cb_ended = True
+		self._maybe_show_nextep_handoff_cover()
 	def onPlayBackError(self): self.playback_error = True
 	def onPlayBackSeek(self, seek_time, seek_offset):
 		# Kodi passes the seek target in ms; seek_to_end() reads it when the stream closes early.
@@ -265,6 +269,30 @@ class RedLightPlayer(xbmc.Player):
 		except Exception: pass
 		return alive
 
+	def _autoscrape_handoff_ready(self):
+		# Toast is only the last alert window. Confirm + finished scrape already
+		# arms Ready (PROP set) - Stop then is a handoff, not "stopped early".
+		try:
+			if ku.get_property(ku.PROP_AUTOSCRAPE_TOAST_SHOWN) == 'true':
+				return True
+			ready = ku.get_property(PROP_AUTOSCRAPE_NEXTEP_READY)
+			return bool(ready) and ready != 'false'
+		except Exception:
+			return False
+
+	def _maybe_show_nextep_handoff_cover(self):
+		if not getattr(self, 'autoscrape_nextep', False):
+			return
+		if not self._autoscrape_handoff_ready():
+			return
+		try:
+			from modules.sources import nextep_handoff_cancelled, show_nextep_handoff_cover
+			if nextep_handoff_cancelled():
+				return
+			show_nextep_handoff_cover()
+		except Exception:
+			pass
+
 	def run(self, url=None, obj=None):
 		# #1 C426: every hand-off to the player ends a quiet start; the sources window never shows now.
 		try:
@@ -283,13 +311,15 @@ class RedLightPlayer(xbmc.Player):
 
 	def play_video(self, url, obj):
 		self.set_constants(url, obj)
-		if self.is_generic:
-			ku.clear_video_playlist()
 		if not self.is_generic and self._resolve_cancelled():
 			self.playback_successful = False
 			self.cancel_all_playback = True
 			self.sources_object.cancel_all_playback = True
 			self.sources_object._resolve_user_cancelled = True
+			try:
+				self.sources_object._abort_plugin_resolve()
+			except Exception:
+				pass
 			return
 		ku.volume_checker()
 		ku.set_property(PROP_PLAY_OPENING, 'true')
@@ -313,10 +343,12 @@ class RedLightPlayer(xbmc.Player):
 				ku.clear_property(PROP_PLAY_OPENING)
 				try:
 					if self.sources_object:
+						self.sources_object.playback_successful = True
 						self.sources_object._release_resolve_busy()
 						self.sources_object._release_sources_busy()
 				except:
 					pass
+				self._seek_to_resume_if_needed()
 				self._register_active_playback()
 				# #1 bug H (28.09.26): the open is confirmed, so tell play_file now. It used to learn
 				# this only from the monitor loop's first tick (playback_close_dialogs), so a Stop
@@ -342,6 +374,10 @@ class RedLightPlayer(xbmc.Player):
 				if cancelled:
 					if not self.sources_object._resolve_user_cancelled:
 						self.kill_dialog()
+					try:
+						self.sources_object._abort_plugin_resolve()
+					except Exception:
+						pass
 				else:
 					# Keep the resolver progress UI so play_file can try the next queued source.
 					self.run_error()
@@ -354,6 +390,77 @@ class RedLightPlayer(xbmc.Player):
 		self._join_end_threads()
 		try: del self.kodi_monitor
 		except: pass
+
+	def _plugin_handle(self):
+		try:
+			return int(sys.argv[1])
+		except Exception:
+			return -1
+
+	def _play_via_resolved_url(self, listitem):
+		handle = self._plugin_handle()
+		if handle <= 0:
+			return False
+		if not self.is_generic and getattr(self.sources_object, '_resolved_url_sent', False):
+			return False
+		# Autoscrape nextep handoff reuses the prior episode's spent PlayMedia handle —
+		# setResolvedUrl is a noop; Player.play() must open the first picked source.
+		if not self.is_generic and getattr(self.sources_object, '_use_player_play', False):
+			return False
+		try:
+			xbmcplugin.setResolvedUrl(handle, True, listitem)
+			if not self.is_generic:
+				self.sources_object._resolved_url_sent = True
+			self._played_via_resolve = True
+			return True
+		except Exception:
+			return False
+
+	def _seek_to_resume_if_needed(self):
+		# setResolvedUrl often ignores StartPercent on Kodi 22 / widget PlayMedia.
+		# Wait until duration is known (4K demux can take well over 500ms) then seek.
+		if not getattr(self, '_played_via_resolve', False):
+			return
+		try:
+			percent = float(self.playback_percent or 0)
+		except Exception:
+			return
+		if percent <= 0:
+			return
+		try:
+			total = 0.0
+			for _ in range(40):  # ~10s @ 250ms — matches slow HEVC open, not endless
+				if self._resolve_cancelled():
+					return
+				try:
+					if self.isPlayingVideo():
+						total = float(self.getTotalTime() or 0)
+						if total > 0:
+							break
+				except Exception:
+					pass
+				ku.sleep(250)
+			if total <= 0:
+				try:
+					ku.logger('Red Light', 'Resume seek skipped: no duration yet (percent=%s)' % percent)
+				except Exception:
+					pass
+				return
+			target = total * percent / 100.0
+			try:
+				current = float(self.getTime() or 0)
+			except Exception:
+				current = 0.0
+			if current >= target - 5:
+				return
+			self.seekTime(target)
+			try:
+				ku.logger('Red Light', 'Resume seek applied: %s%% -> %.1fs (was %.1fs / %.1fs)' % (
+					percent, target, current, total))
+			except Exception:
+				pass
+		except Exception:
+			pass
 
 	def _dismiss_kodi_playback_error_dialog(self):
 		# Kodi shows DialogConfirm (okdialog) when demux/open fails. Force-close so
@@ -511,6 +618,11 @@ class RedLightPlayer(xbmc.Player):
 
 	def playback_close_dialogs(self):
 		self.sources_object.playback_successful = True
+		try:
+			from modules.sources import close_nextep_handoff_cover
+			close_nextep_handoff_cover()
+		except Exception:
+			pass
 		self.kill_dialog()
 		ku.sleep(200)
 		try:
@@ -584,9 +696,10 @@ class RedLightPlayer(xbmc.Player):
 					_monitor_sleep_ms = 1000
 					if self.media_type == 'episode' and getattr(self, '_nextep_close_wait', False) and not getattr(self, '_nextep_stash_play_scheduled', False):
 						try:
-							_rem = round(float(self.getTotalTime()) - float(self.getTime()))
-							if 0 < _rem <= 10:
-								_monitor_sleep_ms = _NEXTEP_CLOSE_POLL_MS
+							if self._refresh_playback_position():
+								_rem = round(float(self.total_time) - float(self.curr_time))
+								if 0 < _rem <= 10:
+									_monitor_sleep_ms = _NEXTEP_CLOSE_POLL_MS
 						except:
 							pass
 					ku.sleep(_monitor_sleep_ms)
@@ -596,8 +709,9 @@ class RedLightPlayer(xbmc.Player):
 					self._maybe_requeue_before_end()
 					self._update_nextep_ready_flag()
 					self._maybe_osd_nextup()
-					try: self.total_time, self.curr_time = self.getTotalTime(), self.getTime()
-					except: ku.sleep(250); continue
+					if not self._refresh_playback_position(allow_stale=False):
+						ku.sleep(250)
+						continue
 					if not self._valid_playback_duration(self.total_time, self.curr_time):
 						ku.sleep(250)
 						continue
@@ -605,7 +719,6 @@ class RedLightPlayer(xbmc.Player):
 						self._intro_skip_fetch_started = True
 						self._start_intro_skip_fetch()
 					self._maybe_apply_intro_skip()
-					self.current_point = round(float(self.curr_time/self.total_time * 100), 1)
 					self._wetrakr_progress_tick()
 					self._punchplay_scrobble_progress()
 					self._maybe_write_resume_checkpoint()
@@ -614,7 +727,7 @@ class RedLightPlayer(xbmc.Player):
 							self.random_continual_triggered = True
 							self.run_random_continual()
 							break
-					elif self.current_point >= 90:
+					elif self.current_point >= self.watched_tick_percent:
 						if not self.media_marked: self.media_watched_marker()
 					if self.media_type == 'episode':
 						if self.autoplay_nextep or self.autoscrape_nextep:
@@ -651,9 +764,19 @@ class RedLightPlayer(xbmc.Player):
 				if getattr(self, 'total_time', None) not in (None, '', 0, 0.0) and getattr(self, 'curr_time', None) not in (None, ''):
 					_remaining = round(float(self.total_time) - float(self.curr_time))
 				natural_end = (not playback_superseded and _remaining is not None and _remaining <= _NEXTEP_NATURAL_END_SEC)
+				# After Next Episode Ready, Stop in credits is a deliberate handoff (1.8.2
+				# "natural end only" was too strict vs subtitle/IntroDB alert windows).
+				ready_fired = self._autoscrape_handoff_ready()
 				if self.autoscrape_nextep and not playback_superseded:
-					if natural_end:
+					if natural_end or ready_fired:
 						ku.set_property(PROP_NEXTEP_NATURAL_END, 'true')
+						if ready_fired and not natural_end:
+							self._log_nextep('Autoscrape next episode: stop after Ready (remaining=%ss)' % (_remaining if _remaining is not None else '?'))
+						try:
+							from modules.sources import show_nextep_handoff_cover
+							show_nextep_handoff_cover()
+						except Exception:
+							pass
 					else:
 						ku.set_property(PROP_NEXTEP_NATURAL_END, 'false')
 						try:
@@ -699,6 +822,8 @@ class RedLightPlayer(xbmc.Player):
 				except: pass
 			if not autoplay_stash_scheduled:
 				ku.hide_busy_dialog()
+			# Re-sample position before mark: stop often races getTime() (seek then Stop).
+			self._refresh_playback_position(allow_stale=True)
 			# #199 C6: the Next key moved Kodi's playlist onto the queued marker, a skip like C7's.
 			if not playback_superseded and not natural_end and not getattr(self, '_advanced_to_queued', False) and self._queued_next_taken():
 				ku.set_property(PROP_SKIP_EPISODE, 'true')
@@ -712,6 +837,12 @@ class RedLightPlayer(xbmc.Player):
 			if getattr(self, '_advanced_to_queued', False) and not self.media_marked: self.media_watched_marker(force_watched=True)
 			marked_before_end = self.media_marked
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
+			# Wipe Kodi MyVideos bookmarks for plugin:// paths so the next home-widget
+			# click does not show Resume/Start over before scrape (Umbrella pattern).
+			try:
+				from modules.watched_status import clear_local_bookmarks
+				clear_local_bookmarks()
+			except: pass
 			self.clear_playback_properties(clear_navigation=False)
 			ku.clear_property(PROP_NEXTEP_READY)
 			ku.clear_property(PROP_NEXTEP_READY_LABEL)
@@ -873,7 +1004,7 @@ class RedLightPlayer(xbmc.Player):
 			listitem.setLabel(self.title)
 			fresh_start = False
 			if self.media_type == 'movie':
-				plot = self.meta_get('plot')
+				plot = self.meta_get('plot') if st.show_loading_plot() else ''
 				listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo})
 				info_tag = listitem.getVideoInfoTag(True)
 				info_tag.setMediaType('movie'), info_tag.setTitle(self.title), info_tag.setOriginalTitle(self.meta_get('original_title')), info_tag.setPlot(plot)
@@ -883,7 +1014,8 @@ class RedLightPlayer(xbmc.Player):
 				info_tag.setWriters(writer), info_tag.setDirectors(director), info_tag.setUniqueIDs({'imdb': self.imdb_id, 'tmdb': str(self.tmdb_id)})
 				info_tag.setCast([ku.kodi_actor()(name=item['name'], role=item['role'], thumbnail=item['thumbnail']) for item in cast])
 			else:
-				if st.avoid_episode_spoilers() and int(self.meta_get('playcount', '0')) == 0: plot = self.meta_get('tvshow_plot') or '* Hidden to Prevent Spoilers *'
+				if not st.show_loading_plot(): plot = ''
+				elif st.avoid_episode_spoilers() and int(self.meta_get('playcount') or 0) == 0: plot = self.meta_get('tvshow_plot') or '* Hidden to Prevent Spoilers *'
 				else: plot = self.meta_get('plot') or self.meta_get('tvshow_plot')
 				listitem.setArt({'poster': poster, 'fanart': fanart, 'icon': poster, 'clearlogo': clearlogo, 'tvshow.poster': poster, 'tvshow.clearlogo': clearlogo})
 				info_tag = listitem.getVideoInfoTag(True)
@@ -951,7 +1083,7 @@ class RedLightPlayer(xbmc.Player):
 		percent = self.playback_percent if self.playback_percent else 0
 		self._spawn(punchplay_scrobble, args=('start', self.media_type, self.tmdb_id, percent, self.season, self.episode),
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
-				'session_id': self._punchplay_session_id}).start()
+				'session_id': self._punchplay_session_id}, daemon=True).start()
 
 	def _punchplay_scrobble_progress(self):
 		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
@@ -964,7 +1096,7 @@ class RedLightPlayer(xbmc.Player):
 		session_id = getattr(self, '_punchplay_session_id', None)
 		self._spawn(punchplay_scrobble, args=('progress', self.media_type, self.tmdb_id, self.current_point, self.season, self.episode),
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
-				'session_id': session_id}).start()
+				'session_id': session_id}, daemon=True).start()
 
 	def _punchplay_scrobble_stop(self, percent):
 		if self.is_generic or st.watched_indicators() != 4 or not st.punchplay_user_active(): return
@@ -973,7 +1105,7 @@ class RedLightPlayer(xbmc.Player):
 		session_id = getattr(self, '_punchplay_session_id', None)
 		self._spawn(punchplay_scrobble, args=('stop', self.media_type, self.tmdb_id, percent, self.season, self.episode),
 			kwargs={'title': getattr(self, 'title', '') or '', 'year': getattr(self, 'year', None),
-				'session_id': session_id}).start()
+				'session_id': session_id}, daemon=True).start()
 
 	def _wetrakr_meta_kwargs(self, percent):
 		ep_title = ''
@@ -1055,8 +1187,16 @@ class RedLightPlayer(xbmc.Player):
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
 		try:
+			self._refresh_playback_position(allow_stale=True)
 			current_point = getattr(self, 'current_point', 0) or 0
-			if current_point >= 90 or force_watched:
+			try:
+				ku.logger('Red Light', 'playback stop progress: %.1f%% (curr=%.1fs total=%.1fs)' % (
+					float(current_point), float(getattr(self, 'curr_time', 0) or 0), float(getattr(self, 'total_time', 0) or 0)))
+			except Exception:
+				pass
+			tick_at = getattr(self, 'watched_tick_percent', None)
+			if tick_at is None: tick_at = st.playback_watched_percent()
+			if current_point >= tick_at or force_watched:
 				self._trakt_scrobble_stop(100)
 				self._simkl_scrobble_stop(100)
 				self._punchplay_scrobble_stop(100)
@@ -1077,6 +1217,10 @@ class RedLightPlayer(xbmc.Player):
 				if current_point >= 5:
 					progress_params = {'media_type': self.media_type, 'tmdb_id': self.tmdb_id, 'curr_time': self.curr_time, 'total_time': self.total_time,
 									'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
+					# Local DB sync so In Progress is correct even if the remote scrobble
+					# thread is still running when the invoker exits; remote stays async.
+					try: ws.set_bookmark(progress_params, remote=False)
+					except Exception: pass
 					self._spawn(self.run_media_progress, args=(ws.set_bookmark, progress_params), name='set_bookmark')
 		except: pass
 
@@ -1186,9 +1330,10 @@ class RedLightPlayer(xbmc.Player):
 			return None
 
 	def _owns_active_playback(self):
+		# Key compare only — do not call isPlayingVideo() here. During seek/cache Kodi can
+		# briefly report not-playing; treating that as "superseded" exits the monitor early
+		# and skips progress save while the stream keeps going.
 		try:
-			if not self.isPlayingVideo():
-				return False
 			active = ku.get_property(PROP_ACTIVE_PLAYBACK_KEY)
 			mine = self._playback_meta_key()
 			if not active or not mine:
@@ -1196,6 +1341,74 @@ class RedLightPlayer(xbmc.Player):
 			return active == mine
 		except:
 			return False
+
+	def _parse_player_time_label(self, value):
+		if value in (None, '', '0', '0:00', '0:00:00', 'N/A'):
+			return None
+		try:
+			return float(value)
+		except Exception:
+			pass
+		try:
+			parts = str(value).strip().split(':')
+			if len(parts) == 3:
+				return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+			if len(parts) == 2:
+				return int(parts[0]) * 60 + float(parts[1])
+		except Exception:
+			pass
+		return None
+
+	def _read_player_times(self):
+		'''Live player position. Prefer Player API; fall back to InfoLabels (seek-safe).'''
+		curr = total = None
+		try:
+			if self.isPlayingVideo():
+				total = float(self.getTotalTime())
+				curr = float(self.getTime())
+		except Exception:
+			curr = total = None
+		if total in (None, 0, 0.0) or curr in (None,):
+			try:
+				total = self._parse_player_time_label(ku.get_infolabel('Player.Duration'))
+				curr = self._parse_player_time_label(ku.get_infolabel('Player.Time'))
+			except Exception:
+				pass
+		if (curr in (None,) or total in (None, 0, 0.0)):
+			try:
+				pct = ku.get_infolabel('Player.Percentage')
+				if pct not in (None, '', '0', '0.0') and total not in (None, 0, 0.0):
+					curr = (float(pct) / 100.0) * float(total)
+				elif pct not in (None, '', '0', '0.0') and getattr(self, 'total_time', None) not in (None, 0, 0.0, ''):
+					total = float(self.total_time)
+					curr = (float(pct) / 100.0) * total
+			except Exception:
+				pass
+		return curr, total
+
+	def _refresh_playback_position(self, allow_stale=True):
+		'''Update curr_time / total_time / current_point. Keep last good sample if live read fails.'''
+		curr, total = self._read_player_times()
+		if total not in (None, 0, 0.0) and curr not in (None,) and float(total) >= 60 and float(curr) > 0:
+			# Honour forward seeks: never shrink a known larger position on a bad post-seek sample.
+			prev = getattr(self, 'curr_time', None)
+			try:
+				prev_f = float(prev) if prev not in (None, '') else 0.0
+			except Exception:
+				prev_f = 0.0
+			if float(curr) + 2.0 < prev_f and prev_f > 30:
+				# Likely a transient 0/start sample after seek — keep previous.
+				curr = prev_f
+			self.total_time, self.curr_time = float(total), float(curr)
+			self.current_point = round(float(self.curr_time) / float(self.total_time) * 100, 1)
+			return True
+		if allow_stale and getattr(self, 'total_time', None) not in (None, 0, 0.0, '') and getattr(self, 'curr_time', None) not in (None, '', 0, 0.0):
+			try:
+				self.current_point = round(float(self.curr_time) / float(self.total_time) * 100, 1)
+				return True
+			except Exception:
+				pass
+		return False
 
 	def _register_active_playback(self):
 		key = self._playback_meta_key()
@@ -1508,6 +1721,11 @@ class RedLightPlayer(xbmc.Player):
 		episode = meta.get('episode', self.episode)
 		poster = meta.get('poster') or self.meta_get('poster')
 		ku.notification('[B]Next Episode Ready:[/B] %s S%02dE%02d' % (title, season, episode), 6500, poster)
+		try:
+			from modules.sources import arm_nextep_handoff_cover
+			arm_nextep_handoff_cover()
+		except Exception:
+			pass
 		self._log_nextep('Autoscrape next episode ready notify: remaining=%ss window=%ss' % (remaining, window))
 
 	def _try_autoplay_early_stash_play(self):
@@ -2422,6 +2640,7 @@ class RedLightPlayer(xbmc.Player):
 			self.meta_get, self.playback_percent = self.meta.get, self.sources_object.playback_percent or 0.0
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
+			self.watched_tick_percent = st.playback_watched_percent()
 			self.current_point = 0
 			self.subs_searched = False
 			self._subtitle_end_remaining_cached = '__unset__'
@@ -2511,7 +2730,12 @@ class RedLightPlayer(xbmc.Player):
 		self._intro_skip_no_timing_logged = False
 		try:
 			from apis.intro_skip_api import peek_intro_segment_cache
-			cached = peek_intro_segment_cache(self.tmdb_id, self.imdb_id, self.season, self.episode, getattr(self, 'total_time', None) or None)
+			duration = None
+			try:
+				total = getattr(self, 'total_time', None)
+				if total not in (None, '', 0, 0.0): duration = float(total)
+			except: pass
+			cached = peek_intro_segment_cache(self.tmdb_id, self.imdb_id, self.season, self.episode, duration)
 			if cached != '__miss__':
 				self._intro_skip_fetch_done = True
 				if cached:
@@ -2554,8 +2778,6 @@ class RedLightPlayer(xbmc.Player):
 				return
 			start_sec = total * start_pct / 100.0
 			end_sec = total * end_pct / 100.0
-			if start_sec < _INTRO_CHAPTER_MIN_START_SEC:
-				return
 			if end_sec - start_sec < _INTRO_CHAPTER_MIN_SEGMENT_SEC or end_sec < _INTRO_CHAPTER_MIN_END_SEC:
 				return
 			self._intro_skip_segment = {'start_sec': start_sec, 'end_sec': end_sec, 'source': 'chapters'}
@@ -2630,6 +2852,13 @@ class RedLightPlayer(xbmc.Player):
 		except: pass
 		return False
 
+	def _restore_fullscreen_after_intro_skip(self):
+		try:
+			from windows.playback_notifications import _restore_fullscreen_playback
+			_restore_fullscreen_playback(self)
+		except Exception:
+			pass
+
 	def _execute_intro_skip_seek(self, start_sec, end_sec, source, target_sec=None):
 		"""#265: target_sec is where the seek lands (end_sec less the Keep At The End seconds)."""
 		if target_sec is None: target_sec = end_sec
@@ -2654,6 +2883,7 @@ class RedLightPlayer(xbmc.Player):
 		except Exception as exc:
 			self._log_intro_skip('Intro skip failed: seek verify (%s)' % exc)
 			return False
+		self._restore_fullscreen_after_intro_skip()
 		self._log_intro_skip('Intro skip (%s): %.1fs -> %.1fs (intro %.1fs to %.1fs)' % (source, actual, target_sec, start_sec, end_sec))
 		return True
 
@@ -2690,6 +2920,8 @@ class RedLightPlayer(xbmc.Player):
 		if self._intro_skip_past_segment(segment):
 			if getattr(self, '_intro_skip_approved', False):
 				self._log_intro_skip('Intro skip missed: past grace window')
+			else:
+				self._log_intro_skip('Intro skip: past intro (prompt not shown)')
 			self._intro_skip_done = True
 			return
 		try:
@@ -2745,7 +2977,7 @@ class RedLightPlayer(xbmc.Player):
 			playing_item = getattr(self, 'playing_item', None)
 			if st.submaker_enabled():
 				from indexers.subtitles import Subtitles
-				self._spawn(Subtitles().run, args=(self.imdb_id, season, episode, poster, playing_filename, playing_item, self), name='subtitles')
+				self._spawn(Subtitles().run, args=(self.imdb_id, season, episode, poster, playing_filename, playing_item, self, year), name='subtitles')
 			elif st.opensubs_enabled():
 				from indexers.subtitles import OpenSubtitlesSubs
 				self._spawn(OpenSubtitlesSubs().run, args=(self.imdb_id, season, episode, poster, year, playing_filename, playing_item, self), name='opensubtitles')

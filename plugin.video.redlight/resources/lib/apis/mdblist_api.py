@@ -4,6 +4,7 @@ import re
 import threading
 import time
 import requests
+from urllib.parse import quote, unquote, urlencode
 from caches import mdblist_cache
 from caches.settings_cache import get_setting, set_setting
 from modules import kodi_utils, settings, list_sort
@@ -141,7 +142,8 @@ def _get_mdbl_playback_items():
 	return result.get('items', [])
 
 def _tmdb_id_from_ids(ids):
-	for key in ('tmdb', 'tmdbid'):
+	if not isinstance(ids, dict): return None
+	for key in ('tmdb', 'tmdbid', 'tmdb_id'):
 		try:
 			if ids.get(key): return str(int(ids[key]))
 		except: pass
@@ -187,27 +189,29 @@ def _normalize_mdbl_personal_item(item, media_kind):
 	block = item.get(nested_key)
 	if isinstance(block, dict):
 		ids = block.get('ids') or {}
-		tmdb_id = _resolve_movie_id(ids) if is_movie else _resolve_tvshow_id(ids)
-		title = block.get('title', '')
-		year = block.get('year') or block.get('release_year', '')
-		imdb_id = ids.get('imdb', '')
-		tvdb_id = ids.get('tvdb', '')
-	else:
-		block = item if isinstance(item, dict) else {}
-		ids = block.get('ids') or {}
-		tmdb_id = None
-		if block.get('tmdb') is not None:
-			try: tmdb_id = str(int(block['tmdb']))
-			except: pass
+		merged_ids = dict(ids)
+		imdb_id = _imdb_from_ids(merged_ids, block)
+		tvdb_id = _tvdb_from_ids(merged_ids, block)
+		if imdb_id: merged_ids['imdb'] = imdb_id
+		if tvdb_id: merged_ids['tvdb'] = tvdb_id
+		tmdb_id = _tmdb_id_from_ids(merged_ids) or _tmdb_id_from_ids(block)
 		if not tmdb_id:
-			merged_ids = dict(ids)
-			if block.get('imdb_id'): merged_ids['imdb'] = block['imdb_id']
-			if block.get('tvdb_id'): merged_ids['tvdb'] = block['tvdb_id']
 			tmdb_id = _resolve_movie_id(merged_ids) if is_movie else _resolve_tvshow_id(merged_ids)
 		title = block.get('title', '')
 		year = block.get('year') or block.get('release_year', '')
-		imdb_id = block.get('imdb_id') or ids.get('imdb', '')
-		tvdb_id = block.get('tvdb_id') or ids.get('tvdb', '')
+	else:
+		block = item if isinstance(item, dict) else {}
+		ids = block.get('ids') or {}
+		merged_ids = dict(ids)
+		imdb_id = _imdb_from_ids(merged_ids, block)
+		tvdb_id = _tvdb_from_ids(merged_ids, block)
+		if imdb_id: merged_ids['imdb'] = imdb_id
+		if tvdb_id: merged_ids['tvdb'] = tvdb_id
+		tmdb_id = _tmdb_id_from_ids(merged_ids) or _tmdb_id_from_ids(block)
+		if not tmdb_id:
+			tmdb_id = _resolve_movie_id(merged_ids) if is_movie else _resolve_tvshow_id(merged_ids)
+		title = block.get('title', '')
+		year = block.get('year') or block.get('release_year', '')
 	if not tmdb_id: return None
 	return {'id': tmdb_id, 'title': title, 'year': year, 'imdb_id': imdb_id or '', 'tvdb_id': tvdb_id or '',
 		'watchlist_at': item.get('watchlist_at', ''), 'collected_at': item.get('collected_at', ''), 'release_date': item.get('release_date', '')}
@@ -337,10 +341,43 @@ def mdbl_collect_list_media(payload):
 		else: movies.append(item)
 	return movies, shows, episodes
 
+def _mdbl_item_media_ids(item):
+	"""Pack tmdb/imdb/tvdb from a list item so Movies/TVShows can fall back past TMDb."""
+	if not isinstance(item, dict): return {}
+	nested = item.get('movie') if isinstance(item.get('movie'), dict) else None
+	if nested is None:
+		nested = item.get('show') if isinstance(item.get('show'), dict) else None
+	blocks = [b for b in (item, nested) if isinstance(b, dict)]
+	merged = {}
+	for block in blocks:
+		ids = block.get('ids')
+		if isinstance(ids, dict): merged.update(ids)
+		for key in ('tmdb', 'tmdbid', 'tmdb_id', 'imdb', 'imdb_id', 'imdbid', 'tvdb', 'tvdb_id', 'tvdbid'):
+			value = block.get(key)
+			if value not in (None, '', 0, '0'): merged.setdefault(key, value)
+	media_ids = {}
+	tmdb = _tmdb_id_from_ids(merged)
+	if tmdb:
+		try: media_ids['tmdb'] = int(tmdb)
+		except: media_ids['tmdb'] = tmdb
+	imdb = _imdb_from_ids(merged, item)
+	if nested: imdb = imdb or _imdb_from_ids(merged, nested)
+	if imdb and imdb not in ('None', '0', None): media_ids['imdb'] = imdb
+	tvdb = _tvdb_from_ids(merged, item)
+	if nested: tvdb = tvdb or _tvdb_from_ids(merged, nested)
+	if tvdb and tvdb not in ('None', '0', None):
+		try: media_ids['tvdb'] = int(tvdb)
+		except: media_ids['tvdb'] = tvdb
+	if not media_ids:
+		try:
+			if item.get('id') not in (None, '', 0, '0'): media_ids['tmdb'] = int(item['id'])
+		except: pass
+	return media_ids
+
 def _mdbl_movie_show_row(item, media_type, order):
-	tmdb_id = mdbl_unified_item_tmdb_id(item)
-	if not tmdb_id: return None
-	return {'type': media_type, 'media_ids': {'tmdb': tmdb_id}, 'order': order, 'custom_order': order}
+	media_ids = _mdbl_item_media_ids(item)
+	if not media_ids: return None
+	return {'type': media_type, 'media_ids': media_ids, 'order': order, 'custom_order': order}
 
 def mdbl_ordered_list_rows(payload):
 	"""Ordered typed rows for mixed list open (movie | show | episode), preserving unified order."""
@@ -384,11 +421,8 @@ def mdbl_ordered_list_rows(payload):
 def _mdbl_item_to_list_entry(item, media_kind):
 	if not isinstance(item, dict): return None
 	ids = item.get('ids') or {}
-	tmdb_id = _tmdb_id_from_ids(ids)
-	if not tmdb_id and item.get('tmdb') is not None:
-		try: tmdb_id = str(int(item['tmdb']))
-		except: pass
-	if not tmdb_id and item.get('mediatype') and item.get('id') is not None:
+	tmdb_id = _tmdb_id_from_ids(ids) or _tmdb_id_from_ids(item)
+	if not tmdb_id and item.get('mediatype') and item.get('id') is not None and not _imdb_from_ids(ids, item) and not _tvdb_from_ids(ids, item):
 		try: tmdb_id = str(int(item['id']))
 		except: pass
 	if tmdb_id:
@@ -397,7 +431,7 @@ def _mdbl_item_to_list_entry(item, media_kind):
 			'watchlist_at': item.get('watchlist_at', ''), 'collected_at': item.get('collected_at', ''), 'release_date': item.get('release_date', '')}
 	entry = _normalize_mdbl_personal_item(item, media_kind)
 	if entry: return entry
-	if item.get('id') is not None:
+	if item.get('id') is not None and not _imdb_from_ids(ids, item) and not _tvdb_from_ids(ids, item):
 		try:
 			tmdb_id = str(int(item['id']))
 			return {'id': tmdb_id, 'title': item.get('title', ''), 'year': item.get('year') or item.get('release_year', ''),
@@ -475,8 +509,8 @@ def mdblist_poll_device(device_data):
 	copy2clip(auth_url)
 	short_url = make_tinyurl(auth_url)
 	p_dialog_insert = '[CR]OR visit [B]%s[/B]' % short_url if short_url else ''
-	verify_display = (device_data.get('verification_uri') or device_data.get('verification_url') or 'mdblist.com/oauth/device').replace('https://', '')
-	content = ('Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B][CR]Link copied to clipboard%s[CR][CR]'
+	verify_display = (device_data.get('verification_uri') or device_data.get('verification_url') or 'mdblist.com/oauth/device').replace('https://', '').replace('http://', '')
+	content = ('Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B]%s[CR][CR]'
 		'Waiting for authorisation...' % (user_code, verify_display, p_dialog_insert))
 	progress = kodi_utils.progress_dialog('MDBList Authorise', qr_code)
 	progress.update(content, 0)
@@ -594,7 +628,12 @@ def mdblist_watched_status_mark(action, media_type, tmdb_id, tvdb_id=0, season=N
 	elif media_type == 'season': media = 'season'
 	else: media = 'shows'
 	success = _mdbl_watched_unwatched(action, media, tmdb_id, tvdb_id, season, episode)
-	if success and action == 'mark_as_unwatched': mdblist_sync_activities()
+	if success:
+		# Local mdblist_db is updated by watched_status_mark. Skip the next list
+		# activity refresh — last_activities would otherwise trigger a full
+		# paginated sync/watched under DialogBusy (Next Episodes after Mark Watched).
+		try: kodi_utils.set_property('redlight.mdblist_skip_list_sync', 'true')
+		except Exception: pass
 	return success
 
 def mdblist_official_status(media_type):
@@ -742,7 +781,7 @@ def mdblist_hide_unhide_progress_items(params):
 	result = call_mdblist(url, json_data=json_data, method='post')
 	mdblist_cache.mdblist_cache.delete(_MDBL_DROPPED_CACHE_KEY)
 	if result is None:
-		return kodi_utils.notification('Error', 3000)
+		return kodi_utils.notify_error()
 	ok = _mdbl_dropped_post_ok(result, action, mediatype)
 	# Membership fallback only for Drop — Undrop must see a real removed/updated count.
 	# (A partial Dropped fetch missing the show would otherwise false-succeed Undrop.)
@@ -752,7 +791,7 @@ def mdblist_hide_unhide_progress_items(params):
 		dropped = mdblist_get_dropped_items()
 		ok = mid in dropped if mid is not None else False
 	if not ok:
-		return kodi_utils.notification('Error', 3000)
+		return kodi_utils.notify_error()
 	mdblist_sync_activities()
 	kodi_utils.kodi_refresh()
 	if action == 'hide': kodi_utils.notification('Dropped from MDBList Progress', 3000)
@@ -995,6 +1034,81 @@ def mdbl_top_lists():
 		lists = result.get('items') or []
 	return _mdbl_expand_list_entries(lists)
 
+_MDBL_LIST_SLUG_URL = re.compile(r'(?:https?://)?(?:www\.)?mdblist\.com/lists/([^/?#]+)/([^/?#]+)', re.I)
+_MDBL_LIST_ID_URL = re.compile(r'(?:https?://)?(?:www\.)?mdblist\.com/lists/(\d+)\b', re.I)
+_MDBL_LIST_USER_URL = re.compile(r'(?:https?://)?(?:www\.)?mdblist\.com/lists/([^/?#]+)/?(?:[?#]|$)', re.I)
+_MDBL_USER_SLUG_SHORT = re.compile(r'^([^/\s]+)/([^/\s]+)$')
+_MDBL_USERNAME_ONLY = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
+
+def _mdbl_first_list(result):
+	lists = _mdbl_expand_list_entries(_mdbl_normalize_list_response(result))
+	if lists: return lists
+	if isinstance(result, dict) and result.get('id'): return [result]
+	return []
+
+def _mdbl_clean_list_part(value):
+	value = unquote((value or '').strip())
+	return value.split('?')[0].split('#')[0].rstrip('/')
+
+def _mdbl_prep_list_query(query):
+	query = unquote((query or '').strip()).strip().strip('/')
+	query = re.sub(r'(?i)/json$', '', query).rstrip('/')
+	return query
+
+def _mdbl_path_user_slug(user, slug):
+	return 'lists/%s/%s' % (quote(_mdbl_clean_list_part(user), safe='-._~'), quote(_mdbl_clean_list_part(slug), safe='-._~'))
+
+def _mdbl_lists_for_user(username):
+	username = _mdbl_clean_list_part(username)
+	if not username or username.isdigit() or username.lower() in ('json', 'user', 'liked', 'top', 'search'):
+		return []
+	return _mdbl_first_list(call_mdblist('lists/user/%s' % quote(username, safe='-._~')))
+
+def mdbl_resolve_list_query(query):
+	"""Parse an MDBList ID, URL, user/slug, or username. Returns (is_lookup, list_of_dicts)."""
+	query = _mdbl_prep_list_query(query)
+	if not query: return False, []
+	match = _MDBL_LIST_SLUG_URL.search(query)
+	if match:
+		slug = _mdbl_clean_list_part(match.group(2))
+		if slug.lower() != 'json':
+			return True, _mdbl_first_list(call_mdblist(_mdbl_path_user_slug(match.group(1), slug)))
+	match = _MDBL_LIST_ID_URL.search(query)
+	if match:
+		return True, _mdbl_first_list(call_mdblist('lists/%s' % match.group(1)))
+	match = _MDBL_LIST_USER_URL.search(query)
+	if match:
+		user = _mdbl_clean_list_part(match.group(1))
+		if user and not user.isdigit():
+			return True, _mdbl_lists_for_user(user)
+	if query.isdigit():
+		return True, _mdbl_first_list(call_mdblist('lists/%s' % query))
+	match = _MDBL_USER_SLUG_SHORT.match(query)
+	if match and match.group(1).lower() not in ('http:', 'https:') and '.' not in match.group(1):
+		return True, _mdbl_first_list(call_mdblist(_mdbl_path_user_slug(match.group(1), match.group(2))))
+	if _MDBL_USERNAME_ONLY.match(query) and '.' not in query:
+		found = _mdbl_lists_for_user(query)
+		if found: return True, found
+	return False, []
+
+def mdbl_search_lists(query):
+	query = _mdbl_prep_list_query(query)
+	is_lookup, resolved = mdbl_resolve_list_query(query)
+	if is_lookup:
+		if resolved:
+			rows = []
+			for item in resolved:
+				row = dict(item)
+				row['_id_lookup'] = True
+				rows.append(row)
+			return rows
+		if not (query or '').strip().isdigit():
+			return []
+	string = 'mdblist_search_lists_%s' % (query or '').strip().lower()
+	path = 'lists/search?%s' % urlencode({'query': query})
+	result = mdblist_cache.cache_mdblist_object(call_mdblist, string, path)
+	return _mdbl_expand_list_entries(_mdbl_normalize_list_response(result))
+
 def get_mdbl_list_payload(list_type, list_id):
 	string = 'mdblist_list_contents_%s_%s' % (list_type, list_id)
 	if list_type == 'external': url = 'external/lists/%s/items?unified=true' % list_id
@@ -1159,11 +1273,11 @@ def mdblist_add_to_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_
 		added = _mdbl_static_result_count(result, 'added')
 		existing = _mdbl_static_result_count(result, 'existing')
 		if added > 0:
-			kodi_utils.notification('Added to %s' % label, 3000)
+			kodi_utils.notify_added_to(label)
 			return result
 		if existing > 0:
-			return kodi_utils.notification('Already In List', 3000)
-	return kodi_utils.notification('Error', 3000)
+			return kodi_utils.notify_already_in_list()
+	return kodi_utils.notify_error()
 
 def mdblist_remove_from_static_list(list_id, tmdb_id, media_type, imdb_id=None, list_name=None, season=None, episode=None, episode_tmdb=None):
 	payload = _mdblist_static_list_payload(media_type, tmdb_id, imdb_id, season=season, episode=episode, episode_tmdb=episode_tmdb)
@@ -1177,69 +1291,66 @@ def mdblist_remove_from_static_list(list_id, tmdb_id, media_type, imdb_id=None, 
 	else:
 		still_in = mdblist_item_in_static_list(list_id, tmdb_id)
 	if removed > 0 or (result is not None and 'error' not in (result or {}) and not still_in):
-		kodi_utils.notification('Removed from %s' % label, 3000)
+		kodi_utils.notify_removed_from(label)
 		if kodi_utils.path_check('build_mdbl_list') or kodi_utils.external(): kodi_utils.kodi_refresh()
 		return result
-	return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
+	return kodi_utils.notify_not_in_list()
 
 def mdblist_add_to_watchlist(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('watchlist/items/add', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')
 	if isinstance(result, dict) and result.get('added', {}).get('movies', 0) + result.get('added', {}).get('shows', 0) > 0:
 		mdblist_sync_activities()
-		return kodi_utils.notification('Added to MDBList Watchlist', 3000)
+		return kodi_utils.notify_success()
 	if isinstance(result, dict) and result.get('existing', {}).get('movies', 0) + result.get('existing', {}).get('shows', 0) > 0:
-		return kodi_utils.notification('Already In List', 3000)
-	return kodi_utils.notification('Error', 3000)
+		return kodi_utils.notify_already_in_list()
+	return kodi_utils.notify_error()
 
 def mdblist_remove_from_watchlist(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('watchlist/items/remove', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')
 	if isinstance(result, dict) and result.get('removed', {}).get('movies', 0) + result.get('removed', {}).get('shows', 0) > 0:
 		mdblist_sync_activities()
 		kodi_utils.kodi_refresh()
-		return kodi_utils.notification('Removed from MDBList Watchlist', 3000)
-	return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
+		return kodi_utils.notify_success()
+	return kodi_utils.notify_not_in_list()
 
 def mdblist_add_to_library(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('sync/collection', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')
 	if isinstance(result, dict) and result.get('updated', {}).get('movies', 0) + result.get('updated', {}).get('shows', 0) > 0:
 		mdblist_sync_activities()
-		return kodi_utils.notification('Added to MDBList Library', 3000)
+		return kodi_utils.notify_success()
 	if isinstance(result, dict) and result.get('existing', {}).get('movies', 0) + result.get('existing', {}).get('shows', 0) > 0:
-		return kodi_utils.notification('Already In List', 3000)
-	return kodi_utils.notification('Error', 3000)
+		return kodi_utils.notify_already_in_list()
+	return kodi_utils.notify_error()
 
 def mdblist_remove_from_library(tmdb_id, media_type, imdb_id=None):
 	result = call_mdblist('sync/collection/remove', json_data=_mdblist_list_payload(media_type, tmdb_id, imdb_id), method='post')
 	if isinstance(result, dict) and result.get('removed', {}).get('movies', 0) + result.get('removed', {}).get('shows', 0) > 0:
 		mdblist_sync_activities()
 		kodi_utils.kodi_refresh()
-		return kodi_utils.notification('Removed from MDBList Library', 3000)
-	return kodi_utils.notification(kodi_utils.LIST_ITEM_NOT_IN_LIST, 3000)
-
-def _mdbl_personal_tmdb_ids(media_kind, fetch_func):
-	try:
-		data, _ = fetch_func(media_kind, 1)
-	except: return set()
-	ids = set()
-	for item in data or []:
-		if not isinstance(item, dict): continue
-		tmdb_id = item.get('id') or item.get('tmdb') or (item.get('ids') or {}).get('tmdb')
-		if tmdb_id:
-			try: ids.add(int(tmdb_id))
-			except: pass
-	return ids
+		return kodi_utils.notify_success()
+	return kodi_utils.notify_not_in_list()
 
 def _mdbl_item_in_watchlist(list_media, tmdb_id):
+	# Full cached watchlist (not page 1) so manager Add/Remove stays correct with pagination on.
 	try: tmdb_id = int(tmdb_id)
 	except: return False
 	media_kind = 'movies' if list_media == 'movie' else 'shows'
-	return tmdb_id in _mdbl_personal_tmdb_ids(media_kind, mdblist_watchlist)
+	for entry in _mdblist_watchlist_normalized(media_kind):
+		try:
+			if int(entry.get('id') or 0) == tmdb_id: return True
+		except: pass
+	return False
 
 def _mdbl_item_in_library(list_media, tmdb_id):
 	try: tmdb_id = int(tmdb_id)
 	except: return False
 	media_kind = 'movies' if list_media == 'movie' else 'shows'
-	return tmdb_id in _mdbl_personal_tmdb_ids(media_kind, mdblist_collection)
+	string, url = 'mdblist_collection', 'sync/collection'
+	for entry in _mdbl_personal_list(_mdbl_collection_watchlist_items(string, url), media_kind):
+		try:
+			if int(entry.get('id') or 0) == tmdb_id: return True
+		except: pass
+	return False
 
 def _mdbl_item_in_dropped(tmdb_id):
 	try: tmdb_id = int(tmdb_id)
@@ -1258,7 +1369,8 @@ def mdblist_manager_choice(params):
 	if episode_mode:
 		episode_tmdb = _mdbl_resolve_episode_tmdb(tmdb_id, season, episode, params.get('episode_id'))
 	# Show-scoped static lists always (restore add-show from episode rows).
-	show_in_lists, show_out_lists = mdblist_static_lists_split_by_membership(list_media, tmdb_id, refresh=True)
+	# Use cached my_lists unless activities already invalidated them (refresh=True was a cold API hit).
+	show_in_lists, show_out_lists = mdblist_static_lists_split_by_membership(list_media, tmdb_id, refresh=False)
 	ep_in_lists, ep_out_lists = [], []
 	if episode_mode and episode_tmdb:
 		ep_in_lists, ep_out_lists = mdblist_static_lists_split_by_membership(
@@ -1293,9 +1405,9 @@ def mdblist_manager_choice(params):
 			choices.append(('Undrop [B]TV Show[/B]', 'undrop'))
 		else:
 			choices.append(('Drop [B]TV Show[/B]', 'drop'))
+	from indexers.dialogs import _manager_mark_watched_choices
+	choices.extend(_manager_mark_watched_choices(params))
 	choices.extend([
-		('Mark as [B]Watched[/B]', 'mark_watched'),
-		('Mark as [B]Unwatched[/B]', 'mark_unwatched'),
 		('Reset [B]Scrobble[/B]', 'reset_scrobble'),
 		('Open [B]MDBList Watchlist[/B]', 'open_watchlist'),
 		('Open [B]MDBList Library[/B]', 'open_library'),
@@ -1407,19 +1519,20 @@ def mdblist_get_my_calendar(dummy=None):
 					'media_ids': {'tmdb': int(show_tmdb)},
 					'season': int(season),
 					'episode': int(episode),
-					'first_aired': str(start).split('T')[0]
+					# Keep full ISO when present so Calendars UTC (+/-) can apply.
+					'first_aired': str(start)
 				})
 			except Exception:
 				continue
 		# Prefer latest occurrence when the API repeats the same show/day.
 		data = [i for n, i in enumerate(data) if i not in data[n + 1:]]
 		return data
-	# v4: request start/end so past airings are included (unscoped calendar/events is future-only).
+	# v5: keep full start timestamps (UTC adjust); start/end so past airings are included.
 	# Empty list is not a valid cache hit — refetch (failed API used to poison the cache).
 	current = get_datetime()
 	api_start = (current - timedelta(days=14)).strftime('%Y-%m-%d')
 	api_end = (current + timedelta(days=14)).strftime('%Y-%m-%d')
-	cache_key = 'mdblist_calendar_airings_v4_%s_%s' % (api_start, api_end)
+	cache_key = 'mdblist_calendar_airings_v5_%s_%s' % (api_start, api_end)
 	cached = mdblist_cache.mdblist_cache.get(cache_key)
 	if cached:
 		data = cached
@@ -1440,16 +1553,13 @@ def mdblist_get_my_calendar(dummy=None):
 	return filtered
 
 def _filter_mdblist_calendar_day_window(data):
-	# Prefer fromisoformat — datetime.strptime is unsafe in Kodi script threads
-	# unless _strptime was imported first (silent parse failures → empty calendar).
-	from datetime import date
+	# Use the same local-day logic as list labels (ISO + UTC offset, or date-only).
+	from modules.utils import calendar_service_local_date
 	start_date, end_date = settings.calendar_day_window()
 	filtered = []
 	for item in data:
-		try:
-			aired = date.fromisoformat(str(item.get('first_aired', ''))[:10])
-		except Exception:
-			continue
+		aired, _ = calendar_service_local_date(item.get('first_aired', ''))
+		if aired is None: continue
 		if start_date <= aired <= end_date:
 			filtered.append(item)
 	return filtered
@@ -1473,6 +1583,10 @@ def build_mdbl_list(params):
 def search_mdbl_my_lists(params):
 	from indexers import mdblist_lists
 	return mdblist_lists.search_mdbl_my_lists(params)
+
+def search_mdbl_lists(params):
+	from indexers import mdblist_lists
+	return mdblist_lists.search_mdbl_lists(params)
 
 def build_mdbl_watchlist(params):
 	from indexers import mdblist_lists
