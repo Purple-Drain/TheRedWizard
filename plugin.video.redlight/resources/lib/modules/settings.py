@@ -1136,12 +1136,12 @@ def results_sort_order():
 	# __torbox__, say) the lower-numbered folder's copy is listed first (#141).
 	sort_direction = -1 if get_setting('redlight.results.size_sort_direction') == '0' else 1
 	return (
-			lambda k: (k['quality_rank'], k['provider_rank'], sort_direction*k['size_rank'], k.get('folder_rank', 0)), #Quality, Provider, Size
-			lambda k: (k['quality_rank'], sort_direction*k['size_rank'], k['provider_rank'], k.get('folder_rank', 0)), #Quality, Size, Provider
-			lambda k: (k['provider_rank'], k['quality_rank'], sort_direction*k['size_rank'], k.get('folder_rank', 0)), #Provider, Quality, Size
-			lambda k: (k['provider_rank'], sort_direction*k['size_rank'], k['quality_rank'], k.get('folder_rank', 0)), #Provider, Size, Quality
-			lambda k: (sort_direction*k['size_rank'], k['quality_rank'], k['provider_rank'], k.get('folder_rank', 0)), #Size, Quality, Provider
-			lambda k: (sort_direction*k['size_rank'], k['provider_rank'], k['quality_rank'], k.get('folder_rank', 0))  #Size, Provider, Quality
+			lambda k: (k['quality_rank'], k.get('source_tier', 7), k['provider_rank'], sort_direction*k['size_rank'], k.get('folder_rank', 0)), #Quality, Provider, Size
+			lambda k: (k['quality_rank'], k.get('source_tier', 7), sort_direction*k['size_rank'], k['provider_rank'], k.get('folder_rank', 0)), #Quality, Size, Provider
+			lambda k: (k['provider_rank'], k['quality_rank'], k.get('source_tier', 7), sort_direction*k['size_rank'], k.get('folder_rank', 0)), #Provider, Quality, Size
+			lambda k: (k['provider_rank'], sort_direction*k['size_rank'], k['quality_rank'], k.get('source_tier', 7), k.get('folder_rank', 0)), #Provider, Size, Quality
+			lambda k: (sort_direction*k['size_rank'], k['quality_rank'], k.get('source_tier', 7), k['provider_rank'], k.get('folder_rank', 0)), #Size, Quality, Provider
+			lambda k: (sort_direction*k['size_rank'], k['provider_rank'], k['quality_rank'], k.get('source_tier', 7), k.get('folder_rank', 0))  #Size, Provider, Quality
 			)[int(get_setting('redlight.results.sort_order', '1'))]
 
 def active_internal_scrapers():

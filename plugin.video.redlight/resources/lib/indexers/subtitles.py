@@ -9,6 +9,7 @@ import requests
 from difflib import SequenceMatcher
 from urllib.parse import quote, unquote
 from modules import kodi_utils as ku, settings as st
+from modules.source_tiers import source_tags, source_family
 
 timeout = 20.0
 _ALERT_SUB_MAX_REMAINING = 600
@@ -30,14 +31,6 @@ _SUBMAKER_ERROR_RE = re.compile(
 _SUB_ERROR_PAYLOAD_MAX_CHARS = 800
 _SUB_ERROR_PAYLOAD_MAX_CUES = 1
 _VTT_TIMESTAMP_RE = re.compile(r'(\d{2}:\d{2}:\d{2})\.(\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2})\.(\d{3})')
-_RELEASE_SOURCE_PATTERNS = (
-	('BLURAY', ('bluray', 'blu.ray', 'blu-ray', 'bdrip', 'bd.rip', 'bdr')),
-	('REMUX', ('remux', 'bdremux', 'bluray.remux', 'uhd.remux', 'complete.remux', '2160p.remux')),
-	('WEB', ('webdl', 'web.dl', 'web-dl', 'webrip', 'web.rip', '.web.')),
-	('HDTV', ('hdtv',)),
-	('DVD', ('dvdrip', 'dvd.rip')),
-	('HDRIP', ('hdrip', 'hd.rip')),
-)
 _PRIMARY_RELEASE_SOURCES = ('BLURAY', 'REMUX', 'WEB', 'HDTV', 'DVD', 'HDRIP')
 _BLURAY_SOURCE_FAMILY = frozenset(('BLURAY', 'REMUX'))
 
@@ -52,9 +45,8 @@ def _release_filename_stem(filename):
 def _detect_release_source_tags(text):
 	norm = _normalize_release_text(text)
 	tags = set()
-	for tag, patterns in _RELEASE_SOURCE_PATTERNS:
-		if any(pattern in norm for pattern in patterns):
-			tags.add(tag)
+	for tag in source_tags(norm):
+		tags.add(source_family(tag))
 	if 'REMUX' in tags:
 		tags.add('BLURAY')
 	return tags

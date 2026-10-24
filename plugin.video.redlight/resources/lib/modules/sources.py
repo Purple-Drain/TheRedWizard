@@ -15,6 +15,7 @@ from modules import debrid, kodi_utils, settings, metadata, watched_status
 from modules.player import RedLightPlayer
 from modules.thread_tools import StopFlag, join_bounded, log_live_threads
 from modules import progress_windows
+from modules.source_tiers import source_tier, TV_CAPTURE_TIER
 from modules.source_utils import get_cache_expiry, make_alias_dict, include_exclude_filters, get_file_info, release_info_format, audio_lang_choices, matches_english_or_untagged, \
 								_normalize_release_title
 from modules.release_groups import release_group_boost
@@ -1258,13 +1259,17 @@ class Sources():
 				if autoplay_only: candidates = self._prescrape_autoplay_candidates(candidates)
 			except: candidates = []
 			finally: self.cloud_prescrape_autoplay, self.autoplay = saved, saved_autoplay
-			if candidates and autoplay_only:
+			# A folder that only holds TV captures (HDTV and the like) is not worth skipping the cloud tier
+			# for (#306). The hit stays in prescrape_sources, so it is still played if nothing better turns up.
+			tv_only = bool(candidates) and autoplay_only and all(source_tier(i.get('name') or i.get('display_name')) == TV_CAPTURE_TIER for i in candidates)
+			if candidates and autoplay_only and not tv_only:
 				self._log_prescrape_timing(started, 'folders first: %d autoplay hit(s), cloud tier skipped' % len(candidates))
 				return True
-			if candidates:
+			if candidates and not autoplay_only:
 				self._log_prescrape_timing(started, 'folders only: %d folder result(s) listed, cloud tier left for the search entry' % len(candidates))
 				return True
-			reason = '%d folder result(s), %s' % (len(self.prescrape_sources), 'none autoplay would take' if autoplay_only else 'none passed the filters')
+			if tv_only: reason = 'only TV-capture folder hit(s)'
+			else: reason = '%d folder result(s), %s' % (len(self.prescrape_sources), 'none autoplay would take' if autoplay_only else 'none passed the filters')
 		self._log_prescrape_timing(started, '%s declined (%s), starting cloud tier' % (mode, reason))
 		return False
 
@@ -1554,7 +1559,7 @@ class Sources():
 		key = (tag or '').lower().replace('[b]', '').replace('[/b]', '').strip()
 		if key in self.filter_keys: return self.filter_keys[key]
 		aliases = {'d/vision': 'D/VISION', 'dolby vision': 'D/VISION', 'hdr': 'HDR', 'high dynamic range (hdr)': 'HDR', 'dolby atmos': 'ATMOS', 'atmos': 'ATMOS', 'hevc (x265)': 'HEVC', 'hevc': 'HEVC',
-					'english or untagged': 'ENG-OR-UNTAGGED', 'eng-or-untagged': 'ENG-OR-UNTAGGED'}
+					'english or untagged': 'ENG-OR-UNTAGGED', 'eng-or-untagged': 'ENG-OR-UNTAGGED', 'web-dl': 'WEB', 'webrip': 'WEB'}
 		aliases.update({name.lower(): lang_tag for name, lang_tag, _ in audio_lang_choices()})
 		return aliases.get(key, tag)
 
@@ -1663,7 +1668,7 @@ class Sources():
 
 	def _pref_boost_sort_key(self, item):
 		if item.get('scrape_provider') == 'aiostreams' and self._aiostreams_preserve_order():
-			return (-item.get('pref_includes', 0), item['quality_rank'], item.get('aio_order', 999999))
+			return (-item.get('pref_includes', 0), item['quality_rank'], item.get('source_tier', 7), item.get('aio_order', 999999))
 		return (-item.get('pref_includes', 0),) + self._results_sort_key(item)
 
 	def _custom_pref_sort_active(self):
@@ -1685,7 +1690,7 @@ class Sources():
 			sort_first_scrapers.extend([i for i in self.all_scrapers if i in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') and settings.sort_to_top(i)])
 			if not sort_first_scrapers: return results
 			sort_first = [i for i in results if i['scrape_provider'] in sort_first_scrapers]
-			sort_first.sort(key=lambda k: (self._sort_folder_to_top(k['scrape_provider']), k['quality_rank']))
+			sort_first.sort(key=lambda k: (self._sort_folder_to_top(k['scrape_provider']), k['quality_rank'], k.get('source_tier', 7)))
 			sort_last = [i for i in results if not i in sort_first]
 			results = sort_first + sort_last
 		except: pass
@@ -2538,17 +2543,18 @@ class Sources():
 		base = self.sort_function(item)
 		if not getattr(self, '_group_boost_active', False): return base
 		boost = -int(item.get('group_boost') or 0)
-		a, b, c = base
-		idx = getattr(self, '_sort_order_index', 1)
-		if idx in (0, 1): return (a, boost, b, c)
-		if idx in (2, 4): return (a, b, boost, c)
-		return (a, b, c, boost)
+		# The boost goes after the first one, two or three ranking keys (by sort order). source_tier always
+		# follows quality_rank, which is always inside that span, so the slot is one further along; the key
+		# also carries folder_rank, so it is spliced rather than unpacked (#297).
+		span = {0: 1, 1: 1, 2: 2, 4: 2}.get(getattr(self, '_sort_order_index', 1), 3) + 1
+		return base[:span] + (boost,) + base[span:]
 
 	def _enrich_sort_fields(self, item):
 		boost = release_group_boost(item) if getattr(self, '_group_boost_active', False) else 0
 		return dict(item, **{
 			'provider_rank': self._get_provider_rank(item['debrid'].lower()),
 			'quality_rank': self._get_quality_rank(item.get('quality', 'SD')),
+			'source_tier': source_tier(item.get('name') or item.get('display_name')),
 			'size_rank': self._get_size_rank(item),
 			'group_boost': boost})
 

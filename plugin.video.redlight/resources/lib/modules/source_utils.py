@@ -11,6 +11,7 @@ from caches.settings_cache import get_setting
 from modules.metadata import episodes_meta
 from modules.settings import date_offset
 from modules.kodi_utils import supported_media, get_property, set_property, notification
+from modules.source_tiers import source_tags
 from modules.utils import adjust_premiered_date, get_datetime, jsondate_to_datetime, subtract_dates, chunks, normalize as _utils_normalize
 # from modules.kodi_utils import logger
 
@@ -813,20 +814,7 @@ def get_info(title):
 		info_append('XVID')
 	elif any(i in title for i in ('divx', 'div2', 'div3', 'div4')):
 		info_append('DIVX')
-	if any(i in title for i in ('remux', 'bdremux')):
-		info_append('REMUX')
-	if any(i in title for i in ('bluray', 'blu.ray', 'bdrip', 'bd.rip')):
-		info_append('BLURAY')
-	elif any(i in title for i in ('dvdrip', 'dvd.rip')):
-		info_append('DVD')
-	elif any(i in title for i in ('.web.', 'webdl', 'web.dl', 'web-dl', 'webrip', 'web.rip')):
-		info_append('WEB')
-	elif 'hdtv' in title:
-		info_append('HDTV')
-	elif 'pdtv' in title:
-		info_append('PDTV')
-	elif any(i in title for i in ('.hdrip', '.hd.rip')):
-		info_append('HDRIP')
+	for source_tag in source_tags(title): info_append(source_tag)
 	if 'atmos' in title:
 		info_append('ATMOS')
 	if any(i in title for i in ('true.hd', 'truehd')):
