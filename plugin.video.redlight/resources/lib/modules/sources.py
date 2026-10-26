@@ -1689,7 +1689,9 @@ class Sources():
 			if 'folders' in self.all_scrapers and settings.sort_to_top('folders'): sort_first_scrapers.append('folders')
 			sort_first_scrapers.extend([i for i in self.all_scrapers if i in ('rd_cloud', 'pm_cloud', 'ad_cloud', 'oc_cloud', 'tb_cloud') and settings.sort_to_top(i)])
 			if not sort_first_scrapers: return results
-			sort_first = [i for i in results if i['scrape_provider'] in sort_first_scrapers]
+			# A TV capture in a folder is not pinned (#306): it sorts with everything else, so a cloud WEB-DL
+			# or Blu-ray at the same resolution plays first and the capture is only the fallback.
+			sort_first = [i for i in results if i['scrape_provider'] in sort_first_scrapers and not (i['scrape_provider'] == 'folders' and i.get('source_tier', 7) == TV_CAPTURE_TIER)]
 			sort_first.sort(key=lambda k: (self._sort_folder_to_top(k['scrape_provider']), k['quality_rank'], k.get('source_tier', 7)))
 			sort_last = [i for i in results if not i in sort_first]
 			results = sort_first + sort_last

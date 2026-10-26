@@ -91,7 +91,7 @@ def test_web_dl_beats_hdtv_and_resolution_beats_tier():
 	assert _sorted_names([('x.WEBRip', '1080p'), ('x.WEB-DL', '1080p')]) == ['x.WEB-DL', 'x.WEBRip']
 
 
-def test_sort_first_keeps_folders_first_then_quality_then_tier():
+def test_sort_first_pins_folders_but_not_tv_captures():
 	original = settings.sort_to_top
 	settings.sort_to_top = lambda provider: provider == 'folders'
 	try:
@@ -102,7 +102,22 @@ def test_sort_first_keeps_folders_first_then_quality_then_tier():
 			{'name': 'folder hdtv', 'scrape_provider': 'folders', 'quality_rank': 2, 'source_tier': 6},
 			{'name': 'folder web', 'scrape_provider': 'folders', 'quality_rank': 2, 'source_tier': 3},
 			{'name': 'folder 4k', 'scrape_provider': 'folders', 'quality_rank': 1, 'source_tier': 6}]
-		assert [i['name'] for i in src.sort_first(rows)] == ['folder 4k', 'folder web', 'folder hdtv', 'cloud']
+		assert [i['name'] for i in src.sort_first(rows)] == ['folder web', 'cloud', 'folder hdtv', 'folder 4k']
+	finally:
+		settings.sort_to_top = original
+
+
+def test_folder_hdtv_below_cloud_webdl_through_sort_results():
+	original = settings.sort_to_top
+	settings.sort_to_top = lambda provider: provider == 'folders'
+	try:
+		src = object.__new__(Sources)
+		src.all_scrapers = ['folders', 'rd_cloud']
+		src._sort_folder_to_top = lambda provider: 0 if provider == 'folders' else 1
+		rows = [{'name': 'Sunny.S11E03.1080p.HDTV.x264', 'scrape_provider': 'folders', 'quality_rank': 2, 'source_tier': 6},
+			{'name': 'Sunny.S11E03.1080p.WEB-DL.x264', 'scrape_provider': 'rd_cloud', 'quality_rank': 2, 'source_tier': 3}]
+		rows = src.sort_first(sorted(rows, key=lambda k: (k['quality_rank'], k['source_tier'])))
+		assert rows[0]['scrape_provider'] == 'rd_cloud'
 	finally:
 		settings.sort_to_top = original
 
