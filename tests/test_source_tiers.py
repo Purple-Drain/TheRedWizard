@@ -122,6 +122,21 @@ def test_folder_hdtv_below_cloud_webdl_through_sort_results():
 		settings.sort_to_top = original
 
 
+def test_group_boost_splices_after_tier_in_every_sort_order():
+	"""prefer_release_groups on: the key is five long (folder_rank, source_tier), so the boost is spliced, never unpacked."""
+	row = {'quality_rank': 2, 'source_tier': 3, 'provider_rank': 1, 'size_rank': 5, 'folder_rank': 0, 'group_boost': 4}
+	original_get = settings.get_setting
+	try:
+		for idx, span in ((0, 2), (1, 2), (2, 3), (3, 4), (4, 3), (5, 4)):
+			settings.get_setting = lambda key, default=None, idx=idx: str(idx) if key == 'redlight.results.sort_order' else '0'
+			src = object.__new__(Sources)
+			src.sort_function, src._group_boost_active, src._sort_order_index = settings.results_sort_order(), True, idx
+			key = src._results_sort_key(row)
+			assert len(key) == 6 and key[span] == -4, (idx, key)
+	finally:
+		settings.get_setting = original_get
+
+
 def _shortcut(names):
 	"""Run the real _folders_first_shortcut over folder hits with these names; (took shortcut, timing lines)."""
 	lines = []
