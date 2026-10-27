@@ -487,6 +487,17 @@ def _find_subtitle_stream_index(player, preferred_languages):
 			if _submaker_language_matches(code, pref): return idx
 	return None
 
+def _find_untagged_subtitle_stream_index():
+	# #303: an embedded track with no language tag is usually the release's own English track, and it
+	# lines up with the cut, so it beats a downloaded file. Forced tracks are signs-only, skip them.
+	props = _player_properties(['subtitles'])
+	if not props: return None
+	for item in props.get('subtitles') or []:
+		if item.get('is_forced') or item.get('is_external') or item.get('index') is None: continue
+		if (item.get('language') or '').strip().lower() in ('', 'und', 'unk'):
+			return int(item['index'])
+	return None
+
 def _find_forced_subtitle_stream_index():
 	props = _player_properties(['currentsubtitle', 'subtitles'])
 	if not props: return None
@@ -577,6 +588,7 @@ def enable_local_subtitles(player, poster=None, notify=True, is_episode=False):
 				if notify: _notify_subtitles_ready(poster=poster, local=True, is_episode=is_episode, player=player)
 				return True
 	stream_index = _find_subtitle_stream_index(player, preferred_languages)
+	if stream_index is None: stream_index = _find_untagged_subtitle_stream_index()
 	if stream_index is not None:
 		try: player.setSubtitleStream(stream_index)
 		except: pass
