@@ -20,6 +20,7 @@ from resources.lib.modules import cleantitle
 from resources.lib.modules import playcount
 from resources.lib.modules import subtitles as subtitle_service
 from resources.lib.modules import simkl
+from resources.lib.modules import mdblist
 from resources.lib.modules import trakt
 
 try:
@@ -77,6 +78,7 @@ class player(xbmc.Player):
             self.ids = dict((k,v) for k, v in six.iteritems(self.ids) if not v == '0')
             self.offset, self.resume_percent = bookmarks.get_resume(self.content, imdb, season, episode, tmdb=self.tmdb)
             self._simkl_scrobble_started = False
+            self._mdblist_scrobble_started = False
             self._trakt_scrobble_started = False
             self._trakt_scrobble_finalized = False
             self._trakt_pending_stop_percent = None
@@ -93,15 +95,20 @@ class player(xbmc.Player):
                 info_tag.set_info(control.metadataClean(meta))
             else:
                 item.setInfo(type='Video', infoLabels=control.metadataClean(meta))
-            # Play via this Player instance so onAVStarted / stop callbacks fire here.
-            if 'plugin' in control.infoLabel('Container.PluginName'):
-                self.play(url, item)
+            # Prefer setResolvedUrl when the plugin handle expects it (Kodi 22 widgets /
+            # PlayMedia). Player().play() from a plugin is unsupported and can leave the
+            # original plugin:// item unresolved → "One or more items failed to play".
+            played_via_resolve = False
             try:
-                handle = int(sys.argv[1])
-                if handle >= 0:
+                handle = control.plugin_handle()
+                if handle > 0:
                     control.resolve(handle, True, item)
+                    control.mark_resolve_sent()
+                    played_via_resolve = True
             except Exception:
                 pass
+            if not played_via_resolve:
+                self.play(url, item)
             control.window.setProperty('script.trakt.ids', json.dumps(self.ids))
             self.keepPlaybackAlive()
             # Stop after CloseFile — never sync-HTTP inside onPlayBackStopped (freezes Kodi).
@@ -112,6 +119,7 @@ class player(xbmc.Player):
                 self._trakt_scrobble_finalize()
             except Exception:
                 pass
+            control.abort_plugin_resolve()
             return
 
 
@@ -255,6 +263,9 @@ class player(xbmc.Player):
         if not getattr(self, '_simkl_scrobble_started', False):
             self._simkl_scrobble_started = True
             self._simkl_scrobble('start', percent=start_pct)
+        if not getattr(self, '_mdblist_scrobble_started', False):
+            self._mdblist_scrobble_started = True
+            self._mdblist_scrobble('start', percent=start_pct)
         if not getattr(self, '_trakt_scrobble_started', False):
             self._trakt_scrobble_started = True
             self._trakt_scrobble('start', percent=start_pct)
@@ -364,6 +375,25 @@ class player(xbmc.Player):
         }
         try:
             threading.Thread(target=simkl.simkl_scrobble, args=args, kwargs=kwargs).start()
+        except Exception:
+            pass
+
+
+    def _mdblist_scrobble(self, action, percent=None):
+        if simkl.getIndicatorsProvider() != 'mdblist':
+            return
+        if percent is None:
+            percent = self._playback_percent()
+        media_type = 'movie' if self.content == 'movie' else 'episode'
+        args = (action, media_type, percent)
+        kwargs = {
+            'tmdb': self.tmdb if self.tmdb not in (None, '0') else None,
+            'imdb': self.imdb if self.imdb not in (None, '0') else None,
+            'season': self.season,
+            'episode': self.episode,
+        }
+        try:
+            threading.Thread(target=mdblist.mdblist_scrobble, args=args, kwargs=kwargs).start()
         except Exception:
             pass
 
@@ -478,6 +508,7 @@ class player(xbmc.Player):
         percent = self._playback_percent() or getattr(self, '_last_percent', 0) or 0
         if 1 <= percent < 92:
             self._simkl_scrobble('pause', percent=percent)
+            self._mdblist_scrobble('pause', percent=percent)
             self._trakt_scrobble('pause', percent=percent)
 
 
@@ -499,8 +530,10 @@ class player(xbmc.Player):
             self._trakt_pending_stop_percent = 100 if percent >= 92 else percent
             if percent >= 92:
                 self._simkl_scrobble('stop', percent=100)
+                self._mdblist_scrobble('stop', percent=100)
             elif percent >= 1:
                 self._simkl_scrobble('pause', percent=percent)
+                self._mdblist_scrobble('pause', percent=percent)
             bookmarks.reset(self.currentTime, self.totalTime, self.content, self.imdb, self.season, self.episode)
             if float(self.currentTime / self.totalTime) >= 0.92:
                 self.libForPlayback()

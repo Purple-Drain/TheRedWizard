@@ -7,8 +7,9 @@ from modules.debrid import debrid_cache_check_available
 from modules.settings import debrid_cache_check, external_module_display_name
 from modules.utils import TaskPool
 from modules.source_utils import source_filters
-from modules.settings import provider_sort_ranks, avoid_episode_spoilers, max_threads
-from modules.kodi_utils import get_icon, kodi_dialog, hide_busy_dialog, show_busy_dialog, addon_fanart, select_dialog, ok_dialog, notification, clear_property
+from modules.settings import provider_sort_ranks, avoid_episode_spoilers, show_loading_plot, max_threads
+from modules.native_torrents import NATIVE_INDEXER_SCRAPERS, NATIVE_TORRENT_SCRAPERS
+from modules.kodi_utils import get_icon, kodi_dialog, hide_busy_dialog, show_busy_dialog, close_dialog, addon_fanart, select_dialog, ok_dialog, notification, clear_property
 
 def _highlight_with_alpha(color, alpha):
 	if not color: return color or 'FFCCCCCC'
@@ -67,10 +68,33 @@ class SourcesResults(BaseDialog):
 	def onInit(self):
 		self.filter_applied = False
 		hide_busy_dialog()
+		# Ready / Next Up toasts (6.5s) sit on top of the first result row after Autoscrape Stop.
+		close_dialog('notification')
+		self.set_properties()
 		if self.make_poster: self.set_poster()
 		self.add_items(self.window_id, self.item_list)
 		self.add_items(self.filter_window_id, self.filter_list)
-		self.setFocusId(self.window_id)
+		self._focus_results_list()
+
+	def _focus_results_list(self):
+		try: self.select_item(self.window_id, 0)
+		except: pass
+		try: self.setFocusId(self.window_id)
+		except: pass
+		try:
+			if self.get_visibility('Control.HasFocus(%s)' % self.window_id): return
+		except: pass
+		Thread(target=self._retry_results_focus, daemon=True).start()
+
+	def _retry_results_focus(self):
+		# List is often not focusable on the first onInit tick (empty → "Control 2000 ... can't").
+		# Without focus, the selected row uses the dimmed focused layout (dark-on-tint).
+		for _ in range(20):
+			self.sleep(50)
+			try:
+				self.setFocusId(self.window_id)
+				if self.get_visibility('Control.HasFocus(%s)' % self.window_id): return
+			except: return
 
 	def run(self):
 		self.doModal()
@@ -251,6 +275,7 @@ class SourcesResults(BaseDialog):
 				listitem = self.make_listitem()
 				set_properties = listitem.setProperties
 				scrape_provider, source, quality, name = get('scrape_provider'), get('source'), get('quality', 'SD'), get('display_name')
+				source_site_label = 'Indexer' if scrape_provider in NATIVE_INDEXER_SCRAPERS else 'Site'
 				basic_quality, quality_icon = self.get_quality_and_path(quality.lower())
 				pack = get('package', 'false') in ('true', 'show', 'season')
 				extraInfo = get('extraInfo', '')
@@ -258,15 +283,23 @@ class SourcesResults(BaseDialog):
 				if pack: extraInfo = '[B]%s PACK[/B] | %s' % (get('package'), extraInfo)
 				if self.episode_group_label: extraInfo = '%s | %s' % (self.episode_group_label, extraInfo)
 				if not extraInfo: extraInfo = 'N/A'
-				if scrape_provider == 'external':
+				if scrape_provider == 'external' or scrape_provider in NATIVE_TORRENT_SCRAPERS:
 					source_site = get('provider').upper()
 					provider = get('debrid', source_site).replace('.me', '').upper()
 					provider_lower = provider.lower()
 					provider_icon = self.get_provider_and_path(provider_lower)[1]
-					if 'Uncached' in item['cache_provider']:
+					cache_provider = item.get('cache_provider') or ''
+					if cache_provider.startswith('Uncached '):
 						if 'seeders' in item: set_properties({'source_type': 'UNCACHED (%d SEEDERS)' % get('seeders', 0)})
 						else: set_properties({'source_type': 'UNCACHED'})
 						item_highlight = 'FF7C7C7C'
+					elif cache_provider.startswith('Unchecked '):
+						cache_flag = 'UNCHECKED'
+						if highlight_type == 0: key = provider_lower
+						else: key = basic_quality
+						item_highlight = self.info_highlights_dict[key]
+						if pack: set_properties({'source_type': '%s [B]PACK[/B]' % cache_flag})
+						else: set_properties({'source_type': '%s' % cache_flag})
 					else:
 						provider_check_names = {'REAL-DEBRID': 'Real-Debrid', 'ALLDEBRID': 'AllDebrid', 'TORBOX': 'TorBox', 'PREMIUMIZE': 'Premiumize.me', 'OFFCLOUD': 'Offcloud'}
 						check_provider = provider_check_names.get(provider)
@@ -310,6 +343,11 @@ class SourcesResults(BaseDialog):
 						scraper_module_label = 'Scraper'
 						scraper_suffix = '     [COLOR %s][B]Scraper: [/B][/COLOR]%s' % (item_highlight, scraper_module.upper())
 						scraper_suffix_tint = '     [COLOR FFA8A8A8][B]Scraper: [/B][/COLOR][COLOR FFFFFFFF]%s[/COLOR]' % scraper_module.upper()
+				elif scrape_provider in NATIVE_TORRENT_SCRAPERS:
+					scraper_module = 'Internal'
+					scraper_module_label = 'Scraper'
+					scraper_suffix = '     [COLOR %s][B]Scraper: [/B][/COLOR]%s' % (item_highlight, scraper_module.upper())
+					scraper_suffix_tint = '     [COLOR FFA8A8A8][B]Scraper: [/B][/COLOR][COLOR FFFFFFFF]%s[/COLOR]' % scraper_module.upper()
 				elif scrape_provider == 'aiostreams':
 					scraper_module = get('aio_release_group') or ''
 					if scraper_module:
@@ -322,9 +360,10 @@ class SourcesResults(BaseDialog):
 						scraper_module_label = 'Site'
 						scraper_suffix = '     [COLOR %s][B]Site: [/B][/COLOR]%s' % (item_highlight, scraper_module.upper())
 						scraper_suffix_tint = '     [COLOR FFA8A8A8][B]Site: [/B][/COLOR][COLOR FFFFFFFF]%s[/COLOR]' % scraper_module.upper()
-				set_properties({'name': name.upper(), 'source_site': source_site, 'provider_icon': provider_icon, 'quality_icon': quality_icon, 'count': '%02d.' % count,
+				set_properties({'name': name.upper(), 'source_site': source_site, 'source_site_label': source_site_label, 'provider_icon': provider_icon, 'quality_icon': quality_icon, 'count': '%02d.' % count,
 						'size_label': get('size_label', 'N/A'), 'extraInfo': extraInfo, 'quality': quality.upper(), 'hash': get('hash', 'N/A'), 'source': json.dumps(item),
-						'highlight': item_highlight, 'highlight_bg': highlight_bg, 'scraper_module': scraper_module.upper() if scraper_module else '', 'scraper_module_label': scraper_module_label,
+						'highlight': item_highlight, 'highlight_bg': highlight_bg, 'highlight_tint_focused_background': 'true' if self.tint_focused_background else 'false',
+						'scraper_module': scraper_module.upper() if scraper_module else '', 'scraper_module_label': scraper_module_label,
 						'scraper_suffix': scraper_suffix, 'scraper_suffix_tint': scraper_suffix_tint})
 				item_list.append((listitem, count))
 			except: pass
@@ -408,9 +447,32 @@ class SourcesResults(BaseDialog):
 		self.setProperty('fanart', self.meta_get('fanart') or self.addon_fanart)
 		self.setProperty('clearlogo', self.meta_get('clearlogo') or '')
 		self.setProperty('title', self.meta_get('title'))
+		self.setProperty('episode_label', self._episode_results_label())
 		self.setProperty('total_results', self.total_results)
 		self.setProperty('filters_ignored', '| Filters Ignored' if self.filters_ignored else '')
 		self.setProperty('failure_info', '| %s' % self.failure_label if self.failure_label else '')
+
+	def _episode_results_label(self):
+		"""SxxExx - episode title beside results count (List format + setting only)."""
+		if self.window_format != 'list':
+			return ''
+		if get_setting('redlight.results.show_episode_title', 'true') != 'true':
+			return ''
+		season, episode = self.meta_get('season'), self.meta_get('episode')
+		try:
+			season, episode = int(season), int(episode)
+		except Exception:
+			return ''
+		if season < 0 or episode < 0:
+			return ''
+		label = 'S%02dE%02d' % (season, episode)
+		ep_name = (self.meta_get('ep_name') or '').strip()
+		if ep_name:
+			label = '%s - %s' % (label, ep_name)
+		group = (self.episode_group_label or '').replace('[B]', '').replace('[/B]', '').strip()
+		if group:
+			label = '%s | %s' % (label, group)
+		return label
 
 	def set_poster(self):
 		if self.window_id == 2000: self.set_image(200, self.poster)
@@ -576,9 +638,16 @@ class SourcesPlayback(BaseDialog):
 		self.setProperty('genre', ', '.join(genre))
 
 	def set_resolver_properties(self):
-		if self.meta_get('media_type') == 'movie': self.text = self.meta_get('plot')
+		if not show_loading_plot():
+			if self.meta_get('media_type') == 'movie':
+				self.text = ''
+			else:
+				self.text = '[B]%02dx%02d - %s[/B]' % (
+					self.meta_get('season'), self.meta_get('episode'), self.meta_get('ep_name', 'N/A').upper())
+		elif self.meta_get('media_type') == 'movie':
+			self.text = self.meta_get('plot')
 		else:
-			if avoid_episode_spoilers() and int(self.meta_get('playcount', '0')) == 0: plot = self.meta_get('tvshow_plot') or '* Hidden to Prevent Spoilers *'
+			if avoid_episode_spoilers() and int(self.meta_get('playcount') or 0) == 0: plot = self.meta_get('tvshow_plot') or '* Hidden to Prevent Spoilers *'
 			else: plot = self.meta_get('plot', '') or self.meta_get('tvshow_plot', '')
 			self.text = '[B]%02dx%02d - %s[/B][CR][CR]%s' % (self.meta_get('season'), self.meta_get('episode'), self.meta_get('ep_name', 'N/A').upper(), plot)
 		self.setProperty('window_mode', self.window_mode)
@@ -649,6 +718,7 @@ class SourcesInfo(BaseDialog):
 		self.setProperty('name', self.item_get_property('name'))
 		self.setProperty('source_type', self.item_get_property('source_type'))
 		self.setProperty('source_site', self.item_get_property('source_site'))
+		self.setProperty('source_site_label', self.item_get_property('source_site_label') or 'Site')
 		self.setProperty('scraper_module', self.item_get_property('scraper_module'))
 		self.setProperty('scraper_module_label', self.item_get_property('scraper_module_label') or 'Scraper')
 		self.setProperty('size_label', self.item_get_property('size_label'))

@@ -1,3 +1,57 @@
+v4.3.7 (2026-08-31)
+ - First run after a build install starts the build's binary installer so InstallAddon no longer waits for a second boot
+
+v4.3.6 (2026-08-30)
+ - Speedtest keeps local results if there is no speedtest.net image, tries HTTPS for upload, and shows a toast if the test fails
+ - Speedtest ping uses a 10 second timeout and averages the probes that actually ran
+ - Restore from backup skips natives that do not belong on this OS and prepares binary add-ons the same way as a build install
+ - Video Cache Settings can auto-detect size from free RAM
+
+v4.3.5 (2026-08-28)
+ - Typo in addon.xml and changelog corrected
+
+v4.3.4 (2026-08-28)
+ - Speedtest now uses the same JSON endpoint as the speedtest.net website (api/js/servers?engine=js)
+
+v4.3.3 (2026-08-24)
+ - Binary add-on handling only rewrites compiled kodi.binary extensions, not Python context menus or resource add-ons
+
+v4.3.2 (2026-08-23)
+ - Whitelist Add/Remove no longer reports an update if nothing was changed
+
+v4.3.1 (2026-08-22)
+ - Authorise accounts are listed debrid A–Z, then meta A–Z; headings are hidden when there is only one group
+ - Enable Skin Override Protection hidden again; Disable is only shown if protection is already on
+ - Screenshots updated
+
+v4.3.1~beta2 (2026-08-21)
+ - Build rename map prompts even when the version number is unchanged
+ - Build unzip progress keeps a solid background; Fresh Start still closes the dialog before the wipe
+ - Account Manager Lite is only shown when it is installed
+ - Authorise Debrid and Meta Accounts list expanded
+ - ResolveURL OffCloud and TorBox open the ResolveURL settings page to add an account
+ - Show Kodi / OS information now updates the main menu when toggled
+ - Upload Kodi Log added; View Logs kept as a fallback
+ - View Logs uses a plain dark window and can be scrolled
+ - Whitelist Add-Ons moved to the Tools menu (less relevant with updated Save Debrid and Meta Account Data list)
+ - Fixed Whitelist selection highlight on first open
+
+v4.3.1~beta1 (2026-08-21)
+ - Save Debrid and Meta Account Data list updated
+ - Authorise Debrid and Meta Accounts added to Account Manager (installed add-ons only)
+ - Refined binary add-on handling so Kodi can update them without deleting the add-on folder
+ - Build installs now keep the zip's add-on database; full table wipe is only used on Fresh Start
+ - Clear Packages on Startup can be Disabled, Every startup, 10 packages or 20 packages
+ - Fresh Start progress dialog now closes before files are deleted
+ - Video cache device presets use adaptive read factor (Kodi 21 and 22)
+ - Whitelist Add/Remove lists show the add-on name only, without Kodi colour codes, including disabled add-ons
+ - Force Update Add-ons now also scans local add-ons, not only repositories
+ - Optional Kodi name, full version, release date and OS on the main menu (default on)
+ - Build Menu only shows the build count when it is greater than zero
+ - Build install shows a finalising notification after extraction
+ - Video Cache Settings only shown on Kodi 21 and 22
+ - New-build notification ignores list reordering and no longer shows a blank name
+
 v4.3.0 (2026-05-02)
  - Reorganisation and rewrite of menus:
   * (Kodi) Maintenance and (Wizard) Tools separated into separate submenus

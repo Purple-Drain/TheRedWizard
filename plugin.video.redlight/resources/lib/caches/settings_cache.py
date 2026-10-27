@@ -119,12 +119,16 @@ def _new_setting_value(setting_id, setting_default, currentsettings, had_existin
 		# purge then deletes the five legacy ids and with them the only copy of the user's orderings.
 		if setting_id == 'migration.unified_list_sort': return 'true' if fresh_install else setting_default
 		return setting_default
+	if setting_id == 'provider.internal':
+		if any(currentsettings.get('provider.%s' % scraper) == 'true' for scraper in ('comet', 'torrentio', 'torz', 'nyaa', 'animetosho')):
+			return 'true'
+		return setting_default
 	old_setting_id = _NEW_SETTING_VALUE_MIGRATIONS.get(setting_id)
 	if not old_setting_id:
 		return setting_default
 	return currentsettings.get(old_setting_id, setting_default)
 
-_CREDENTIAL_STRING_SETTINGS = frozenset(('tmdb_api', 'trakt.client', 'trakt.secret', 'tmdb.lists_read_token', 'omdb_api'))
+_CREDENTIAL_STRING_SETTINGS = frozenset(('tmdb_api', 'trakt.client', 'trakt.secret', 'tmdb.lists_read_token', 'fanarttv_api', 'omdb_api'))
 
 def normalize_credential_string(value):
 	if value in (None, 'empty_setting'): return ''
@@ -313,8 +317,12 @@ class SettingsCache:
 			raise
 		return row is None
 
-	def set(self, setting_id, setting_value=None):
+	def set(self, setting_id, setting_value=None, provider_sync=True):
 		setting_id = setting_id.replace('redlight.', '')
+		prev_watched_indicators = None
+		if setting_id == 'watched_indicators':
+			try: prev_watched_indicators = str(self.read_db_value('watched_indicators') or '0')
+			except: prev_watched_indicators = '0'
 		self._db_cache.pop(setting_id, None)
 		self._db_cache.pop('%s_name' % setting_id, None)
 		self._secret_cache.pop(setting_id, None)
@@ -409,6 +417,8 @@ class SettingsCache:
 				from apis.aiostreams_api import refresh_settings_properties
 				refresh_settings_properties()
 			except: pass
+		if provider_sync and setting_id == 'watched_indicators' and str(setting_value) != str(prev_watched_indicators):
+			_sync_watched_provider_on_switch(setting_value)
 
 	def set_many(self, settings_list, load_properties=True):
 		dbcon = connect_database('settings_db')
@@ -454,8 +464,8 @@ class SettingsCache:
 
 settings_cache = SettingsCache()
 
-def set_setting(setting_id, value):
-	settings_cache.set(setting_id, value)
+def set_setting(setting_id, value, provider_sync=True):
+	settings_cache.set(setting_id, value, provider_sync=provider_sync)
 
 def _bump_secrets_generation():
 	"""Tell every Python process to read its logins again (#176). Called after the database write."""
@@ -648,7 +658,7 @@ def run_deferred_setup_background_if_needed():
 _DIRECTORY_LISTING_MODES = frozenset((
 	'build_movie_list', 'build_tvshow_list', 'build_season_list', 'build_episode_list',
 	'build_in_progress_episode', 'build_recently_watched_episode', 'build_next_episode',
-	'build_my_calendar', 'build_mdbl_calendar', 'build_punchplay_calendar', 'build_simkl_calendar', 'build_mdbl_next_up', 'build_next_episode_manager',
+	'build_my_calendar', 'build_mdbl_calendar', 'build_punchplay_calendar', 'build_simkl_calendar', 'build_simkl_public_calendar', 'build_mdbl_next_up', 'build_next_episode_manager',
 	# #92: both reuse build_single_episode('episode.next', ...), same as build_next_episode above.
 	'next_episode.info', 'playback.next_episode'))
 
@@ -1072,7 +1082,6 @@ def set_from_list(params):
 				except:
 					pass
 				return
-	prev_value = get_setting('redlight.%s' % setting_id) if setting_id == 'watched_indicators' else None
 	set_setting(setting_id, setting_value)
 	if setting_id == 'external_scraper.run_mode':
 		try:
@@ -1081,21 +1090,7 @@ def set_from_list(params):
 			settings_cache.set_memory_cache('%s_name' % setting_id, mode_opts.get(str(setting_value), ''))
 		except:
 			pass
-	if setting_id == 'watched_indicators' and setting_value == '3' and str(prev_value) != '3':
-		try:
-			from apis.mdblist_api import mdblist_sync_activities
-			mdblist_sync_activities(force_update=True)
-		except: pass
-	if setting_id == 'watched_indicators' and setting_value == '2' and str(prev_value) != '2':
-		try:
-			from apis.simkl_api import simkl_sync_activities
-			simkl_sync_activities(force_update=True)
-		except: pass
-	if setting_id == 'watched_indicators' and setting_value == '4' and str(prev_value) != '4':
-		try:
-			from apis.punchplay_api import punchplay_sync_activities
-			punchplay_sync_activities(force_update=True)
-		except: pass
+	# watched_indicators sync is queued from SettingsCache.set (own plugin invoker; force if empty).
 
 _FOLDER_PATH_PREFIXES = ('dav://', 'davs://', 'smb://', 'nfs://', 'ftp://', 'ftps://', 'sftp://', 'http://', 'https://', 'special://', '/')
 
@@ -1147,9 +1142,392 @@ def restore_setting_default(params):
 	except:
 		if not silent: kodi_utils.ok_dialog(text='Error restoring default setting')
 
+# Accounts / API keys / external scraper slots kept by Default Red Light Settings.
+_PRESERVE_SETTING_IDS = frozenset((
+	# Meta accounts + OAuth
+	'trakt.user', 'trakt.token', 'trakt.refresh', 'trakt.expires', 'trakt.client', 'trakt.secret',
+	'simkl.user', 'simkl.token', 'simkl.client',
+	'mdblist.user', 'mdblist.token', 'mdblist.client', 'mdblist.refresh',
+	'punchplay.user', 'punchplay.token', 'punchplay.client', 'punchplay.refresh', 'punchplay.expires', 'punchplay.device_id',
+	'wetrakr.user', 'wetrakr.token',
+	'tmdb.token', 'tmdb.username', 'tmdb.account_id', 'tmdb.session_id', 'tmdb.account_session_id', 'tmdb.lists_read_token',
+	# API keys
+	'tmdb_api', 'fanarttv_api', 'omdb_api', 'rpdb_api', 'google_api', 'groq_api',
+	# Debrid auth (not enable/priority/cache toggles)
+	'rd.token', 'rd.refresh', 'rd.client_id', 'rd.secret', 'rd.account_id',
+	'pm.token', 'pm.account_id',
+	'ad.token', 'ad.account_id',
+	'oc.token', 'oc.account_id',
+	'tb.token',
+	# Direct source accounts
+	'easynews_user', 'easynews_password',
+	'aiostreams.username', 'aiostreams.password', 'aiostreams.custom_url', 'aiostreams.profiles', 'aiostreams.instance',
+	# NZB indexer accounts (slots)
+	'nzb1.enabled', 'nzb1.label', 'nzb1.url', 'nzb1.key',
+	'nzb2.enabled', 'nzb2.label', 'nzb2.url', 'nzb2.key',
+	'nzb3.enabled', 'nzb3.label', 'nzb3.url', 'nzb3.key',
+	# Subtitles accounts / APIs
+	'playback.opensubs_api_key', 'playback.opensubs_username', 'playback.opensubs_password', 'playback.opensubs_token',
+	'playback.submaker_manifest',
+	# Legacy single external scraper module pointers (slots covered below)
+	'external_scraper.module', 'external_scraper.name',
+))
+
+def _is_preserved_setting(setting_id):
+	if setting_id in _PRESERVE_SETTING_IDS:
+		return True
+	# External scraper slots: keep module / name / enabled only (not run_mode or other scraper prefs).
+	if setting_id.startswith('external_scraper.slot') and (
+			setting_id.endswith('.module') or setting_id.endswith('.name') or setting_id.endswith('.enabled')):
+		return True
+	return False
+
+def _remove_addon_data_path(target):
+	"""Delete a file/folder under addon_data. If locked, rename aside so a fresh path can be created.
+	Returns True when the original path has no live (non-.wiped) content left."""
+	from os import path as ospath
+	import gc
+	import os
+	import shutil
+	import time
+	if not target:
+		return True
+
+	def _gone(path):
+		try:
+			if ospath.exists(path): return False
+		except: pass
+		try:
+			if kodi_utils.path_exists(path): return False
+		except: pass
+		return True
+
+	def _has_live_content(path):
+		"""True if path exists as a live file, or a dir with any non-.wiped entry."""
+		if _gone(path):
+			return False
+		base = ospath.basename(path.rstrip('/\\'))
+		if base and '.wiped' in base:
+			return False
+		try:
+			if ospath.isfile(path):
+				return True
+		except: pass
+		try:
+			if ospath.isdir(path):
+				for dirpath, dirnames, filenames in os.walk(path):
+					for name in list(filenames) + list(dirnames):
+						if name and name not in ('.', '..') and '.wiped' not in name:
+							return True
+				return False
+		except: pass
+		# xbmcvfs-only path we could not classify — treat as live.
+		return True
+
+	def _delete_tree(path):
+		# Bottom-up file delete first — more reliable than a single rmtree on Windows locks.
+		try:
+			if ospath.isfile(path):
+				os.remove(path)
+				return
+			if ospath.isdir(path):
+				for dirpath, dirnames, filenames in os.walk(path, topdown=False):
+					for name in filenames:
+						fp = ospath.join(dirpath, name)
+						try: os.remove(fp)
+						except Exception:
+							try: kodi_utils.delete_file(fp)
+							except: pass
+					for name in dirnames:
+						dp = ospath.join(dirpath, name)
+						try: os.rmdir(dp)
+						except Exception:
+							try: kodi_utils.delete_folder(dp, force=True)
+							except: pass
+				try: os.rmdir(path)
+				except Exception:
+					shutil.rmtree(path, ignore_errors=True)
+				return
+		except Exception:
+			pass
+		try:
+			kodi_utils.delete_folder(path, force=True)
+		except:
+			try: kodi_utils.delete_file(path)
+			except: pass
+
+	def _quarantine(path):
+		base = path.rstrip('/\\')
+		for n in range(0, 8):
+			dest = '%s.wiped' % base if n == 0 else '%s.wiped%d' % (base, n)
+			if ospath.exists(dest) or kodi_utils.path_exists(dest):
+				continue
+			try:
+				os.rename(base, dest)
+				return not _has_live_content(path)
+			except Exception:
+				try:
+					kodi_utils.rename_file(base, dest)
+					return not _has_live_content(path)
+				except Exception:
+					pass
+		# Folder rename blocked by an open file — quarantine children, then retry the folder.
+		if ospath.isdir(base):
+			try:
+				for name in os.listdir(base):
+					if not name or '.wiped' in name:
+						continue
+					child = ospath.join(base, name)
+					if not _has_live_content(child):
+						continue
+					_delete_tree(child)
+					if not _has_live_content(child):
+						continue
+					cbase = child.rstrip('/\\')
+					for n in range(0, 8):
+						cdest = '%s.wiped' % cbase if n == 0 else '%s.wiped%d' % (cbase, n)
+						if ospath.exists(cdest):
+							continue
+						try:
+							os.rename(cbase, cdest)
+							break
+						except Exception:
+							pass
+			except Exception:
+				pass
+			_delete_tree(base)
+			if not _has_live_content(path):
+				return True
+			for n in range(0, 8):
+				dest = '%s.wiped' % base if n == 0 else '%s.wiped%d' % (base, n)
+				if ospath.exists(dest):
+					continue
+				try:
+					os.rename(base, dest)
+					return not _has_live_content(path)
+				except Exception:
+					pass
+		return not _has_live_content(path)
+
+	if not _has_live_content(target):
+		return True
+	gc.collect()
+	for _ in range(3):
+		_delete_tree(target)
+		if not _has_live_content(target):
+			return True
+		time.sleep(0.2)
+		gc.collect()
+	# Locked by Kodi/services — move aside so make_databases can recreate the live name.
+	return _quarantine(target)
+
+def reset_settings_keep_accounts(params={}):
+	"""Factory-reset settings values while keeping accounts, API keys, and external scraper slots."""
+	heading = 'Default Red Light Settings'
+	if not kodi_utils.confirm_dialog(
+			heading=heading,
+			text='Reset all Red Light settings to defaults?[CR][CR]'
+				 'Keeps meta/debrid/direct accounts, API keys, subtitle logins, NZB indexer accounts, '
+				 'and External Scraper slots.[CR][CR]Personal lists, caches, and watched data are not wiped.',
+			ok_label='Continue', cancel_label='Cancel', default_control=11, scroll=True):
+		return
+	if not kodi_utils.confirm_dialog(
+			heading=heading,
+			text='Are you sure?[CR][CR]This cannot be undone (except by restoring a settings backup).',
+			ok_label='Reset Settings', cancel_label='Cancel', default_control=11, scroll=True):
+		return
+	try:
+		progress = kodi_utils.progress_dialog()
+		progress.update('Saving accounts…', 5)
+		all_settings = settings_cache.get_all()
+		preserved = {sid: val for sid, val in all_settings.items() if _is_preserved_setting(sid)}
+		progress.update('Clearing settings…', 20)
+		dbcon = connect_database('settings_db')
+		dbcon.execute('DELETE FROM settings')
+		try: dbcon.commit()
+		except: pass
+		try: dbcon.close()
+		except: pass
+		settings_cache._db_cache.clear()
+		clear_settings_boot_state(clear_deferred=False)
+		progress.update('Rebuilding defaults…', 45)
+		sync_settings({'silent': 'true', 'load_properties': 'false', 'force': 'true'})
+		progress.update('Restoring accounts…', 70)
+		for sid, val in preserved.items():
+			try:
+				info = default_setting_values(sid)
+				settings_cache.write_db(sid, val, info)
+			except: pass
+		progress.update('Refreshing…', 90)
+		clear_settings_boot_state(clear_deferred=False)
+		sync_settings({'silent': 'true', 'load_properties': 'true', 'force': 'true'})
+		try:
+			from modules.settings import refresh_external_scraper_properties
+			refresh_external_scraper_properties()
+		except: pass
+		try:
+			from modules.service_expiry import publish_settings_expiry_properties
+			publish_settings_expiry_properties()
+		except: pass
+		progress.close()
+		kodi_utils.ok_dialog(heading=heading, text='Settings restored to defaults.[CR]Accounts and API keys were kept.', scroll=True)
+	except Exception as e:
+		try: progress.close()
+		except: pass
+		kodi_utils.logger('reset_settings_keep_accounts', str(e))
+		kodi_utils.ok_dialog(heading=heading, text='Error resetting settings.[CR]%s' % e, scroll=True)
+
+def reset_addon_data(params={}):
+	"""Wipe Red Light addon_data and rebuild empty databases / default settings."""
+	from os import path as ospath
+	import gc
+	heading = 'Reset Red Light'
+	if not kodi_utils.confirm_dialog(
+			heading=heading,
+			text='Wipe all Red Light addon data and rebuild from scratch?[CR][CR]'
+				 'Deletes settings, caches, watched/progress DBs, personal lists, favorites, '
+				 'episode groups, navigator customisation, and any downloads stored inside Red Light addon data.[CR][CR]'
+				 'You will need to re-authorise accounts and re-enter API keys.',
+			ok_label='Continue', cancel_label='Cancel', default_control=11, scroll=True):
+		return
+	if not kodi_utils.confirm_dialog(
+			heading=heading,
+			text='Final confirmation.[CR][CR]This permanently deletes Red Light addon data.',
+			ok_label='Wipe & Rebuild', cancel_label='Cancel', default_control=11, scroll=True):
+		return
+	progress = None
+	paused = False
+	try:
+		progress = kodi_utils.progress_dialog()
+		progress.update('Pausing services…', 5)
+		kodi_utils.set_property('redlight.pause_services', 'true')
+		paused = True
+		# Give monitors a moment to leave DB operations.
+		kodi_utils.sleep(1000)
+		profile = kodi_utils.addon_profile()
+		if not profile:
+			raise Exception('Addon profile path unavailable')
+		# Drop in-process DB handles before deleting files under us.
+		settings_cache.clear_db_cache()
+		clear_settings_boot_state(clear_deferred=False)
+		gc.collect()
+		progress.update('Wiping addon data…', 20)
+		folders, files = kodi_utils.list_dirs(profile)
+		# Remove prior quarantine leftovers first so they do not accumulate.
+		stale = [name for name in list(files) + list(folders) if name and '.wiped' in name]
+		for name in stale:
+			_remove_addon_data_path(ospath.join(profile, name))
+		folders, files = kodi_utils.list_dirs(profile)
+		targets = [ospath.join(profile, name) for name in list(files) + list(folders)
+					if name not in (None, '', '.', '..') and '.wiped' not in (name or '')]
+		total = max(1, len(targets))
+		for idx, target in enumerate(targets):
+			_remove_addon_data_path(target)
+			progress.update('Wiping addon data…', 20 + int(50 * (idx + 1) / total))
+		# Confirm live names are gone (empty dirs / .wiped leftovers are fine).
+		remain_folders, remain_files = kodi_utils.list_dirs(profile)
+		candidates = [name for name in list(remain_files) + list(remain_folders)
+						if name not in (None, '', '.', '..') and '.wiped' not in (name or '')]
+		live = []
+		for name in candidates:
+			if not _remove_addon_data_path(ospath.join(profile, name)):
+				live.append(name)
+		if live:
+			raise Exception(
+				'Some files are still locked.[CR]Close Settings / Red Light windows, restart Kodi, then retry.[CR][CR]%s'
+				% ', '.join(sorted(live)[:8]))
+		# Remove empty leftover folders (e.g. download dirs whose contents wiped).
+		try:
+			import os
+			remain_folders, _remain_files = kodi_utils.list_dirs(profile)
+			for name in remain_folders:
+				if not name or name in ('.', '..'):
+					continue
+				path = ospath.join(profile, name)
+				try:
+					if ospath.isdir(path) and not os.listdir(path):
+						os.rmdir(path)
+				except Exception:
+					try: kodi_utils.delete_folder(path, force=False)
+					except: pass
+		except: pass
+		progress.update('Rebuilding databases…', 75)
+		if not kodi_utils.path_exists(profile):
+			kodi_utils.make_directories(profile)
+		from caches.base_cache import make_databases, remove_old_databases
+		make_databases()
+		try: remove_old_databases()
+		except: pass
+		progress.update('Creating default settings…', 88)
+		clear_settings_boot_state(clear_deferred=True)
+		sync_settings({'silent': 'true', 'load_properties': 'true', 'force': 'true'})
+		# Best-effort cleanup of quarantined leftovers after fresh DBs exist.
+		try:
+			q_folders, q_files = kodi_utils.list_dirs(profile)
+			for name in list(q_files) + list(q_folders):
+				if name and '.wiped' in name:
+					_remove_addon_data_path(ospath.join(profile, name))
+		except: pass
+		progress.close()
+		kodi_utils.ok_dialog(
+			heading=heading,
+			text='Red Light addon data was wiped and rebuilt.[CR][CR]'
+				 'Re-authorise accounts under Meta Accounts / Torrent Sources / Direct Sources.[CR][CR]'
+				 'A full Kodi restart is recommended.',
+			scroll=True)
+	except Exception as e:
+		try:
+			if progress: progress.close()
+		except: pass
+		kodi_utils.logger('reset_addon_data', str(e))
+		kodi_utils.ok_dialog(
+			heading=heading,
+			text='Error wiping addon data.[CR][CR]%s' % e,
+			scroll=True)
+	finally:
+		if paused:
+			try: kodi_utils.clear_property('redlight.pause_services')
+			except: pass
+
 def default_setting_values(setting_id):
 	if 'redlight.' in setting_id: setting_id = setting_id.replace('redlight.', '')
 	return _get_defaults_map().get(setting_id)
+
+def _provider_watched_db_empty(provider_index):
+	try:
+		from modules.watched_status import get_database
+		dbcon = get_database(int(provider_index))
+		return dbcon.execute('SELECT 1 FROM watched LIMIT 1').fetchone() is None
+	except:
+		return True
+
+def _sync_watched_provider_on_switch(provider_value):
+	"""When Watched Status Provider switches to a remote service: activity-gated sync.
+	Force full pull only if that provider's local watched table is empty (first enable).
+	Stale-but-populated DBs catch up via activities / Phase 2. Tools > Force Sync still wipes.
+	Queued as its own plugin invoker so Settings / authorise can return immediately.
+	"""
+	try:
+		provider = int(provider_value)
+	except Exception:
+		return
+	modes = {
+		1: 'trakt.trakt_sync_activities',
+		2: 'simkl.simkl_sync_activities',
+		3: 'mdblist.mdblist_sync_activities',
+		4: 'punchplay.punchplay_sync_activities',
+	}
+	mode = modes.get(provider)
+	if not mode:
+		return
+	force = _provider_watched_db_empty(provider)
+	params = {'mode': mode, 'force_update': 'true' if force else 'false'}
+	if provider == 4 and force:
+		params['notify'] = 'true'
+	try:
+		kodi_utils.run_plugin(params, block=False)
+	except Exception:
+		pass
 
 def _get_defaults_map():
 	global _DEFAULTS_MAP
@@ -1256,6 +1634,7 @@ def default_settings():
 '9': 'Last 9 Watched', '10': 'Last 10 Watched'}},
 {'setting_id': 'mpaa_region', 'setting_type': 'string', 'setting_default': 'US'},
 {'setting_id': 'lists_cache_duraton', 'setting_type': 'string', 'setting_default': '24'},
+{'setting_id': 'tmdb.premieres_sort', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Popularity', '1': 'Newest First'}},
 {'setting_id': 'tv_progress_location', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Watched', '1': 'In Progress', '2': 'Both'}},
 {'setting_id': 'show_specials', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'exclude_specials_progress', 'setting_type': 'boolean', 'setting_default': 'true'},
@@ -1264,7 +1643,12 @@ def default_settings():
 {'setting_id': 'use_season_name', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'default_all_episodes', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Never', '1': 'If Only One Season', '2': 'Always'}},
 {'setting_id': 'avoid_episode_spoilers', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'show_loading_plot', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'include_anime_tvshow', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'show_public_calendars', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'public_calendar_include_anime', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'public_calendar_max_items', 'setting_type': 'action', 'setting_default': '250', 'min_value': '0', 'max_value': '2000'},
+{'setting_id': 'public_calendar_cache_list', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'anime.seasons_episode_group_fallback', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'show_unaired_watchlist', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'meta_filter', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -1294,6 +1678,7 @@ def default_settings():
 {'setting_id': 'widget_refresh_timer', 'setting_type': 'string', 'setting_default': '0'},
 {'setting_id': 'widget_refresh_notification', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'widget_hide_watched', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'widget_hide_watched_fill', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'widget_hide_next_page', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== RPDb Ratings Posters
 {'setting_id': 'rpdb_enabled', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'Movies', '2': 'TV Shows', '3': 'Both'}},
@@ -1313,6 +1698,8 @@ def default_settings():
 #==================== General
 {'setting_id': 'single_ep_display', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'TITLE - SxE. EPISODE', '1': 'SxE. EPISODE', '2': 'EPISODE'}},
 {'setting_id': 'single_ep_display_widget', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'TITLE - SxE. EPISODE', '1': 'SxE. EPISODE', '2': 'EPISODE'}},
+{'setting_id': 'single_ep_widget_omit_tvshowtitle', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'single_ep_widget_omit_season_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'single_ep_unwatched_episodes', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'single_ep_unwatched_in_title', 'setting_type': 'boolean', 'setting_default': 'false'},
 #==================== Next Episodes
@@ -1358,6 +1745,8 @@ def default_settings():
 {'setting_id': 'tmdb.lists_read_token', 'setting_type': 'string', 'setting_default': 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJhMGJmMjA3YzVmZjZjMGNhYWJhYzAzMjdlMzliMWNkMiIsIm5iZiI6MTUwMzk0ODAxMC43NTQsInN1YiI6IjU5YTQ2Y2U4YzNhMzY4MGIxMjAwMjgxYiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.2pYaMVzWy-TNg2SBlkP_CrYWpaxcU7LZIZLPdgJp9jw'},
 {'setting_id': 'tmdb.token', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'tmdb.username', 'setting_type': 'string', 'setting_default': 'empty_setting'},
+#==================== Fanart.tv
+{'setting_id': 'fanarttv_api', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 #==================== OMDb
 {'setting_id': 'omdb_api', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 #==================== RPDb
@@ -1384,6 +1773,46 @@ def default_settings():
 {'setting_id': 'external_scraper.slot3.name', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'external_scraper.slot3.enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'external_scraper.run_mode', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'1': 'Series (Fallback by Slot Order)', '2': 'Series (All Slots in Order)', '3': 'Primary Slot + Parallel Fallback', '0': 'Parallel (All Enabled Slots)'}},
+{'setting_id': 'provider.internal', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'provider.comet', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'comet.url', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {
+	'0': 'Goldy — https://comet.feels.legal',
+	'1': 'Stremio.ru — https://comet.stremio.ru',
+	'2': 'Midnight — https://cometfortheweebs.midnightignite.me',
+	'3': 'Custom — set URL below',
+}},
+{'setting_id': 'comet.custom_url', 'setting_type': 'string', 'setting_default': ''},
+{'setting_id': 'comet.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'comet.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'provider.torrentio', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'torrentio.url', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {
+	'0': 'https://torrentio.strem.fun',
+	'1': 'Custom — set URL below',
+}},
+{'setting_id': 'torrentio.custom_url', 'setting_type': 'string', 'setting_default': ''},
+{'setting_id': 'torrentio.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'torrentio.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'provider.torz', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'torz.url', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {
+	'0': 'Kuu-lection — https://stremthru.stremio.ru',
+	'1': 'Munif — https://stremthru.13377001.xyz',
+	'2': 'Midnight — https://stremthrufortheweebs.midnightignite.me',
+	'3': 'Custom — set URL below',
+}},
+{'setting_id': 'torz.custom_url', 'setting_type': 'string', 'setting_default': ''},
+{'setting_id': 'torz.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'torz.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'provider.nyaa', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'nyaa.category', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {
+	'0': 'All categories',
+	'1': 'Anime (English-translated)',
+	'2': 'Anime (all)',
+}},
+{'setting_id': 'nyaa.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'nyaa.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'provider.animetosho', 'setting_type': 'boolean', 'setting_default': 'false'},
+{'setting_id': 'animetosho.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'animetosho.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'migration.external_scraper_slots_v160', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.cache_check_pm_oc_tb_v129e', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'migration.ad_cache_check_removed_v173', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -1469,6 +1898,7 @@ def default_settings():
 {'setting_id': 'easynews_user', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'easynews_password', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'easynews.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'easynews.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'easynews.filter_lang', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'easynews.exclude_adult', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'easynews.lang_filters', 'setting_type': 'string', 'setting_default': 'eng'},
@@ -1523,6 +1953,7 @@ def default_settings():
 {'setting_id': 'nzb3.url', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'nzb3.key', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'nzb.title_filter', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'nzb.title_filter_episode', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'nzb.fallback_search', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'nzb.search_width', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Focused', '1': 'Balanced', '2': 'Broad'}},
 {'setting_id': 'check.nzb', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -1544,6 +1975,7 @@ def default_settings():
 {'setting_id': 'cloud_stall_resume_attempts', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0'},
 {'setting_id': 'playback_open_timeout', 'setting_type': 'action', 'setting_default': '30', 'min_value': '1'},
 {'setting_id': 'results.list_format', 'setting_type': 'string', 'setting_default': 'List'},
+{'setting_id': 'results.show_episode_title', 'setting_type': 'boolean', 'setting_default': 'true'},
 #==================== Rescrape
 {'setting_id': 'rescrape.cache_ignored', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Off', '1': 'Auto', '2': 'Prompt'}},
 {'setting_id': 'rescrape.cache_ignored.order', 'setting_type': 'action', 'setting_default': '0', 'min_value': '1', 'max_value': '5'},
@@ -1584,6 +2016,7 @@ def default_settings():
 {'setting_id': 'filter.av1', 'setting_type': 'action', 'setting_default': '0', 'settings_options':{'0': 'Include', '1': 'Exclude'}},
 {'setting_id': 'filter.enhanced_upscaled', 'setting_type': 'action', 'setting_default': '0', 'settings_options':{'0': 'Include', '1': 'Exclude'}},
 {'setting_id': 'filter.sort_to_top', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'Source Select', '2': 'Autoplay', '3': 'Both'}},
+{'setting_id': 'filter.prefer_release_groups', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'Source Select', '2': 'Autoplay', '3': 'Both'}},
 {'setting_id': 'filter.preferred_filters', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 {'setting_id': 'filter_audio', 'setting_type': 'string', 'setting_default': 'empty_setting'},
 #==================== Results Color Highlights
@@ -1632,7 +2065,7 @@ def default_settings():
 {'setting_id': 'autoplay_alert_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Window', '1': 'Notification'}},
 {'setting_id': 'autoplay_default_action', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Play', '1': 'Cancel', '2': 'Pause & Wait'}},
 {'setting_id': 'autoplay_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
-{'setting_id': 'autoplay_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
+{'setting_id': 'autoplay_alert_timing', 'setting_type': 'action', 'setting_default': '3', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
 {'setting_id': 'autoplay_skip_intro', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Off', '2': 'Auto', '1': 'Prompt'}},
 {'setting_id': 'skip_intro_all_episodes', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'binge_skip_intro', 'setting_type': 'boolean', 'setting_default': 'false'},
@@ -1643,13 +2076,13 @@ def default_settings():
 {'setting_id': 'autoplay_watching_check', 'setting_type': 'action', 'setting_default': '3', 'min_value': '0', 'max_value': '5'},
 {'setting_id': 'autoscrape_next_episode', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'autoscrape_next_window_percentage', 'setting_type': 'action', 'setting_default': '95', 'min_value': '75', 'max_value': '99'},
-{'setting_id': 'autoscrape_alert_timing', 'setting_type': 'action', 'setting_default': '1', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
+{'setting_id': 'autoscrape_alert_timing', 'setting_type': 'action', 'setting_default': '3', 'settings_options': {'0': 'Playback Percentage', '1': 'Chapter Info', '2': 'Subtitles Info', '3': 'IntroDB Info'}},
 {'setting_id': 'autoscrape_confirm', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'auto_resume_episode', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'Never', '1': 'Always', '2': 'Autoplay Only'}},
 #==================== Playback Utilities
 {'setting_id': 'playback.limit_resolve', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'easynews.playback_method', 'setting_type': 'action', 'setting_default': '0', 'settings_options': {'0': 'None', '1': 'Retry', '2': 'No Seek', '3': 'Both'}},
-{'setting_id': 'easynews.playback_method_retries', 'setting_type': 'action', 'setting_default': '1', 'min_value': '1', 'max_value': '4'},
+{'setting_id': 'easynews.playback_method_retries', 'setting_type': 'action', 'setting_default': '1', 'min_value': '1', 'max_value': '8'},
 {'setting_id': 'easynews.playback_method_limited', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'playback.volumecheck_enabled', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'playback.volumecheck_percent', 'setting_type': 'action', 'setting_default': '50', 'min_value': '1', 'max_value': '100'},

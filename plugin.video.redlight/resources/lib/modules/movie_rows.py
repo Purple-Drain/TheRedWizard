@@ -22,6 +22,8 @@ def render_movie_row(row, make_listitem, kodi_actor):
 	info_tag.setWriters(info['writers']), info_tag.setDirectors(info['directors'])
 	info_tag.setCast([kodi_actor(name=i['name'], role=i['role'], thumbnail=i['thumbnail']) for i in row['cast']])
 	if 'resume_seconds' in row: info_tag.setResumePoint(row['resume_seconds'])
+	try: listitem.setContentLookup(False)
+	except: pass
 	listitem.setLabel(row['label'])
 	listitem.addContextMenuItems([tuple(i) for i in row['cm']])
 	listitem.setArt(row['art'])

@@ -220,8 +220,8 @@ def nav_row(label, icon, fanart):
 def _render_nav(nav, make_listitem):
 	listitem = make_listitem()
 	listitem.setLabel(nav['label'])
+	listitem.getVideoInfoTag().setPlot(' ')
 	kodi_utils.set_list_item_art(listitem, nav['icon'], fanart=nav['fanart'], banner=nav['fanart'])
-	listitem.getVideoInfoTag(True).setPlot(' ')
 	return listitem
 
 

@@ -14,9 +14,11 @@ def render_episode_row(row, make_listitem, kodi_actor):
 	listitem = make_listitem()
 	info = row['info']
 	info_tag = listitem.getVideoInfoTag(True)
-	info_tag.setMediaType('episode'), info_tag.setOriginalTitle(info['original_title']), info_tag.setTvShowTitle(info['tvshow_title'])
+	info_tag.setMediaType('episode'), info_tag.setOriginalTitle(info['original_title'])
+	if not info.get('omit_tvshowtitle'): info_tag.setTvShowTitle(info['tvshow_title'])
 	info_tag.setTitle(info['title']), info_tag.setGenres(info['genres'])
-	info_tag.setPlaycount(info['playcount']), info_tag.setSeason(info['season']), info_tag.setEpisode(info['episode']), info_tag.setPlot(info['plot'])
+	info_tag.setPlaycount(info['playcount']), info_tag.setPlot(info['plot'])
+	if not info.get('omit_season_episode'): info_tag.setSeason(info['season']), info_tag.setEpisode(info['episode'])
 	info_tag.setFirstAired(info['first_aired'])
 	info_tag.setDuration(info['duration']), info_tag.setIMDBNumber(info['imdb']), info_tag.setUniqueIDs(info['unique_ids'])
 	info_tag.setCountries(info['countries']), info_tag.setTrailer(info['trailer']), info_tag.setTvShowStatus(info['tvshow_status'])
@@ -24,6 +26,8 @@ def render_episode_row(row, make_listitem, kodi_actor):
 	info_tag.setYear(info['year']), info_tag.setRating(info['rating']), info_tag.setVotes(info['votes']), info_tag.setMpaa(info['mpaa'])
 	info_tag.setCast([kodi_actor(name=i['name'], role=i['role'], thumbnail=i['thumbnail']) for i in row['cast']])
 	if 'resume_seconds' in row: info_tag.setResumePoint(row['resume_seconds'])
+	try: listitem.setContentLookup(False)
+	except: pass
 	listitem.setLabel(row['label'])
 	listitem.addContextMenuItems([tuple(i) for i in row['cm']])
 	listitem.setArt(row['art'])

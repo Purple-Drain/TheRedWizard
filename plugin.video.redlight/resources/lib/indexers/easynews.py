@@ -10,6 +10,18 @@ from modules import kodi_utils
 from modules.utils import clean_file_name
 # logger = kodi_utils.logger
 
+def _thumb_url(url, fallback):
+	thumb = EasyNews.auth_thumb(url or fallback) or fallback
+	return thumb
+
+def _easynews_row_fanart(thumbnail):
+	"""Nimbus List / FlixList side art reads Art(fanart) for plugin files. Other skins keep addon fanart as the page backdrop."""
+	try:
+		if 'nimbus' in kodi_utils.current_skin().lower():
+			return thumbnail
+	except: pass
+	return kodi_utils.get_addon_fanart()
+
 def search_easynews_image(key_id=None):
 	return Images().run({'mode': 'easynews_image_results', 'key_id': unquote(key_id), 'page_no': 1})
 
@@ -21,9 +33,11 @@ def search_easynews(params):
 		files = EasyNews.search(search_name)
 		easynews_file_browser(files, handle)
 	except: pass
-	kodi_utils.set_content(handle, kodi_utils.MENU_FOLDER_CONTENT)
+	# Same content as debrid browsers so skins (incl. Nimbus List art toggles) use files paths,
+	# not empty-menu / isMenuListing handling.
+	kodi_utils.set_content(handle, kodi_utils.PREMIUM_FILES_CONTENT)
 	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.premium', kodi_utils.MENU_FOLDER_CONTENT)
+	kodi_utils.set_view_mode('view.premium', kodi_utils.PREMIUM_FILES_CONTENT)
 
 def easynews_file_browser(files, handle):
 	def _builder():
@@ -50,14 +64,11 @@ def easynews_file_browser(files, handle):
 				listitem = kodi_utils.make_listitem()
 				listitem.setLabel(display)
 				listitem.addContextMenuItems(cm)
-				thumbnail = item_get('thumbnail', icon)
-				listitem.setArt({'icon': thumbnail, 'poster': thumbnail, 'thumb': thumbnail, 'fanart': fanart, 'banner': icon})
-				info_tag = listitem.getVideoInfoTag(True)
-				info_tag.setPlot(' ')
+				thumbnail = _thumb_url(item_get('thumbnail'), icon)
+				kodi_utils.finish_premium_listitem(listitem, thumbnail, fanart=_easynews_row_fanart(thumbnail))
 				yield (url, listitem, False)
 			except: pass
 	icon = kodi_utils.get_icon('easynews')
-	fanart = kodi_utils.get_addon_fanart()
 	kodi_utils.add_items(handle, list(_builder()))
 
 def resolve_easynews(params):

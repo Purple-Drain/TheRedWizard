@@ -481,7 +481,7 @@ def _trakt_id_from_sync(kind, content, ids):
     try:
         media = 'movies' if content == 'movie' else 'shows'
         media_key = 'movie' if content == 'movie' else 'show'
-        items = getTraktAsJsonPaged('/users/me/%s/%s' % (kind, media))
+        items = _trakt_paged_cached('/users/me/%s/%s' % (kind, media))
         if not items:
             return None
         for item in items:
@@ -682,7 +682,7 @@ def authTrakt(reopen_settings=False):
         auth_utils.copy2clip(auth_url)
         insert = '[CR]OR visit [B]%s[/B]' % short_url if short_url else ''
         verify_display = (result.get('verification_url') or 'trakt.tv/activate').replace('https://', '')
-        content = ('Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B][CR]Link copied to clipboard%s[CR][CR]'
+        content = ('Enter [B]%s[/B] at [B]%s[/B][CR]OR scan the [B]QR Code[/B]%s[CR][CR]'
                    'Waiting for authorisation...' % (user_code, verify_display, insert))
         progress.update(content, qr_path=qr_code)
         token_result = None
@@ -735,7 +735,7 @@ def authTrakt(reopen_settings=False):
 
 
 def getTraktIndicatorsInfo():
-    # True only when Indicators is Trakt (not Local / Simkl).
+    # True only when Indicators is Trakt (not Gratis Red / Simkl).
     try:
         from resources.lib.modules import simkl
         return simkl.getIndicatorsProvider() == 'trakt'
@@ -1011,11 +1011,30 @@ def _entry_media_ids(item, content):
     return None
 
 
+def _trakt_paged_cache_payload(url):
+    """Wrap paged results so empty lists still store in trakt_cache (falsy-safe)."""
+    items = getTraktAsJsonPaged(url)
+    if items is None:
+        return None
+    return {'items': items}
+
+
+def _trakt_paged_cached(url):
+    """Short-TTL paged Trakt fetch for manager membership (same table as shelves)."""
+    from resources.lib.modules import trakt_cache
+    data = trakt_cache.get(_trakt_paged_cache_payload, trakt_cache.TTL_LISTS_SEC, url)
+    if data is None:
+        return None
+    if isinstance(data, dict) and 'items' in data:
+        return data['items']
+    return data if isinstance(data, list) else None
+
+
 def _item_in_sync(kind, content, ids):
     """Return True/False if membership is known, or None if the check failed."""
     try:
         media = 'movies' if content == 'movie' else 'shows'
-        items = getTraktAsJsonPaged('/users/me/%s/%s' % (kind, media))
+        items = _trakt_paged_cached('/users/me/%s/%s' % (kind, media))
         if items is None:
             return None
         for item in items:
@@ -1029,7 +1048,7 @@ def _item_in_sync(kind, content, ids):
 def _item_in_personal_list(slug, content, ids):
     """Return True/False if membership is known, or None if the check failed."""
     try:
-        items = getTraktAsJsonPaged('/users/me/lists/%s/items' % slug)
+        items = _trakt_paged_cached('/users/me/lists/%s/items' % slug)
         if items is None:
             return None
         for item in items:

@@ -17,6 +17,7 @@ from __future__ import absolute_import, division, unicode_literals
 
 import os.path
 import sys
+import json
 import math
 import platform
 import socket
@@ -43,7 +44,7 @@ except ImportError:  # Python 2
 
 try:  # Python 3
     from http.client import HTTPConnection, HTTPSConnection
-    from urllib.parse import parse_qs, urlparse
+    from urllib.parse import parse_qs, quote, urlparse
     from urllib.request import urlopen, Request, HTTPError, URLError
 except ImportError:
     try:  # Python 2.6 and newer
@@ -57,8 +58,8 @@ except ImportError:
         from urllib.parse import urlparse
         from urllib2 import urlopen, Request, HTTPError, URLError
 
-from xbmc import Monitor
-from xbmcgui import ControlButton, ControlImage, ControlLabel, ControlTextBox, WindowXMLDialog
+from xbmc import Monitor, log as xbmc_log
+from xbmcgui import ControlButton, ControlImage, ControlLabel, ControlTextBox, Dialog, WindowXMLDialog
 
 try:  # Kodi v19 or newer
     from xbmcvfs import translatePath
@@ -66,7 +67,7 @@ except ImportError:  # Kodi v18 and older
     # pylint: disable=ungrouped-imports
     from xbmc import translatePath
 
-from .kodiutils import addon_path, localize, log
+from .kodiutils import addon_path, get_addon_info, localize, log, log_error
 
 
 IMAGE_RESULT = None
@@ -78,6 +79,75 @@ USER_AGENT = 'Mozilla/5.0 ({system}; U; {arch}; en-us) Python/{version} (KHTML, 
     arch=platform.architecture()[0],
     version=platform.python_version(),
 )
+
+SERVERS_API = 'https://www.speedtest.net/api/js/servers'
+
+
+def get_servers(search=None, server_id=None, https_only=False, limit=20):
+    """Fetch servers from Ookla's JSON endpoint (used by the speedtest.net web client).
+
+    Replaces the deprecated speedtest-servers-static.php XML list.
+    - No arguments -> nearest servers based on the requesting IP (automatic mode).
+    - search -> servers matching a city or country query.
+    - server_id -> a single, specific server.
+    """
+    url = '%s?engine=js&limit=%d' % (SERVERS_API, int(limit))
+    if server_id:
+        url += '&serverid=%s' % quote(str(server_id))
+    elif search:
+        url += '&search=%s' % quote(search)
+    if https_only:
+        url += '&https_functional=true'
+
+    try:
+        request = build_request(url, headers={'Accept': 'application/json'})
+        handler = catch_request(request)
+        if not hasattr(handler, 'read'):
+            return []
+        raw = handler.read()
+        handler.close()
+        data = json.loads(raw.decode('utf-8', 'replace'))
+    except (ValueError, HTTPError, URLError, socket.error, AttributeError):
+        return []
+
+    if not isinstance(data, list):
+        return []
+
+    result = []
+    for entry in data:
+        if not entry.get('url'):
+            continue
+        result.append(dict(
+            url=entry['url'],
+            lat=entry.get('lat'),
+            lon=entry.get('lon'),
+            name=entry.get('name', ''),
+            country=entry.get('country', ''),
+            cc=entry.get('cc', ''),
+            sponsor=entry.get('sponsor', ''),
+            host=entry.get('host', ''),
+            id=str(entry.get('id', '')),
+        ))
+    return result
+
+
+def upload_urls_for_server(server, prefer_https=True):
+    """Ookla JSON still returns http://…/upload.php; many servers refuse that POST.
+
+    Prefer HTTPS using the Ookla host field, then the advertised URL, then http→https.
+    """
+    urls = []
+    host = server.get('host') or ''
+    url = server.get('url') or ''
+    if prefer_https and host:
+        urls.append('https://%s/speedtest/upload.php' % host)
+    if url and url not in urls:
+        urls.append(url)
+    if prefer_https and url.startswith('http://'):
+        https_same = 'https://' + url[len('http://'):]
+        if https_same not in urls:
+            urls.append(https_same)
+    return urls
 
 
 class SpeedtestCliServerListError(Exception):
@@ -133,7 +203,7 @@ class FileGetter(threading.Thread):
             if timeit.default_timer() - self.starttime <= 10:
                 request = build_request(self.url)
                 handler = urlopen(request)
-                while not SHUTDOWN_EVENT.isSet():
+                while not SHUTDOWN_EVENT.is_set():
                     self.result.append(len(handler.read(10240)))
                     if not self.result[-1]:
                         break
@@ -155,7 +225,7 @@ class FilePutter(threading.Thread):
 
     def run(self):
         try:
-            if timeit.default_timer() - self.starttime <= 10 and not SHUTDOWN_EVENT.isSet():
+            if timeit.default_timer() - self.starttime <= 10 and not SHUTDOWN_EVENT.is_set():
                 request = build_request(self.url, data=self.data)
                 handler = urlopen(request)
                 handler.read(11)
@@ -163,7 +233,7 @@ class FilePutter(threading.Thread):
                 self.result = len(self.data)
             else:
                 self.result = 0
-        except IOError:
+        except Exception:
             self.result = 0
 
 
@@ -175,9 +245,9 @@ def get_attributes_by_tag_name(dom, tag_name):
 def get_config():
     request = build_request('http://www.speedtest.net/speedtest-config.php')
     handler = catch_request(request)
-    if handler is False:
+    if not hasattr(handler, 'read'):
         log(0, 'Could not retrieve speedtest.net configuration')
-        sys.exit(1)
+        return None
     configxml = []
     while True:
         configxml.append(handler.read(10240))
@@ -218,70 +288,46 @@ def get_config():
 
 
 def closest_servers(client, total=False):
+    """Return the closest servers using Ookla's JSON endpoint.
 
-    urls = [
-        'https://www.speedtest.net/speedtest-servers-static.php',
-        'http://c.speedtest.net/speedtest-servers-static.php',
-    ]
-    errors = []
-    servers = {}
-    for url in urls:
-        try:
-            request = build_request(url)
-            handler = catch_request(request)
-            if handler is False:
-                # errors.append('%s' % e)
-                raise SpeedtestCliServerListError
-            serversxml = []
-            while not Monitor().abortRequested():
-                serversxml.append(handler.read(10240))
-                if not serversxml[-1]:
-                    break
-            if int(handler.code) != 200:
-                handler.close()
-                raise SpeedtestCliServerListError
-            handler.close()
+    Optional keys on ``client``: ``search`` (city/country), ``server_id``,
+    ``https_only``. When latitude/longitude are known, servers are sorted by
+    distance; otherwise the JSON order (nearest-by-IP) is kept.
+    """
+    search = client.get('search') if isinstance(client, dict) else None
+    server_id = client.get('server_id') if isinstance(client, dict) else None
+    https_only = bool(client.get('https_only')) if isinstance(client, dict) else False
+
+    raw = get_servers(search=search, server_id=server_id, https_only=https_only)
+
+    if not raw and https_only:
+        raw = get_servers(search=search, server_id=server_id, https_only=False)
+    if not raw and (search or server_id):
+        raw = get_servers()
+
+    if not raw:
+        log(0, 'Failed to retrieve list of speedtest.net servers')
+        return []
+
+    try:
+        client_geo = [float(client['lat']), float(client['lon'])]
+    except (KeyError, TypeError, ValueError):
+        client_geo = None
+
+    if client_geo:
+        for attrib in raw:
             try:
-                if 'minidom' in sys.modules:
-                    root = minidom.parseString(''.join(serversxml))
-                    elements = root.getElementsByTagName('server')
-                else:
-                    root = ElementTree.fromstring(''.encode().join(serversxml))
-                    elements = root.iter(tag='server')
-            except SyntaxError:
-                raise SpeedtestCliServerListError  # pylint: disable=raise-missing-from
-            for server in elements:
-                try:
-                    attrib = server.attrib
-                except AttributeError:
-                    attrib = dict(list(server.attributes.items()))
-                ddd = distance([float(client['lat']), float(client['lon'])], [float(attrib.get('lat')), float(attrib.get('lon'))])
-                attrib['d'] = ddd
-                if ddd not in servers:
-                    servers[ddd] = [attrib]
-                else:
-                    servers[ddd].append(attrib)
-            del root
-            del serversxml
-            del elements
-        except SpeedtestCliServerListError:
-            continue
-        if servers:
-            break
-    if not servers:
-        log(0, 'Failed to retrieve list of speedtest.net servers: {errors}', errors='\n'.join(errors))
-        sys.exit(1)
-    closest = []
-    for ddd in sorted(servers.keys()):
-        for sss in servers[ddd]:
-            closest.append(sss)
-            if len(closest) == 5 and not total:
-                break
-        else:
-            continue
-        break
-    del servers
-    return closest
+                attrib['d'] = distance(client_geo, [float(attrib['lat']), float(attrib['lon'])])
+            except (TypeError, ValueError):
+                attrib['d'] = 99999
+        raw.sort(key=lambda a: a.get('d', 99999))
+    else:
+        for idx, attrib in enumerate(raw):
+            attrib.setdefault('d', float(idx))
+
+    if total:
+        return raw
+    return raw[:5]
 
 
 def get_best_server(servers):
@@ -289,28 +335,23 @@ def get_best_server(servers):
     for server in servers:
         cum = []
         url = '%s/latency.txt' % os.path.dirname(server['url'])
-        urlparts = urlparse(url)
         for _ in range(0, 3):
             try:
-                if urlparts[0] == 'https':
-                    handler = HTTPSConnection(urlparts[1])
-                else:
-                    handler = HTTPConnection(urlparts[1])
-                headers = {'User-Agent': USER_AGENT}
+                request = build_request(url)
                 start = timeit.default_timer()
-                handler.request('GET', urlparts[2], headers=headers)
-                response = handler.getresponse()
+                response = urlopen(request, timeout=10)
+                text = response.read(9)
                 total = timeit.default_timer() - start
+                status = response.getcode()
+                response.close()
             except (HTTPError, URLError, socket.error):
-                cum.append(3600)
+                cum.append(3.6)
                 continue
-            text = response.read(9)
-            if int(response.status) == 200 and text == 'test=test'.encode():
+            if status == 200 and text == 'test=test'.encode():
                 cum.append(total)
             else:
-                cum.append(3600)
-            handler.close()
-        avg = round(sum(cum) / 6 * 1000, 3)
+                cum.append(3.6)
+        avg = round(sum(cum) / len(cum) * 1000, 3)
         results[avg] = server
     fastest = sorted(results.keys())[0]
     best = results[fastest]
@@ -362,6 +403,7 @@ class SpeedTest(Animation):
         self.screeny = 1080
         self.textbox = None
         self.ul_textbox = None
+        self._busy = False
 
         if sys.version_info.major == 2:
             WindowXMLDialog.__init__(self, xmlFilename, scriptPath, defaultSkin, defaultRes)  # pylint: disable=non-parent-init-called
@@ -616,6 +658,8 @@ class SpeedTest(Animation):
             self.ping_textbox.setLabel('')
 
     def show_end_result(self):
+        if not IMAGE_RESULT:
+            return
         self.img_final_results = ControlImage(932, 40, 320, 144, '', aspectRatio=0)
         self.addControl(self.img_final_results)
         self.img_final_results.setVisible(False)
@@ -650,19 +694,43 @@ class SpeedTest(Animation):
 
     def onClick(self, control):  # pylint: disable=invalid-name
         if control == self.button_run_id:
-            self.display_button_run(False)
-            self.display_results()
-            self.display_progress_bar()
-            self.display_ping_test()
-            self.display_gauge_test()
-            self.speedtest(share=True, simple=True)
-            self.display_progress_bar(False)
-            self.display_ping_test(False)
-            self.display_gauge_test(False)
-            self.display_results(False)
-            self.show_end_result()
-            self.show_end_result_sp()
-            self.display_button_close('visible')
+            if self._busy:
+                return
+            self._busy = True
+            try:
+                self.display_button_run(False)
+                self.display_results()
+                self.display_progress_bar()
+                self.display_ping_test()
+                self.display_gauge_test()
+                success = False
+                try:
+                    success = self.speedtest(share=True, simple=True)
+                except Exception as exc:  # noqa: BLE001 - never let a test crash leave a dead UI
+                    log_error('speedtester: speedtest() raised {error}', error=exc)
+                    success = False
+                self.display_progress_bar(False)
+                self.display_ping_test(False)
+                self.display_gauge_test(False)
+                if success and IMAGE_RESULT:
+                    self.display_results(False)
+                    self.show_end_result()
+                    self.show_end_result_sp()
+                    self.display_button_close('visible')
+                elif not success:
+                    self.display_results(False)
+                    Dialog().notification(
+                        get_addon_info('name'),
+                        localize(30953),
+                        get_addon_info('icon'),
+                        4000
+                    )
+                    self.display_button_run('true')
+                else:
+                    self.show_end_result_sp()
+                    self.display_button_close('visible')
+            finally:
+                self._busy = False
         if control == self.button_close_id:
             self.save_close()
 
@@ -725,7 +793,7 @@ class SpeedTest(Animation):
                 thread.start()
                 queue.put(thread, True)
 
-                if not quiet and not SHUTDOWN_EVENT.isSet():
+                if not quiet and not SHUTDOWN_EVENT.is_set():
                     sys.stdout.write('.')
                     sys.stdout.flush()
 
@@ -763,7 +831,7 @@ class SpeedTest(Animation):
                 thread = FilePutter(url, start, size)
                 thread.start()
                 queue.put(thread, True)
-                if not quiet and not SHUTDOWN_EVENT.isSet():
+                if not quiet and not SHUTDOWN_EVENT.is_set():
                     sys.stdout.write('.')
                     sys.stdout.flush()
         finished = []
@@ -811,13 +879,19 @@ class SpeedTest(Animation):
         try:
             config = get_config()
         except URLError:
-            return False
+            config = None
+        if not config or not config.get('client'):
+            config = dict(client=dict(ip='', isp='ISP', lat='', lon=''))
+
+        config['client']['https_only'] = True
 
         start_st.append(localize(30962))  # Retrieving speedtest.net server list
         self.update_textbox(start_st)
         self.img_centertext.setImage(self.image_centertext_testingping)
 
         servers = closest_servers(config['client'])
+        if not servers:
+            return False
 
         start_st.append(localize(30963, **config['client']))  # Testing from ISP
         self.update_textbox(start_st)
@@ -870,7 +944,13 @@ class SpeedTest(Animation):
 
         start_st.append(localize(30973))  # Testing upload speed...
         self.update_textbox(start_st)
-        ulspeed = self.upload_speed(best['url'], sizes, simple)
+        ulspeed = 0
+        for upload_url in upload_urls_for_server(best, prefer_https=True):
+            xbmc_log('Speedtest upload trying %s' % upload_url, 1)
+            ulspeed = self.upload_speed(upload_url, sizes, simple)
+            xbmc_log('Speedtest upload bytes/s=%s url=%s' % (ulspeed, upload_url), 1)
+            if ulspeed:
+                break
         start_st[-1] = localize(30974, speed=ulspeed * 8 / 1000 / 1000)  # Upload speed
         self.update_textbox(start_st)
         self.ul_textbox.setLabel('%.2f' % float(ulspeed * 8 / 1000 / 1000))
@@ -896,25 +976,23 @@ class SpeedTest(Animation):
             headers = {'Referer': 'https://c.speedtest.net/flash/speedtest.swf'}
             request = build_request('https://www.speedtest.net/api/api.php', data='&'.join(api_data).encode(), headers=headers)
             fdesc = catch_request(request)
-            if fdesc is False:
+            if not hasattr(fdesc, 'read'):
                 log(0, 'Could not submit results to speedtest.net')
-                return False
-            response = fdesc.read()
-            code = fdesc.code
-            fdesc.close()
+            else:
+                response = fdesc.read()
+                code = fdesc.code
+                fdesc.close()
 
-            if int(code) != 200:
-                log(0, 'Could not submit results to speedtest.net')
-                return False
-
-            qsargs = parse_qs(response.decode())  # pylint: disable=deprecated-method
-            resultid = qsargs.get('resultid')
-            if not resultid or len(resultid) != 1:
-                log(0, 'Could not submit results to speedtest.net')
-                return False
-
-            global IMAGE_RESULT  # pylint: disable=global-statement
-            IMAGE_RESULT = 'https://www.speedtest.net/result/%s.png' % resultid[0]
+                if int(code) != 200:
+                    log(0, 'Could not submit results to speedtest.net')
+                else:
+                    qsargs = parse_qs(response.decode())  # pylint: disable=deprecated-method
+                    resultid = qsargs.get('resultid')
+                    if not resultid or len(resultid) != 1:
+                        log(0, 'Could not submit results to speedtest.net')
+                    else:
+                        global IMAGE_RESULT  # pylint: disable=global-statement
+                        IMAGE_RESULT = 'https://www.speedtest.net/result/%s.png' % resultid[0]
 
         return True
 
