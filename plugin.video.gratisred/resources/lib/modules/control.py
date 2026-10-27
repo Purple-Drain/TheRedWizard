@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
 import traceback
 
@@ -73,6 +74,53 @@ skin = xbmc.getSkinDir()
 player = xbmc.Player()
 playlist = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
 resolve = xbmcplugin.setResolvedUrl
+PROP_RESOLVE_DONE = 'plugin.video.gratisred.resolve_done'
+
+
+def plugin_handle():
+    try:
+        return int(sys.argv[1])
+    except Exception:
+        return -1
+
+
+def clear_resolve_state():
+    try:
+        window.clearProperty(PROP_RESOLVE_DONE)
+    except Exception:
+        pass
+
+
+def mark_resolve_sent():
+    try:
+        window.setProperty(PROP_RESOLVE_DONE, 'true')
+    except Exception:
+        pass
+
+
+def abort_plugin_resolve():
+    # Kodi 22 widget / PlayMedia: exit without setResolvedUrl(True|False) leaves plugin://
+    # "not playable" → "One or more items failed to play".
+    try:
+        if window.getProperty(PROP_RESOLVE_DONE) == 'true':
+            return False
+    except Exception:
+        pass
+    handle = plugin_handle()
+    if handle <= 0:
+        return False
+    try:
+        resolve(handle, False, item(offscreen=True))
+        mark_resolve_sent()
+        return True
+    except Exception:
+        try:
+            resolve(handle, False, item())
+            mark_resolve_sent()
+            return True
+        except Exception:
+            return False
+
 
 legalFilename = xbmc.makeLegalFilename if getKodiVersion() < 19 else xbmcvfs.makeLegalFilename
 
@@ -677,12 +725,21 @@ def _focus_addon_settings_category(category, setting=0):
         return False
 
 
-def openSettings(query=None, id=None):
+def _wait_addon_settings_closed():
+    _wait_addon_settings_window()
+    while _addon_settings_visible() and not monitor.abortRequested():
+        sleep(200)
+
+
+def openSettings(query=None, id=None, reopen_special=False):
     try:
         id = addonInfo('id') if id == None else id
         idle()
         execute('Addon.OpenSettings(%s)' % id)
         if query == None:
+            if reopen_special and id not in (None, addonInfo('id')):
+                _wait_addon_settings_closed()
+                reopen_settings_category(3, 0)
             return
         category, setting = query.split('.')
         _focus_addon_settings_category(int(category), int(setting))
@@ -738,17 +795,104 @@ def finish_auth_ui(reopen_settings=False):
             pass
 
 
-def installAddon(id, refresh_menu=False):
+def _addons_database_path():
+    database_dir = transPath('special://database')
+    if database_dir and database_dir[-1] not in ('\\', '/'):
+        database_dir = database_dir + '/'
     try:
-        addon_path = os.path.join(transPath('special://home/addons'), id)
-        if not os.path.exists(addon_path) == True:
-            execute('InstallAddon(%s)' % id)
-            if refresh_menu and _wait_for_addon(id):
-                refresh()
-        else:
+        _dirs, files = listDir(database_dir)
+    except Exception:
+        files = []
+    candidates = [f for f in files if f.lower().startswith('addons') and f.lower().endswith('.db')]
+    if not candidates:
+        return transPath('special://database/Addons33.db')
+    candidates.sort()
+    return database_dir + candidates[-1]
+
+
+def _addon_listed_in_repo_directories(addon_id):
+    import json
+    try:
+        payload = json.loads(jsonrpc(json.dumps({
+            'jsonrpc': '2.0', 'id': 1, 'method': 'Addons.GetAddons',
+            'params': {'type': 'xbmc.addon.repository', 'properties': ['name']},
+        })))
+        repos = (payload.get('result') or {}).get('addons') or []
+    except Exception:
+        repos = []
+    addon_id_l = (addon_id or '').lower()
+    for repo in repos:
+        repo_id = repo.get('addonid') or ''
+        if not repo_id:
+            continue
+        for directory in (
+            'addons://%s/' % repo_id,
+            'addons://%s/xbmc.python.module/' % repo_id,
+            'addons://%s/xbmc.python.pluginsource/' % repo_id,
+            'addons://%s/xbmc.python.script/' % repo_id,
+            'addons://%s/xbmc.python.service/' % repo_id,
+            'addons://%s/xbmc.subtitle.module/' % repo_id,
+        ):
+            try:
+                listing = json.loads(jsonrpc(json.dumps({
+                    'jsonrpc': '2.0', 'id': 1, 'method': 'Files.GetDirectory',
+                    'params': {'directory': directory, 'media': 'files', 'properties': ['file']},
+                })))
+                files = (listing.get('result') or {}).get('files') or []
+            except Exception:
+                files = []
+            for item in files:
+                path = (item.get('file') or '').rstrip('/').lower()
+                if path.endswith('/' + addon_id_l) or path.split('/')[-1] == addon_id_l:
+                    return True
+    return False
+
+
+def _addon_available_from_repos(addon_id):
+    if not addon_id:
+        return False
+    try:
+        from sqlite3 import dbapi2 as database
+        dbcon = database.connect(_addons_database_path(), timeout=40.0)
+        row = dbcon.execute(
+            'SELECT 1 FROM addons AS a'
+            ' JOIN addonlinkrepo AS l ON l.idAddon = a.id'
+            ' JOIN repo AS r ON r.id = l.idRepo'
+            ' JOIN installed AS i ON i.addonID = r.addonID'
+            ' WHERE a.addonID = ? AND COALESCE(i.enabled, 1) = 1 LIMIT 1',
+            (addon_id,)).fetchone()
+        dbcon.close()
+        return bool(row)
+    except Exception:
+        return _addon_listed_in_repo_directories(addon_id)
+
+
+def _addon_not_in_repo_dialog(addon_id):
+    okDialog(
+        '%s is not in any installed repository.[CR][CR]Add a repository that provides it, then try again.'
+        % addon_id
+    )
+
+
+def installAddon(id, refresh_menu=False, reopen_settings=False):
+    try:
+        if condVisibility('System.HasAddon(%s)' % id):
             infoDialog('{0} is already installed'.format(id), sound=True)
             if refresh_menu:
                 refresh()
+            elif reopen_settings:
+                reopen_settings_category(3, 0)
+            return
+        if not _addon_available_from_repos(id):
+            _addon_not_in_repo_dialog(id)
+            if reopen_settings:
+                reopen_settings_category(3, 0)
+            return
+        xbmc.executebuiltin('InstallAddon(%s)' % id, True)
+        if refresh_menu and _wait_for_addon(id):
+            refresh()
+        elif reopen_settings:
+            reopen_settings_category(3, 0)
     except:
         return
 
@@ -763,6 +907,61 @@ def _wait_for_addon(addon_id, timeout_sec=120):
     except:
         pass
     return False
+
+
+def show_unaired_watchlist():
+    """Include Unaired Media in Watchlists — default on (Red Light 2.3.2)."""
+    return setting('show.unaired.watchlist') != 'false'
+
+
+def is_watchlist_shelf(url_key):
+    key = str(url_key or '').lower()
+    if key in ('trakt_watchlist', 'simkl_plantowatch', 'mdblist_watchlist'):
+        return True
+    if '/users/me/watchlist/' in key:
+        return True
+    return False
+
+
+def item_is_unaired(item, today_date, media='movie'):
+    if not item:
+        return False
+    today = re.sub(r'[^0-9]', '', str(today_date or ''))
+    premiered = item.get('premiered') or '0'
+    try:
+        if premiered and premiered != '0':
+            return int(re.sub(r'[^0-9]', '', str(premiered))) > int(today)
+    except Exception:
+        pass
+    if media != 'movie':
+        status = item.get('status') or ''
+        if (not premiered or premiered == '0') and status in ('Upcoming', 'In Production', 'Planned'):
+            return True
+    try:
+        year = re.sub(r'[^0-9]', '', str(item.get('year') or ''))
+        if year and int(year) > int(str(today_date or '')[:4] or '0'):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def filter_watchlist_unaired(items, url_key, today_date, media='movie'):
+    if not items or show_unaired_watchlist() or not is_watchlist_shelf(url_key):
+        return items
+    return [i for i in items if not item_is_unaired(i, today_date, media=media)]
+
+
+def playback_progress_stale(item):
+    """True when a playback row is leftover ≤1% (Red Light 2.2.4)."""
+    if not item:
+        return False
+    if 'progress' not in item or item.get('progress') in (None, ''):
+        return False
+    try:
+        return float(item.get('progress')) <= 1
+    except Exception:
+        return False
 
 
 def checkArtwork():

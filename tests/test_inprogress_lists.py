@@ -43,7 +43,7 @@ def test_the_saved_list_path_loads_no_provider_module_and_no_requests():
 
 # --- settings coverage ----------------------------------------------------------------------------
 
-_WITH_ARGUMENTS = {'lists_sort_order', 'paginate', 'page_limit', 'rpdb_info', 'media_open_action'}
+_WITH_ARGUMENTS = {'lists_sort_order', 'paginate', 'page_limit', 'rpdb_info', 'media_open_action', 'hide_unaired_watchlist_item'}
 _CM_HELPERS = {'append_external_scraper_settings_cm', 'append_list_shortcut_context_menus', 'append_source_shortcut_context_menus'}
 # Read, but no effect on a page-1 home widget: thread count, the in-addon Jump To item.
 _NO_EFFECT = {'max_threads', 'jump_to_enabled'}
