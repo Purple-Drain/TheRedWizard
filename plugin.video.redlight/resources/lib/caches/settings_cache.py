@@ -1970,6 +1970,8 @@ def default_settings():
 {'setting_id': 'cloud_play_retries', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0'},
 {'setting_id': 'cloud_queue_fallthrough', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'prescrape_folders_first', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'library_first', 'setting_type': 'boolean', 'setting_default': 'true'},
+{'setting_id': 'library.path_map', 'setting_type': 'string', 'setting_default': 'smb://10.1.1.22/media/=dav://10.1.1.22:9998/dav/'},
 {'setting_id': 'prescrape.sequential', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'cloud_stall_resume', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'cloud_stall_resume_attempts', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0'},

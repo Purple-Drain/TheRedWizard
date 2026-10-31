@@ -455,6 +455,10 @@ def prescrape_folders_first():
 	On by default; hidden, like cloud_queue_fallthrough."""
 	return get_setting('redlight.prescrape_folders_first', 'true') == 'true'
 
+def library_first():
+	"""Kodi library rung ahead of the folder slots (#312); rides on the folders provider."""
+	return get_setting('redlight.library_first', 'true') == 'true'
+
 def prescrape_sequential():
 	"""The waterfall prescrape ladder (#22): rungs run in provider_sort_ranks() order, one at a
 	time, racing within a rung and reacting to its first usable result. Off by default; supersedes
