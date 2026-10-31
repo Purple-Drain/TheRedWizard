@@ -4,6 +4,7 @@ before any debrid folder or cloud copy of it. Looked up by tmdb id over JSON-RPC
 SMB path is mapped to the T5 WebDAV share, because a seek over SMB ends playback on the Shield
 (kodi-shield-config docs/playback-paths.md). A file whose path can't be mapped off SMB is skipped."""
 import json
+from urllib.parse import quote, unquote
 from caches.settings_cache import get_setting
 from modules import source_utils
 from modules.utils import clean_file_name, normalize
@@ -28,10 +29,12 @@ def path_map():
 	return pairs
 
 def playable_path(file_path, pairs):
-	"""The library path as it should be played, or None when it would still be SMB (or is a stack)."""
+	"""The library path as it should be played, or None when it would still be SMB (or is a stack).
+	The library keeps names raw; over dav curl refuses a space or bracket, so the mapped rest is
+	percent-encoded the way a folders listing returns it."""
 	if not file_path or file_path.startswith('stack://'): return None
 	for src, dst in pairs:
-		if file_path.lower().startswith(src.lower()): file_path = dst + file_path[len(src):]; break
+		if file_path.lower().startswith(src.lower()): file_path = dst + quote(unquote(file_path[len(src):]), safe='/'); break
 	if file_path.lower().startswith('smb://'): return None
 	return file_path
 
@@ -72,7 +75,7 @@ class source:
 			for library_path in files:
 				file_dl = playable_path(library_path, pairs)
 				if not file_dl: continue
-				file_name = normalize(file_dl.rstrip('/').split('/')[-1])
+				file_name = normalize(library_path.rstrip('/').split('/')[-1])
 				size = _size_gb(library_path)
 				video_quality, details = source_utils.get_file_info(name_info=source_utils.release_info_format(file_name))
 				self.sources.append({'name': file_name, 'display_name': clean_file_name(file_name), 'quality': video_quality, 'size': size,
