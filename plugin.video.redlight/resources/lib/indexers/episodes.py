@@ -858,60 +858,35 @@ def build_single_episode(list_type, params={}):
 			except: data = sorted(data, key=lambda i: i['sort_title'], reverse=True)
 	else: data, return_results = sorted(params, key=lambda i: i['custom_order']), True
 	# Keyed after the provider refresh and fetches above, so it names the state this list is built from.
-	nextep_list_key = nextep_list_cache.cache_key(is_external, 'is_anime_list' in params) if cache_next_list else None
-	list_type_compare = list_type.split('episode.')[1]
-	list_type_starts_with = list_type_compare.startswith
-	# One read for every show's cached facts (unwatched-count suffix), instead of a per-show query.
-	show_facts_map = widget_cache.get_show_facts([i['media_ids'].get('tmdb') for i in data if i.get('media_ids')]) if unwatched_info else {}
-	threads = TaskPool().tasks_enumerate(_process, data, min(len(data), settings.max_threads()))
-	[i.join() for i in threads]
-	if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
-	if list_type_starts_with('next_'):
-		kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s negative / %s miss, %.1fs'
-			% (list_type, len(data), len(item_list), len(nextep_hits), len(nextep_negative_hits),
-			len(data) - len(nextep_hits) - len(nextep_negative_hits), time.time() - build_started))
-		touched = {}
-		if sort_key == 'updated':
-			# #1 "Recently Updated": the later of the last watched row and the last watched-state change.
-			try:
-				from modules.show_touch import load as load_touch
-				touched = load_touch()
-			except Exception: touched = {}
-			for i in item_list:
-				try:
-					dt = jsondate_to_datetime(i['last_played'], resformat)
-					# Tracker rows are UTC ('...Z'); Red Light's own watched rows are local time.
-					played = calendar.timegm(dt.timetuple()) if resformat.endswith('Z') else dt.timestamp()
-				except Exception: played = 0.0
-				i['updated'] = max(played, touched.get(str(i.get('tmdb_id')), 0.0))
-		def func(function):
-			if sort_key == 'name': return title_key(function, ignore_articles)
-			elif sort_key == 'last_played': return jsondate_to_datetime(function, resformat)
-			else: return function
-		if settings.nextep_airing_today():
-			airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
-									key=lambda i: func(i[sort_key]), reverse=sort_direction)
-			item_list = [i for i in item_list if not i in airing_today]
-		else: airing_today = []
-		if sort_key in ('last_played', 'updated'):
-			unwatched = sorted([i for i in item_list if i['unwatched']], key=lambda i: title_key(i['name'], ignore_articles))
-			item_list = sorted([i for i in item_list if not i['unwatched']], key=lambda i: func(i[sort_key]), reverse=sort_direction) + unwatched
-		else: item_list = sorted(item_list, key=lambda i: func(i[sort_key]), reverse=sort_direction)
-		item_list = airing_today + item_list
-	else:
-		item_list.sort(key=lambda i: i['sort_order'])
-		if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'simkl_public_calendar'):
-			if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'simkl_public_calendar'): reverse = settings.calendar_sort_order() == 0
-			else: reverse = True
-			try: item_list = sorted(item_list, key=lambda i: i.get('first_aired', '2100-12-31'), reverse=reverse)
-			except:
-				del item_list[:]
-				process_data = data
-		if process_data:
-			threads = TaskPool().tasks_enumerate(_process, process_data, min(len(process_data), settings.max_threads()))
-			[i.join() for i in threads]
+	# Cold Next Episodes rebuild opened the no-cancel busy dialog above; close it on every
+	# exit (upstream 2.4.2 did the same). Dropped in the 2.4.2 sync merge, #311.
+	try:
+		nextep_list_key = nextep_list_cache.cache_key(is_external, 'is_anime_list' in params) if cache_next_list else None
+		list_type_compare = list_type.split('episode.')[1]
+		list_type_starts_with = list_type_compare.startswith
+		# One read for every show's cached facts (unwatched-count suffix), instead of a per-show query.
+		show_facts_map = widget_cache.get_show_facts([i['media_ids'].get('tmdb') for i in data if i.get('media_ids')]) if unwatched_info else {}
+		threads = TaskPool().tasks_enumerate(_process, data, min(len(data), settings.max_threads()))
+		[i.join() for i in threads]
 		if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
 		if list_type_starts_with('next_'):
+			kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s negative / %s miss, %.1fs'
+				% (list_type, len(data), len(item_list), len(nextep_hits), len(nextep_negative_hits),
+				len(data) - len(nextep_hits) - len(nextep_negative_hits), time.time() - build_started))
+			touched = {}
+			if sort_key == 'updated':
+				# #1 "Recently Updated": the later of the last watched row and the last watched-state change.
+				try:
+					from modules.show_touch import load as load_touch
+					touched = load_touch()
+				except Exception: touched = {}
+				for i in item_list:
+					try:
+						dt = jsondate_to_datetime(i['last_played'], resformat)
+						# Tracker rows are UTC ('...Z'); Red Light's own watched rows are local time.
+						played = calendar.timegm(dt.timetuple()) if resformat.endswith('Z') else dt.timestamp()
+					except Exception: played = 0.0
+					i['updated'] = max(played, touched.get(str(i.get('tmdb_id')), 0.0))
 			def func(function):
 				if sort_key == 'name': return title_key(function, ignore_articles)
 				elif sort_key == 'last_played': return jsondate_to_datetime(function, resformat)
@@ -920,19 +895,51 @@ def build_single_episode(list_type, params={}):
 				airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
 										key=lambda i: func(i[sort_key]), reverse=sort_direction)
 				item_list = [i for i in item_list if not i in airing_today]
-				item_list = airing_today + item_list
-	if cache_next_list:
-		try:
-			from modules.nextep_warm import request_widget_warm
-			request_widget_warm([i['list_items'][0] for i in item_list])
-		except Exception: pass
-		nextep_list_cache.store(nextep_list_key, is_external, 'is_anime_list' in params, [(i['list_items'][0], i['row']) for i in item_list], future_dates,
-			_get_category_name())
-	kodi_utils.add_items(handle, [i['list_items'] for i in item_list])
-	kodi_utils.set_content(handle, 'episodes')
-	kodi_utils.set_category(handle, _get_category_name())
-	# Keep plugin order for calendars — Kodi "Sort by Date" was reordering vs day labels.
-	if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'simkl_public_calendar', 'trakt_recently_aired'):
-		kodi_utils.set_sort_method(handle, 'none', labelMask='%L')
-	kodi_utils.end_directory(handle, cacheToDisc=False)
-	kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))
+			else: airing_today = []
+			if sort_key in ('last_played', 'updated'):
+				unwatched = sorted([i for i in item_list if i['unwatched']], key=lambda i: title_key(i['name'], ignore_articles))
+				item_list = sorted([i for i in item_list if not i['unwatched']], key=lambda i: func(i[sort_key]), reverse=sort_direction) + unwatched
+			else: item_list = sorted(item_list, key=lambda i: func(i[sort_key]), reverse=sort_direction)
+			item_list = airing_today + item_list
+		else:
+			item_list.sort(key=lambda i: i['sort_order'])
+			if list_type_compare in ('trakt_calendar', 'trakt_recently_aired', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'simkl_public_calendar'):
+				if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'simkl_public_calendar'): reverse = settings.calendar_sort_order() == 0
+				else: reverse = True
+				try: item_list = sorted(item_list, key=lambda i: i.get('first_aired', '2100-12-31'), reverse=reverse)
+				except:
+					del item_list[:]
+					process_data = data
+			if process_data:
+				threads = TaskPool().tasks_enumerate(_process, process_data, min(len(process_data), settings.max_threads()))
+				[i.join() for i in threads]
+			if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
+			if list_type_starts_with('next_'):
+				def func(function):
+					if sort_key == 'name': return title_key(function, ignore_articles)
+					elif sort_key == 'last_played': return jsondate_to_datetime(function, resformat)
+					else: return function
+				if settings.nextep_airing_today():
+					airing_today = sorted([i for i in item_list if date_difference(current_date, jsondate_to_datetime(i.get('first_aired', '2100-12-31'), '%Y-%m-%d').date(), 0)],
+											key=lambda i: func(i[sort_key]), reverse=sort_direction)
+					item_list = [i for i in item_list if not i in airing_today]
+					item_list = airing_today + item_list
+		if cache_next_list:
+			try:
+				from modules.nextep_warm import request_widget_warm
+				request_widget_warm([i['list_items'][0] for i in item_list])
+			except Exception: pass
+			nextep_list_cache.store(nextep_list_key, is_external, 'is_anime_list' in params, [(i['list_items'][0], i['row']) for i in item_list], future_dates,
+				_get_category_name())
+		kodi_utils.add_items(handle, [i['list_items'] for i in item_list])
+		kodi_utils.set_content(handle, 'episodes')
+		kodi_utils.set_category(handle, _get_category_name())
+		# Keep plugin order for calendars — Kodi "Sort by Date" was reordering vs day labels.
+		if list_type_compare in ('trakt_calendar', 'mdblist_calendar', 'punchplay_calendar', 'simkl_calendar', 'simkl_public_calendar', 'trakt_recently_aired'):
+			kodi_utils.set_sort_method(handle, 'none', labelMask='%L')
+		kodi_utils.end_directory(handle, cacheToDisc=False)
+		kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))
+	finally:
+		if _nextep_busy:
+			try: kodi_utils.hide_busy_dialog()
+			except: pass
