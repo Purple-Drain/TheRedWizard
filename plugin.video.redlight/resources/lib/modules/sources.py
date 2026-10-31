@@ -1452,14 +1452,20 @@ class Sources():
 		if self._pref_sort_should_run() or any(i.get('pref_includes') for i in results):
 			results = self._sort_with_pref_boost(results)
 			pref_sort_ran = True
-		if self.ignore_scrape_filters: return results
+		if self.ignore_scrape_filters: return self._library_to_top(results)
 		combined = self._apply_result_limits(results, cloud_scrapers)
 		if self._pin_scrapers_to_top_enabled():
 			combined = self.sort_first(combined)
 		elif not pref_sort_ran:
 			combined = self.sort_results(combined)
 		self._log_custom_sort_summary(combined, pref_sort_ran)
-		return combined
+		return self._library_to_top(combined)
+
+	def _library_to_top(self, results):
+		"""A Kodi library copy is on the LAN: it goes first whatever the sort and pin settings say (#312)."""
+		library = [i for i in results if i.get('library')]
+		if not library: return results
+		return library + [i for i in results if not i.get('library')]
 
 	def _stamp_native_torrent_cache(self, results):
 		native = [i for i in results if i.get('scrape_provider') in self.native_torrent_scrapers and i.get('hash') and not i.get('cache_provider')]
@@ -1692,7 +1698,7 @@ class Sources():
 			# A TV capture in a folder is not pinned (#306): it sorts with everything else, so a cloud WEB-DL
 			# or Blu-ray at the same resolution plays first and the capture is only the fallback.
 			sort_first = [i for i in results if i['scrape_provider'] in sort_first_scrapers and not (i['scrape_provider'] == 'folders' and i.get('source_tier', 7) == TV_CAPTURE_TIER)]
-			sort_first.sort(key=lambda k: (self._sort_folder_to_top(k['scrape_provider']), k['quality_rank'], k.get('source_tier', 7)))
+			sort_first.sort(key=lambda k: (not k.get('library'), self._sort_folder_to_top(k['scrape_provider']), k['quality_rank'], k.get('source_tier', 7)))
 			sort_last = [i for i in results if not i in sort_first]
 			results = sort_first + sort_last
 		except: pass
@@ -1743,6 +1749,8 @@ class Sources():
 		if 'folders' in active_internal_scrapers:
 			folder_info = self.get_folderscraper_info()
 			self.folder_info = [i for i in folder_info if settings.source_folders_directory(self.media_type, i[1])]
+			# The Kodi library rung rides on the folders provider and runs ahead of its slots (#312).
+			if settings.library_first(): self.folder_info.insert(0, ('Kodi Library', 'library', None))
 			if self.folder_info:
 				self.active_folders = True
 				self.internal_scraper_names = [i for i in active_internal_scrapers if i not in ('folders', 'external')] + [i[0] for i in self.folder_info]
@@ -1838,7 +1846,7 @@ class Sources():
 		def import_info():
 			for item in self.folder_info:
 				scraper_name = item[0]
-				module = manual_function_import('scrapers.folders', 'source')
+				module = manual_function_import('scrapers.library' if item[1] == 'library' else 'scrapers.folders', 'source')
 				yield ('folders', (module, (item[1], scraper_name, item[2])), scraper_name)
 		sourceDict = list(import_info())
 		try: sourceDict = list(import_info())
