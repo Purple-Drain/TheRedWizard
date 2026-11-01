@@ -3961,7 +3961,11 @@ class Sources():
 			candidate_name = (results[0] or {}).get('name') or ''
 			playing_name = kodi_utils.get_property('redlight.now_playing_release') or ''
 			if not candidate_name or not playing_name: return False
-			return _normalize_release_title(candidate_name) == _normalize_release_title(playing_name)
+			if _normalize_release_title(candidate_name) != _normalize_release_title(playing_name): return False
+			# A season pack shares one name across every episode; only a file whose own SxxEyy
+			# tokens include this episode really holds it (#319: S04E14-16 marked from a pack).
+			from modules.source_utils import iter_season_episode_tokens
+			return (int(self.season), int(self.episode)) in set(iter_season_episode_tokens(playing_name))
 		except Exception:
 			return False
 

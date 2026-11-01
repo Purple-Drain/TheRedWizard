@@ -2641,7 +2641,9 @@ class RedLightPlayer(xbmc.Player):
 			self.playing_filename = self.sources_object.playing_filename
 			self.media_marked, self.nextep_info_gathered, self.movie_stingers_run = False, False, False
 			self.watched_tick_percent = st.playback_watched_percent()
-			self.current_point = 0
+			# The seek guard in _refresh_playback_position never shrinks a known position, so the
+			# episode before's end time would carry into this play and mark it watched (#319).
+			self.current_point, self.curr_time, self.total_time = 0, 0.0, 0.0
 			self.subs_searched = False
 			self._subtitle_end_remaining_cached = '__unset__'
 			self._subtitle_alert_fetch_started = False
