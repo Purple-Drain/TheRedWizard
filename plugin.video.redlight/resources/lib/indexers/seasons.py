@@ -106,6 +106,16 @@ def build_season_list(params):
 				listitem.addContextMenuItems(cm)
 				yield (url_params, listitem, True)
 			except: pass
+	def _all_seasons_item():
+		listitem = make_listitem()
+		listitem.setLabel('All Seasons')
+		info_tag = listitem.getVideoInfoTag(True)
+		info_tag.setMediaType('season'), info_tag.setTitle('All Seasons'), info_tag.setTvShowTitle(show_title), info_tag.setPlot(show_plot)
+		info_tag.setUniqueIDs({'imdb': imdb_id, 'tmdb': str_tmdb_id, 'tvdb': str_tvdb_id})
+		listitem.setArt({'poster': show_poster, 'fanart': show_fanart, 'clearlogo': show_clearlogo, 'landscape': show_landscape,
+						'thumb': show_poster, 'icon': show_landscape, 'tvshow.poster': show_poster, 'tvshow.clearlogo': show_clearlogo})
+		listitem.setProperty('redlight.all_seasons', 'true')
+		return (build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': 'all'}), listitem, True)
 	kodi_actor, make_listitem, build_url = kodi_utils.kodi_actor(), kodi_utils.make_listitem, kodi_utils.build_url
 	poster_empty, fanart_empty = kodi_utils.get_icon('box_office'), kodi_utils.addon_fanart()
 	handle, is_external = int(sys.argv[1]), kodi_utils.external()
@@ -164,6 +174,10 @@ def build_season_list(params):
 	group_watched_info = watched_info_group_season(tmdb_id, group_details, get_database(watched_indicators)) if group_season_totals else {}
 	list_items = list(list(_process()))
 	if custom_order is not None: return (list_items[0], custom_order)
+	# One row atop the season list opening the flat season=all episode list (#317).
+	if total_seasons > 1 and settings.show_all_seasons_entry() and not hide_watched:
+		try: list_items.insert(0, _all_seasons_item())
+		except: pass
 	kodi_utils.add_items(handle, list_items)
 	kodi_utils.set_content(handle, 'seasons')
 	kodi_utils.set_category(handle, show_title)

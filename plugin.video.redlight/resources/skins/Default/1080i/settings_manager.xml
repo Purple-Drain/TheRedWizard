@@ -1036,6 +1036,14 @@
                       </item>
                       <item>
                           <visible>Container(2000).HasFocus(30)</visible>
+                          <property name="setting_label">Show All Seasons Entry</property>
+                          <property name="setting_type">boolean</property>
+                          <property name="setting_value">$INFO[Window(10000).Property(redlight.show_all_seasons_entry)]</property>
+                          <property name="setting_description">When enabled (default), the season list of a show with more than one season starts with an All Seasons row listing every episode in order.</property>
+                          <onclick>RunPlugin(plugin://plugin.video.redlight/?mode=settings_manager.set_boolean&amp;setting_id=show_all_seasons_entry)</onclick>
+                      </item>
+                      <item>
+                          <visible>Container(2000).HasFocus(30)</visible>
                           <property name="setting_label">Flatten TV Show Seasons</property>
                           <property name="setting_type">action</property>
                           <property name="setting_value">$INFO[Window(10000).Property(redlight.default_all_episodes_name)]</property>

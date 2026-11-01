@@ -1626,6 +1626,9 @@ def rpdb_info(media_type):
 	if active: return {'rpdb_api_key': get_setting('redlight.rpdb_api'), 'rpdb_format': get_setting('redlight.rpdb_format')}
 	else: return {'rpdb_api_key': None, 'rpdb_format': None}
 
+def show_all_seasons_entry():
+	return get_setting('redlight.show_all_seasons_entry', 'true') == 'true'
+
 def use_season_name():
 	return get_setting('redlight.use_season_name', 'false') == 'true'
 
