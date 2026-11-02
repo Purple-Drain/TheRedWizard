@@ -305,7 +305,8 @@ def build_episode_list(params):
 	watched_info = ws.watched_info_episode(tmdb_id, watched_db)
 	if season == 'all':
 		total_seasons = meta_get('total_seasons')
-		episodes_data = sorted(all_episodes_meta(meta, settings.show_specials()), key=lambda x: (x['season'], x['episode']))
+		# Specials last, the same order as the season list (#317).
+		episodes_data = sorted(all_episodes_meta(meta, settings.show_specials()), key=lambda x: (x['season'] == 0, x['season'], x['episode']))
 		bookmarks = ws.get_bookmarks_all_episode(tmdb_id, total_seasons, watched_db)
 		season_poster = show_poster
 		category_name = 'Season %s' % season if total_seasons == 1 else 'Seasons 1-%s' % total_seasons
