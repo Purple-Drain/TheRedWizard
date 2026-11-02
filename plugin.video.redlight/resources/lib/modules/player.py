@@ -46,6 +46,8 @@ _EARLY_PREP_SEEK_QUIET_SEC = 10
 # Set while a claimed skip waits for its prep; the prep then skips the warm read so it stashes sooner.
 PROP_SKIP_PREP_WAITING = 'redlight.skip_prep_waiting'
 _NEXTEP_NATURAL_END_SEC = 15
+# #324 C6: a skip marks the episode watched only from this far in (percent).
+_SKIP_WATCHED_MIN_POINT = 50
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
 # end never advances into it; Red Light's own next-episode hand-off owns the end.
 _QUEUED_NEXT_DROP_SEC = _NEXTEP_NATURAL_END_SEC + 5
@@ -826,15 +828,21 @@ class RedLightPlayer(xbmc.Player):
 			self._refresh_playback_position(allow_stale=True)
 			# #199 C6: the Next key moved Kodi's playlist onto the queued marker, a skip like C7's.
 			if not playback_superseded and not natural_end and not getattr(self, '_advanced_to_queued', False) and self._queued_next_taken():
-				ku.set_property(PROP_SKIP_EPISODE, 'true')
-				self._log_nextep('Play next episode now: Next key, moving on')
+				# #324 C3: a stream failure (error, or an EOF well before the end) also moves Kodi onto
+				# the marker. Only a clean hand-off is the Next key.
+				failed = self._marker_hit_failure()
+				if failed:
+					self._log_nextep('Play next episode now: marker reached but ignored, not the Next key (%s)' % failed)
+				else:
+					ku.set_property(PROP_SKIP_EPISODE, 'true')
+					self._log_nextep('Play next episode now: Next key, moving on (confirmed: no error, no early EOF)')
 			# #199 C7: request_skip_episode stopped this play to move on; count it as watched.
 			skip_requested = not playback_superseded and ku.get_property(PROP_SKIP_EPISODE) == 'true'
 			if skip_requested:
 				ku.clear_property(PROP_SKIP_EPISODE)
-				if not self.media_marked: self.media_watched_marker(force_watched=True)
+				if not self.media_marked: self._mark_skipped_episode()
 			# #1 C417: the Next key moved on to the queued file; this episode counts as watched.
-			if getattr(self, '_advanced_to_queued', False) and not self.media_marked: self.media_watched_marker(force_watched=True)
+			if getattr(self, '_advanced_to_queued', False) and not self.media_marked: self._mark_skipped_episode()
 			marked_before_end = self.media_marked
 			if not playback_superseded and not self.media_marked: self.media_watched_marker()
 			# Wipe Kodi MyVideos bookmarks for plugin:// paths so the next home-widget
@@ -1183,6 +1191,26 @@ class RedLightPlayer(xbmc.Player):
 							'title': self.title, 'season': self.season, 'episode': self.episode, 'from_playback': 'true'}
 			self._spawn(self.run_media_progress, args=(ws.set_bookmark_checkpoint, progress_params), name='bookmark_checkpoint')
 		except: pass
+
+	def _marker_hit_failure(self):
+		"""#324 C3: why a move onto the queued marker was a stream failure, not the Next key, or ''."""
+		if getattr(self, 'playback_error', False): return 'playback error'
+		if getattr(self, '_cb_ended', False):
+			try: remaining = float(self.total_time) - float(self.curr_time)
+			except Exception: remaining = None
+			if remaining is None or float(self.total_time or 0) <= 0: return 'EOF with no known position'
+			if remaining > _NEXTEP_NATURAL_END_SEC * 2: return 'EOF %.0fs before the end' % remaining
+		return ''
+
+	def _mark_skipped_episode(self):
+		"""#324 C6: a skip to the next episode counts as watched from halfway; before that the episode
+		keeps its progress and stays in progress."""
+		point = getattr(self, 'current_point', 0) or 0
+		if point >= _SKIP_WATCHED_MIN_POINT:
+			self.media_watched_marker(force_watched=True)
+		else:
+			self._log_nextep('Skipped at %.1f%%, under %d%%: keeping progress, not marking watched' % (point, _SKIP_WATCHED_MIN_POINT))
+			self.media_watched_marker()
 
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
