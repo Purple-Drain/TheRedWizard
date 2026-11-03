@@ -50,6 +50,11 @@ _NEXTEP_NATURAL_END_SEC = 15
 _SHORT_FILE_RATIO = 0.6
 # #324 C6: a skip marks the episode watched only from this far in (percent).
 _SKIP_WATCHED_MIN_POINT = 50
+# #330 C19: after a queued hand-off Kodi can still report the previous file's position. A read counts
+# only once one at or under _ADOPT_FRESH_MAX_SEC has been seen, and for _ADOPT_QUIET_SEC after the
+# adopt there is no watched mark and no next-episode prep or alert.
+_ADOPT_FRESH_MAX_SEC = 60
+_ADOPT_QUIET_SEC = 120
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
 # end never advances into it; Red Light's own next-episode hand-off owns the end.
 _QUEUED_NEXT_DROP_SEC = _NEXTEP_NATURAL_END_SEC + 5
@@ -731,9 +736,10 @@ class RedLightPlayer(xbmc.Player):
 							self.random_continual_triggered = True
 							self.run_random_continual()
 							break
+					elif self._adopt_quiet(): pass
 					elif self.current_point >= self.watched_tick_percent:
 						if not self.media_marked: self.media_watched_marker()
-					if self.media_type == 'episode':
+					if self.media_type == 'episode' and not self._adopt_quiet():
 						if self.autoplay_nextep or self.autoscrape_nextep:
 							if not self.nextep_info_gathered:
 								if not self._defer_nextep_info(): self.info_next_ep()
@@ -1240,7 +1246,7 @@ class RedLightPlayer(xbmc.Player):
 				pass
 			tick_at = getattr(self, 'watched_tick_percent', None)
 			if tick_at is None: tick_at = st.playback_watched_percent()
-			if (current_point >= tick_at or force_watched) and not self._short_of_tmdb_runtime():
+			if (current_point >= tick_at or force_watched) and not self._short_of_tmdb_runtime() and not self._adopt_quiet():
 				self._trakt_scrobble_stop(100)
 				self._simkl_scrobble_stop(100)
 				self._punchplay_scrobble_stop(100)
@@ -1433,6 +1439,7 @@ class RedLightPlayer(xbmc.Player):
 	def _refresh_playback_position(self, allow_stale=True):
 		'''Update curr_time / total_time / current_point. Keep last good sample if live read fails.'''
 		curr, total = self._read_player_times()
+		if curr not in (None,) and self._adopt_stale_read(curr): return False
 		if total not in (None, 0, 0.0) and curr not in (None,) and float(total) >= 60 and float(curr) > 0:
 			# Honour forward seeks: never shrink a known larger position on a bad post-seek sample.
 			prev = getattr(self, 'curr_time', None)
@@ -2046,8 +2053,28 @@ class RedLightPlayer(xbmc.Player):
 		# a queued file still opening (an RD 503) that then stops is a failed open, not a user Stop.
 		try: self._cb_avstarted = float(self.getTotalTime() or 0) > 0 and float(self.getTime() or 0) > 0
 		except Exception: self._cb_avstarted = False
+		self._adopted_at, self._adopt_fresh = time.time(), False
 		self._log_nextep('Queued next episode: adopted the playing file as this Red Light play')
 		return True
+
+	def _adopt_stale_read(self, curr):
+		"""#330 C19: True while an adopted play's position read may still be the previous file's."""
+		if not getattr(self, '_adopted_at', None) or getattr(self, '_adopt_fresh', True): return False
+		try: curr = float(curr)
+		except Exception: return True
+		if 0 < curr <= _ADOPT_FRESH_MAX_SEC:
+			self._adopt_fresh = True
+			return False
+		if not getattr(self, '_adopt_stale_logged', False):
+			self._adopt_stale_logged = True
+			self._log_nextep('Queued next episode: ignoring position %.0fs, still the previous file' % curr)
+		return True
+
+	def _adopt_quiet(self):
+		"""#330 C19: True in the first _ADOPT_QUIET_SEC of an adopted play, or until its position is fresh."""
+		adopted_at = getattr(self, '_adopted_at', None)
+		if not adopted_at: return False
+		return not getattr(self, '_adopt_fresh', True) or time.time() - adopted_at < _ADOPT_QUIET_SEC
 
 	def _adopt_resume_seek(self):
 		try: percent = float(getattr(self.sources_object, 'playback_percent', 0) or 0)
