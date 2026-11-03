@@ -46,6 +46,8 @@ _EARLY_PREP_SEEK_QUIET_SEC = 10
 # Set while a claimed skip waits for its prep; the prep then skips the warm read so it stashes sooner.
 PROP_SKIP_PREP_WAITING = 'redlight.skip_prep_waiting'
 _NEXTEP_NATURAL_END_SEC = 15
+# #326 C10: a file under this share of TMDb's runtime is never marked watched by percentage.
+_SHORT_FILE_RATIO = 0.6
 # #324 C6: a skip marks the episode watched only from this far in (percent).
 _SKIP_WATCHED_MIN_POINT = 50
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
@@ -1212,6 +1214,20 @@ class RedLightPlayer(xbmc.Player):
 			self._log_nextep('Skipped at %.1f%%, under %d%%: keeping progress, not marking watched' % (point, _SKIP_WATCHED_MIN_POINT))
 			self.media_watched_marker()
 
+	def _short_of_tmdb_runtime(self):
+		"""#326 C10: True when the played file is under _SHORT_FILE_RATIO of TMDb's runtime (a Part 1 of a
+		one-entry two-parter, or a cut-short or wrong file). Reaching the watched percent of such a file is
+		not watching the episode, so it keeps its progress instead. False whenever either length is unknown."""
+		try:
+			runtime = float(self.meta_get('ep_duration') or 0)  # the episode's own TMDb runtime, not the show's
+			total = float(getattr(self, 'total_time', 0) or 0)
+		except Exception:
+			return False
+		if runtime <= 0 or total <= 0 or total >= runtime * _SHORT_FILE_RATIO: return False
+		ku.logger('Red Light', 'short file: %.0fs of TMDb runtime %.0fs (under %d%%), keeping progress, not marking watched' % (
+			total, runtime, _SHORT_FILE_RATIO * 100))
+		return True
+
 	def media_watched_marker(self, force_watched=False):
 		self.media_marked = True
 		try:
@@ -1224,7 +1240,7 @@ class RedLightPlayer(xbmc.Player):
 				pass
 			tick_at = getattr(self, 'watched_tick_percent', None)
 			if tick_at is None: tick_at = st.playback_watched_percent()
-			if current_point >= tick_at or force_watched:
+			if (current_point >= tick_at or force_watched) and not self._short_of_tmdb_runtime():
 				self._trakt_scrobble_stop(100)
 				self._simkl_scrobble_stop(100)
 				self._punchplay_scrobble_stop(100)
