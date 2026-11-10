@@ -986,7 +986,8 @@ def get_external_cache_status(debrid, unchecked_hashes, data, active_debrid):
 	try:
 		results = []
 		imdb_id = data['imdb']
-		debrid_name, services, token = {'Real-Debrid': ('realdebrid', ['torrentio'], get_setting('redlight.rd.token')),
+		# Real-Debrid: no Torrentio call, so the RD token never leaves the device; DMM below checks every hash (#333 Q333-3).
+		debrid_name, services, token = {'Real-Debrid': ('realdebrid', [], None),
 										'AllDebrid': ('alldebrid', ['mediafusion'], get_setting('redlight.ad.token'))}[debrid]
 		threads = [Thread(target=_process, args=(item, unchecked_hashes)) for item in services]
 		[i.start() for i in threads]
