@@ -8,7 +8,7 @@ import time
 import xbmcplugin
 from urllib.parse import unquote
 from threading import Thread, Lock, current_thread
-from windows.base_window import open_window, create_window
+from windows.base_window import open_window, create_window, close_shown, shown_windows
 from caches.settings_cache import get_setting
 from scrapers import external, folders
 from modules import debrid, kodi_utils, settings, metadata, watched_status
@@ -400,16 +400,12 @@ def close_nextep_handoff_cover():
 	_HANDOFF_COVER, _HANDOFF_COVER_THREAD, _HANDOFF_COVER_SHOWN = None, None, False
 	if win is None and thread is None:
 		try:
-			kodi_utils.close_dialog('nextep_handoff.xml')
+			close_shown('nextep_handoff.xml')
 		except Exception:
 			pass
 		return
 	try:
 		win.close()
-	except Exception:
-		pass
-	try:
-		kodi_utils.close_dialog('nextep_handoff.xml')
 	except Exception:
 		pass
 	if thread and thread.is_alive():
@@ -808,7 +804,7 @@ class Sources():
 
 	def _close_sources_results_window(self):
 		try:
-			kodi_utils.close_dialog('sources_results.xml')
+			close_shown('sources_results.xml')
 			kodi_utils.sleep(200)
 		except:
 			pass
@@ -2207,7 +2203,7 @@ class Sources():
 		kodi_utils.hide_busy_dialog()
 		if self.progress_thread and self.progress_thread.is_alive():
 			try:
-				kodi_utils.close_dialog('sources_playback.xml')
+				close_shown('sources_playback.xml')
 			except:
 				pass
 			join_bounded([self.progress_thread], 2.0, 'resolve_progress_dialog')
@@ -2989,19 +2985,25 @@ class Sources():
 			return
 		if retries is None:
 			retries = 6 if kodi_utils.is_android() else 3
-		# extras.xml: Play from Extras used to leave it stacked over fullscreen video.
-		dialogs = ('sources_playback.xml', 'sources_results.xml', 'nextep_handoff.xml', 'extras.xml')
+		# These are Red Light's own XML windows, not Kodi window names: Dialog.Close(<name>.xml) and
+		# Window.IsVisible(<name>.xml) only logged "Can't find window" and did nothing (#337). Close the
+		# windows Red Light has shown through their own close(). The next-episode cover is left to
+		# close_nextep_handoff_cover, which owns its armed state.
+		# extras.xml: Play from Extras used to leave it stacked over fullscreen video, so it is only
+		# closed once video is playing (a cancelled scrape must not take Extras down).
 		for _ in range(retries):
 			if not self._sources_still_owns_ui():
 				return
-			for name in dialogs:
-				try:
-					kodi_utils.close_dialog(name)
-				except:
-					pass
+			dialogs = ('sources_playback.xml', 'sources_results.xml')
+			try:
+				if kodi_utils.kodi_player().isPlayingVideo():
+					dialogs += ('extras.xml',)
+			except:
+				pass
+			close_shown(*dialogs)
 			kodi_utils.hide_busy_dialog()
 			try:
-				if not any(kodi_utils.get_visibility('Window.IsVisible(%s)' % name) for name in dialogs):
+				if not shown_windows(*dialogs):
 					break
 			except:
 				break

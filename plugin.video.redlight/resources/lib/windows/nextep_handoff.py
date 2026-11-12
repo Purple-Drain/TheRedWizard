@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from modules.kodi_utils import addon_fanart, get_icon, get_visibility, set_property, clear_property
-from windows.base_window import BaseDialog
+from windows.base_window import BaseDialog, shown_windows
 
 PROP_HANDOFF_VISIBLE = 'redlight.nextep_handoff.visible'
 
@@ -46,7 +46,7 @@ class NextepHandoffCover(BaseDialog):
 		if action not in self.closing_actions:
 			return
 		# Results owns Back once it is up. Cover-only Back cancels the handoff.
-		if get_visibility('Window.IsVisible(sources_results.xml)') or get_visibility('Window.IsVisible(sources_playback.xml)'):
+		if shown_windows('sources_results.xml', 'sources_playback.xml'):
 			return
 		# Still playing: this overlay should not be up. Dismiss it; do not cancel.
 		if get_visibility('Window.IsActive(fullscreenvideo)'):

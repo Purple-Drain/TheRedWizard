@@ -2,6 +2,8 @@
 import xbmcgui
 import re
 import json
+import threading
+import weakref
 from threading import Thread
 from xml.dom.minidom import parse as mdParse
 from modules import kodi_utils, settings
@@ -133,7 +135,53 @@ def window_player(obj):
 	except: obj.close()
 	kodi_utils.hide_busy_dialog()
 
+# Red Light's own XML windows (sources_playback.xml and friends) are not registered Kodi window
+# names, so Dialog.Close(<name>.xml) and Window.IsVisible(<name>.xml) only log "Window Translator:
+# Can't find window" and do nothing (TheRedWizard #337). The windows Red Light has shown are
+# tracked here instead, and closed through their own close().
+_shown_lock = threading.Lock()
+_shown = []
+
+def _skin_name(window):
+	try: return window.args[0]
+	except Exception: return None
+
+def _mark_shown(window):
+	with _shown_lock:
+		_shown[:] = [r for r in _shown if r() is not None]
+		if not any(r() is window for r in _shown): _shown.append(weakref.ref(window))
+
+def _mark_closed(window):
+	with _shown_lock:
+		_shown[:] = [r for r in _shown if r() is not None and r() is not window]
+
+def shown_windows(*skin_xmls):
+	"""Windows with one of these skin files that have loaded (onInit ran) and not yet closed."""
+	with _shown_lock:
+		found = [r() for r in _shown]
+	return [w for w in found if w is not None and _skin_name(w) in skin_xmls]
+
+def close_shown(*skin_xmls):
+	"""close() every shown window with one of these skin files. Returns how many were asked to close."""
+	targets = shown_windows(*skin_xmls)
+	for w in targets:
+		try: w.close()
+		except Exception: pass
+	return len(targets)
+
 class BaseDialog(xbmcgui.WindowXMLDialog):
+	def __init_subclass__(cls, **kwargs):
+		super().__init_subclass__(**kwargs)
+		orig = cls.__dict__.get('onInit')
+		if orig is None: return
+		def onInit(self, *a, **kw):
+			_mark_shown(self)
+			return orig(self, *a, **kw)
+		cls.onInit = onInit
+
+	def onClosed(self):
+		_mark_closed(self)
+
 	def __init__(self, *args):
 		xbmcgui.WindowXMLDialog.__init__(self, args)
 		self.args = args

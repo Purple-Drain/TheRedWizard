@@ -502,11 +502,12 @@ class RedLightPlayer(xbmc.Player):
 		# media-stack #52: a sources window still up now is stale (the video is playing) and, being
 		# modal, makes Kodi refuse the fullscreen activation below.
 		try:
+			from windows.base_window import shown_windows
 			left = progress_windows.open_count()
-			if left or ku.get_visibility('Window.IsVisible(sources_playback.xml)'):
+			if left or shown_windows('sources_playback.xml'):
 				ku.logger('Red Light', 'Playback open: closing %d stale sources window(s) before fullscreen (media-stack #52)' % left)
 				progress_windows.close_all(2.0)
-				if ku.get_visibility('Window.IsVisible(sources_playback.xml)'):
+				if shown_windows('sources_playback.xml'):
 					ku.logger('Red Light', 'Playback open: sources window still up, closing all dialogs (media-stack #52)')
 					ku.close_all_dialog()
 				ku.sleep(150)
