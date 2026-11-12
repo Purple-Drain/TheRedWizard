@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 from threading import Thread
-from windows.base_window import BaseDialog
+from windows.base_window import BaseDialog, shown_windows
 from caches.settings_cache import get_setting, set_setting
 from modules.debrid import debrid_cache_check_available
 from modules.settings import debrid_cache_check, external_module_display_name
@@ -221,7 +221,7 @@ class SourcesResults(BaseDialog):
 							self.sources_ref._sources_results_window = None
 							if self.sources_ref._playback_already_active():
 								try:
-									if self.get_visibility('Window.IsActive(sources_results.xml)'):
+									if shown_windows('sources_results.xml'):
 										self.selected = (None, '')
 										return self.close()
 								except:
