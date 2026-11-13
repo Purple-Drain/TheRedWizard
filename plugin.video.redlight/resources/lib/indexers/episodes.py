@@ -388,7 +388,11 @@ def build_single_episode(list_type, params={}):
 				except Exception: rewatch = None
 			if rewatch:
 				r_season, r_episode, show_self = rewatch
-				if show_self: orig_season, orig_episode = r_season, r_episode
+				# #342: an episode stopped part-way (resume bookmark, not watched) stays offered; the cursor
+				# moves at every play start, so without this the row skips it for the one after.
+				from modules.rewatch_cursor import offers_cursor_episode
+				cursor_progress = ws.get_progress_status_episode(ws.get_bookmarks_episode(tmdb_id, r_season, watched_db), r_episode)
+				if offers_cursor_episode(show_self, cursor_progress): orig_season, orig_episode = r_season, r_episode
 				else: orig_season, orig_episode = ws.get_next(r_season, r_episode, watched_info, season_data, 0, meta)
 				if not orig_season or not orig_episode: return
 			elif list_type_starts_with('next'):

@@ -85,6 +85,15 @@ def seed(tmdb_id):
 	except Exception: return None
 
 
+def offers_cursor_episode(show_self, resume_progress):
+	"""True when Next Episodes offers the cursor's own episode rather than the one after it (#342).
+
+	The cursor moves at the start of every play, so an episode stopped part-way (a resume bookmark,
+	not watched) would otherwise be skipped for the next one. It stays offered until finishing it
+	marks it watched, which erases the bookmark."""
+	return bool(show_self) or bool(resume_progress)
+
+
 def on_play_started(tmdb_id, season, episode, already_watched, continue_mode):
 	"""Called once per Red Light episode play. Returns what it did, for the log and the tests."""
 	try: season, episode = int(season), int(episode)

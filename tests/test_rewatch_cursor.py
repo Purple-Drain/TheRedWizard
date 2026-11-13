@@ -62,3 +62,21 @@ def test_menu_can_restore_an_automatic_cursor_quietly(profile, monkeypatch):
     monkeypatch.setattr(rc.kodi_utils, 'kodi_refresh', lambda: None)
     rc.menu({'action': 'set', 'tmdb_id': '1668', 'season': '2', 'episode': '5', 'show_self': 'false', 'quiet': 'true'})
     assert rc.seed(1668) == (2, 5, False) and shown == []
+
+
+def test_unfinished_cursor_episode_stays_offered(profile):
+    # #342: S18E01 stopped at 65% under a moving cursor must stay the row, not become S18E02.
+    rc.on_play_started(2190, 18, 1, True, True)
+    assert rc.seed(2190) == (18, 1, False)
+    assert rc.offers_cursor_episode(False, 65.2) is True
+
+
+def test_finished_cursor_episode_moves_on(profile):
+    # Finishing marks it watched, which erases the bookmark: no progress, so the next one is offered.
+    assert rc.offers_cursor_episode(False, None) is False
+    assert rc.offers_cursor_episode(False, 0) is False
+
+
+def test_show_self_cursor_is_unchanged(profile):
+    assert rc.offers_cursor_episode(True, None) is True
+    assert rc.offers_cursor_episode(True, 40) is True
