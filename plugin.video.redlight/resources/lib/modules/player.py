@@ -597,6 +597,16 @@ class RedLightPlayer(xbmc.Player):
 					self.playback_successful = False
 					self.safe_stop()
 					break
+				# #343: no progress dialog (quiet start) used to skip the timeout and the Kodi error
+				# dialog check below, so a failed open waited for ever (Parks 13.11.26: a dead
+				# pre-resolved link, HTTP 503, sat for 5 minutes). Same two checks, same order.
+				elif elapsed_ms >= timeout_ms:
+					self._open_window_expired()
+					if not self.playback_successful:
+						ku.logger('Red Light', 'Playback open: no start within %ss and no progress dialog; trying the next source' % (timeout_ms // 1000))
+					break
+				elif self._dismiss_kodi_playback_error_dialog():
+					self.playback_successful = False
 				elif self.isPlayingVideo():
 					self._confirm_open(elapsed_ms)
 			elif self.sources_object.progress_dialog.skip_resolved(): self.playback_successful = False
