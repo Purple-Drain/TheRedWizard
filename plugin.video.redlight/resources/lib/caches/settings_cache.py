@@ -2073,6 +2073,7 @@ def default_settings():
 {'setting_id': 'skip_intro_all_episodes', 'setting_type': 'boolean', 'setting_default': 'true'},
 {'setting_id': 'binge_skip_intro', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'intro_skip_excluded_shows', 'setting_type': 'string', 'setting_default': ''},
+{'setting_id': 'intro_skip_excluded_seeded', 'setting_type': 'boolean', 'setting_default': 'false'},
 {'setting_id': 'binge_sitting_gap_min', 'setting_type': 'action', 'setting_default': '30', 'min_value': '1', 'max_value': '720'},
 {'setting_id': 'intro_skip_keep_start', 'setting_type': 'action', 'setting_default': '2', 'min_value': '0', 'max_value': '15'},
 {'setting_id': 'intro_skip_keep_end', 'setting_type': 'action', 'setting_default': '5', 'min_value': '0', 'max_value': '15'},

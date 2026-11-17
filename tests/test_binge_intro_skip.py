@@ -114,3 +114,14 @@ def test_other_show_still_skips(monkeypatch):
     monkeypatch.setattr(st, 'get_setting', lambda k, d=None: values.get(k, d))
     _fetch_started(p, monkeypatch)
     assert p._intro_skip_active
+
+
+def test_starter_shows_are_seeded_once(monkeypatch):
+    """#263: Seinfeld, Parks and Recreation and Always Sunny join the list once; a later removal sticks."""
+    values = {'redlight.intro_skip_excluded_shows': '55'}
+    monkeypatch.setattr(st, 'get_setting', lambda k, d=None: values.get(k, d))
+    monkeypatch.setattr(st, 'set_setting', lambda k, v, *a, **kw: values.__setitem__('redlight.' + k, v))
+    assert st.intro_skip_excluded_shows() == ['55', '1400', '8592', '2710']
+    assert values['redlight.intro_skip_excluded_seeded'] == 'true'
+    values['redlight.intro_skip_excluded_shows'] = '8592'
+    assert st.intro_skip_excluded_shows() == ['8592']
