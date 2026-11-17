@@ -530,8 +530,22 @@ def skip_intro_auto_approved(play_type):
 def skip_intro_needs_prompt(play_type):
 	return skip_intro_mode() == 1 and skip_intro_enabled(play_type)
 
+INTRO_SKIP_EXCLUDED_SEED = ('1400', '8592', '2710')  # Seinfeld, Parks and Recreation, It's Always Sunny in Philadelphia
+
+def _seed_intro_skip_excluded():
+	'''#263: once per device, add the starter shows to the stored list. A show removed later stays removed.'''
+	if get_setting('redlight.intro_skip_excluded_seeded', 'false') == 'true': return
+	try:
+		ids = [i.strip() for i in get_setting('redlight.intro_skip_excluded_shows', '').split(',') if i.strip()]
+		for tmdb_id in INTRO_SKIP_EXCLUDED_SEED:
+			if tmdb_id not in ids: ids.append(tmdb_id)
+		set_setting('intro_skip_excluded_shows', ','.join(ids))
+		set_setting('intro_skip_excluded_seeded', 'true')
+	except: pass
+
 def intro_skip_excluded_shows():
 	'''#263: TMDb ids of shows whose intro is never auto-skipped, set from the show Options menu.'''
+	_seed_intro_skip_excluded()
 	return [i.strip() for i in get_setting('redlight.intro_skip_excluded_shows', '').split(',') if i.strip()]
 
 def intro_skip_excluded(tmdb_id):
