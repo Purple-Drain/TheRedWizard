@@ -55,6 +55,9 @@ _SKIP_WATCHED_MIN_POINT = 50
 # adopt there is no watched mark and no next-episode prep or alert.
 _ADOPT_FRESH_MAX_SEC = 60
 _ADOPT_QUIET_SEC = 120
+# #349: an adopted file resumed past _ADOPT_FRESH_MAX_SEC is told from the previous file's frozen
+# position by advancing: a read this much later and higher, at about the pace of the clock, is live.
+_ADOPT_ADVANCE_MIN_SEC = 3
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
 # end never advances into it; Red Light's own next-episode hand-off owns the end.
 _QUEUED_NEXT_DROP_SEC = _NEXTEP_NATURAL_END_SEC + 5
@@ -2076,6 +2079,17 @@ class RedLightPlayer(xbmc.Player):
 		if 0 < curr <= _ADOPT_FRESH_MAX_SEC:
 			self._adopt_fresh = True
 			return False
+		# #349: a resumed file (Seinfeld The Beard, 21.11: resumed at 1176s) never reads at or under
+		# _ADOPT_FRESH_MAX_SEC, so every read stayed "previous file" for the whole play and nothing was
+		# marked. The previous file's position stands still; a live one advances with the clock.
+		now = time.time()
+		ref = getattr(self, '_adopt_stale_ref', None)
+		if ref and now - ref[1] >= _ADOPT_ADVANCE_MIN_SEC and 0 < curr - ref[0] <= (now - ref[1]) * 2 + 2:
+			self._adopt_fresh = True
+			self._log_nextep('Queued next episode: position %.0fs is advancing, so it is this file (resumed play)' % curr)
+			return False
+		if not ref or curr != ref[0] and now - ref[1] >= _ADOPT_ADVANCE_MIN_SEC:
+			self._adopt_stale_ref = (curr, now)
 		if not getattr(self, '_adopt_stale_logged', False):
 			self._adopt_stale_logged = True
 			self._log_nextep('Queued next episode: ignoring position %.0fs, still the previous file' % curr)
