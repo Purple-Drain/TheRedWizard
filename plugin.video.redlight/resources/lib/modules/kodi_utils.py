@@ -894,7 +894,10 @@ def schedule_playback_widget_refresh():
 	mark_playback_widget_refresh()
 	schedule_widget_refresh(silent=True, defer_browsing=True)
 
-def refresh_widgets(silent=False, reload_skin=False, defer_browsing=False):
+def refresh_widgets(silent=False, reload_skin=False, defer_browsing=False, mark_due=True):
+	# mark_due=False is the timed WidgetRefresher: it does not make saved lists due (#352). It never defers
+	# (defer_browsing stays False), so the flag need not survive schedule_widget_refresh, whose router
+	# route is a manual refresh and always marks lists due.
 	if service_shutting_down(): return
 	# Playback-scheduled refresh: wait until Home (or leave Red Light Videos) so we do not
 	# interrupt Next Episodes / In Progress with a second GetDirectory.
@@ -910,8 +913,9 @@ def refresh_widgets(silent=False, reload_skin=False, defer_browsing=False):
 	RandomWidgets().delete_like('random_list.%')
 	if reload_skin: lists_cache.delete_like('trakt_movies_trending_%')
 	# Saved widget lists count as due from here (modules.saved_lists, #155, #163).
-	from time import time
-	set_property('redlight.widgets_refreshed_at', str(int(time())))
+	if mark_due:
+		from time import time
+		set_property('redlight.widgets_refreshed_at', str(int(time())))
 	kodi_refresh()
 	try:
 		if home(): container_refresh()

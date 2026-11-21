@@ -317,7 +317,7 @@ class WidgetRefresher:
 				if self.condition_check(): continue
 				if self.next_refresh < time():
 					kodi_utils.logger('Red Light', 'WidgetRefresher Service - Widgets Refreshed')
-					kodi_utils.refresh_widgets()
+					kodi_utils.refresh_widgets(mark_due=False)
 					self.set_next_refresh(time())
 			except: pass
 		try: del player
