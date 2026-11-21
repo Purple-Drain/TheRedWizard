@@ -306,10 +306,16 @@ class WidgetRefresher:
 		wait_for_abort, self.is_playing = monitor.waitForAbort, player.isPlayingVideo
 		wait_for_abort(10)
 		self.set_next_refresh(time())
+		was_playing = False
 		while not monitor.abortRequested():
 			try:
 				wait_for_abort(10)
 				if kodi_utils.service_shutting_down(monitor): continue
+				# #315: the skin reloads Home when playback stops, so a tick that fell due during playback
+				# is redundant; restart the timer on the playing-to-stopped edge, before condition_check().
+				playing = bool(self.is_playing())
+				if was_playing and not playing: self.set_next_refresh(time())
+				was_playing = playing
 				offset = int(get_setting('redlight.widget_refresh_timer', '60'))
 				if offset != self.offset:
 					self.set_next_refresh(time())

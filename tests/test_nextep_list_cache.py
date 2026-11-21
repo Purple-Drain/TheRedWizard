@@ -268,6 +268,7 @@ def widget(db, prefs, monkeypatch):
 	props = {}
 	monkeypatch.setattr(kodi_utils, 'get_property', lambda name: props.get(name, ''))
 	monkeypatch.setattr(kodi_utils, 'set_property', lambda name, value: props.__setitem__(name, value))
+	monkeypatch.setattr(kodi_utils, 'clear_property', lambda name: props.pop(name, None))  # #315 build marker
 	directory['props'] = props
 	return directory, built_meta
 
@@ -372,6 +373,7 @@ def test_a_changed_state_is_shown_stale_once_then_rebuilt(widget, db):
 	assert not nlc.serve({})
 	assert props[nlc.REVALIDATE_PROP] == nlc.DONE  # cleared before the build, not after it
 	assert 'rebuild asked for by the service' in directory['log'][-1]
+	nlc.release()  # the build the miss above would start has ended (#315 marker)
 	assert not nlc.serve({})  # no second stale list this session
 	assert 'state changed since it was stored' in directory['log'][-1]
 

@@ -345,6 +345,14 @@ def build_episode_list(params):
 	kodi_utils.set_view_mode('view.episodes', 'episodes', is_external)
 
 def build_single_episode(list_type, params={}):
+	# One build at a time (#315): router.py's serve miss set the Next Episodes marker; clear it on every exit,
+	# the early return on a packet-cache hit and an exception included.
+	try: return _build_single_episode(list_type, params)
+	finally:
+		if list_type == 'episode.next': nextep_list_cache.release()
+
+
+def _build_single_episode(list_type, params={}):
 	category_override = None
 	def _get_category_name():
 		if category_override: return category_override
