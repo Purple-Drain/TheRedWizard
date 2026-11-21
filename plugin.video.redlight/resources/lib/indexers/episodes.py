@@ -344,6 +344,16 @@ def build_episode_list(params):
 	kodi_utils.end_directory(handle, cacheToDisc=False if is_external else True)
 	kodi_utils.set_view_mode('view.episodes', 'episodes', is_external)
 
+def nextep_build_summary(list_type, shows, listed, hits, negatives, reasons, phases, total_secs):
+	"""The Next Episodes build log line (#316). The start up to 'next-episode cache' is what older greps match;
+	miss is only shows really computed, the other reasons a show had no cached answer follow it."""
+	sync_secs, fetch_secs, shows_secs, tail_secs = phases
+	return ('build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s negative / %s miss, '
+		'%s unwatched (not cached) / %s rewatch cursor / %s no show meta, %.1fs (sync %.1fs, fetch %.1fs, shows %.1fs, tail %.1fs)'
+		% (list_type, shows, listed, hits, negatives, reasons.count('computed'), reasons.count('unwatched'),
+		reasons.count('rewatch'), reasons.count('no_meta'), total_secs, sync_secs, fetch_secs, shows_secs, tail_secs))
+
+
 def build_single_episode(list_type, params={}):
 	# One build at a time (#315): router.py's serve miss set the Next Episodes marker; clear it on every exit,
 	# the early return on a packet-cache hit and an exception included.
@@ -374,7 +384,9 @@ def _build_single_episode(list_type, params={}):
 		try:
 			ep_data_get = ep_data.get
 			meta = tvshow_meta('trakt_dict', ep_data_get('media_ids'), api_key, mpaa_region_value, current_date, current_time, is_anime_list=is_anime_list)
-			if not meta: return
+			if not meta:
+				nextep_reasons.append('no_meta')
+				return
 			meta_get = meta.get
 			cm = []
 			cm_append = cm.append
@@ -395,6 +407,7 @@ def _build_single_episode(list_type, params={}):
 					rewatch = rewatch_seed(tmdb_id)
 				except Exception: rewatch = None
 			if rewatch:
+				nextep_reasons.append('rewatch')
 				r_season, r_episode, show_self = rewatch
 				# #342: an episode stopped part-way (resume bookmark, not watched) stays offered; the cursor
 				# moves at every play start, so without this the row skips it for the one after.
@@ -417,6 +430,7 @@ def _build_single_episode(list_type, params={}):
 					orig_season, orig_episode = resolved
 					nextep_hits.append(tmdb_id)
 				else:
+					nextep_reasons.append('unwatched' if unwatched else 'computed')
 					# get_next_episodes() picked orig_season/orig_episode by raw (season, episode)
 					# order -- correct it into the show's own group order first when it has a
 					# group-native traversal, or "next" walks on from the wrong episode (#76).
@@ -680,7 +694,8 @@ def _build_single_episode(list_type, params={}):
 	play_mode = 'playback.%s' % playback_key
 	watched_db = ws.get_database(watched_indicators)
 	watched_info_tvshow = ws.watched_info_tvshow(watched_db) if unwatched_info else {}
-	build_started, nextep_hits, nextep_negative_hits = time.time(), [], []
+	build_started, nextep_hits, nextep_negative_hits, nextep_reasons = time.time(), [], [], []
+	phase_sync_secs = phase_fetch_secs = phase_shows_secs = 0.0
 	if list_type in ('episode.next', 'episode.mdblist_next'):
 		ws.clear_local_bookmarks()
 		try: ws._purge_negligible_progress(ws.get_database(watched_indicators))
@@ -732,9 +747,9 @@ def _build_single_episode(list_type, params={}):
 			return
 		# Cold rebuild (#203): Kodi's GetDirectory busy often dies when fullscreen closes after
 		# Stop; keep an explicit spinner until rows are ready (warm cache hits skip this).
-		# Not for a widget refresh (#311): the modal busy dialog stays up on Home after boot and
-		# after playback until a keypress, and nobody is waiting on a widget. _nextep_busy stays
-		# False so the hide_busy_dialog() paths below are skipped too.
+		# Not for a widget refresh (#311): the busy dialog is modal for the whole 5 to 8 s build, and
+		# nobody is waiting on a widget (it does close when the build ends, since pd.140).
+		# _nextep_busy stays False so the hide_busy_dialog() paths below are skipped too.
 		if is_external:
 			try: kodi_utils.logger('Red Light', 'next_episode cold rebuild: busy dialog skipped for widget refresh (#311)')
 			except: pass
@@ -745,6 +760,7 @@ def _build_single_episode(list_type, params={}):
 		try:
 			# Right after Stop, local watched/progress is already written — blocking Simkl/Trakt/etc.
 			# sync is the main wait even with one row. Skip ~30s; monitors / later opens still sync.
+			_phase_started = time.time()
 			_skip_provider_refresh = False
 			try: _skip_provider_refresh = kodi_utils.playback_list_sync_skip_recent()
 			except: pass
@@ -763,6 +779,8 @@ def _build_single_episode(list_type, params={}):
 			elif watched_indicators == 4 and settings.punchplay_user_active():
 				try: ws._refresh_punchplay_tvshow_watched()
 				except: pass
+			phase_sync_secs = time.time() - _phase_started
+			_phase_started = time.time()
 			data = ws.get_next_episodes(nextep_content, watched_indicators)
 			if settings.nextep_limit_history(): data = data[:settings.nextep_limit()]
 			hidden_list = set(ws.get_hidden_progress_items(watched_indicators) or [])
@@ -782,6 +800,7 @@ def _build_single_episode(list_type, params={}):
 										for i in favorites if not int(i['tmdb_id']) in [x['media_ids']['tmdb'] for x in data]])
 					except: pass
 				data += unwatched
+			phase_fetch_secs = time.time() - _phase_started
 		except Exception:
 			try: kodi_utils.hide_busy_dialog()
 			except: pass
@@ -886,13 +905,13 @@ def _build_single_episode(list_type, params={}):
 		list_type_starts_with = list_type_compare.startswith
 		# One read for every show's cached facts (unwatched-count suffix), instead of a per-show query.
 		show_facts_map = widget_cache.get_show_facts([i['media_ids'].get('tmdb') for i in data if i.get('media_ids')]) if unwatched_info else {}
+		_phase_started = time.time()
 		threads = TaskPool().tasks_enumerate(_process, data, min(len(data), settings.max_threads()))
 		[i.join() for i in threads]
+		phase_shows_secs = time.time() - _phase_started
 		if return_results: return [(i['list_items'], i['sort_order']) for i in item_list]
 		if list_type_starts_with('next_'):
-			kodi_utils.logger('Red Light', 'build_single_episode(%s): %s shows, %s listed, next-episode cache %s hit / %s negative / %s miss, %.1fs'
-				% (list_type, len(data), len(item_list), len(nextep_hits), len(nextep_negative_hits),
-				len(data) - len(nextep_hits) - len(nextep_negative_hits), time.time() - build_started))
+			_tail_started = time.time()
 			touched = {}
 			if sort_key == 'updated':
 				# #1 "Recently Updated": the later of the last watched row and the last watched-state change.
@@ -959,6 +978,10 @@ def _build_single_episode(list_type, params={}):
 			kodi_utils.set_sort_method(handle, 'none', labelMask='%L')
 		kodi_utils.end_directory(handle, cacheToDisc=False)
 		kodi_utils.set_view_mode('view.episodes_single', 'episodes', is_external, fallback_view_types=('view.episodes',))
+		if list_type_starts_with('next_'):
+			try: kodi_utils.logger('Red Light', nextep_build_summary(list_type, len(data), len(item_list), len(nextep_hits), len(nextep_negative_hits),
+				nextep_reasons, (phase_sync_secs, phase_fetch_secs, phase_shows_secs, time.time() - _tail_started), time.time() - build_started))
+			except Exception: pass
 	finally:
 		if _nextep_busy:
 			try: kodi_utils.hide_busy_dialog()

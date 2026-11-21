@@ -164,8 +164,10 @@ def forget_all():
 	for spec in specs(): forget(spec)
 
 
-def _miss(spec, reason, started):
-	kodi_utils.logger('Red Light', '%s list cache miss (%s), %.2fs' % (spec.label, reason, time.time() - started))
+def _miss(spec, reason, started, key_secs=None):
+	# key_secs (#316): how long working out the key and the choice took, when the miss came from there.
+	timing = '' if key_secs is None else ' (key %.2fs)' % key_secs
+	kodi_utils.logger('Red Light', '%s list cache miss (%s), %.2fs%s' % (spec.label, reason, time.time() - started, timing))
 	return False
 
 
@@ -239,10 +241,13 @@ def serve(spec, params, variant=False):
 			kodi_utils.set_property(REVALIDATE_PROP % name, DONE)
 			return _miss(spec, 'rebuild asked for by the service', started)
 		kind, stored_key, payload, age, reason = _choose(spec, is_external, variant, revalidate)
-		if kind is None: return _miss(spec, reason, started)
+		key_secs = time.time() - started
+		if kind is None: return _miss(spec, reason, started, key_secs)
+		key_started = time.time()
 		make_listitem, kodi_actor = kodi_utils.make_listitem, kodi_utils.kodi_actor()
 		items = [(i['url'], _render_nav(i['row']['nav'], make_listitem) if 'nav' in i['row'] else spec.render(i['row'], make_listitem, kodi_actor),
 				bool(i.get('folder'))) for i in payload['items']]
+		rendered_at = time.time()
 	except Exception as e: return _miss(spec, 'error: %s' % e, started)
 	# Committed from here: a build can no longer answer this handle, so the directory must end whatever
 	# happens, or Kodi's fetch of the widget fails outright instead of showing a list.
@@ -263,6 +268,6 @@ def serve(spec, params, variant=False):
 		kodi_utils.logger('Red Light', '%s list cache stale (%s): %s listed, built %s ago, rebuild pending, %.2fs'
 			% (spec.label, reason, len(items), _age_text(age), time.time() - started))
 	else:
-		kodi_utils.logger('Red Light', '%s list cache hit: %s listed, built %s ago, %.2fs'
-			% (spec.label, len(items), _age_text(age), time.time() - started))
+		kodi_utils.logger('Red Light', '%s list cache hit: %s listed, built %s ago, %.2fs (key %.2fs, render %.2fs)'
+			% (spec.label, len(items), _age_text(age), time.time() - started, key_secs, rendered_at - key_started))
 	return True
