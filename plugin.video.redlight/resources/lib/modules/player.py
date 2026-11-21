@@ -55,8 +55,9 @@ _SKIP_WATCHED_MIN_POINT = 50
 # adopt there is no watched mark and no next-episode prep or alert.
 _ADOPT_FRESH_MAX_SEC = 60
 _ADOPT_QUIET_SEC = 120
-# #349: an adopted file resumed past _ADOPT_FRESH_MAX_SEC is told from the previous file's frozen
-# position by advancing: a read this much later and higher, at about the pace of the clock, is live.
+# #349: a queued hand-off that resumes a saved bookmark past _ADOPT_FRESH_MAX_SEC never reads at or
+# under it. Its position is told from the previous file's frozen one by advancing at about the pace
+# of the clock, judged over reads at least this far apart.
 _ADOPT_ADVANCE_MIN_SEC = 3
 # #199 C6: the queued next-episode marker comes off the playlist this close to the end, so a natural
 # end never advances into it; Red Light's own next-episode hand-off owns the end.
@@ -657,6 +658,7 @@ class RedLightPlayer(xbmc.Player):
 		playback_superseded = False
 		try:
 			ensure_dialog_dead, total_check_time = False, 0
+			show_stinger, stinger_alert_timing, stingers_percentage_fallback = False, None, None  # #339: episodes never set these
 			if self.media_type == 'episode':
 				play_random_continual = self.sources_object.random_continual
 				play_random = self.sources_object.random
@@ -2051,6 +2053,9 @@ class RedLightPlayer(xbmc.Player):
 		if self.is_generic or getattr(self, 'media_type', None) != 'episode': return False
 		try:
 			if not self.isPlayingVideo(): return False
+			# #349 / #143: a wake-resume adopt has no previous file; Kodi itself restored the file at its
+			# stored offset (The Beard, 1156s), so the #330 stale-position guard must not apply to it.
+			wake_adopt = (getattr(getattr(self, 'sources_object', None), 'params', None) or {}).get('adopt_no_resume') == 'true'
 			playlist = ku.make_playlist('video')
 			self._own_index = playlist.getposition()
 			marker = xbmcgui.ListItem(label='Next episode', offscreen=True)
@@ -2067,8 +2072,13 @@ class RedLightPlayer(xbmc.Player):
 		# a queued file still opening (an RD 503) that then stops is a failed open, not a user Stop.
 		try: self._cb_avstarted = float(self.getTotalTime() or 0) > 0 and float(self.getTime() or 0) > 0
 		except Exception: self._cb_avstarted = False
-		self._adopted_at, self._adopt_fresh = time.time(), False
-		self._log_nextep('Queued next episode: adopted the playing file as this Red Light play')
+		self._adopt_stale_ref = None
+		if wake_adopt:
+			self._adopted_at, self._adopt_fresh = None, True
+			self._log_nextep('Queued next episode: adopted the playing file as this Red Light play (wake resume, no previous file to guard against)')
+		else:
+			self._adopted_at, self._adopt_fresh = time.time(), False
+			self._log_nextep('Queued next episode: adopted the playing file as this Red Light play')
 		return True
 
 	def _adopt_stale_read(self, curr):
@@ -2079,16 +2089,20 @@ class RedLightPlayer(xbmc.Player):
 		if 0 < curr <= _ADOPT_FRESH_MAX_SEC:
 			self._adopt_fresh = True
 			return False
-		# #349: a resumed file (Seinfeld The Beard, 21.11: resumed at 1176s) never reads at or under
-		# _ADOPT_FRESH_MAX_SEC, so every read stayed "previous file" for the whole play and nothing was
-		# marked. The previous file's position stands still; a live one advances with the clock.
+		# #349: a queued hand-off whose next episode has a saved bookmark is seeked past
+		# _ADOPT_FRESH_MAX_SEC right after the adopt, so it never reads at or under it. The previous
+		# file's position stands still (or creeps); a live one advances at about the pace of the clock.
+		# (A wake-resume adopt has no previous file and skips this guard, see _adopt_queued_play.)
 		now = time.time()
 		ref = getattr(self, '_adopt_stale_ref', None)
-		if ref and now - ref[1] >= _ADOPT_ADVANCE_MIN_SEC and 0 < curr - ref[0] <= (now - ref[1]) * 2 + 2:
-			self._adopt_fresh = True
-			self._log_nextep('Queued next episode: position %.0fs is advancing, so it is this file (resumed play)' % curr)
-			return False
-		if not ref or curr != ref[0] and now - ref[1] >= _ADOPT_ADVANCE_MIN_SEC:
+		if not ref:
+			self._adopt_stale_ref = (curr, now)
+		elif now - ref[1] >= _ADOPT_ADVANCE_MIN_SEC:
+			dt, delta = now - ref[1], curr - ref[0]
+			if 0.5 * dt <= delta <= 1.5 * dt + 2:
+				self._adopt_fresh = True
+				self._log_nextep('Queued next episode: position %.0fs is advancing, so it is this file (resumed play)' % curr)
+				return False
 			self._adopt_stale_ref = (curr, now)
 		if not getattr(self, '_adopt_stale_logged', False):
 			self._adopt_stale_logged = True
