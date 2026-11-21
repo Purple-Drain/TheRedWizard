@@ -18,6 +18,7 @@ A stored list also stops being served on the earliest air date among its next ep
 aired episode appears (valid_until).
 """
 import hashlib
+import time
 from caches.base_cache import connect_database
 from modules import kodi_utils, settings, saved_lists
 from modules.episode_rows import render_episode_row
@@ -172,5 +173,66 @@ def forget():
 	saved_lists.forget(SPEC)
 
 
+# Single flight (#315). After a playback stop the skin reloads Home and other triggers (the refresher's
+# UpdateLibrary scan) ask for the same list while the first build is still running. A request that
+# misses sets this marker (a start time, per list name, not per key: the build re-keys at store time);
+# the build clears it in a finally (indexers.episodes). A request that finds a fresh marker waits for
+# it to clear, then runs the normal serve: a hit is served, a miss builds. Window property get and set
+# are not atomic, so two requests that start together can both build. That is accepted: it is the
+# state today, and the marker only has to stop the common back-to-back case.
+BUILD_PROP = 'redlight.nextep_building.%s'
+BUILD_STALE_SEC = 30  # the worst build seen took 15.3 s
+BUILD_WAIT_SEC = 20
+_WAIT_STEP_SEC = 0.25
+_owned = {}  # {list name: marker value this process set}, for release()
+
+
+def _build_marker_age(name):
+	"""Seconds since the build marker was set, or None when there is none or it is stale or unreadable."""
+	raw = kodi_utils.get_property(BUILD_PROP % name)
+	if not raw: return None
+	try: age = time.time() - float(raw)
+	except Exception:
+		kodi_utils.clear_property(BUILD_PROP % name)
+		return None
+	if age < 0 or age > BUILD_STALE_SEC:
+		kodi_utils.clear_property(BUILD_PROP % name)
+		return None
+	return age
+
+
+def _wait_for_build(name):
+	"""Wait (abort-aware) until the build marker for name clears or BUILD_WAIT_SEC passes. Seconds waited."""
+	if _build_marker_age(name) is None: return 0.0
+	started, monitor = time.time(), kodi_utils.kodi_monitor()
+	while time.time() - started < BUILD_WAIT_SEC and _build_marker_age(name) is not None:
+		if monitor.waitForAbort(_WAIT_STEP_SEC): break
+	return time.time() - started
+
+
+def release(name=None):
+	"""Clear the marker this process set. Called from the build's finally; safe when none was set, and
+	it never clears a marker another request set after this one's went stale."""
+	for n in ([name] if name else list(_owned)):
+		mine = _owned.pop(n, None)
+		try:
+			if mine is not None and kodi_utils.get_property(BUILD_PROP % n) == mine: kodi_utils.clear_property(BUILD_PROP % n)
+		except Exception: pass
+
+
 def serve(params):
-	return saved_lists.serve(SPEC, params, 'is_anime_list' in params)
+	variant = 'is_anime_list' in params
+	try: name = list_name(kodi_utils.external(), variant)
+	except Exception: return saved_lists.serve(SPEC, params, variant)
+	waited = 0.0
+	try: waited = _wait_for_build(name)
+	except Exception: pass
+	served = saved_lists.serve(SPEC, params, variant)
+	if waited: kodi_utils.logger('Red Light', 'Next Episodes: waited %.1fs for the build already running, then %s' % (waited, 'served its list' if served else 'built'))
+	if not served:
+		try:
+			marker = str(time.time())
+			kodi_utils.set_property(BUILD_PROP % name, marker)
+			_owned[name] = marker
+		except Exception: pass
+	return served
