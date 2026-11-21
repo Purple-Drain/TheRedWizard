@@ -630,3 +630,20 @@ def test_nothing_answered_ends_the_checks_without_a_refresh(revalidator):
 	job.run(_Monitor(clock))
 	assert props[nlc.REVALIDATE_PROP] == nlc.DONE and refreshed == []
 	assert clock.now - 1000.0 > nlc.FIRST_ANSWER_WAIT
+
+
+def test_build_log_counts_reasons_and_times_phases_316(widget):
+	directory, built_meta = widget
+	episodes.build_single_episode('episode.next', {})
+	line = [l for l in directory['log'] if l.startswith('build_single_episode(')][-1]
+	assert re.match(r'build_single_episode\(\S+\): 2 shows, 1 listed, next-episode cache 0 hit / 0 negative / \d+ miss, '
+		r'\d+ unwatched \(not cached\) / \d+ rewatch cursor / \d+ no show meta, [\d.]+s \(sync [\d.]+s, fetch [\d.]+s, shows [\d.]+s, tail [\d.]+s\)$', line), line
+
+
+def test_serve_lines_report_key_and_render_time_316(widget):
+	directory, built_meta = widget
+	assert not nlc.serve({})
+	assert re.search(r'list cache miss \(nothing stored\), [\d.]+s \(key [\d.]+s\)$', directory['log'][-1]), directory['log'][-1]
+	episodes.build_single_episode('episode.next', {})
+	assert nlc.serve({})
+	assert re.search(r'list cache hit: 1 listed, built 0 s ago, [\d.]+s \(key [\d.]+s, render [\d.]+s\)$', directory['log'][-1]), directory['log'][-1]
