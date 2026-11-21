@@ -5,9 +5,9 @@ A widget whose contents can be keyed from local state alone (the watched and pro
 provider's cached rows, favourites, settings) registers a Spec here. The router asks serve() before it
 imports the indexer, and it answers in one of three ways:
 
-* hit: the stored list was built from exactly the current state, after the last widget refresh (the
-  widget_refresh_timer setting or a manual Refresh Widgets, so those still rebuild as they always did),
-  within the spec's freshness, and the spec's own check passes (Next Episodes: no listed show has aired
+* hit: the stored list was built from exactly the current state, after the last manual widget
+  refresh (Refresh Widgets and the other refresh_widgets() callers still make lists due; the timed
+  widget_refresh_timer refresh does not, so a list whose key is unchanged survives it, #352), within the spec's freshness, and the spec's own check passes (Next Episodes: no listed show has aired
   a next episode since). Served as is.
 * stale: a home widget asked at the start of a session, nothing fresh is stored, but a list from an
   earlier run is (younger than STALE_MAX). Shown at once, so the row is never empty at start, and
