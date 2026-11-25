@@ -112,10 +112,12 @@ def make_batch_insert(action, media_type, media_id, season, episode, last_played
 def refresh_container(refresh=True):
 	if refresh: kodi_refresh()
 
-def _schedule_playback_widget_refresh(from_playback):
-	if from_playback:
-		from modules.kodi_utils import schedule_playback_widget_refresh
-		schedule_playback_widget_refresh()
+def _schedule_playback_widget_refresh(from_playback=True):
+	# Manual marks schedule it too (#358): refresh_container() only refreshes the active container,
+	# so the home Next Episodes widget kept its old row. The refresh waits for Home, so marking
+	# from inside a Red Light list is not interrupted.
+	from modules.kodi_utils import schedule_playback_widget_refresh
+	schedule_playback_widget_refresh()
 
 def group_relocated_episodes(tmdb_id):
 	"""Raw (season, episode) pairs the show's assigned TMDb episode group relocates OUT of a
@@ -773,6 +775,7 @@ def mark_tvshow(params):
 	_arm_provider_list_sync_skip(watched_indicators)
 	batch_watched_status_mark(watched_indicators, insert_list, action)
 	progress_backround.close()
+	_schedule_playback_widget_refresh()
 	refresh_container()
 	notification('Success')
 
@@ -814,6 +817,7 @@ def mark_season(params):
 	_arm_provider_list_sync_skip(watched_indicators)
 	batch_watched_status_mark(watched_indicators, insert_list, action)
 	progress_backround.close()
+	_schedule_playback_widget_refresh()
 	refresh_container()
 	notification('Success')
 
