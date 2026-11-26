@@ -392,6 +392,9 @@ def routing(sys):
 	elif mode == 'person_direct.search':
 		from indexers.people import person_direct_search
 		return person_direct_search(params.get('key_id') or params.get('query'))
+	elif mode == 'browse_episodes_via_seasons':
+		from modules.kodi_utils import browse_episodes_via_seasons
+		return browse_episodes_via_seasons(params)
 	elif mode == 'kodi_refresh':
 		from modules.kodi_utils import kodi_refresh
 		return kodi_refresh()

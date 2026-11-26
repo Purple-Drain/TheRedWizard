@@ -83,7 +83,7 @@ def build_season_list(params):
 				if progress:
 					cm_append(['mark_watched', ('[B]Mark Unwatched[/B]', 'RunPlugin(%s)' % build_url({'mode': 'watched_status.mark_season', 'action': 'mark_as_unwatched',
 														'title': show_title, 'tmdb_id': tmdb_id, 'tvdb_id': tvdb_id, 'season': season_number}))])
-				set_properties({'watchedepisodes': str(watched), 'unwatchedepisodes': str(unwatched)})
+				set_properties({'watchedepisodes': str(watched), 'unwatchedepisodes': str(unwatched), 'redlight.season_number': str(season_number)})
 				set_properties({'totalepisodes': str(aired_eps), 'watchedprogress': str(visible_progress),
 								'redlight.extras_params': extras_params, 'redlight.options_params': options_params})
 				if is_external:
@@ -179,6 +179,11 @@ def build_season_list(params):
 		try: list_items.insert(0, _all_seasons_item())
 		except: pass
 	kodi_utils.add_items(handle, list_items)
+	# Widget Browse Episodes (#364) asks for the episode's own season to be highlighted.
+	focus_season = params.get('focus_season')
+	if focus_season not in (None, ''):
+		focus_index = next((i for i, x in enumerate(list_items) if x[1].getProperty('redlight.season_number') == str(focus_season)), -1)
+		kodi_utils.set_property('redlight.focus_season_index', str(focus_index))
 	kodi_utils.set_content(handle, 'seasons')
 	kodi_utils.set_category(handle, show_title)
 	kodi_utils.end_directory(handle, cacheToDisc=False if is_external else True)
