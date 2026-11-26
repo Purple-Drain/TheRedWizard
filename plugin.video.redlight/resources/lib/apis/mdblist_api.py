@@ -616,6 +616,15 @@ def _mdbl_watched_unwatched(action, media, media_id, tvdb_id=0, season=None, epi
 	result = call_mdblist(url, json_data=data, method='post')
 	if not isinstance(result, dict): return False
 	success = result.get(result_key, {}).get(success_key, 0) > 0
+	# Mark with 0 updated: MDBList reports an item it already holds as watched under
+	# skipped_no_date (captured 26.11.26, #360). That is already-watched, not a failure,
+	# so the local mark and widget refresh must still run. Unknown ids land in not_found.
+	if not success and action == 'mark_as_watched':
+		skipped = result.get('skipped_no_date')
+		if isinstance(skipped, dict) and skipped.get(success_key, 0) > 0:
+			kodi_utils.logger('MDBList', 'already watched on MDBList (%s %s via %s): %s' % (action, media, key, str(result)[:400]))
+			return True
+	if not success: kodi_utils.logger('MDBList', 'sync reply %s %s via %s: %s' % (action, media, key, str(result)[:400]))
 	if not success and media != 'movies' and tvdb_id:
 		return _mdbl_watched_unwatched(action, media, tvdb_id, 0, season, episode, 'tvdb')
 	# Remove with 0 removed = already unwatched on MDBList — not a failure.
