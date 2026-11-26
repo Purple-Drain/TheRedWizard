@@ -554,7 +554,9 @@ def _build_single_episode(list_type, params={}):
 			settings.append_source_shortcut_context_menus(cm_append, build_url, cm_sort_order, 'episode', tmdb_id, season, episode, playcount)
 			settings.append_external_scraper_settings_cm(cm_append, build_url)
 			cm_append(['browse_seasons', ('[B]Browse Seasons[/B]', window_command % build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id}))])
-			cm_append(['browse_episodes', ('[B]Browse Episodes[/B]', window_command % build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season}))])
+			if is_external: browse_episodes_command = 'RunPlugin(%s)' % build_url({'mode': 'browse_episodes_via_seasons', 'tmdb_id': tmdb_id, 'season': season})
+			else: browse_episodes_command = window_command % build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season})
+			cm_append(['browse_episodes', ('[B]Browse Episodes[/B]', browse_episodes_command)])
 			# List managers stay show-scoped (watchlist/library/etc). MDBList static add/remove uses season/episode when present.
 			trakt_manager_params, simkl_manager_params, punchplay_manager_params, mdblist_manager_params, tmdb_manager_params = '', '', '', '', ''
 			if settings.trakt_user_active():

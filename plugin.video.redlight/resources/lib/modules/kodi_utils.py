@@ -937,6 +937,30 @@ def activate_window(params, block=False):
 	if isinstance(params, dict): params = build_url(params)
 	return execute_builtin('ActivateWindow(Videos,%s,return)' % params, block)
 
+def browse_episodes_via_seasons(params):
+	"""Widget Browse Episodes (#364). ActivateWindow(Videos,<episodes>,return) leaves the new window with
+	no parent history, so Back closed it to Home. Open the show's seasons list first (the episode's own
+	season highlighted), then Container.Update to the episodes so Kodi keeps the seasons list as history.
+	Falls back to the old single ActivateWindow if the seasons window never appears."""
+	tmdb_id, season = params.get('tmdb_id'), params.get('season')
+	episodes_params = build_url({'mode': 'build_episode_list', 'tmdb_id': tmdb_id, 'season': season})
+	if season in (None, '', 'all'): return execute_builtin('ActivateWindow(Videos,%s,return)' % episodes_params)
+	clear_property('redlight.focus_season_index')
+	execute_builtin('ActivateWindow(Videos,%s,return)' % build_url({'mode': 'build_season_list', 'tmdb_id': tmdb_id, 'focus_season': season}))
+	index, waited = '', 0
+	while waited < 4000:
+		sleep(100)
+		waited += 100
+		index = get_property('redlight.focus_season_index')
+		if index and get_visibility('Window.IsActive(videos)') and 'build_season_list' in unquote(folder_path()) and get_visibility('Integer.IsGreater(Container.NumItems,0)'): break
+	else:
+		return execute_builtin('ActivateWindow(Videos,%s,return)' % episodes_params)
+	try:
+		if int(index) >= 0: focus_index(int(index))
+	except: pass
+	sleep(150)
+	return execute_builtin('Container.Update(%s)' % episodes_params)
+
 def container_refresh():
 	return execute_builtin('Container.Refresh')
 
