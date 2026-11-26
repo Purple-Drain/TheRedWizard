@@ -735,6 +735,15 @@ def _touch_show(tmdb_id):
 		touch(tmdb_id)
 	except Exception: pass
 
+def _end_rewatch(tmdb_id):
+	# #361: a rewatch cursor makes Next Episodes offer the episode after the cursor and ignore every
+	# watched row, so a manual mark or unmark could never change the show's row. A manual mark ends the
+	# rewatch overlay; the row then follows the watched table again. Never called from playback.
+	try:
+		from modules.rewatch_cursor import clear
+		if clear(tmdb_id): logger('Red Light', 'Rewatch cursor cleared by a manual mark: tmdb=%s' % tmdb_id)
+	except Exception: pass
+
 def mark_tvshow(params):
 	_touch_show(params.get('tmdb_id'))  # #1 Recently Updated sort
 	title, action, tmdb_id = params.get('title', ''), params.get('action'), params.get('tmdb_id')
@@ -774,6 +783,7 @@ def mark_tvshow(params):
 			insert_append(make_batch_insert(action, 'episode', tmdb_id, season_number, ep_number, last_played, title))
 	_arm_provider_list_sync_skip(watched_indicators)
 	batch_watched_status_mark(watched_indicators, insert_list, action)
+	_end_rewatch(tmdb_id)
 	progress_backround.close()
 	_schedule_playback_widget_refresh()
 	refresh_container()
@@ -816,6 +826,7 @@ def mark_season(params):
 		insert_append(make_batch_insert(action, 'episode', tmdb_id, season_number, ep_number, last_played, title))
 	_arm_provider_list_sync_skip(watched_indicators)
 	batch_watched_status_mark(watched_indicators, insert_list, action)
+	_end_rewatch(tmdb_id)
 	progress_backround.close()
 	_schedule_playback_widget_refresh()
 	refresh_container()
@@ -852,6 +863,7 @@ def mark_episode(params):
 	_arm_provider_list_sync_skip(watched_indicators)
 	watched_status_mark(watched_indicators, media_type, tmdb_id, action, season, episode, title)
 	update_hidden_progress(tmdb_id)
+	if not from_playback: _end_rewatch(tmdb_id)
 	_schedule_playback_widget_refresh(from_playback)
 	refresh_container(refresh)
 	if not from_playback: notification('Success')
