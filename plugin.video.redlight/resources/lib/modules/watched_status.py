@@ -110,7 +110,13 @@ def make_batch_insert(action, media_type, media_id, season, episode, last_played
 	else: return (media_type, media_id, season, episode)
 
 def refresh_container(refresh=True):
-	if refresh: kodi_refresh()
+	# A mark made on Home gets one refresh: the scheduled widget refresh (#358), which runs after
+	# the new list can be built. An immediate UpdateLibrary here made the skin refetch early and
+	# redraw the old row (#363). Marks inside a Red Light list still refresh that list.
+	if not refresh: return
+	from modules.kodi_utils import home
+	if home(): return
+	kodi_refresh()
 
 def _schedule_playback_widget_refresh(from_playback=True):
 	# Manual marks schedule it too (#358): refresh_container() only refreshes the active container,
